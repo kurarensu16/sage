@@ -1,0 +1,954 @@
+SYSTEM DESIGN DOCUMENT
+Automated Grading & Faculty Evaluation System
+Dr. Yanga's Colleges, Inc.
+BS Information Technology — Capstone Project
+AY 2025-2026
+1. System Overview
+This document covers the full system design of the Automated Grading and Faculty Evaluation System for Dr. Yanga's Colleges, Inc. (DYCI). The system is a web-based platform that handles class record management, automated grade computation, student grade monitoring, faculty evaluation, and AI-driven academic recommendations.
+The system is designed to eliminate manual grade computation, reduce the burden of grade consultations, enforce data privacy in faculty evaluations, and provide data-driven insights for both students and administration.
+2. User Roles
+2.1 Admin
+Manage all user accounts (create, update, enable/disable)
+Create and configure evaluation forms and criteria
+Set evaluation window open and close dates
+Perform admin override on locked posted grades
+View all system data and activity logs
+2.2 Dean
+View all class records across departments and sections
+Monitor grade posting status per faculty per grading period
+View grade distribution summaries per subject and section
+View AI-generated faculty fitness predictions for all faculty under their department
+View the list of AI-flagged at-risk students
+Generate printable and exportable summary reports
+2.3 Faculty
+Create class records per subject and section
+Define grade components (activity, quiz, exam, project) with percentage weights
+Input student scores per component
+Post grades per grading period (Prelim, Midterm, Finals)
+View faculty evaluation results per section (anonymized)
+Receive notifications when an evaluation window closes
+2.4 Student
+View own grades per subject per grading period
+Receive notifications when grades are posted
+View personal lapses and missing score components
+Submit faculty evaluations within the active window
+3. Functional Requirements
+3.1 Authentication & Access Control
+FR #
+Description
+FR01
+The system shall allow users to log in using role-based credentials.
+FR02
+The system shall restrict module access based on user role.
+3.2 Grading Module
+FR #
+Description
+FR03
+Faculty shall be able to create a class record per subject and section.
+FR04
+Faculty shall be able to define grade components (activity, quiz, exam, project) with corresponding percentage weights.
+FR05
+The system shall validate that grade component weights sum to 100%.
+FR06
+Faculty shall be able to input scores per student per component.
+FR07
+The system shall automatically compute the midterm and final grade based on defined weights.
+FR08
+Faculty shall be able to post grades per grading period (Prelim, Midterm, Finals).
+FR09
+The system shall prevent editing of posted grades without an admin override.
+3.3 Student Portal
+FR #
+Description
+FR10
+Students shall be able to view their grades per subject per grading period.
+FR11
+The system shall notify students when a new grade period is posted.
+FR12
+The system shall display each student's lapses or missing score components.
+FR13
+Students shall not be able to view other students' grades.
+3.4 Faculty Evaluation Module
+FR #
+Description
+FR14
+Admin shall be able to create an evaluation form with criteria and rating items.
+FR15
+Admin shall be able to set an open and close date for each evaluation window.
+FR16
+Students shall only be able to submit evaluations within the active window.
+FR17
+The system shall hide student identity from faculty when displaying evaluation results.
+FR18
+Faculty shall be able to view evaluation results broken down per section.
+FR19
+Faculty shall be notified when an evaluation window closes.
+3.5 Dean Module
+FR #
+Description
+FR20
+The Dean shall be able to view grade posting status of all faculty per grading period.
+FR21
+The Dean shall be able to view grade distribution summaries per subject and section.
+FR22
+The Dean shall be able to view AI-generated faculty fitness predictions for all faculty under their department.
+FR23
+The Dean shall be able to view the list of at-risk students flagged by the AI recommendation system.
+FR24
+The Dean shall be able to generate printable and exportable summary reports.
+3.6 AI Features
+FR #
+Description
+FR25
+The system shall generate an AI-based recommendation per student advising whether to continue their course based on academic performance.
+FR26
+The system shall generate an AI-based faculty fitness prediction assessing whether the professor is recommended for the next school year, based on evaluation ratings and comments.
+4. Non-Functional Requirements
+NFR #
+Category
+Requirement
+NFR01
+Security
+Student identity in evaluations must be anonymized and non-recoverable from the UI.
+NFR02
+Privacy
+The system must comply with Philippine Data Privacy Act (RA 10173).
+NFR03
+Performance
+Grade computation must complete within 3 seconds of input submission.
+NFR04
+Usability
+The interface must be usable on both desktop and mobile browsers.
+NFR05
+Reliability
+The system must maintain 99% uptime during active evaluation windows.
+NFR06
+Maintainability
+Codebase must follow component-based architecture for ease of updates.
+NFR07
+Scalability
+The system must support at least 500 concurrent student users.
+NFR08
+Integrity
+Posted grades must be immutable without an admin-logged override.
+5. Entity Relationship Diagram
+The system database consists of 17 tables hosted on 
+Supabase
+ (PostgreSQL). The tables are organized into five functional groups: user and organizational data, grading, evaluation, AI outputs, and notifications.
+5.1 Table Definitions
+Table: users
+Column
+Type
+Notes
+user_id
+UUID
+PK
+last_name
+VARCHAR
+first_name
+VARCHAR
+middle_name
+VARCHAR
+email
+VARCHAR
+UNIQUE
+password_hash
+VARCHAR
+role
+ENUM
+admin | dean | faculty | student
+department_id
+UUID
+FK → departments
+created_at
+TIMESTAMP
+Table: departments
+Column
+Type
+Notes
+department_id
+UUID
+PK
+name
+VARCHAR
+e.g., College of IT
+created_at
+TIMESTAMP
+Table: subjects
+Column
+Type
+Notes
+subject_id
+UUID
+PK
+code
+VARCHAR
+e.g., IT101
+name
+VARCHAR
+units
+INT
+department_id
+UUID
+FK → departments
+Table: sections
+Column
+Type
+Notes
+section_id
+UUID
+PK
+name
+VARCHAR
+e.g., BSIT-3A
+school_year
+VARCHAR
+semester
+ENUM
+1st | 2nd | Summer
+department_id
+UUID
+FK → departments
+Table: enrollments
+Column
+Type
+Notes
+enrollment_id
+UUID
+PK
+student_id
+UUID
+FK → users
+section_id
+UUID
+FK → sections
+subject_id
+UUID
+FK → subjects
+enrolled_at
+TIMESTAMP
+Table: 
+class_records
+Column
+Type
+Notes
+class_record_id
+UUID
+PK
+faculty_id
+UUID
+FK → users
+subject_id
+UUID
+FK → subjects
+section_id
+UUID
+FK → sections
+school_year
+VARCHAR
+semester
+ENUM
+1st | 2nd | Summer
+created_at
+TIMESTAMP
+Table: 
+grade_components
+Column
+Type
+Notes
+component_id
+UUID
+PK
+class_record_id
+UUID
+FK → 
+class_records
+grade_period
+ENUM
+prelim | midterm | finals
+type
+ENUM
+activity | quiz | exam | project
+name
+VARCHAR
+e.g., Quiz 1
+weight
+DECIMAL
+Must sum to 100 per period
+max_score
+DECIMAL
+created_at
+TIMESTAMP
+Table: 
+component_scores
+Column
+Type
+Notes
+score_id
+UUID
+PK
+component_id
+UUID
+FK → 
+grade_components
+student_id
+UUID
+FK → users
+score
+DECIMAL
+encoded_at
+TIMESTAMP
+encoded_by
+UUID
+FK → users (faculty)
+Table: 
+posted_grades
+Column
+Type
+Notes
+posted_grade_id
+UUID
+PK
+class_record_id
+UUID
+FK → 
+class_records
+student_id
+UUID
+FK → users
+grade_period
+ENUM
+prelim | midterm | finals
+computed_grade
+DECIMAL
+remarks
+VARCHAR
+passed | failed | incomplete
+posted_by
+UUID
+FK → users (faculty)
+posted_at
+TIMESTAMP
+is_locked
+BOOLEAN
+DEFAULT true
+override_by
+UUID
+FK → users (admin), nullable
+override_at
+TIMESTAMP
+Nullable
+Table: notifications
+Column
+Type
+Notes
+notification_id
+UUID
+PK
+recipient_id
+UUID
+FK → users
+type
+ENUM
+grade_posted
+ | 
+eval_closed
+ | 
+eval_window_open
+ | 
+ai_recommendation
+message
+TEXT
+is_read
+BOOLEAN
+DEFAULT false
+created_at
+TIMESTAMP
+Table: 
+evaluation_forms
+Column
+Type
+Notes
+form_id
+UUID
+PK
+title
+VARCHAR
+created_by
+UUID
+FK → users (admin)
+created_at
+TIMESTAMP
+Table: 
+evaluation_criteria
+Column
+Type
+Notes
+criteria_id
+UUID
+PK
+form_id
+UUID
+FK → 
+evaluation_forms
+label
+VARCHAR
+e.g., Teaching Effectiveness
+description
+TEXT
+max_rating
+INT
+DEFAULT 5
+order_index
+INT
+Table: 
+evaluation_windows
+Column
+Type
+Notes
+window_id
+UUID
+PK
+form_id
+UUID
+FK → 
+evaluation_forms
+faculty_id
+UUID
+FK → users
+section_id
+UUID
+FK → sections
+open_at
+TIMESTAMP
+close_at
+TIMESTAMP
+is_closed
+BOOLEAN
+DEFAULT false
+created_by
+UUID
+FK → users (admin)
+Table: 
+evaluation_responses
+Column
+Type
+Notes
+response_id
+UUID
+PK
+window_id
+UUID
+FK → 
+evaluation_windows
+anonymous_token
+VARCHAR
+Hashed, not linkable to student
+submitted_at
+TIMESTAMP
+Table: 
+evaluation_ratings
+Column
+Type
+Notes
+rating_id
+UUID
+PK
+response_id
+UUID
+FK → 
+evaluation_responses
+criteria_id
+UUID
+FK → 
+evaluation_criteria
+rating
+INT
+Table: 
+evaluation_comments
+Column
+Type
+Notes
+comment_id
+UUID
+PK
+response_id
+UUID
+FK → 
+evaluation_responses
+comment
+TEXT
+Table: 
+ai_student_recommendations
+Column
+Type
+Notes
+recommendation_id
+UUID
+PK
+student_id
+UUID
+FK → users
+generated_at
+TIMESTAMP
+summary
+TEXT
+AI output
+recommendation
+ENUM
+continue | 
+at_risk
+ | 
+recommend_shift
+basis_snapshot
+JSONB
+Grade data at time of generation
+Table: 
+ai_faculty_predictions
+Column
+Type
+Notes
+prediction_id
+UUID
+PK
+faculty_id
+UUID
+FK → users
+school_year
+VARCHAR
+generated_at
+TIMESTAMP
+summary
+TEXT
+AI output
+verdict
+ENUM
+recommended | 
+needs_improvement
+ | 
+not_recommended
+strong_points
+TEXT
+weak_points
+TEXT
+basis_snapshot
+JSONB
+Eval data at time of generation
+5.2 Relationships Summary
+From
+To
+Cardinality
+users
+departments
+Many-to-One
+departments
+subjects
+One-to-Many
+departments
+sections
+One-to-Many
+enrollments
+users (student)
+Many-to-One
+enrollments
+sections
+Many-to-One
+enrollments
+subjects
+Many-to-One
+class_records
+users (faculty)
+Many-to-One
+class_records
+subjects
+Many-to-One
+class_records
+sections
+Many-to-One
+grade_components
+class_records
+Many-to-One
+component_scores
+grade_components
+Many-to-One
+component_scores
+users (student)
+Many-to-One
+posted_grades
+class_records
+Many-to-One
+posted_grades
+users (student)
+Many-to-One
+notifications
+users
+Many-to-One
+evaluation_criteria
+evaluation_forms
+Many-to-One
+evaluation_windows
+evaluation_forms
+Many-to-One
+evaluation_windows
+users (faculty)
+Many-to-One
+evaluation_windows
+sections
+Many-to-One
+evaluation_responses
+evaluation_windows
+Many-to-One
+evaluation_ratings
+evaluation_responses
+Many-to-One
+evaluation_ratings
+evaluation_criteria
+Many-to-One
+evaluation_comments
+evaluation_responses
+Many-to-One
+ai_student_recommendations
+users (student)
+Many-to-One
+ai_faculty_predictions
+users (faculty)
+Many-to-One
+6. Use Case Diagram
+The following table lists all 25 use cases grouped by module, along with the actors involved in each.
+UC #
+Module
+Use Case
+Actors
+UC01
+Authentication
+Log In
+Admin, Dean, Faculty, Student
+UC02
+Authentication
+Access Role-Based Modules
+Admin, Dean, Faculty, Student
+UC03
+User Management
+Manage User Accounts
+Admin
+UC04
+Evaluation Management
+Create Evaluation Form
+Admin
+UC05
+Evaluation Management
+Set Evaluation Window
+Admin
+UC06
+Evaluation Management
+Override Posted Grade
+Admin
+UC07
+Dean Oversight
+View All Class Records
+Dean
+UC08
+Dean Oversight
+Monitor Grade Posting Status
+Dean
+UC09
+Dean Oversight
+View Grade Distribution
+Dean
+UC10
+Dean Oversight
+View AI Faculty Predictions
+Dean
+UC11
+Dean Oversight
+View At-Risk Students
+Dean
+UC12
+Dean Oversight
+Generate Summary Reports
+Dean
+UC13
+Class Record
+Create Class Record
+Faculty
+UC14
+Class Record
+Define Grade Components & Weights
+Faculty
+UC15
+Class Record
+Input Student Scores
+Faculty
+UC16
+Class Record
+Auto-Compute Grades
+Faculty
+UC17
+Class Record
+Post Grades per Period
+Faculty
+UC18
+Faculty Evaluation
+View Evaluation Results per Section
+Faculty
+UC19
+Faculty Evaluation
+Receive Evaluation Notification
+Faculty
+UC20
+Student Portal
+View Own Grades
+Student
+UC21
+Student Portal
+Receive Grade Notification
+Student
+UC22
+Student Portal
+View Lapses & Missing Scores
+Student
+UC23
+Student Portal
+Submit Faculty Evaluation
+Student
+UC24
+AI Features
+Generate Student Recommendation
+Student, Dean
+UC25
+AI Features
+Generate Faculty Fitness Prediction
+Faculty, Dean
+7. Data Flow Diagram
+7.1 Level 0 — Context Diagram
+The Level 0 DFD treats the entire system as a single process and identifies all external entities and their high-level data flows.
+Entity
+Data Sent to System
+Data Received from System
+Admin
+User data, eval forms, windows, grade overrides
+System reports, confirmations
+Dean
+Report and filter requests
+Grade reports, eval results, AI predictions
+Faculty
+Scores, grade components, post commands
+Computed grades, eval results, notifications
+Student
+Evaluation responses, grade view requests
+Grades, lapses, AI recommendations, notifications
+7.2 Level 1 — Process Decomposition
+The system is decomposed into 8 processes:
+Process
+Name
+Description
+P1
+Authentication
+Validates credentials and issues role-based session tokens.
+P2
+User Management
+Admin creates, updates, and manages all user accounts.
+P3
+Class Record & Grade Management
+Faculty creates class records, defines components, inputs scores, auto-computes and posts grades.
+P4
+Student Grade Portal
+Students view their posted grades, component breakdowns, and lapses.
+P5
+Faculty Evaluation
+Admin manages eval forms and windows; students submit anonymous responses; faculty view results.
+P6
+AI Recommendation Engine
+Reads grade and evaluation data and generates student and faculty AI outputs.
+P7
+Dean Oversight & Reporting
+Dean views all grade and evaluation data, AI predictions, and generates reports.
+P8
+Notification Service
+Dispatches notifications to students and faculty on key system events.
+7.3 Data Stores
+Store
+Tables Covered
+D1
+users
+D2
+class_records
+, 
+grade_components
+D3
+component_scores
+, 
+posted_grades
+D4
+evaluation_forms
+, 
+evaluation_criteria
+, 
+evaluation_windows
+D5
+evaluation_responses
+, 
+evaluation_ratings
+, 
+evaluation_comments
+D6
+ai_student_recommendations
+D7
+ai_faculty_predictions
+D8
+notifications
+8. UI Screen List
+The system consists of 35 screens distributed across 4 role portals plus shared public screens.
+8.1 Shared / Public Screens
+Screen #
+Screen Name
+Key Elements
+S01
+Login Page
+Email + password fields; role determined server-side; redirect to role dashboard after login.
+S02
+Forgot Password Page
+Email input to receive reset link.
+S03
+Reset Password Page
+New password + confirm password fields.
+8.2 Admin Screens
+Screen #
+Screen Name
+Key Elements
+S04
+Admin Dashboard
+Overview stats: total users, active eval windows, pending grade posts, recent activity log.
+S05
+User Management — List
+Table of all users with role, department, status; search and filter; Add User button.
+S06
+User Management — Create / Edit User
+Form: name, email, role, department, section assignments; enable/disable toggle.
+S07
+Evaluation Form Builder
+Create eval form; add/remove criteria with labels, descriptions, max rating; reorder criteria.
+S08
+Evaluation Forms — List
+Table of all created forms; view, edit, delete actions.
+S09
+Evaluation Window Management — List
+Table: faculty name, section, form used, open date, close date, status; Create Window button.
+S10
+Evaluation Window — Create / Edit
+Select faculty, section, form; set open and close datetime; save/publish.
+S11
+Grade Override
+Search by student, subject, section, period; view locked grade; override input with reason; logs override.
+S12
+Admin Notifications / Activity Log
+System events: grade posts, eval closures, AI triggers, overrides.
+8.3 Dean Screens
+Screen #
+Screen Name
+Key Elements
+S13
+Dean Dashboard
+Summary cards: total faculty, sections, at-risk count, pending grade posts; quick links.
+S14
+Grade Posting Status — Overview
+Table per faculty: subjects, sections, periods posted vs pending; filter by department, semester, school year.
+S15
+Grade Distribution — View
+Select subject, section, period; view breakdown: passed, failed, grade ranges; visual chart.
+S16
+Faculty Evaluation Results — Overview
+List of all faculty with average evaluation rating per semester; click to drill down.
+S17
+Faculty Evaluation Results — Per Faculty
+Breakdown per section; ratings per criterion; anonymized comments; AI fitness prediction summary.
+S18
+At-Risk Students — List
+Table: student name, course, section, AI recommendation, grade snapshot; filter by course/section.
+S19
+Summary Reports
+Select report type; filter by semester/school year/department; export as PDF or print.
+8.4 Faculty Screens
+Screen #
+Screen Name
+Key Elements
+S20
+Faculty Dashboard
+Cards: active class records, pending grade posts, upcoming eval windows, notifications.
+S21
+Class Records — List
+Table: subject, section, school year, semester, posting status per period; Create button.
+S22
+Class Record — Create
+Select subject, section, school year, semester; confirm and proceed to grade component setup.
+S23
+Grade Components — Setup
+Per grading period; add components with type, name, max score, weight; live weight total validator.
+S24
+Score Input — Student List
+Select class record and period; editable table of enrolled students; inline save per row.
+S25
+Grade Computation — Preview
+Auto-computed grade per student; breakdown per component; highlight missing scores; Post button.
+S26
+Posted Grades — View
+Read-only view of posted grades per period; locked grades shown; override-flagged grades highlighted.
+S27
+Faculty Evaluation Results — My Results
+Select section and window; view ratings per criterion (anonymized); view comments; AI fitness prediction.
+S28
+Faculty Notifications
+Eval window closed alerts, grade override notifications, AI prediction ready alerts.
+8.5 Student Screens
+Screen #
+Screen Name
+Key Elements
+S29
+Student Dashboard
+Cards: enrolled subjects, latest grade posted, pending evaluation forms, AI recommendation status.
+S30
+My Grades — Subject List
+List of enrolled subjects per semester; badge showing latest posted period per subject.
+S31
+My Grades — Subject Detail
+Tabs: Prelim/Midterm/Finals; computed grade, component breakdown, missing scores, remarks.
+S32
+Faculty Evaluation — List
+Active evaluation windows; status: pending/submitted/closed; deadline countdown per window.
+S33
+Faculty Evaluation — Form
+Criteria with rating selector (1-5); optional comment field; anonymous submission confirmation.
+S34
+AI Recommendation — View
+AI recommendation summary; verdict: continue/at-risk/recommend shift; grade snapshot basis; generated date.
+S35
+Student Notifications
+Grade posted alerts, evaluation window opened alerts, AI recommendation ready alerts.
+8.6 Screen Count Summary
+Role
+Screen Count
+Screen Range
+Shared / Public
+3
+S01 – S03
+Admin
+9
+S04 – S12
+Dean
+7
+S13 – S19
+Faculty
+9
+S20 – S28
+Student
+7
+S29 – S35
+TOTAL
+35
+S01 – S35
+SAGE: Smart Academic Grading and Evaluation System
+Notes:
+1. Who makes section and courses (admin)
+2. admin assigns subject and sections to faculty
+3. The subject has course code, faculty will give the course code for students and they will be enrolled.
+End of System Design Document — DYCI Capstone Project AY 2025-2026
