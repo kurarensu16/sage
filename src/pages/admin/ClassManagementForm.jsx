@@ -3,19 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { ChevronRight, Save, Upload, X, Check, Users, AlertCircle, FileSpreadsheet } from 'lucide-react';
 import { mockDb } from '../../lib/mockDb';
-
-const availableSubjects = [
-  { code: 'IT101', name: 'Introduction to Computing' },
-  { code: 'IT201', name: 'Data Structures and Algorithms' },
-  { code: 'CS301', name: 'Artificial Intelligence' },
-  { code: 'IT401', name: 'Capstone Project 1' }
-];
-
-const availableSections = ['BSIT-1A', 'BSIT-2B', 'BSCS-3A', 'BSIT-4A', 'BSCS-1B', 'BSIT-2A'];
+import * as XLSX from 'xlsx';
 
 export default function ClassManagementForm() {
   const navigate = useNavigate();
   const [facultyUsers, setFacultyUsers] = useState([]);
+  const [subjects, setSubjects] = useState([]);
+  const [sections, setSections] = useState([]);
   
   const [formData, setFormData] = useState({
     subject: '',
@@ -29,6 +23,9 @@ export default function ClassManagementForm() {
   const [parsedStudents, setParsedStudents] = useState([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [showWarning, setShowWarning] = useState(false);
+  const [warningText, setWarningText] = useState('');
+  const fileInputRef = React.useRef(null);
 
   // Sample CSV template pre-loaded for easy demo
   const sampleCSV = `std-101,Jenkins,Sarah,s.jenkins@student.sage.edu
@@ -39,7 +36,50 @@ std-103,Johnson,Mary,m.johnson@student.sage.edu`;
     // Load active faculty members
     const users = mockDb.getUsers();
     setFacultyUsers(users.filter(u => u.role === 'faculty' && u.status === 'active'));
+
+    // Load dynamic subjects and sections, sorted alphabetically
+    const dbSubjects = mockDb.getSubjects().sort((a, b) => a.code.localeCompare(b.code));
+    const dbSections = mockDb.getSections().sort((a, b) => a.name.localeCompare(b.name));
+    setSubjects(dbSubjects);
+    setSections(dbSections);
   }, []);
+
+  useEffect(() => {
+    if (formData.subject && formData.facultyId) {
+      const [subCode] = formData.subject.split('|');
+      const selectedSubject = subjects.find(s => s.code === subCode);
+      const selectedFaculty = facultyUsers.find(f => f.id === formData.facultyId);
+      
+      if (selectedSubject && selectedFaculty && selectedSubject.department !== selectedFaculty.department) {
+        setWarningText(`The subject ${selectedSubject.code} belongs to "${selectedSubject.department}", but Prof. ${selectedFaculty.firstName} ${selectedFaculty.lastName} belongs to "${selectedFaculty.department}".`);
+        setShowWarning(true);
+      } else {
+        setShowWarning(false);
+        setWarningText('');
+      }
+    } else {
+      setShowWarning(false);
+      setWarningText('');
+    }
+  }, [formData.subject, formData.facultyId, subjects, facultyUsers]);
+
+  const handleSectionChange = (e) => {
+    const selectedSecName = e.target.value;
+    const secObj = sections.find(s => s.name === selectedSecName);
+    if (secObj) {
+      setFormData(prev => ({
+        ...prev,
+        section: selectedSecName,
+        schoolYear: secObj.schoolYear || '2025-2026',
+        semester: secObj.semester || '2nd'
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        section: selectedSecName
+      }));
+    }
+  };
 
   const handleLoadSample = () => {
     setCsvText(sampleCSV);
@@ -88,6 +128,26 @@ std-103,Johnson,Mary,m.johnson@student.sage.edu`;
     } else {
       setParsedStudents([]);
     }
+  };
+
+  const handleFileUpload = (file) => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const csv = XLSX.utils.sheet_to_csv(worksheet);
+        setCsvText(csv);
+        handleParseCSV(csv);
+      } catch (err) {
+        setErrorMsg('Failed to parse file. Please verify it is a valid Excel or CSV file.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
   };
 
   const handleSubmit = (e) => {
@@ -162,6 +222,16 @@ std-103,Johnson,Mary,m.johnson@student.sage.edu`;
           </div>
         )}
 
+        {showWarning && (
+          <div className="bg-amber-50 border border-amber-250 text-amber-800 p-4 rounded-lg text-sm font-semibold flex items-start gap-2.5 shadow-sm">
+            <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold block">Department Mismatch Warning</span>
+              <span className="text-xs text-amber-700 mt-1 block leading-relaxed">{warningText}</span>
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-6">
           
           {/* Section 1: Subject, Section & Faculty Info */}
@@ -187,7 +257,7 @@ std-103,Johnson,Mary,m.johnson@student.sage.edu`;
                   className="block w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
                 >
                   <option value="">Select subject...</option>
-                  {availableSubjects.map((sub, idx) => (
+                  {subjects.map((sub, idx) => (
                     <option key={idx} value={`${sub.code}|${sub.name}`}>{sub.code} - {sub.name}</option>
                   ))}
                 </select>
@@ -199,12 +269,12 @@ std-103,Johnson,Mary,m.johnson@student.sage.edu`;
                 <select
                   required
                   value={formData.section}
-                  onChange={(e) => setFormData({...formData, section: e.target.value})}
+                  onChange={handleSectionChange}
                   className="block w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
                 >
                   <option value="">Select section...</option>
-                  {availableSections.map((sec, idx) => (
-                    <option key={idx} value={sec}>{sec}</option>
+                  {sections.map((sec, idx) => (
+                    <option key={idx} value={sec.name}>{sec.name}</option>
                   ))}
                 </select>
               </div>
@@ -272,12 +342,40 @@ std-103,Johnson,Mary,m.johnson@student.sage.edu`;
               </button>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                CSV Input Data (Format: <code className="font-mono text-sage-700">StudentID,LastName,FirstName,Email</code>)
-              </label>
-              <textarea
-                value={csvText}
+            <div className="flex flex-col gap-4">
+              
+              {/* Drag and Drop Upload Zone */}
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const file = e.dataTransfer.files[0];
+                  if (file) handleFileUpload(file);
+                }}
+                className="border-2 border-dashed border-slate-200 hover:border-sage-400 rounded-xl p-6 text-center cursor-pointer bg-slate-50/50 hover:bg-sage-50/20 transition-all flex flex-col items-center justify-center gap-2 group relative"
+              >
+                <input 
+                  ref={fileInputRef}
+                  type="file" 
+                  accept=".xlsx,.xls,.csv" 
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file) handleFileUpload(file);
+                  }}
+                  className="hidden"
+                />
+                <Upload className="h-8 w-8 text-slate-400 group-hover:text-sage-600 transition-colors" />
+                <div className="text-xs font-bold text-slate-700 group-hover:text-sage-700">Drag & drop your Excel (.xlsx) or CSV (.csv) file here</div>
+                <div className="text-[10px] text-slate-400">Or click to select a file from your computer</div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                  Or Paste Raw Data (Format: <code className="font-mono text-sage-700">StudentID,LastName,FirstName,Email</code>)
+                </label>
+                <textarea
+                  value={csvText}
                 onChange={(e) => {
                   setCsvText(e.target.value);
                   setParsedStudents([]);
@@ -297,6 +395,7 @@ std-103,Johnson,Mary,m.johnson@student.sage.edu`;
                 </button>
               </div>
             </div>
+          </div>
 
             {/* Student Preview Table */}
             {parsedStudents.length > 0 && (

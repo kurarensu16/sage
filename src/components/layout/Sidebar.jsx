@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { BookOpen, LayoutDashboard, Users, FileText, Bell, LogOut, Plus, Calendar, AlertCircle, BarChart3, Star, FileDown } from 'lucide-react';
+import { BookOpen, LayoutDashboard, Users, FileText, Bell, LogOut, Plus, Calendar, AlertCircle, BarChart3, Star, FileDown, Layers, BookMarked, Shield } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import SageLogo from './SageLogo';
 
@@ -14,11 +14,13 @@ export default function Sidebar({ isCollapsed }) {
     admin: [
       { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/admin/userlist', icon: Users, label: 'User Management' },
+      { to: '/admin/subjectlist', icon: BookMarked, label: 'Subjects Database' },
+      { to: '/admin/sectionlist', icon: Layers, label: 'Sections Database' },
       { to: '/admin/classmanagementlist', icon: BookOpen, label: 'Classrooms' },
       { to: '/admin/evalformslist', icon: FileText, label: 'Evaluation Forms' },
       { to: '/admin/evalwindowlist', icon: Calendar, label: 'Evaluation Windows' },
       { to: '/admin/gradeoverride', icon: AlertCircle, label: 'Grade Override' },
-      { to: '/admin/activitylog', icon: Bell, label: 'Activity Log' },
+      { to: '/admin/auditlog', icon: Shield, label: 'Audit Logs' },
     ],
     faculty: [
       { to: '/faculty/dashboard', icon: LayoutDashboard, label: 'Dashboard' },

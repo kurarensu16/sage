@@ -3,7 +3,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Search, Filter, Clock, Shield, RefreshCw } from 'lucide-react';
 import { mockDb } from '../../lib/mockDb';
 
-export default function ActivityLog() {
+export default function AuditLog() {
   const [logs, setLogs] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('');
@@ -54,7 +54,7 @@ export default function ActivityLog() {
 
   return (
     <>
-      <PageHeader title="System Activity & Audit Log" breadcrumb="Admin Portal">
+      <PageHeader title="System Audit Logs" breadcrumb="Admin Portal">
         <button 
           onClick={loadLogs}
           className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg transition-colors bg-white flex items-center gap-2 shadow-sm"

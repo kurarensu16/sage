@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
@@ -9,6 +9,7 @@ import {
   AlertCircle,
   Copy
 } from 'lucide-react';
+import { mockDb } from '../../lib/mockDb';
 
 export default function ClassRecordCreate() {
   const navigate = useNavigate();
@@ -20,13 +21,15 @@ export default function ClassRecordCreate() {
     sourceClass: ''
   });
 
-  const availableSubjects = [
-    { code: 'CS301', name: 'Artificial Intelligence (Lecture)' },
-    { code: 'IT302', name: 'Database Systems 2 (Lab)' },
-    { code: 'CS302', name: 'Software Engineering 1 (Lecture)' }
-  ];
+  const [availableSubjects, setAvailableSubjects] = useState([]);
+  const [sections, setSections] = useState([]);
 
-  const sections = ['BSCS-3A', 'BSIT-3A', 'BSIT-3B', 'BSCS-3B'];
+  useEffect(() => {
+    const dbSubjects = mockDb.getSubjects().sort((a, b) => a.code.localeCompare(b.code));
+    const dbSections = mockDb.getSections().sort((a, b) => a.name.localeCompare(b.name));
+    setAvailableSubjects(dbSubjects);
+    setSections(dbSections.map(s => s.name));
+  }, []);
   
   const activeClassRecords = [
     { id: 1, label: 'IT101 - BSIT-1A (Introduction to Computing)' },

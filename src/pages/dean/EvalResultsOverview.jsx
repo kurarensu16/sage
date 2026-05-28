@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, Star, ArrowRight, Award, GraduationCap, Filter } from 'lucide-react';
 import { mockDb } from '../../lib/mockDb';
+import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
 
 export default function EvalResultsOverview() {
   const navigate = useNavigate();
@@ -41,7 +42,18 @@ export default function EvalResultsOverview() {
       `${f.firstName} ${f.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
       f.email.toLowerCase().includes(searchTerm.toLowerCase());
       
-    const matchesDept = !deptFilter || f.department === deptFilter;
+    // Normalise department comparison for legacy data
+    let fDept = f.department;
+    if (fDept === 'College of IT' || fDept === 'College of CS') {
+      fDept = 'College of Computer Studies';
+    }
+    
+    let filterDept = deptFilter;
+    if (filterDept === 'College of IT' || filterDept === 'College of CS') {
+      filterDept = 'College of Computer Studies';
+    }
+    
+    const matchesDept = !filterDept || fDept === filterDept;
 
     return matchesSearch && matchesDept;
   });
@@ -81,9 +93,10 @@ export default function EvalResultsOverview() {
                 onChange={(e) => setDeptFilter(e.target.value)}
                 className="block w-full border border-slate-200 px-3 py-2 rounded-lg text-xs bg-white outline-none cursor-pointer"
               >
-                <option value="">All Departments</option>
-                <option value="College of IT">College of IT</option>
-                <option value="College of CS">College of CS</option>
+                <option value="">All Colleges</option>
+                {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
+                  <option key={college} value={college}>{college}</option>
+                ))}
               </select>
             </div>
 
@@ -122,7 +135,7 @@ export default function EvalResultsOverview() {
                 <div className="space-y-2 border-t border-b border-slate-100 py-3 text-xs leading-normal">
                   <div className="flex justify-between">
                     <span className="text-slate-500 font-medium">Department:</span>
-                    <span className="font-bold text-slate-800">{f.department}</span>
+                    <span className="font-bold text-slate-800">{f.department === 'College of IT' || f.department === 'College of CS' ? 'College of Computer Studies' : f.department}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500 font-medium">Active Sections:</span>

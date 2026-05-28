@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { FileText, Printer, FileDown, Filter, Calendar } from 'lucide-react';
 import { mockDb } from '../../lib/mockDb';
+import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
 
 export default function SummaryReports() {
   const [reportType, setReportType] = useState('grade-distribution');
-  const [deptFilter, setDeptFilter] = useState('College of IT');
+  const [deptFilter, setDeptFilter] = useState('College of Computer Studies');
   const [semFilter, setSemFilter] = useState('2nd');
   const [syFilter, setSyFilter] = useState('2025-2026');
 
@@ -47,7 +48,7 @@ export default function SummaryReports() {
         return {
           name: `${f.firstName} ${f.lastName}`,
           email: f.email,
-          dept: f.department,
+          dept: f.department === 'College of IT' || f.department === 'College of CS' ? 'College of Computer Studies' : f.department,
           sections: classesCount,
           rating: rating
         };
@@ -73,7 +74,7 @@ export default function SummaryReports() {
         return {
           name: `${s.firstName} ${s.lastName}`,
           email: s.email,
-          dept: s.department,
+          dept: s.department === 'College of IT' || s.department === 'College of CS' ? 'College of Computer Studies' : s.department,
           gwa: gwa,
           risk: risk
         };
@@ -151,14 +152,15 @@ export default function SummaryReports() {
 
             {/* Department */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Department</label>
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">College / School</label>
               <select
                 value={deptFilter}
                 onChange={(e) => setDeptFilter(e.target.value)}
                 className="block w-full border border-slate-200 px-3 py-2.5 rounded-lg text-xs bg-white outline-none cursor-pointer"
               >
-                <option value="College of IT">College of IT</option>
-                <option value="College of CS">College of CS</option>
+                {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
+                  <option key={college} value={college}>{college}</option>
+                ))}
               </select>
             </div>
 
@@ -211,7 +213,7 @@ export default function SummaryReports() {
             <div className="text-center space-y-1.5 border-b-2 border-slate-900 pb-5">
               <h2 className="text-base font-bold uppercase tracking-wider">Dr. Yanga's Colleges, Inc.</h2>
               <p className="text-[10px] text-slate-500 font-mono">Wakas, Bocaue, Bulacan, Philippines</p>
-              <p className="text-xs font-bold text-slate-700">Office of the Dean, IT & Computer Studies</p>
+              <p className="text-xs font-bold text-slate-700">Office of the Dean, College of Computer Studies</p>
             </div>
 
             {/* Document Details */}
@@ -318,7 +320,7 @@ export default function SummaryReports() {
             <div className="pt-12 flex justify-end">
               <div className="text-center w-56 border-t border-slate-900 pt-2 text-xs">
                 <p className="font-bold text-slate-950">Carlos Valdes, MIT</p>
-                <p className="text-slate-500 mt-0.5">Dean, College of IT & CS</p>
+                <p className="text-slate-500 mt-0.5">Dean, College of Computer Studies</p>
               </div>
             </div>
           </div>

@@ -7,6 +7,7 @@ import { mockDb } from '../../lib/mockDb';
 export default function ClassManagementList() {
   const [classrooms, setClassrooms] = useState([]);
   const [facultyUsers, setFacultyUsers] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusTab, setStatusTab] = useState('active'); // active | archived
 
@@ -19,6 +20,7 @@ export default function ClassManagementList() {
   const loadData = () => {
     setClassrooms(mockDb.getClassrooms());
     setFacultyUsers(mockDb.getUsers().filter(u => u.role === 'faculty' && u.status === 'active'));
+    setSubjects(mockDb.getSubjects());
   };
 
   useEffect(() => {
@@ -242,6 +244,24 @@ export default function ClassManagementList() {
                   ))}
                 </select>
               </div>
+
+              {(() => {
+                const targetFacultyObj = facultyUsers.find(f => f.id === targetFacultyId);
+                const classSubjectObj = subjects.find(s => s.code === selectedClass.subjectCode);
+                const isMismatched = targetFacultyObj && classSubjectObj && targetFacultyObj.department !== classSubjectObj.department;
+                if (!isMismatched) return null;
+                return (
+                  <div className="bg-amber-50 border border-amber-250 text-amber-800 p-3 rounded-lg text-xs flex items-start gap-2 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
+                    <AlertTriangle className="h-4.5 w-4.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block">Department Mismatch Warning</span>
+                      <span className="text-[11px] leading-relaxed block mt-0.5">
+                        The subject belongs to "{classSubjectObj.department}", but Prof. {targetFacultyObj.firstName} {targetFacultyObj.lastName} belongs to "{targetFacultyObj.department}".
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Modal Footer */}

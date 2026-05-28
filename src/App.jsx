@@ -13,9 +13,14 @@ import AdminEvalFormsList from './pages/admin/EvalFormsList';
 import AdminEvalWindowList from './pages/admin/EvalWindowList';
 import AdminEvalWindowForm from './pages/admin/EvalWindowForm';
 import AdminGradeOverride from './pages/admin/GradeOverride';
-import AdminActivityLog from './pages/admin/ActivityLog';
+import AdminAuditLog from './pages/admin/AuditLog';
 import AdminClassManagementList from './pages/admin/ClassManagementList';
 import AdminClassManagementForm from './pages/admin/ClassManagementForm';
+import AdminSubjectList from './pages/admin/SubjectList';
+import AdminSubjectForm from './pages/admin/SubjectForm';
+import AdminSectionList from './pages/admin/SectionList';
+import AdminSectionForm from './pages/admin/SectionForm';
+import AdminNotifications from './pages/admin/Notifications';
 import DeanDashboard from './pages/dean/Dashboard';
 import DeanGradePostingStatus from './pages/dean/GradePostingStatus';
 import DeanGradeDistribution from './pages/dean/GradeDistribution';
@@ -23,6 +28,7 @@ import DeanEvalResultsOverview from './pages/dean/EvalResultsOverview';
 import DeanEvalResultsFaculty from './pages/dean/EvalResultsFaculty';
 import DeanAtRiskStudents from './pages/dean/AtRiskStudents';
 import DeanSummaryReports from './pages/dean/SummaryReports';
+import DeanNotifications from './pages/dean/Notifications';
 import FacultyDashboard from './pages/faculty/Dashboard';
 import FacultyClassRecordsList from './pages/faculty/ClassRecordsList';
 import FacultyClassRecordCreate from './pages/faculty/ClassRecordCreate';
@@ -39,6 +45,7 @@ import StudentEvalList from './pages/student/EvalList';
 import StudentEvalForm from './pages/student/EvalForm';
 import StudentAIRecommendation from './pages/student/AIRecommendation';
 import StudentNotifications from './pages/student/Notifications';
+import Settings from './pages/shared/Settings';
 
 function App() {
   return (
@@ -60,9 +67,15 @@ function App() {
           <Route path="/admin/evalwindowlist" element={<AdminEvalWindowList />} />
           <Route path="/admin/evalwindowform" element={<AdminEvalWindowForm />} />
           <Route path="/admin/gradeoverride" element={<AdminGradeOverride />} />
-          <Route path="/admin/activitylog" element={<AdminActivityLog />} />
+          <Route path="/admin/auditlog" element={<AdminAuditLog />} />
           <Route path="/admin/classmanagementlist" element={<AdminClassManagementList />} />
           <Route path="/admin/classmanagementform" element={<AdminClassManagementForm />} />
+          <Route path="/admin/subjectlist" element={<AdminSubjectList />} />
+          <Route path="/admin/subjectform" element={<AdminSubjectForm />} />
+          <Route path="/admin/sectionlist" element={<AdminSectionList />} />
+          <Route path="/admin/sectionform" element={<AdminSectionForm />} />
+          <Route path="/admin/notifications" element={<AdminNotifications />} />
+          <Route path="/admin/settings" element={<Settings />} />
           <Route path="/dean/dashboard" element={<DeanDashboard />} />
           <Route path="/dean/gradepostingstatus" element={<DeanGradePostingStatus />} />
           <Route path="/dean/gradedistribution" element={<DeanGradeDistribution />} />
@@ -70,6 +83,8 @@ function App() {
           <Route path="/dean/evalresultsfaculty" element={<DeanEvalResultsFaculty />} />
           <Route path="/dean/atriskstudents" element={<DeanAtRiskStudents />} />
           <Route path="/dean/summaryreports" element={<DeanSummaryReports />} />
+          <Route path="/dean/notifications" element={<DeanNotifications />} />
+          <Route path="/dean/settings" element={<Settings />} />
           <Route path="/faculty/dashboard" element={<FacultyDashboard />} />
           <Route path="/faculty/classrecordslist" element={<FacultyClassRecordsList />} />
           <Route path="/faculty/classrecordcreate" element={<FacultyClassRecordCreate />} />
@@ -79,6 +94,7 @@ function App() {
           <Route path="/faculty/postedgradesview" element={<FacultyPostedGradesView />} />
           <Route path="/faculty/evalresultsmy" element={<FacultyEvalResultsMy />} />
           <Route path="/faculty/notifications" element={<FacultyNotifications />} />
+          <Route path="/faculty/settings" element={<Settings />} />
           <Route path="/student/dashboard" element={<StudentDashboard />} />
           <Route path="/student/mygradeslist" element={<StudentMyGradesList />} />
           <Route path="/student/mygradesdetail" element={<StudentMyGradesDetail />} />
@@ -86,6 +102,7 @@ function App() {
           <Route path="/student/evalform" element={<StudentEvalForm />} />
           <Route path="/student/airecommendation" element={<StudentAIRecommendation />} />
           <Route path="/student/notifications" element={<StudentNotifications />} />
+          <Route path="/student/settings" element={<Settings />} />
         </Route>
       </Routes>
     </BrowserRouter>

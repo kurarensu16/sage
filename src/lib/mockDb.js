@@ -6,18 +6,20 @@ const STORAGE_KEYS = {
   EVAL_TEMPLATES: 'sage_eval_templates',
   EVAL_WINDOWS: 'sage_eval_windows',
   LOGS: 'sage_logs',
-  POSTED_GRADES: 'sage_posted_grades'
+  POSTED_GRADES: 'sage_posted_grades',
+  SUBJECTS: 'sage_subjects',
+  SECTIONS: 'sage_sections'
 };
 
 // Seed Data
 const defaultUsers = [
-  { id: 'usr-001', lastName: 'System', firstName: 'Admin', middleName: 'Control', email: 'admin@sage.edu.ph', role: 'admin', department: 'College of IT', status: 'active' },
-  { id: 'usr-002', lastName: 'Valdes', firstName: 'Carlos', middleName: 'Mendoza', email: 'c.valdes@sage.edu.ph', role: 'dean', department: 'College of IT', status: 'active' },
-  { id: 'usr-003', lastName: 'Rivera', firstName: 'Amanda', middleName: 'Santos', email: 'a.rivera@sage.edu.ph', role: 'faculty', department: 'College of IT', status: 'active' },
-  { id: 'usr-004', lastName: 'Doe', firstName: 'John', middleName: 'Smith', email: 'j.doe@sage.edu.ph', role: 'faculty', department: 'College of CS', status: 'active' },
-  { id: 'usr-005', lastName: 'Jenkins', firstName: 'Sarah', middleName: 'Lee', email: 's.jenkins@student.sage.edu', role: 'student', department: 'College of IT', status: 'active' },
-  { id: 'usr-006', lastName: 'Smith', firstName: 'John', middleName: 'Davis', email: 'j.smith@student.sage.edu', role: 'student', department: 'College of IT', status: 'active' },
-  { id: 'usr-007', lastName: 'Johnson', firstName: 'Mary', middleName: 'Cruz', email: 'm.johnson@student.sage.edu', role: 'student', department: 'College of CS', status: 'active' }
+  { id: 'usr-001', lastName: 'System', firstName: 'Admin', middleName: 'Control', email: 'admin@sage.edu.ph', role: 'admin', department: 'College of Computer Studies', program: '', status: 'active' },
+  { id: 'usr-002', lastName: 'Valdes', firstName: 'Carlos', middleName: 'Mendoza', email: 'c.valdes@sage.edu.ph', role: 'dean', department: 'College of Computer Studies', program: '', status: 'active' },
+  { id: 'usr-003', lastName: 'Rivera', firstName: 'Amanda', middleName: 'Santos', email: 'a.rivera@sage.edu.ph', role: 'faculty', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', status: 'active' },
+  { id: 'usr-004', lastName: 'Doe', firstName: 'John', middleName: 'Smith', email: 'j.doe@sage.edu.ph', role: 'faculty', department: 'College of Computer Studies', program: 'Bachelor of Science in Computer Science', status: 'active' },
+  { id: 'usr-005', lastName: 'Jenkins', firstName: 'Sarah', middleName: 'Lee', email: 's.jenkins@student.sage.edu', role: 'student', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', section: 'BSIT-1A', yearLevel: '1st Year', status: 'active' },
+  { id: 'usr-006', lastName: 'Smith', firstName: 'John', middleName: 'Davis', email: 'j.smith@student.sage.edu', role: 'student', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', section: 'BSIT-2B', yearLevel: '2nd Year', status: 'active' },
+  { id: 'usr-007', lastName: 'Johnson', firstName: 'Mary', middleName: 'Cruz', email: 'm.johnson@student.sage.edu', role: 'student', department: 'College of Computer Studies', program: 'Bachelor of Science in Computer Science', section: 'BSCS-3A', yearLevel: '3rd Year', status: 'active' }
 ];
 
 const defaultClassrooms = [
@@ -86,10 +88,13 @@ const defaultEvalTemplates = [
     author: 'Admin System Control',
     createdDate: '2026-05-10T09:00:00Z',
     criteria: [
-      { id: 'crit-1', label: 'Teaching Effectiveness', description: 'Explains complex topics clearly with relevant examples.', maxRating: 5 },
-      { id: 'crit-2', label: 'Punctuality & Attendance', description: 'Starts class sessions on time and conducts them regularly.', maxRating: 5 },
-      { id: 'crit-3', label: 'Fair Grading Assessment', description: 'Grades activities, projects, and exams objectively.', maxRating: 5 },
-      { id: 'crit-4', label: 'Communication & Engagement', description: 'Addresses student inquiries patiently and professionally.', maxRating: 5 }
+      { id: 'crit-1', label: 'Content Knowledge and Pedagogy', description: 'Instructional methods, higher-order thinking skills, language proficiency, verbal/non-verbal strategies.', maxRating: 4 },
+      { id: 'crit-2', label: 'Learning Environment', description: 'Safe, learning-focused environment, behavior management, supportive collaboration.', maxRating: 4 },
+      { id: 'crit-3', label: 'Diversity of Learners', description: 'Learner-centered culture, linguistic and cultural responsiveness, addressing unique educational needs.', maxRating: 4 },
+      { id: 'crit-4', label: 'Teaching, Learning, and Planning', description: 'Sequential teaching-learning process, curriculum alignment, technology integration.', maxRating: 4 },
+      { id: 'crit-5', label: 'Assessment and Reporting', description: 'Assessment design, monitoring student progress, informing stakeholders of accomplishments.', maxRating: 4 },
+      { id: 'crit-6', label: 'Community Linkages and Professional Engagement', description: 'School community relations, professional ethics, compliance with rules/regulations.', maxRating: 4 },
+      { id: 'crit-7', label: 'Personal Growth and Professional Development', description: 'Protection of teaching honor, professional collaboration, self-reflection.', maxRating: 4 }
     ]
   }
 ];
@@ -123,10 +128,26 @@ const defaultEvalWindows = [
   }
 ];
 
+const defaultSubjects = [
+  { id: 'sbj-001', code: 'IT101', name: 'Introduction to Computing', units: 3, department: 'College of Computer Studies' },
+  { id: 'sbj-002', code: 'IT201', name: 'Data Structures and Algorithms', units: 3, department: 'College of Computer Studies' },
+  { id: 'sbj-003', code: 'CS301', name: 'Artificial Intelligence', units: 3, department: 'College of Computer Studies' },
+  { id: 'sbj-004', code: 'IT401', name: 'Capstone Project 1', units: 3, department: 'College of Computer Studies' }
+];
+
+const defaultSections = [
+  { id: 'sec-001', name: 'BSIT-1A', schoolYear: '2025-2026', semester: '2nd', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology' },
+  { id: 'sec-002', name: 'BSIT-2B', schoolYear: '2025-2026', semester: '2nd', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology' },
+  { id: 'sec-003', name: 'BSCS-3A', schoolYear: '2025-2026', semester: '2nd', department: 'College of Computer Studies', program: 'Bachelor of Science in Computer Science' },
+  { id: 'sec-004', name: 'BSIT-4A', schoolYear: '2025-2026', semester: '2nd', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology' },
+  { id: 'sec-005', name: 'BSCS-1B', schoolYear: '2025-2026', semester: '2nd', department: 'College of Computer Studies', program: 'Bachelor of Science in Computer Science' },
+  { id: 'sec-006', name: 'BSIT-2A', schoolYear: '2025-2026', semester: '2nd', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology' }
+];
+
 const defaultPostedGrades = [
   { id: 'grd-001', classRecordId: 'cls-001', subjectCode: 'IT101', section: 'BSIT-1A', studentId: 'usr-005', studentName: 'Sarah Jenkins', gradePeriod: 'prelim', computedGrade: 2.00, remarks: 'passed', isLocked: true, postedBy: 'Amanda Rivera', postedAt: '2026-03-10T11:00:00Z' },
   { id: 'grd-002', classRecordId: 'cls-001', subjectCode: 'IT101', section: 'BSIT-1A', studentId: 'usr-005', studentName: 'Sarah Jenkins', gradePeriod: 'midterm', computedGrade: 2.25, remarks: 'passed', isLocked: true, postedBy: 'Amanda Rivera', postedAt: '2026-05-12T14:30:00Z' },
-  { id: 'grd-003', classRecordId: 'cls-002', subjectCode: 'IT201', section: 'BSIT-2B', studentId: 'usr-006', studentName: 'John Smith', gradePeriod: 'prelim', computedGrade: 3.25, remarks: 'failed', isLocked: true, postedBy: 'Amanda Rivera', postedAt: '2026-03-11T10:00:00Z' }
+  { id: 'grd-003', classRecordId: 'cls-002', subjectCode: 'IT201', section: 'BSIT-2B', studentId: 'usr-006', studentName: 'John Smith', gradePeriod: 'prelim', computedGrade: 5.00, remarks: 'failed', isLocked: true, postedBy: 'Amanda Rivera', postedAt: '2026-03-11T10:00:00Z' }
 ];
 
 const defaultLogs = [
@@ -155,7 +176,27 @@ function setToStorage(key, value) {
 
 export const mockDb = {
   // --- USERS ---
-  getUsers: () => getFromStorage(STORAGE_KEYS.USERS, defaultUsers),
+  getUsers: () => {
+    const stored = getFromStorage(STORAGE_KEYS.USERS, defaultUsers);
+    let updated = false;
+    const migrated = stored.map(u => {
+      const def = defaultUsers.find(d => d.id === u.id);
+      if (def) {
+        // Find if any key present in seed defaults is missing/empty in stored user
+        const missingKeys = Object.keys(def).filter(k => u[k] === undefined || u[k] === '');
+        if (missingKeys.length > 0) {
+          updated = true;
+          return { ...def, ...u, ...missingKeys.reduce((acc, k) => ({ ...acc, [k]: def[k] }), {}) };
+        }
+      }
+      return u;
+    });
+    if (updated) {
+      setToStorage(STORAGE_KEYS.USERS, migrated);
+      return migrated;
+    }
+    return stored;
+  },
   saveUser: (user) => {
     const users = mockDb.getUsers();
     if (user.id) {
@@ -311,6 +352,60 @@ export const mockDb = {
       
       setToStorage(STORAGE_KEYS.POSTED_GRADES, grades);
       mockDb.addLog('Grade Override', `Overrode ${grades[index].studentName}'s ${grades[index].gradePeriod} grade in ${grades[index].subjectCode} from ${oldGrade.toFixed(2)} (${oldRemarks}) to ${parseFloat(newGrade).toFixed(2)} (${remarks}). Reason: ${reason}.`, adminName);
+    }
+  },
+
+  // --- SUBJECTS ---
+  getSubjects: () => getFromStorage(STORAGE_KEYS.SUBJECTS, defaultSubjects),
+  saveSubject: (subject) => {
+    const subjects = mockDb.getSubjects();
+    if (subject.id) {
+      const index = subjects.findIndex(s => s.id === subject.id);
+      if (index !== -1) {
+        subjects[index] = { ...subjects[index], ...subject };
+      }
+    } else {
+      subject.id = `sbj-${Math.random().toString(36).substr(2, 9)}`;
+      subjects.push(subject);
+    }
+    setToStorage(STORAGE_KEYS.SUBJECTS, subjects);
+    mockDb.addLog(subject.id ? 'Subject Update' : 'Subject Creation', `Saved subject details for ${subject.code} - ${subject.name}.`);
+    return subject;
+  },
+  deleteSubject: (id) => {
+    const subjects = mockDb.getSubjects();
+    const subject = subjects.find(s => s.id === id);
+    const filtered = subjects.filter(s => s.id !== id);
+    setToStorage(STORAGE_KEYS.SUBJECTS, filtered);
+    if (subject) {
+      mockDb.addLog('Subject Deletion', `Deleted subject: ${subject.code} - ${subject.name}.`);
+    }
+  },
+
+  // --- SECTIONS ---
+  getSections: () => getFromStorage(STORAGE_KEYS.SECTIONS, defaultSections),
+  saveSection: (section) => {
+    const sections = mockDb.getSections();
+    if (section.id) {
+      const index = sections.findIndex(s => s.id === section.id);
+      if (index !== -1) {
+        sections[index] = { ...sections[index], ...section };
+      }
+    } else {
+      section.id = `sec-${Math.random().toString(36).substr(2, 9)}`;
+      sections.push(section);
+    }
+    setToStorage(STORAGE_KEYS.SECTIONS, sections);
+    mockDb.addLog(section.id ? 'Section Update' : 'Section Creation', `Saved section details for ${section.name}.`);
+    return section;
+  },
+  deleteSection: (id) => {
+    const sections = mockDb.getSections();
+    const section = sections.find(s => s.id === id);
+    const filtered = sections.filter(s => s.id !== id);
+    setToStorage(STORAGE_KEYS.SECTIONS, filtered);
+    if (section) {
+      mockDb.addLog('Section Deletion', `Deleted section: ${section.name}.`);
     }
   },
 

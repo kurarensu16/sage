@@ -16,11 +16,11 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 
 | Layer | Technology |
 |---|---|
-| **Frontend** | React 19 + Vite + Tailwind CSS |
+| **Frontend** | React 19 + Vite + Tailwind CSS + SheetJS (xlsx) |
 | **Backend / Database** | Supabase (PostgreSQL + Auth + Storage) |
 | **AI Integration** | Claude API (Anthropic) |
 | **Deployment** | Vercel |
-| **Design System** | Sora + DM Sans + JetBrains Mono, Indigo-600 primary |
+| **Design System** | Sora + DM Sans + JetBrains Mono, Sage green (#356d62) primary |
 
 ---
 
@@ -28,14 +28,16 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 
 ### 2.1 Admin
 * Manage all user accounts (create, update, enable/disable)
-* Create classrooms by linking subject, section, and faculty
-* Import enrolled students into a class via CSV
-* Reassign faculty to a class (for substitutions or replacements)
+* Pre-load subjects database (once per school year or as needed)
+* Pre-load sections database (once per semester)
+* Create classrooms — one per subject/section/faculty combination
+* Import enrolled students per classroom via CSV
+* Reassign faculty to a classroom (for substitutions or replacements)
 * Create and configure evaluation forms and criteria
 * Set evaluation window open and close dates
 * Perform admin override on locked posted grades
-* Archive classes at semester end
-* View all system data and activity logs
+* Archive classrooms at semester end
+* View all system data and audit logs
 
 ### 2.2 Dean
 * View all class records across departments and sections
@@ -50,7 +52,7 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 * Define grade components (activity, quiz, exam, project) with percentage weights
 * Input student scores per component
 * View real-time running grade and Early Warning System indicators per student
-* Post grades per grading period (Prelim, Midterm, Finals)
+* Post grades per grading period (Prelim, Midterm, Semi-Final, Final)
 * View faculty evaluation results per section (anonymized)
 * Receive notifications when an evaluation window closes
 
@@ -74,12 +76,15 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 ### 3.2 Class & Enrollment Management
 | FR # | Description |
 |---|---|
-| **FR03** | Admin shall be able to create a classroom by linking a subject, section, and faculty member. |
-| **FR04** | Admin shall be able to import enrolled students into a class via CSV at the start of each semester. |
-| **FR05** | Admin shall be able to reassign a faculty member to an existing class. |
-| **FR06** | The system shall log all faculty reassignments including timestamp and the admin who performed the action. |
-| **FR07** | Admin shall be able to archive a class, preventing new enrollments and locking it from further grading edits. |
-| **FR08** | The system shall warn Admin if unposted grades exist before confirming a class archive action. |
+| **FR03** | Admin shall be able to pre-load and manage the master database of academic subjects. |
+| **FR03a** | Admin shall be able to batch import academic subjects via CSV or Excel (.xlsx) file uploads. |
+| **FR04** | Admin shall be able to pre-load and manage the master database of class sections, linked directly to specific academic programs and colleges (e.g., BSIT, BSN, BSA) to maintain program structure. |
+| **FR04a** | Admin shall be able to batch import class sections via CSV or Excel (.xlsx) file uploads. |
+| **FR05** | Admin shall be able to create a classroom by linking a pre-loaded subject, section, and faculty member, enforcing Department/College alignment checks to ensure faculty are teaching within their department unless explicitly overridden. |
+| **FR06** | Admin shall be able to import enrolled students per classroom via CSV or Excel (.xlsx) file uploads. |
+| **FR06a** | Admin shall be able to batch import users (students, faculty, deans) via CSV or Excel (.xlsx) file uploads. |
+| **FR07** | Admin shall be able to reassign a faculty member to an existing classroom, logging the action for auditing. |
+| **FR08** | Admin shall be able to archive a classroom, warning Admins if unposted grades exist before locking it from edits. |
 
 ### 3.3 Grading Module
 | FR # | Description |
@@ -88,17 +93,21 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 | **FR10** | Faculty shall be able to define grade components (activity, quiz, exam, project) with corresponding percentage weights. |
 | **FR11** | The system shall validate that grade component weights sum to 100% before allowing score input. |
 | **FR12** | Faculty shall be able to input scores per student per component. |
-| **FR13** | The system shall automatically compute the midterm and final grade based on defined weights. |
-| **FR14** | The system shall compute a real-time running grade per student based on currently encoded score components. |
-| **FR15** | The system shall display a visual standing indicator per student: Safe (green), At-Risk (yellow), or Failing Trajectory (red), based on the running grade. |
+| **FR13** | The system shall automatically compute the term grades (Prelim, Midterm, Semi-Final, Final) and rating aggregation averages (Midterm Rating, Tentative Final Rating, and Semestral Grade) based on defined weights and rounding rules. |
+| **FR14** | The system shall compute a real-time running grade per student based on currently encoded score components (Class Standing, Character Rating, and Term Exam). |
+| **FR15** | The system shall display a visual standing indicator per student: Safe (green), At-Risk (yellow), or Failing Trajectory (red), based on the running grade GWA. |
 | **FR16** | The system shall display a tooltip on At-Risk and Failing Trajectory indicators showing the exact running percentage. |
-| **FR17** | Faculty shall be able to post grades per grading period (Prelim, Midterm, Finals). |
+| **FR17** | Faculty shall be able to post grades per grading period (Prelim, Midterm, Semi-Final, Final). |
+| **FR17a** | The system shall allow faculty to filter the class record view by individual grading period (Prelim, Midterm, Semi-Final, Final) or view all terms side-by-side. |
+| **FR17b** | The system shall provide a fullscreen expand/collapse toggle on class record tables (Score Input, Computation Preview, and Posted Grades) to maximize viewing area, with Escape key and backdrop-click to exit. |
 | **FR18** | The system shall prevent editing of posted grades without an admin override. |
 
 ### 3.4 Student Portal
 | FR # | Description |
 |---|---|
 | **FR19** | Students shall be able to view their grades per subject per grading period. |
+| **FR19a** | Students shall be able to view individual activity breakdowns (e.g., Activity 1 to 6) under the Class Standing component via an expandable accordion row. |
+| **FR19b** | Students shall be able to view a Complete Semestral Grade Record (Spreadsheet View) at the bottom of the breakdown page showing the complete calculation chain (PG, MG, MR, SFG, FG, TFR, SG, GWA, Remarks) with a fullscreen option for easier reading. |
 | **FR20** | The system shall notify students when a new grade period is posted. |
 | **FR21** | The system shall display each student's lapses or missing score components. |
 | **FR22** | Students shall not be able to view other students' grades. |
@@ -227,7 +236,7 @@ The SAGE database consists of 19 tables hosted on Supabase (PostgreSQL). Tables 
 |---|---|---|
 | `component_id` | UUID | PK |
 | `class_record_id` | UUID | FK → `class_records` |
-| `grade_period` | ENUM | prelim \| midterm \| finals |
+| `grade_period` | ENUM | prelim \| midterm \| semi_final \| final |
 | `type` | ENUM | activity \| quiz \| exam \| project |
 | `name` | VARCHAR | e.g., Quiz 1 |
 | `weight` | DECIMAL | Must sum to 100 per period |
@@ -250,7 +259,7 @@ The SAGE database consists of 19 tables hosted on Supabase (PostgreSQL). Tables 
 | `posted_grade_id` | UUID | PK |
 | `class_record_id` | UUID | FK → `class_records` |
 | `student_id` | UUID | FK → `users` |
-| `grade_period` | ENUM | prelim \| midterm \| finals |
+| `grade_period` | ENUM | prelim \| midterm \| semi_final \| final |
 | `computed_grade` | DECIMAL | |
 | `remarks` | VARCHAR | passed \| failed \| incomplete |
 | `posted_by` | UUID | FK → `users` (faculty) |
@@ -284,7 +293,7 @@ The SAGE database consists of 19 tables hosted on Supabase (PostgreSQL). Tables 
 | `form_id` | UUID | FK → `evaluation_forms` |
 | `label` | VARCHAR | e.g., Teaching Effectiveness |
 | `description` | TEXT | |
-| `max_rating` | INT | DEFAULT 5 |
+| `max_rating` | INT | DEFAULT 4 |
 | `order_index` | INT | |
 
 #### Table: `evaluation_windows`
@@ -383,39 +392,41 @@ The SAGE database consists of 19 tables hosted on Supabase (PostgreSQL). Tables 
 
 ## 6. Use Case Diagram
 
-SAGE has 29 use cases across 9 modules distributed among 4 actors.
+SAGE has 31 use cases across 9 modules distributed among 4 actors.
 
 | UC # | Module | Use Case | Actors |
 |---|---|---|---|
 | **UC01** | Authentication | Log In | Admin, Dean, Faculty, Student |
 | **UC02** | Authentication | Access Role-Based Modules | Admin, Dean, Faculty, Student |
 | **UC03** | User Management | Manage User Accounts | Admin |
-| **UC04** | Class Management | Create Classroom | Admin |
-| **UC05** | Class Management | Import Students via CSV | Admin |
-| **UC06** | Class Management | Reassign Faculty to Class | Admin |
-| **UC07** | Class Management | Archive Class | Admin |
-| **UC08** | Evaluation Management | Create Evaluation Form | Admin |
-| **UC09** | Evaluation Management | Set Evaluation Window | Admin |
-| **UC10** | Evaluation Management | Override Posted Grade | Admin |
-| **UC11** | Dean Oversight | View All Class Records | Dean |
-| **UC12** | Dean Oversight | Monitor Grade Posting Status | Dean |
-| **UC13** | Dean Oversight | View Grade Distribution | Dean |
-| **UC14** | Dean Oversight | View AI Faculty Predictions | Dean |
-| **UC15** | Dean Oversight | View At-Risk Students | Dean |
-| **UC16** | Dean Oversight | Generate Summary Reports | Dean |
-| **UC17** | Class Record | Create Class Record | Faculty |
-| **UC18** | Class Record | Define Grade Components & Weights | Faculty |
-| **UC19** | Class Record | Input Student Scores | Faculty |
-| **UC20** | Class Record | View Early Warning Indicators | Faculty |
-| **UC21** | Class Record | Post Grades per Period | Faculty |
-| **UC22** | Faculty Evaluation | View Evaluation Results per Section | Faculty |
-| **UC23** | Faculty Evaluation | Receive Evaluation Notification | Faculty |
-| **UC24** | Student Portal | View Own Grades | Student |
-| **UC25** | Student Portal | Receive Grade Notification | Student |
-| **UC26** | Student Portal | View Lapses & Missing Scores | Student |
-| **UC27** | Student Portal | Submit Faculty Evaluation | Student |
-| **UC28** | AI Features | Generate Student Recommendation | Student, Dean |
-| **UC29** | AI Features | Generate Faculty Fitness Prediction | Faculty, Dean |
+| **UC04** | Class Management | Pre-load & Manage Subjects | Admin |
+| **UC05** | Class Management | Pre-load & Manage Sections | Admin |
+| **UC06** | Class Management | Create Classroom | Admin |
+| **UC07** | Class Management | Import Students via CSV | Admin |
+| **UC08** | Class Management | Reassign Faculty to Classroom | Admin |
+| **UC09** | Class Management | Archive Classroom | Admin |
+| **UC10** | Evaluation Management | Create Evaluation Form | Admin |
+| **UC11** | Evaluation Management | Set Evaluation Window | Admin |
+| **UC12** | Evaluation Management | Override Posted Grade | Admin |
+| **UC13** | Dean Oversight | View All Class Records | Dean |
+| **UC14** | Dean Oversight | Monitor Grade Posting Status | Dean |
+| **UC15** | Dean Oversight | View Grade Distribution | Dean |
+| **UC16** | Dean Oversight | View AI Faculty Predictions | Dean |
+| **UC17** | Dean Oversight | View At-Risk Students | Dean |
+| **UC18** | Dean Oversight | Generate Summary Reports | Dean |
+| **UC19** | Class Record | Create Class Record | Faculty |
+| **UC20** | Class Record | Define Grade Components & Weights | Faculty |
+| **UC21** | Class Record | Input Student Scores | Faculty |
+| **UC22** | Class Record | View Early Warning Indicators | Faculty |
+| **UC23** | Class Record | Post Grades per Period | Faculty |
+| **UC24** | Faculty Evaluation | View Evaluation Results per Section | Faculty |
+| **UC25** | Faculty Evaluation | Receive Evaluation Notification | Faculty |
+| **UC26** | Student Portal | View Own Grades | Student |
+| **UC27** | Student Portal | Receive Grade Notification | Student |
+| **UC28** | Student Portal | View Lapses & Missing Scores | Student |
+| **UC29** | Student Portal | Submit Faculty Evaluation | Student |
+| **UC30** | AI Features | Generate Student Recommendation | Student, Dean |
+| **UC31** | AI Features | Generate Faculty Fitness Prediction | Faculty, Dean |
 
 ---
 
@@ -427,7 +438,7 @@ The Level 0 DFD treats the entire system as a single process and identifies all 
 
 | Entity | Data Sent to System | Data Received from System |
 |---|---|---|
-| **Admin** | User data, classroom setup, CSV imports, eval forms, windows, grade overrides, archive commands | System reports, confirmations, activity logs |
+| **Admin** | User data, classroom setup, CSV imports, eval forms, windows, grade overrides, archive commands | System reports, confirmations, audit logs |
 | **Dean** | Report and filter requests | Grade reports, eval results, AI predictions, at-risk student lists |
 | **Faculty** | Scores, grade components, post commands | Computed grades, running grade indicators, eval results, notifications |
 | **Student** | Evaluation responses, grade view requests | Grades, lapses, AI recommendations, notifications |
@@ -475,63 +486,67 @@ SAGE consists of 37 screens distributed across 4 role portals plus shared public
 ### 8.2 Admin Screens
 | Screen # | Screen Name | Key Elements |
 |---|---|---|
-| **S04** | Admin Dashboard | KPI row: Total Users, Active Eval Windows, Pending Grade Posts, Archived Classes. Activity log: recent grade posts, reassignments, overrides. |
+| **S04** | Admin Dashboard | KPI row: Total Users, Active Eval Windows, Pending Grade Posts, Archived Classrooms. Audit logs: recent grade posts, reassignments, overrides. |
 | **S05** | User Management — List | Table of all users: name, email, role badge, department, status. Search and filter. Add User button. |
 | **S06** | User Management — Create / Edit | Form: name, email, role, department. Enable/disable toggle. |
-| **S07** | Class Management — List | Table: subject, section, faculty assigned, status (active/archived), student count. Actions: reassign faculty, archive. |
-| **S08** | Class Management — Create | Form: select subject, section, faculty. CSV import button for student enrollment. Preview imported students before saving. |
-| **S09** | Evaluation Form Builder | Create form with title. Add/remove/reorder criteria: label, description, max rating. Live preview panel. |
-| **S10** | Evaluation Forms — List | Table of all created forms. View, edit, delete actions. |
-| **S11** | Evaluation Window Management — List | Table: faculty, section, form used, open date, close date, status badge. Create Window button. |
-| **S12** | Evaluation Window — Create / Edit | Select faculty, section, form. Set open and close datetime. Save/publish. |
-| **S13** | Grade Override | Search by student, subject, section, period. View locked grade. Override input with reason field. Logs override with admin ID and timestamp. |
-| **S14** | Admin Notifications / Activity Log | System events: grade posts, eval closures, AI triggers, overrides, faculty reassignments. |
+| **S07** | Subjects Database — List | Table of all pre-loaded subjects: code, description, units, department. Search and filter. Pre-load Subject button. |
+| **S08** | Subjects Database — Create / Edit | Form to configure subject code, descriptive name, unit counts, department. |
+| **S09** | Sections Database — List | Table of all pre-loaded sections: name, school year, semester, department. Search and filter. Pre-load Section button. |
+| **S10** | Sections Database — Create / Edit | Form to configure section name, department, school year, and semester. |
+| **S11** | Classrooms Directory — List | Table: subject, section, faculty assigned, status (active/archived), student count. Actions: reassign faculty, archive. |
+| **S12** | Classrooms Directory — Create / Edit / CSV Registry | Form: select subject, section, faculty. CSV import button for student enrollment. Preview imported students before saving. |
+| **S13** | Evaluation Form Builder | Create form with title. Add/remove/reorder criteria: label, description, max rating. Live preview panel. |
+| **S14** | Evaluation Forms — List | Table of all created forms. View, edit, delete actions. |
+| **S15** | Evaluation Window Management — List | Table: faculty, section, form used, open date, close date, status badge. Create Window button. |
+| **S16** | Evaluation Window — Create / Edit | Select faculty, section, form. Set open and close datetime. Save/publish. |
+| **S17** | Grade Override | Search by student, subject, section, period. View locked grade. Override input with reason field. Logs override with admin ID and timestamp. |
+| **S18** | Admin Notifications / Audit Logs | System events: grade posts, eval closures, AI triggers, overrides, faculty reassignments. |
 
 ### 8.3 Dean Screens
 | Screen # | Screen Name | Key Elements |
 |---|---|---|
-| **S15** | Dean Dashboard | KPI row: Total Faculty, Total Sections, At-Risk Students, Pending Grade Posts. Quick links to reports and AI summaries. |
-| **S16** | Grade Posting Status — Overview | Table per faculty: subjects, sections, periods posted vs pending. Filter by department, semester, school year. |
-| **S17** | Grade Distribution — View | Select subject, section, period. View breakdown: passed, failed, grade ranges. Visual chart representation. |
-| **S18** | Faculty Evaluation Results — Overview | List of all faculty with average evaluation rating per semester. Click to drill down per faculty. |
-| **S19** | Faculty Evaluation Results — Per Faculty | Breakdown per section. Ratings per criterion. Anonymized comments. AI fitness prediction summary and verdict. |
-| **S20** | At-Risk Students — List | Table: student name, course, section, running grade, AI recommendation, Early Warning indicator. Filter by course, section, severity. |
-| **S21** | Summary Reports | Select report type, filter by semester/school year/department. Export as PDF or print. |
+| **S19** | Dean Dashboard | KPI row: Total Faculty, Total Sections, At-Risk Students, Pending Grade Posts. Quick links to reports and AI summaries. |
+| **S20** | Grade Posting Status — Overview | Table per faculty: subjects, sections, periods posted vs pending. Filter by department, semester, school year. |
+| **S21** | Grade Distribution — View | Select subject, section, period. View breakdown: passed, failed, grade ranges. Visual chart representation. |
+| **S22** | Faculty Evaluation Results — Overview | List of all faculty with average evaluation rating per semester. Click to drill down per faculty. |
+| **S23** | Faculty Evaluation Results — Per Faculty | Breakdown per section. Ratings per criterion. Anonymized comments. AI fitness prediction summary and verdict. |
+| **S24** | At-Risk Students — List | Table: student name, course, section, running grade, AI recommendation, Early Warning indicator. Filter by course, section, severity. |
+| **S25** | Summary Reports | Select report type, filter by semester/school year/department. Export as PDF or print. |
 
 ### 8.4 Faculty Screens
 | Screen # | Screen Name | Key Elements |
 |---|---|---|
-| **S22** | Faculty Dashboard | KPI row: Active Class Records, Pending Grade Posts, At-Risk Students (across all classes), Open Eval Windows. Upcoming deadlines card. |
-| **S23** | Class Records — List | Table: subject, section, school year, semester, status, posting status per period. Create Class Record button. |
-| **S24** | Class Record — Create | Select subject, section, school year, semester. Confirm and proceed to grade component setup. |
-| **S25** | Grade Components — Setup | Per grading period (Prelim/Midterm/Finals). Add components: type, name, max score, weight. Live weight total validator (must equal 100%). |
-| **S26** | Score Input — Student List | Select class record and grading period. Editable table per student: one column per grade component, Running Grade column (mono, color-coded), Early Warning indicator dot (green/yellow/red) with hover tooltip. Inline save per row. |
-| **S27** | Grade Computation — Preview | Auto-computed grade per student. Component breakdown. Missing scores highlighted. Summary bar: passed, failed, incomplete counts. Post Grades button with lock confirmation dialog. |
-| **S28** | Posted Grades — View | Read-only view of posted grades per period. Locked grades shown. Override-flagged grades highlighted. |
-| **S29** | Faculty Evaluation Results — My Results | Select section and eval window. View ratings per criterion (anonymized). View comments. AI fitness prediction (own result). |
-| **S30** | Faculty Notifications | Eval window closed alerts, grade override notifications, AI prediction ready alerts. |
+| **S26** | Faculty Dashboard | KPI row: Active Class Records, Pending Grade Posts, At-Risk Students (across all classes), Open Eval Windows. Upcoming deadlines card. |
+| **S27** | Class Records — List | Table: subject, section, school year, semester, status, posting status per period. Create Class Record button. |
+| **S28** | Class Record — Create | Select subject, section, school year, semester. Confirm and proceed to grade component setup. |
+| **S29** | Grade Components — Setup | Per grading period (Prelim/Midterm/Semi-Final/Final). Add components: type, name, max score, weight. Live weight total validator (must equal 100%). |
+| **S30** | Score Input — Student List | Select class record. **View Period dropdown** to filter by individual term (Prelim, Midterm, Semi-Final, Final) or view all terms side-by-side. Editable table per student: columns for Class Standing (Max 110), Character Rating (Max 100), and Term Exam (Max 40). Running Grade column (mono GWA equivalent, color-coded), Early Warning indicator dot (green/yellow/red) with hover tooltip. Inline save per row. **Fullscreen expand button** on table card header with Escape key / backdrop-click to exit. |
+| **S31** | Grade Computation — Preview | Auto-computed grade per student showing full progression chain (PG, MG, MR, SFG, FG, TFR, SG, GWA, Remarks). Component breakdown. Missing scores highlighted. Summary bar: passed, failed, incomplete counts. Post Grades button with lock confirmation dialog. **Fullscreen expand button** on table card header with sticky column headers and Escape key to exit. |
+| **S32** | Posted Grades — View | Read-only view of posted grades. Displays locked GWA report columns (MR, TFR, SG, GWA, Remarks) matching the official printed format. **Fullscreen expand button** on table card header with sticky column headers and Escape key to exit. |
+| **S33** | Faculty Evaluation Results — My Results | Select section and eval window. View ratings per criterion (anonymized). View comments. AI fitness prediction (own result). |
+| **S34** | Faculty Notifications | Eval window closed alerts, grade override notifications, AI prediction ready alerts. |
 
 ### 8.5 Student Screens
 | Screen # | Screen Name | Key Elements |
 |---|---|---|
-| **S31** | Student Dashboard | KPI row: Enrolled Subjects, Latest Grade Posted, Pending Evaluations, AI Recommendation status. Enrolled subjects list with period badges. Notifications preview. |
-| **S32** | My Grades — Subject List | List of enrolled subjects per semester. Badge per subject showing latest posted period (Posted=emerald, Pending=amber). |
-| **S33** | My Grades — Subject Detail | Tabs: Prelim/Midterm/Finals. Per tab: computed grade, component breakdown (mono scores and weights), missing scores/lapses highlighted, remarks badge. |
-| **S34** | Faculty Evaluation — List | Active evaluation windows: faculty name, subject, section, open/close dates, status badge, deadline countdown. Evaluate button if pending. |
-| **S35** | Faculty Evaluation — Form | Anonymity notice banner. Criteria with 1-5 rating buttons. Optional comments textarea. Anonymous submission confirmation dialog. |
-| **S36** | AI Recommendation — View | Verdict badge (Continue/At-Risk/Recommend Shift). AI summary paragraph. Basis grade snapshot table. Generated timestamp. |
-| **S37** | Student Notifications | Grade posted alerts, evaluation window opened alerts, AI recommendation ready alerts. |
+| **S35** | Student Dashboard | KPI row: Enrolled Subjects, Latest Grade Posted, Pending Evaluations, AI Recommendation status. Enrolled subjects list with period badges. Notifications preview. |
+| **S36** | My Grades — Subject List | List of enrolled subjects per semester. Badge per subject showing latest posted period (Posted=emerald, Pending=amber). |
+| **S37** | My Grades — Subject Detail | Tabs: Prelim/Midterm/Semi-Final/Final. Per tab: computed grade, component breakdown table with expandable Class Standing row to view individual activity scores (Activity 1 to 6), missing scores/lapses highlighted. Includes a Complete Semestral Grade Record (Spreadsheet View) at the bottom showing the full calculation chain (PG, MG, MR, SFG, FG, TFR, SG, GWA, Remarks) with a fullscreen toggle. |
+| **S38** | Faculty Evaluation — List | Active evaluation windows: faculty name, subject, section, open/close dates, status badge, deadline countdown. Evaluate button if pending. |
+| **S39** | Faculty Evaluation — Form | Anonymity notice banner. Criteria grouped by 7 categories with 1-4 rating buttons. Textareas for strengths and improvement points. Anonymous submission confirmation dialog. |
+| **S40** | AI Recommendation — View | Verdict badge (Continue/At-Risk/Recommend Shift). AI summary paragraph. Basis grade snapshot table. Generated timestamp. |
+| **S41** | Student Notifications | Grade posted alerts, evaluation window opened alerts, AI recommendation ready alerts. |
 
 ### 8.6 Screen Count Summary
 
 | Role | Screen Count | Screen Range |
 |---|---|---|
 | Shared / Public | 3 | S01 – S03 |
-| Admin | 11 | S04 – S14 |
-| Dean | 7 | S15 – S21 |
-| Faculty | 9 | S22 – S30 |
-| Student | 7 | S31 – S37 |
-| **TOTAL** | **37** | **S01 – S37** |
+| Admin | 15 | S04 – S18 |
+| Dean | 7 | S19 – S25 |
+| Faculty | 9 | S26 – S34 |
+| Student | 7 | S35 – S41 |
+| **TOTAL** | **41** | **S01 – S41** |
 
 ---
 

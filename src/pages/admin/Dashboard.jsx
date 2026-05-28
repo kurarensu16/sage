@@ -119,7 +119,7 @@ export default function Dashboard() {
               <h3 className="text-base font-bold font-display text-slate-900 flex items-center gap-2">
                 <ShieldAlert className="h-5 w-5 text-sage-600" /> Recent Administrative Activity
               </h3>
-              <Link to="/admin/activitylog" className="text-xs font-bold text-sage-600 hover:text-sage-700 flex items-center gap-0.5">
+              <Link to="/admin/auditlog" className="text-xs font-bold text-sage-600 hover:text-sage-700 flex items-center gap-0.5">
                 Full Log <ChevronRight className="h-3 w-3" />
               </Link>
             </div>

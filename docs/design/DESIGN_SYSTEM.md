@@ -536,7 +536,7 @@ All icons use `lucide-react`. Standard sizes:
 - FileText `FileText` — Evaluation Forms
 - CalendarClock `CalendarClock` — Evaluation Windows
 - UnlockKeyhole `UnlockKeyhole` — Grade Overrides
-- Bell `Bell` — Activity Log
+- Shield `Shield` — Audit Logs
 
 ### Dean
 - Building2 `Building2` — Dashboard

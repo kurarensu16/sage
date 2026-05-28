@@ -34,10 +34,13 @@ export default function EvalResultsFaculty() {
     const isAmanda = facultyId === 'usr-003';
     
     const ratings = [
-      { id: 'crit-1', label: 'Teaching Effectiveness', rating: isAmanda ? 4.82 : 4.10, max: 5 },
-      { id: 'crit-2', label: 'Punctuality & Attendance', rating: isAmanda ? 4.65 : 4.25, max: 5 },
-      { id: 'crit-3', label: 'Fair Grading Assessment', rating: isAmanda ? 4.70 : 3.90, max: 5 },
-      { id: 'crit-4', label: 'Communication & Engagement', rating: isAmanda ? 4.88 : 4.15, max: 5 }
+      { id: 'crit-1', label: 'Content Knowledge and Pedagogy', rating: isAmanda ? 3.82 : 3.10, max: 4 },
+      { id: 'crit-2', label: 'Learning Environment', rating: isAmanda ? 3.71 : 3.25, max: 4 },
+      { id: 'crit-3', label: 'Diversity of Learners', rating: isAmanda ? 3.65 : 2.90, max: 4 },
+      { id: 'crit-4', label: 'Teaching, Learning, and Planning', rating: isAmanda ? 3.76 : 3.15, max: 4 },
+      { id: 'crit-5', label: 'Assessment and Reporting', rating: isAmanda ? 3.69 : 3.05, max: 4 },
+      { id: 'crit-6', label: 'Community Linkages and Professional Engagement', rating: isAmanda ? 3.73 : 3.20, max: 4 },
+      { id: 'crit-7', label: 'Personal Growth and Professional Development', rating: isAmanda ? 3.80 : 3.40, max: 4 }
     ];
     setCriteriaRatings(ratings);
 
@@ -63,7 +66,7 @@ export default function EvalResultsFaculty() {
       severity: isAmanda ? 'success' : 'warning',
       summary: isAmanda 
         ? "AI evaluation engine predicts high retention outcomes (98% probability) and strong grade mapping alignment. Performance reflects excellent engagement scores. No corrective action plan required."
-        : "AI evaluation engine notes a slight deviation in grading feedback satisfaction (3.90 rating). Recommends a review of grading component weights. Overall teaching capacity matches standard institutional benchmarks."
+        : "AI evaluation engine notes a slight deviation in grading feedback satisfaction (3.05 rating). Recommends a review of grading component weights. Overall teaching capacity matches standard institutional benchmarks."
     });
 
   }, [facultyId]);
@@ -110,7 +113,7 @@ export default function EvalResultsFaculty() {
           </div>
 
           <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 text-amber-700 px-3.5 py-1.5 rounded-xl font-mono font-bold text-sm">
-            <Star className="h-4 w-4 fill-current" /> Cumulative Rating: {cumulativeRating.toFixed(2)} / 5.00
+            <Star className="h-4 w-4 fill-current" /> Cumulative Rating: {cumulativeRating.toFixed(2)} / 4.00
           </div>
         </div>
 

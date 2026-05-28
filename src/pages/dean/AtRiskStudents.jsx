@@ -23,23 +23,35 @@ export default function AtRiskStudents() {
       
       let runningGwa = 1.75; // Default average
       let failingPeriodsCount = 0;
-      let targetSection = 'BSIT-1A';
+      let targetSection = s.section || 'BSIT-1A';
       
       if (grades.length > 0) {
         const sum = grades.reduce((acc, curr) => acc + curr.computedGrade, 0);
         runningGwa = sum / grades.length;
         failingPeriodsCount = grades.filter(g => g.computedGrade > 3.00).length;
-        targetSection = grades[0].section;
+        if (!s.section) {
+          targetSection = grades[0].section;
+        }
       } else {
-        // Mock default values for seed students
-        if (s.id === 'usr-006') {
-          runningGwa = 3.25;
-          failingPeriodsCount = 1;
-          targetSection = 'BSIT-2B';
-        } else if (s.id === 'usr-007') {
-          runningGwa = 1.50;
-          failingPeriodsCount = 0;
-          targetSection = 'BSCS-3A';
+        // Mock default values for seed students if section is not explicitly set
+        if (!s.section) {
+          if (s.id === 'usr-006') {
+            runningGwa = 3.25;
+            failingPeriodsCount = 1;
+            targetSection = 'BSIT-2B';
+          } else if (s.id === 'usr-007') {
+            runningGwa = 1.50;
+            failingPeriodsCount = 0;
+            targetSection = 'BSCS-3A';
+          }
+        } else {
+          if (s.id === 'usr-006') {
+            runningGwa = 3.25;
+            failingPeriodsCount = 1;
+          } else if (s.id === 'usr-007') {
+            runningGwa = 1.50;
+            failingPeriodsCount = 0;
+          }
         }
       }
 
@@ -103,11 +115,16 @@ export default function AtRiskStudents() {
     const matchesSeverity = !severityFilter || s.severity === severityFilter;
     const matchesSection = !sectionFilter || s.section === sectionFilter;
     
-    // Course filter: e.g. IT vs CS based on department
-    const isItDept = s.department === 'College of IT';
+    // Course filter: BSIT vs BSCS based on program, department or section name prefix
+    const isItDept = s.program === 'Bachelor of Science in Information Technology' || 
+                     s.department === 'College of IT' || 
+                     (s.section && s.section.startsWith('BSIT'));
+    const isCsDept = s.program === 'Bachelor of Science in Computer Science' || 
+                     s.department === 'College of CS' || 
+                     (s.section && s.section.startsWith('BSCS'));
     const matchesCourse = !courseFilter ||
       (courseFilter === 'BSIT' && isItDept) ||
-      (courseFilter === 'BSCS' && !isItDept);
+      (courseFilter === 'BSCS' && isCsDept);
 
     return matchesSearch && matchesSeverity && matchesSection && matchesCourse;
   });
@@ -209,7 +226,8 @@ export default function AtRiskStudents() {
                         <span>{s.firstName} {s.lastName}</span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-600">
-                        {s.department === 'College of IT' ? 'BSIT' : 'BSCS'}
+                        {s.program === 'Bachelor of Science in Information Technology' || (s.section && s.section.startsWith('BSIT')) ? 'BSIT' : 
+                         s.program === 'Bachelor of Science in Computer Science' || (s.section && s.section.startsWith('BSCS')) ? 'BSCS' : 'Other'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">

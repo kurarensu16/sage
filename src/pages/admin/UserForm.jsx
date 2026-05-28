@@ -3,6 +3,15 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { ChevronRight, Save, X, User } from 'lucide-react';
 import { mockDb } from '../../lib/mockDb';
+import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
+
+const getYearDigit = (yl) => {
+  if (yl === '1st Year') return '1';
+  if (yl === '2nd Year') return '2';
+  if (yl === '3rd Year') return '3';
+  if (yl === '4th Year') return '4';
+  return '';
+};
 
 export default function UserForm() {
   const navigate = useNavigate();
@@ -16,12 +25,24 @@ export default function UserForm() {
     middleName: '',
     email: '',
     role: 'student',
-    department: 'College of IT',
+    department: 'College of Computer Studies',
+    program: 'Bachelor of Science in Information Technology',
+    section: '',
+    yearLevel: '1st Year',
     status: 'active'
   });
   
   const [errorMsg, setErrorMsg] = useState('');
   const [isEditMode, setIsEditMode] = useState(false);
+
+  const allSections = mockDb.getSections();
+  const availableSections = allSections.filter(sec => {
+    const matchesDept = sec.department === formData.department;
+    const matchesProg = sec.program === formData.program;
+    const yearDigit = getYearDigit(formData.yearLevel);
+    const matchesYear = yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true;
+    return matchesDept && matchesProg && matchesYear;
+  });
 
   useEffect(() => {
     if (userId) {
@@ -29,13 +50,25 @@ export default function UserForm() {
       const users = mockDb.getUsers();
       const existingUser = users.find(u => u.id === userId);
       if (existingUser) {
+        let dept = existingUser.department;
+        let prog = existingUser.program;
+        if (dept === 'College of IT') {
+          dept = 'College of Computer Studies';
+          prog = prog || 'Bachelor of Science in Information Technology';
+        } else if (dept === 'College of CS') {
+          dept = 'College of Computer Studies';
+          prog = prog || 'Bachelor of Science in Computer Science';
+        }
         setFormData({
           lastName: existingUser.lastName,
           firstName: existingUser.firstName,
           middleName: existingUser.middleName || '',
           email: existingUser.email,
           role: existingUser.role,
-          department: existingUser.department,
+          department: dept || 'College of Computer Studies',
+          program: prog || (DYCI_ACADEMIC_PROGRAMS[dept]?.[0] || ''),
+          section: existingUser.section || '',
+          yearLevel: existingUser.yearLevel || '1st Year',
           status: existingUser.status
         });
       } else {
@@ -51,6 +84,11 @@ export default function UserForm() {
     // Form Validations
     if (!formData.lastName.trim() || !formData.firstName.trim() || !formData.email.trim()) {
       setErrorMsg('Please fill in all required fields.');
+      return;
+    }
+
+    if (formData.role === 'student' && !formData.section) {
+      setErrorMsg('Please assign a section to the student.');
       return;
     }
 
@@ -182,7 +220,20 @@ export default function UserForm() {
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Portal Role</label>
               <select
                 value={formData.role}
-                onChange={(e) => setFormData({...formData, role: e.target.value})}
+                onChange={(e) => {
+                  const nextRole = e.target.value;
+                  const yearDigit = getYearDigit(formData.yearLevel || '1st Year');
+                  const filteredSecs = allSections.filter(
+                    sec => sec.department === formData.department && 
+                           sec.program === formData.program &&
+                           (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
+                  );
+                  setFormData({
+                    ...formData,
+                    role: nextRole,
+                    section: nextRole === 'student' && filteredSecs.length > 0 ? filteredSecs[0].name : ''
+                  });
+                }}
                 className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
               >
                 <option value="student">Student</option>
@@ -196,14 +247,30 @@ export default function UserForm() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Department */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Department</label>
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">College / School <span className="text-rose-500">*</span></label>
               <select
                 value={formData.department}
-                onChange={(e) => setFormData({...formData, department: e.target.value})}
+                onChange={(e) => {
+                  const selectedCollege = e.target.value;
+                  const defaultProgram = DYCI_ACADEMIC_PROGRAMS[selectedCollege]?.[0] || '';
+                  const yearDigit = getYearDigit(formData.yearLevel || '1st Year');
+                  const filteredSecs = allSections.filter(
+                    sec => sec.department === selectedCollege && 
+                           sec.program === defaultProgram &&
+                           (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
+                  );
+                  setFormData({
+                    ...formData,
+                    department: selectedCollege,
+                    program: defaultProgram,
+                    section: filteredSecs.length > 0 ? filteredSecs[0].name : ''
+                  });
+                }}
                 className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
               >
-                <option value="College of IT">College of Information Technology</option>
-                <option value="College of CS">College of Computer Science</option>
+                {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
+                  <option key={college} value={college}>{college}</option>
+                ))}
               </select>
             </div>
 
@@ -224,6 +291,100 @@ export default function UserForm() {
               </div>
             </div>
           </div>
+
+          {/* Dynamic Degree Program & Section Selection for Student/Faculty */}
+          {(formData.role === 'student' || formData.role === 'faculty') && (
+            <div className={`grid grid-cols-1 ${formData.role === 'student' ? 'md:grid-cols-3' : ''} gap-4`}>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Degree Program <span className="text-rose-500">*</span></label>
+                <select
+                  value={formData.program}
+                  onChange={(e) => {
+                    const nextProgram = e.target.value;
+                    const yearDigit = getYearDigit(formData.yearLevel);
+                    const filteredSecs = allSections.filter(
+                      sec => sec.department === formData.department && 
+                             sec.program === nextProgram &&
+                             (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
+                    );
+                    setFormData({
+                      ...formData,
+                      program: nextProgram,
+                      section: filteredSecs.length > 0 ? filteredSecs[0].name : ''
+                    });
+                  }}
+                  className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+                >
+                  {(DYCI_ACADEMIC_PROGRAMS[formData.department] || []).map(prog => (
+                    <option key={prog} value={prog}>{prog}</option>
+                  ))}
+                </select>
+              </div>
+
+              {formData.role === 'student' && (
+                <>
+                  {/* Year Level Select */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Year Level <span className="text-rose-500">*</span></label>
+                    <select
+                      value={formData.yearLevel}
+                      onChange={(e) => {
+                        const nextYear = e.target.value;
+                        const yearDigit = getYearDigit(nextYear);
+                        const filteredSecs = allSections.filter(
+                          sec => sec.department === formData.department && 
+                                 sec.program === formData.program &&
+                                 (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
+                        );
+                        setFormData({
+                          ...formData,
+                          yearLevel: nextYear,
+                          section: filteredSecs.length > 0 ? filteredSecs[0].name : ''
+                        });
+                      }}
+                      className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-350 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+                    >
+                      <option value="1st Year">1st Year</option>
+                      <option value="2nd Year">2nd Year</option>
+                      <option value="3rd Year">3rd Year</option>
+                      <option value="4th Year">4th Year</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Assigned Section <span className="text-rose-500">*</span></label>
+                    {availableSections.length > 0 ? (
+                      <select
+                        value={formData.section}
+                        onChange={(e) => setFormData({...formData, section: e.target.value})}
+                        className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+                      >
+                        <option value="">-- Select Section --</option>
+                        {availableSections.map(sec => (
+                          <option key={sec.id} value={sec.name}>{sec.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg flex flex-col gap-1">
+                        <span>No active sections preloaded for this year/program.</span>
+                        <span className="text-[10px] text-slate-500">
+                          Please create a section in the{' '}
+                          <button
+                            type="button"
+                            onClick={() => navigate('/admin/sections')}
+                            className="text-sage-600 font-semibold underline hover:text-sage-700"
+                          >
+                            Sections Database
+                          </button>{' '}
+                          first.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Form Actions */}
           <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">

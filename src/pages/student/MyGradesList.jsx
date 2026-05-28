@@ -15,7 +15,7 @@ export default function MyGradesList() {
 
   // Subject list data
   const grades = [
-    { code: 'IT101', name: 'Introduction to Computing', credits: 3, instructor: 'Prof. Amanda Rivera', latestPeriod: 'Midterm', status: 'Posted', grade: '1.25' },
+    { code: 'IT101', name: 'Introduction to Computing', credits: 3, instructor: 'Prof. Amanda Rivera', latestPeriod: 'Midterm', status: 'Posted', grade: '2.00' },
     { code: 'IT201', name: 'Data Structures and Algorithms', credits: 3, instructor: 'Prof. Amanda Rivera', latestPeriod: 'Prelim', status: 'Posted', grade: '1.50' },
     { code: 'CS301', name: 'Artificial Intelligence', credits: 3, instructor: 'Prof. Amanda Rivera', latestPeriod: 'Prelim', status: 'Draft', grade: '—' },
     { code: 'MATH104', name: 'Discrete Mathematics', credits: 3, instructor: 'Dr. Carlos Valdes', latestPeriod: 'Midterm', status: 'Posted', grade: '1.75' }

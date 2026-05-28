@@ -62,6 +62,12 @@ export default function GradeComponentsSetup() {
         { name: 'Practical Exercises', weight: 30 },
         { name: 'Hands-on Exam', weight: 30 }
       ]);
+    } else if (presetType === 'DYCI-STD') {
+      setCategories([
+        { name: 'Class Standing (Quizzes/Activities)', weight: 50 },
+        { name: 'Character Rating', weight: 10 },
+        { name: 'Term Examination', weight: 40 }
+      ]);
     }
   };
 
@@ -101,9 +107,16 @@ export default function GradeComponentsSetup() {
         {/* Preset Pickers */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3">
           <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
-            <RefreshCw className="h-3.5 w-3.5" /> Quick Presets for College of Computer Studies
+            <RefreshCw className="h-3.5 w-3.5" /> Quick Presets & Grading Standards
           </h4>
           <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => applyPreset('DYCI-STD')}
+              type="button"
+              className="px-3.5 py-2 text-xs font-semibold bg-sage-50 hover:bg-sage-100 border border-sage-200 text-sage-800 rounded-lg transition-colors font-bold"
+            >
+              DYCI Official Standard (50% CS / 10% Char / 40% Exam)
+            </button>
             <button
               onClick={() => applyPreset('CCS-LEC')}
               type="button"

@@ -33,19 +33,21 @@ export default function EvalResultsMy() {
     { id: 'CS301', code: 'CS301', section: 'BSCS-3A' },
   ];
 
-  // Mock evaluation data
+  // Mock evaluation data rescaled out of 4
   const evaluationStats = {
     All: {
-      overall: 4.72,
+      overall: 3.72,
       totalEvaluators: 125,
       participationRate: '92.5%',
       collegeRank: 'Top 8%',
       criteria: [
-        { name: 'Mastery of Subject Matter', description: 'Demonstrates deep knowledge, explains concepts accurately, and answers questions effectively.', score: 4.85, max: 5 },
-        { name: 'Teaching Methodology', description: 'Uses diverse and engaging instructional strategies, maintains clear session flow, and uses time well.', score: 4.68, max: 5 },
-        { name: 'Classroom Management', description: 'Fosters a respectful learning environment, manages student behavior, and maintains discipline.', score: 4.70, max: 5 },
-        { name: 'Interpersonal Relations & Guidance', description: 'Accessible, supportive, encourages communication, and handles concerns fairly.', score: 4.65, max: 5 },
-        { name: 'Professionalism & Commitment', description: 'Punctual, professional in demeanor, adheres to course policies, and shows enthusiasm.', score: 4.73, max: 5 }
+        { name: 'Content Knowledge and Pedagogy', description: 'Instructional methods, higher-order thinking skills, language proficiency, verbal/non-verbal strategies.', score: 3.82, max: 4 },
+        { name: 'Learning Environment', description: 'Safe, learning-focused environment, behavior management, supportive collaboration.', score: 3.71, max: 4 },
+        { name: 'Diversity of Learners', description: 'Learner-centered culture, linguistic and cultural responsiveness, addressing unique educational needs.', score: 3.65, max: 4 },
+        { name: 'Teaching, Learning, and Planning', description: 'Sequential teaching-learning process, curriculum alignment, technology integration.', score: 3.76, max: 4 },
+        { name: 'Assessment and Reporting', description: 'Assessment design, monitoring student progress, informing stakeholders of accomplishments.', score: 3.69, max: 4 },
+        { name: 'Community Linkages and Professional Engagement', description: 'School community relations, professional ethics, compliance with rules/regulations.', score: 3.73, max: 4 },
+        { name: 'Personal Growth and Professional Development', description: 'Protection of teaching honor, professional collaboration, self-reflection.', score: 3.80, max: 4 }
       ],
       comments: [
         { course: 'IT101', text: "Very accommodating and explains the lab exercises clearly. I learned a lot from the hands-on sessions." },
@@ -56,16 +58,18 @@ export default function EvalResultsMy() {
       ]
     },
     IT101: {
-      overall: 4.79,
+      overall: 3.80,
       totalEvaluators: 42,
       participationRate: '93.3%',
       collegeRank: 'Top 5%',
       criteria: [
-        { name: 'Mastery of Subject Matter', description: 'Demonstrates deep knowledge, explains concepts accurately, and answers questions effectively.', score: 4.90, max: 5 },
-        { name: 'Teaching Methodology', description: 'Uses diverse and engaging instructional strategies, maintains clear session flow, and uses time well.', score: 4.75, max: 5 },
-        { name: 'Classroom Management', description: 'Fosters a respectful learning environment, manages student behavior, and maintains discipline.', score: 4.80, max: 5 },
-        { name: 'Interpersonal Relations & Guidance', description: 'Accessible, supportive, encourages communication, and handles concerns fairly.', score: 4.72, max: 5 },
-        { name: 'Professionalism & Commitment', description: 'Punctual, professional in demeanor, adheres to course policies, and shows enthusiasm.', score: 4.78, max: 5 }
+        { name: 'Content Knowledge and Pedagogy', description: 'Instructional methods, higher-order thinking skills, language proficiency, verbal/non-verbal strategies.', score: 3.88, max: 4 },
+        { name: 'Learning Environment', description: 'Safe, learning-focused environment, behavior management, supportive collaboration.', score: 3.79, max: 4 },
+        { name: 'Diversity of Learners', description: 'Learner-centered culture, linguistic and cultural responsiveness, addressing unique educational needs.', score: 3.72, max: 4 },
+        { name: 'Teaching, Learning, and Planning', description: 'Sequential teaching-learning process, curriculum alignment, technology integration.', score: 3.82, max: 4 },
+        { name: 'Assessment and Reporting', description: 'Assessment design, monitoring student progress, informing stakeholders of accomplishments.', score: 3.75, max: 4 },
+        { name: 'Community Linkages and Professional Engagement', description: 'School community relations, professional ethics, compliance with rules/regulations.', score: 3.81, max: 4 },
+        { name: 'Personal Growth and Professional Development', description: 'Protection of teaching honor, professional collaboration, self-reflection.', score: 3.87, max: 4 }
       ],
       comments: [
         { course: 'IT101', text: "Very accommodating and explains the lab exercises clearly. I learned a lot from the hands-on sessions." },
@@ -73,16 +77,18 @@ export default function EvalResultsMy() {
       ]
     },
     IT201: {
-      overall: 4.63,
+      overall: 3.64,
       totalEvaluators: 35,
       participationRate: '92.1%',
       collegeRank: 'Top 15%',
       criteria: [
-        { name: 'Mastery of Subject Matter', description: 'Demonstrates deep knowledge, explains concepts accurately, and answers questions effectively.', score: 4.80, max: 5 },
-        { name: 'Teaching Methodology', description: 'Uses diverse and engaging instructional strategies, maintains clear session flow, and uses time well.', score: 4.58, max: 5 },
-        { name: 'Classroom Management', description: 'Fosters a respectful learning environment, manages student behavior, and maintains discipline.', score: 4.60, max: 5 },
-        { name: 'Interpersonal Relations & Guidance', description: 'Accessible, supportive, encourages communication, and handles concerns fairly.', score: 4.55, max: 5 },
-        { name: 'Professionalism & Commitment', description: 'Punctual, professional in demeanor, adheres to course policies, and shows enthusiasm.', score: 4.62, max: 5 }
+        { name: 'Content Knowledge and Pedagogy', description: 'Instructional methods, higher-order thinking skills, language proficiency, verbal/non-verbal strategies.', score: 3.75, max: 4 },
+        { name: 'Learning Environment', description: 'Safe, learning-focused environment, behavior management, supportive collaboration.', score: 3.63, max: 4 },
+        { name: 'Diversity of Learners', description: 'Learner-centered culture, linguistic and cultural responsiveness, addressing unique educational needs.', score: 3.58, max: 4 },
+        { name: 'Teaching, Learning, and Planning', description: 'Sequential teaching-learning process, curriculum alignment, technology integration.', score: 3.68, max: 4 },
+        { name: 'Assessment and Reporting', description: 'Assessment design, monitoring student progress, informing stakeholders of accomplishments.', score: 3.61, max: 4 },
+        { name: 'Community Linkages and Professional Engagement', description: 'School community relations, professional ethics, compliance with rules/regulations.', score: 3.65, max: 4 },
+        { name: 'Personal Growth and Professional Development', description: 'Protection of teaching honor, professional collaboration, self-reflection.', score: 3.72, max: 4 }
       ],
       comments: [
         { course: 'IT201', text: "Could provide more coding examples during lectures, but overall very helpful during consultation hours." },
@@ -90,16 +96,18 @@ export default function EvalResultsMy() {
       ]
     },
     CS301: {
-      overall: 4.74,
+      overall: 3.73,
       totalEvaluators: 48,
       participationRate: '92.3%',
       collegeRank: 'Top 7%',
       criteria: [
-        { name: 'Mastery of Subject Matter', description: 'Demonstrates deep knowledge, explains concepts accurately, and answers questions effectively.', score: 4.85, max: 5 },
-        { name: 'Teaching Methodology', description: 'Uses diverse and engaging instructional strategies, maintains clear session flow, and uses time well.', score: 4.71, max: 5 },
-        { name: 'Classroom Management', description: 'Fosters a respectful learning environment, manages student behavior, and maintains discipline.', score: 4.70, max: 5 },
-        { name: 'Interpersonal Relations & Guidance', description: 'Accessible, supportive, encourages communication, and handles concerns fairly.', score: 4.68, max: 5 },
-        { name: 'Professionalism & Commitment', description: 'Punctual, professional in demeanor, adheres to course policies, and shows enthusiasm.', score: 4.79, max: 5 }
+        { name: 'Content Knowledge and Pedagogy', description: 'Instructional methods, higher-order thinking skills, language proficiency, verbal/non-verbal strategies.', score: 3.84, max: 4 },
+        { name: 'Learning Environment', description: 'Safe, learning-focused environment, behavior management, supportive collaboration.', score: 3.72, max: 4 },
+        { name: 'Diversity of Learners', description: 'Learner-centered culture, linguistic and cultural responsiveness, addressing unique educational needs.', score: 3.66, max: 4 },
+        { name: 'Teaching, Learning, and Planning', description: 'Sequential teaching-learning process, curriculum alignment, technology integration.', score: 3.77, max: 4 },
+        { name: 'Assessment and Reporting', description: 'Assessment design, monitoring student progress, informing stakeholders of accomplishments.', score: 3.70, max: 4 },
+        { name: 'Community Linkages and Professional Engagement', description: 'School community relations, professional ethics, compliance with rules/regulations.', score: 3.74, max: 4 },
+        { name: 'Personal Growth and Professional Development', description: 'Protection of teaching honor, professional collaboration, self-reflection.', score: 3.81, max: 4 }
       ],
       comments: [
         { course: 'CS301', text: "Awesome professor! Data structures and algorithms became very easy to understand because of the interactive assignments." }
@@ -111,10 +119,10 @@ export default function EvalResultsMy() {
 
   // Helper to determine score color / label
   const getRatingLabel = (score) => {
-    if (score >= 4.5) return { text: 'Outstanding', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
-    if (score >= 4.0) return { text: 'Very Satisfactory', color: 'bg-blue-50 text-blue-700 border-blue-200' };
-    if (score >= 3.0) return { text: 'Satisfactory', color: 'bg-amber-50 text-amber-700 border-amber-200' };
-    return { text: 'Needs Improvement', color: 'bg-rose-50 text-rose-700 border-rose-200' };
+    if (score >= 3.60) return { text: 'Exemplary', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    if (score >= 3.00) return { text: 'Satisfactory', color: 'bg-blue-50 text-blue-700 border-blue-200' };
+    if (score >= 2.00) return { text: 'Needs Improvement', color: 'bg-amber-50 text-amber-700 border-amber-200' };
+    return { text: 'Poor', color: 'bg-rose-50 text-rose-700 border-rose-200' };
   };
 
   const ratingLabel = getRatingLabel(activeStats.overall);
@@ -188,11 +196,11 @@ export default function EvalResultsMy() {
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Overall Rating</p>
             <div className="mt-4 flex items-baseline gap-1">
               <span className="text-5xl font-extrabold font-mono text-slate-900">{activeStats.overall.toFixed(2)}</span>
-              <span className="text-lg text-slate-400 font-mono">/5.00</span>
+              <span className="text-lg text-slate-400 font-mono">/4.00</span>
             </div>
             
             <div className="mt-3 flex items-center gap-1">
-              {[1, 2, 3, 4, 5].map((star) => (
+              {[1, 2, 3, 4].map((star) => (
                 <Star 
                   key={star} 
                   className={`h-4 w-4 ${

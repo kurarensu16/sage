@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLocation, Link } from 'react-router-dom';
-import { Search, Bell, Settings, HelpCircle, ChevronDown, PanelLeft } from 'lucide-react';
+import { Search, Bell, Settings, PanelLeft } from 'lucide-react';
 
 export default function Topbar({ toggleSidebar, isCollapsed }) {
   const location = useLocation();
@@ -70,21 +70,14 @@ export default function Topbar({ toggleSidebar, isCollapsed }) {
       {/* Right side controls */}
       <div className="flex items-center gap-4">
         
-        {/* Help Center Icon */}
-        <button 
-          title="Help Center"
-          className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-colors hidden sm:block"
-        >
-          <HelpCircle className="h-5 w-5" />
-        </button>
-
         {/* Settings Icon */}
-        <button 
+        <Link 
+          to={`/${role}/settings`}
           title="Account Settings"
-          className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-colors"
+          className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-colors block"
         >
           <Settings className="h-5 w-5" />
-        </button>
+        </Link>
 
         {/* Notifications Icon */}
         <div className="relative">
@@ -115,8 +108,6 @@ export default function Topbar({ toggleSidebar, isCollapsed }) {
               {currentMeta.title}
             </span>
           </div>
-
-          <ChevronDown className="h-3.5 w-3.5 text-slate-400 group-hover:text-slate-600 transition-colors" />
         </div>
 
       </div>
