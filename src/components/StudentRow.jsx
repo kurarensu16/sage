@@ -2,7 +2,19 @@ import React, { useState } from 'react';
 import { cn } from "../lib/utils";
 import { Check, Save, Lock } from 'lucide-react';
 
-export default function StudentRow({ student, rowNo, initialPeriods, readOnly = false, viewMode = 'All' }) {
+export default function StudentRow({ 
+  student, 
+  rowNo, 
+  initialPeriods, 
+  readOnly = false, 
+  viewMode = 'All',
+  maxItems = {
+    Prelim: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+    Midterm: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+    'Semi-Final': { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+    Final: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 }
+  }
+}) {
   // Prelim scores state
   const [pAct1, setPAct1] = useState(initialPeriods?.Prelim?.act1 ?? 0);
   const [pAct2, setPAct2] = useState(initialPeriods?.Prelim?.act2 ?? 0);
@@ -45,22 +57,27 @@ export default function StudentRow({ student, rowNo, initialPeriods, readOnly = 
 
   const [isSaved, setIsSaved] = useState(false);
 
-  // Helper change handler for ratings calculation per term
-  const calcPeriodRating = (act1, act2, act3, act4, act5, act6, char, exam) => {
+  // Helper change handler for ratings calculation per term using dynamic max items
+  const calcPeriodRating = (act1, act2, act3, act4, act5, act6, char, exam, term) => {
+    const termMax = maxItems[term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
+    const totalActMax = termMax.act1 + termMax.act2 + termMax.act3 + termMax.act4 + termMax.act5 + termMax.act6;
     const csTotal = act1 + act2 + act3 + act4 + act5 + act6;
-    const csPercent = (csTotal / 110) * 50;
-    const charPercent = char * 0.1;
-    const examPercent = exam; // exam raw score acts as exam weight score (exam/40 * 40 => exam)
+    
+    // Percentage based on dynamic total points
+    const csPercent = totalActMax > 0 ? (csTotal / totalActMax) * 50 : 0;
+    const charPercent = termMax.char > 0 ? (char / termMax.char) * 10 : 0; // Weighted at 10%
+    const examPercent = termMax.exam > 0 ? (exam / termMax.exam) * 40 : 0; // Weighted at 40%
+    
     const totalScore = csPercent + charPercent + examPercent;
     const rating = Math.min(100, Math.max(0, Math.round(totalScore)));
     return { csTotal, csPercent, examPercent, rating };
   };
 
   // Computations for all 4 periods
-  const prelimResult = calcPeriodRating(pAct1, pAct2, pAct3, pAct4, pAct5, pAct6, pChar, pExam);
-  const midtermResult = calcPeriodRating(mAct1, mAct2, mAct3, mAct4, mAct5, mAct6, mChar, mExam);
-  const semiFinalResult = calcPeriodRating(sfAct1, sfAct2, sfAct3, sfAct4, sfAct5, sfAct6, sfChar, sfExam);
-  const finalResult = calcPeriodRating(fAct1, fAct2, fAct3, fAct4, fAct5, fAct6, fChar, fExam);
+  const prelimResult = calcPeriodRating(pAct1, pAct2, pAct3, pAct4, pAct5, pAct6, pChar, pExam, 'Prelim');
+  const midtermResult = calcPeriodRating(mAct1, mAct2, mAct3, mAct4, mAct5, mAct6, mChar, mExam, 'Midterm');
+  const semiFinalResult = calcPeriodRating(sfAct1, sfAct2, sfAct3, sfAct4, sfAct5, sfAct6, sfChar, sfExam, 'Semi-Final');
+  const finalResult = calcPeriodRating(fAct1, fAct2, fAct3, fAct4, fAct5, fAct6, fChar, fExam, 'Final');
 
   // Semestral rating chain computations (Excel standard)
   const mr = Math.round((prelimResult.rating + midtermResult.rating) / 2);
@@ -90,6 +107,11 @@ export default function StudentRow({ student, rowNo, initialPeriods, readOnly = 
     if (score >= 75) return { label: 'At-Risk', color: 'text-amber-700 bg-amber-50 border-amber-200', dot: 'bg-amber-500 shadow-amber-500/40' };
     return { label: 'Failing', color: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500 shadow-rose-500/40 animate-pulse' };
   };
+
+  const pMax = maxItems.Prelim || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
+  const mMax = maxItems.Midterm || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
+  const sfMax = maxItems['Semi-Final'] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
+  const fMax = maxItems.Final || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
 
   const statusInfo = getStatus(sg);
 
@@ -125,47 +147,47 @@ export default function StudentRow({ student, rowNo, initialPeriods, readOnly = 
         <>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{pAct1}</span> : (
-              <input type="number" min="0" max="20" value={pAct1} onChange={(e) => { setPAct1(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={pMax.act1} value={pAct1} onChange={(e) => { setPAct1(Math.max(0, Math.min(pMax.act1, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{pAct2}</span> : (
-              <input type="number" min="0" max="20" value={pAct2} onChange={(e) => { setPAct2(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={pMax.act2} value={pAct2} onChange={(e) => { setPAct2(Math.max(0, Math.min(pMax.act2, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{pAct3}</span> : (
-              <input type="number" min="0" max="20" value={pAct3} onChange={(e) => { setPAct3(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={pMax.act3} value={pAct3} onChange={(e) => { setPAct3(Math.max(0, Math.min(pMax.act3, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{pAct4}</span> : (
-              <input type="number" min="0" max="20" value={pAct4} onChange={(e) => { setPAct4(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={pMax.act4} value={pAct4} onChange={(e) => { setPAct4(Math.max(0, Math.min(pMax.act4, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{pAct5}</span> : (
-              <input type="number" min="0" max="20" value={pAct5} onChange={(e) => { setPAct5(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={pMax.act5} value={pAct5} onChange={(e) => { setPAct5(Math.max(0, Math.min(pMax.act5, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{pAct6}</span> : (
-              <input type="number" min="0" max="10" value={pAct6} onChange={(e) => { setPAct6(Math.max(0, Math.min(10, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={pMax.act6} value={pAct6} onChange={(e) => { setPAct6(Math.max(0, Math.min(pMax.act6, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{prelimResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.csPercent.toFixed(1)}</td>
           <td className="p-1 border-r border-slate-100 w-16">
             {readOnly ? <span className="font-mono text-xs">{pChar}</span> : (
-              <input type="number" min="0" max="100" value={pChar} onChange={(e) => { setPChar(Math.max(0, Math.min(100, Number(e.target.value)))); setIsSaved(false); }} className="w-16 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={pMax.char} value={pChar} onChange={(e) => { setPChar(Math.max(0, Math.min(pMax.char, Number(e.target.value)))); setIsSaved(false); }} className="w-16 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{pExam}</span> : (
-              <input type="number" min="0" max="40" value={pExam} onChange={(e) => { setPExam(Math.max(0, Math.min(40, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={pMax.exam} value={pExam} onChange={(e) => { setPExam(Math.max(0, Math.min(pMax.exam, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
-          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{pExam.toFixed(1)}</td>
+          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-sky-50 border-r border-slate-200 text-sky-850 w-14 text-center">{prelimResult.rating}</td>
         </>
       )}
@@ -175,47 +197,47 @@ export default function StudentRow({ student, rowNo, initialPeriods, readOnly = 
         <>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{mAct1}</span> : (
-              <input type="number" min="0" max="20" value={mAct1} onChange={(e) => { setMAct1(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={mMax.act1} value={mAct1} onChange={(e) => { setMAct1(Math.max(0, Math.min(mMax.act1, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{mAct2}</span> : (
-              <input type="number" min="0" max="20" value={mAct2} onChange={(e) => { setMAct2(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={mMax.act2} value={mAct2} onChange={(e) => { setMAct2(Math.max(0, Math.min(mMax.act2, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{mAct3}</span> : (
-              <input type="number" min="0" max="20" value={mAct3} onChange={(e) => { setMAct3(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={mMax.act3} value={mAct3} onChange={(e) => { setMAct3(Math.max(0, Math.min(mMax.act3, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{mAct4}</span> : (
-              <input type="number" min="0" max="20" value={mAct4} onChange={(e) => { setMAct4(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={mMax.act4} value={mAct4} onChange={(e) => { setMAct4(Math.max(0, Math.min(mMax.act4, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{mAct5}</span> : (
-              <input type="number" min="0" max="20" value={mAct5} onChange={(e) => { setMAct5(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={mMax.act5} value={mAct5} onChange={(e) => { setMAct5(Math.max(0, Math.min(mMax.act5, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{mAct6}</span> : (
-              <input type="number" min="0" max="10" value={mAct6} onChange={(e) => { setMAct6(Math.max(0, Math.min(10, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={mMax.act6} value={mAct6} onChange={(e) => { setMAct6(Math.max(0, Math.min(mMax.act6, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{midtermResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.csPercent.toFixed(1)}</td>
           <td className="p-1 border-r border-slate-100 w-16">
             {readOnly ? <span className="font-mono text-xs">{mChar}</span> : (
-              <input type="number" min="0" max="100" value={mChar} onChange={(e) => { setMChar(Math.max(0, Math.min(100, Number(e.target.value)))); setIsSaved(false); }} className="w-16 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={mMax.char} value={mChar} onChange={(e) => { setMChar(Math.max(0, Math.min(mMax.char, Number(e.target.value)))); setIsSaved(false); }} className="w-16 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{mExam}</span> : (
-              <input type="number" min="0" max="40" value={mExam} onChange={(e) => { setMExam(Math.max(0, Math.min(40, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={mMax.exam} value={mExam} onChange={(e) => { setMExam(Math.max(0, Math.min(mMax.exam, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
-          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{mExam.toFixed(1)}</td>
+          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-indigo-50 border-r border-slate-200 text-indigo-800 w-14 text-center">{midtermResult.rating}</td>
         </>
       )}
@@ -230,47 +252,47 @@ export default function StudentRow({ student, rowNo, initialPeriods, readOnly = 
         <>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{sfAct1}</span> : (
-              <input type="number" min="0" max="20" value={sfAct1} onChange={(e) => { setSfAct1(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={sfMax.act1} value={sfAct1} onChange={(e) => { setSfAct1(Math.max(0, Math.min(sfMax.act1, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{sfAct2}</span> : (
-              <input type="number" min="0" max="20" value={sfAct2} onChange={(e) => { setSfAct2(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={sfMax.act2} value={sfAct2} onChange={(e) => { setSfAct2(Math.max(0, Math.min(sfMax.act2, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{sfAct3}</span> : (
-              <input type="number" min="0" max="20" value={sfAct3} onChange={(e) => { setSfAct3(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={sfMax.act3} value={sfAct3} onChange={(e) => { setSfAct3(Math.max(0, Math.min(sfMax.act3, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{sfAct4}</span> : (
-              <input type="number" min="0" max="20" value={sfAct4} onChange={(e) => { setSfAct4(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={sfMax.act4} value={sfAct4} onChange={(e) => { setSfAct4(Math.max(0, Math.min(sfMax.act4, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{sfAct5}</span> : (
-              <input type="number" min="0" max="20" value={sfAct5} onChange={(e) => { setSfAct5(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={sfMax.act5} value={sfAct5} onChange={(e) => { setSfAct5(Math.max(0, Math.min(sfMax.act5, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{sfAct6}</span> : (
-              <input type="number" min="0" max="10" value={sfAct6} onChange={(e) => { setSfAct6(Math.max(0, Math.min(10, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={sfMax.act6} value={sfAct6} onChange={(e) => { setSfAct6(Math.max(0, Math.min(sfMax.act6, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{semiFinalResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.csPercent.toFixed(1)}</td>
           <td className="p-1 border-r border-slate-100 w-16">
             {readOnly ? <span className="font-mono text-xs">{sfChar}</span> : (
-              <input type="number" min="0" max="100" value={sfChar} onChange={(e) => { setSfChar(Math.max(0, Math.min(100, Number(e.target.value)))); setIsSaved(false); }} className="w-16 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={sfMax.char} value={sfChar} onChange={(e) => { setSfChar(Math.max(0, Math.min(sfMax.char, Number(e.target.value)))); setIsSaved(false); }} className="w-16 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{sfExam}</span> : (
-              <input type="number" min="0" max="40" value={sfExam} onChange={(e) => { setSfExam(Math.max(0, Math.min(40, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={sfMax.exam} value={sfExam} onChange={(e) => { setSfExam(Math.max(0, Math.min(sfMax.exam, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
-          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{sfExam.toFixed(1)}</td>
+          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-amber-50 border-r border-slate-200 text-amber-800 w-14 text-center">{semiFinalResult.rating}</td>
         </>
       )}
@@ -280,47 +302,47 @@ export default function StudentRow({ student, rowNo, initialPeriods, readOnly = 
         <>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{fAct1}</span> : (
-              <input type="number" min="0" max="20" value={fAct1} onChange={(e) => { setFAct1(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={fMax.act1} value={fAct1} onChange={(e) => { setFAct1(Math.max(0, Math.min(fMax.act1, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{fAct2}</span> : (
-              <input type="number" min="0" max="20" value={fAct2} onChange={(e) => { setFAct2(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={fMax.act2} value={fAct2} onChange={(e) => { setFAct2(Math.max(0, Math.min(fMax.act2, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{fAct3}</span> : (
-              <input type="number" min="0" max="20" value={fAct3} onChange={(e) => { setFAct3(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={fMax.act3} value={fAct3} onChange={(e) => { setFAct3(Math.max(0, Math.min(fMax.act3, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{fAct4}</span> : (
-              <input type="number" min="0" max="20" value={fAct4} onChange={(e) => { setFAct4(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={fMax.act4} value={fAct4} onChange={(e) => { setFAct4(Math.max(0, Math.min(fMax.act4, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{fAct5}</span> : (
-              <input type="number" min="0" max="20" value={fAct5} onChange={(e) => { setFAct5(Math.max(0, Math.min(20, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={fMax.act5} value={fAct5} onChange={(e) => { setFAct5(Math.max(0, Math.min(fMax.act5, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{fAct6}</span> : (
-              <input type="number" min="0" max="10" value={fAct6} onChange={(e) => { setFAct6(Math.max(0, Math.min(10, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={fMax.act6} value={fAct6} onChange={(e) => { setFAct6(Math.max(0, Math.min(fMax.act6, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{finalResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.csPercent.toFixed(1)}</td>
           <td className="p-1 border-r border-slate-100 w-16">
             {readOnly ? <span className="font-mono text-xs">{fChar}</span> : (
-              <input type="number" min="0" max="100" value={fChar} onChange={(e) => { setFChar(Math.max(0, Math.min(100, Number(e.target.value)))); setIsSaved(false); }} className="w-16 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={fMax.char} value={fChar} onChange={(e) => { setFChar(Math.max(0, Math.min(fMax.char, Number(e.target.value)))); setIsSaved(false); }} className="w-16 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
           <td className="p-1 border-r border-slate-100 w-12">
             {readOnly ? <span className="font-mono text-xs">{fExam}</span> : (
-              <input type="number" min="0" max="40" value={fExam} onChange={(e) => { setFExam(Math.max(0, Math.min(40, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
+              <input type="number" min="0" max={fMax.exam} value={fExam} onChange={(e) => { setFExam(Math.max(0, Math.min(fMax.exam, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
             )}
           </td>
-          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{fExam.toFixed(1)}</td>
+          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-orange-50 border-r border-slate-200 text-orange-850 w-14 text-center">{finalResult.rating}</td>
         </>
       )}

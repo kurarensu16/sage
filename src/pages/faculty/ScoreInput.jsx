@@ -9,6 +9,33 @@ export default function ScoreInput() {
   const [viewMode, setViewMode] = useState('All');
   const [isFullScreen, setIsFullScreen] = useState(false);
 
+  // Maximum items configuration for activities and exams per period
+  const [maxItems, setMaxItems] = useState({
+    Prelim: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+    Midterm: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+    'Semi-Final': { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+    Final: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 }
+  });
+
+  const [editingColumn, setEditingColumn] = useState(null); // { period, key, label, value }
+
+  const handleConfirmMaxItem = (value) => {
+    if (editingColumn) {
+      updateMaxItem(editingColumn.period, editingColumn.key, value);
+      setEditingColumn(null);
+    }
+  };
+
+  const updateMaxItem = (period, key, value) => {
+    setMaxItems(prev => ({
+      ...prev,
+      [period]: {
+        ...prev[period],
+        [key]: Math.max(1, value)
+      }
+    }));
+  };
+
   // Escape key closes fullscreen
   useEffect(() => {
     const handleEsc = (e) => { if (e.key === 'Escape') setIsFullScreen(false); };
@@ -330,82 +357,254 @@ export default function ScoreInput() {
                                 Action
                               </th>
                           </tr>
-                          
-                           <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
-                            {/* Prelim sub-headers */}
+                                                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
+                             {/* text-slate-600 text-[9px] font-bold text-center */}
+                             {/* Prelim sub-headers */}
+                             {(viewMode === 'All' || viewMode === 'Prelim') && (
+                               <>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">4</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">5</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">6</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-sky-100/30 font-bold w-14 text-slate-800">Rating</th>
+                               </>
+                             )}
+
+                             {/* Midterm sub-headers */}
+                             {(viewMode === 'All' || viewMode === 'Midterm') && (
+                               <>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">4</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">5</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">6</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-indigo-100/30 font-bold w-14 text-slate-800">Rating</th>
+                               </>
+                             )}
+
+                             {/* Semi-Final sub-headers */}
+                             {(viewMode === 'All' || viewMode === 'Semi-Final') && (
+                               <>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">4</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">5</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">6</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-amber-100/30 font-bold w-14 text-slate-800">Rating</th>
+                               </>
+                             )}
+
+                             {/* Final sub-headers */}
+                             {(viewMode === 'All' || viewMode === 'Final') && (
+                               <>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">4</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">5</th>
+                                 <th className="px-1 py-1.5 border-r border-slate-100 w-12">6</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-orange-100/30 font-bold w-14 text-slate-800">Rating</th>
+                               </>
+                             )}
+                           </tr>
+                      </thead>                      <tbody className="divide-y divide-slate-100">
+                          {/* 📐 Max Column Items Configuration Row */}
+                          <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-750 font-semibold h-11 select-none">
+                            <td className="px-2 py-3 border-r border-slate-200 bg-slate-50/80"></td>
+                            <td className="px-2 py-3 border-r border-slate-200 bg-slate-50/80"></td>
+                            <td className="px-4 py-3 text-left font-bold text-slate-800 sticky left-0 bg-slate-50 border-r border-slate-200 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                              <div className="flex items-center gap-1 text-sage-800 font-bold uppercase tracking-wider text-[10px]">
+                                📐 Max Column Items
+                              </div>
+                            </td>
+
+                            {/* Prelim Period */}
                             {(viewMode === 'All' || viewMode === 'Prelim') && (
                               <>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">4</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">5</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">6</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Raw</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-2 py-1.5 border-r border-slate-200 bg-sky-100/30 font-bold w-14 text-slate-800">Rating</th>
+                                <td onClick={() => setEditingColumn({ period: 'Prelim', key: 'act1', label: 'Quiz / Activity 1', value: maxItems.Prelim.act1 })} className="p-1 border-r border-slate-100 w-12 bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Prelim.act1}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Prelim', key: 'act2', label: 'Quiz / Activity 2', value: maxItems.Prelim.act2 })} className="p-1 border-r border-slate-100 w-12 bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Prelim.act2}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Prelim', key: 'act3', label: 'Quiz / Activity 3', value: maxItems.Prelim.act3 })} className="p-1 border-r border-slate-100 w-12 bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Prelim.act3}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Prelim', key: 'act4', label: 'Quiz / Activity 4', value: maxItems.Prelim.act4 })} className="p-1 border-r border-slate-100 w-12 bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Prelim.act4}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Prelim', key: 'act5', label: 'Quiz / Activity 5', value: maxItems.Prelim.act5 })} className="p-1 border-r border-slate-100 w-12 bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Prelim.act5}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Prelim', key: 'act6', label: 'Quiz / Activity 6', value: maxItems.Prelim.act6 })} className="p-1 border-r border-slate-100 w-12 bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Prelim.act6}
+                                </td>
+                                <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
+                                  {maxItems.Prelim.act1 + maxItems.Prelim.act2 + maxItems.Prelim.act3 + maxItems.Prelim.act4 + maxItems.Prelim.act5 + maxItems.Prelim.act6}
+                                </td>
+                                <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">50%</td>
+                                <td onClick={() => setEditingColumn({ period: 'Prelim', key: 'char', label: 'Character Rating', value: maxItems.Prelim.char })} className="p-1 border-r border-slate-100 w-16 bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Prelim.char}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Prelim', key: 'exam', label: 'Exam Max Score', value: maxItems.Prelim.exam })} className="p-1 border-r border-slate-100 w-12 bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Prelim.exam}
+                                </td>
+                                <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">40%</td>
+                                <td className="px-2 py-3 font-mono font-bold bg-sky-100/80 border-r border-slate-200 text-sky-900 w-14 text-center text-[10px]">100%</td>
                               </>
                             )}
 
-                            {/* Midterm sub-headers */}
+                            {/* Midterm Period */}
                             {(viewMode === 'All' || viewMode === 'Midterm') && (
                               <>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">4</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">5</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">6</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Raw</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-2 py-1.5 border-r border-slate-200 bg-indigo-100/30 font-bold w-14 text-slate-800">Rating</th>
+                                <td onClick={() => setEditingColumn({ period: 'Midterm', key: 'act1', label: 'Quiz / Activity 1', value: maxItems.Midterm.act1 })} className="p-1 border-r border-slate-100 w-12 bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Midterm.act1}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Midterm', key: 'act2', label: 'Quiz / Activity 2', value: maxItems.Midterm.act2 })} className="p-1 border-r border-slate-100 w-12 bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Midterm.act2}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Midterm', key: 'act3', label: 'Quiz / Activity 3', value: maxItems.Midterm.act3 })} className="p-1 border-r border-slate-100 w-12 bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Midterm.act3}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Midterm', key: 'act4', label: 'Quiz / Activity 4', value: maxItems.Midterm.act4 })} className="p-1 border-r border-slate-100 w-12 bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Midterm.act4}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Midterm', key: 'act5', label: 'Quiz / Activity 5', value: maxItems.Midterm.act5 })} className="p-1 border-r border-slate-100 w-12 bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Midterm.act5}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Midterm', key: 'act6', label: 'Quiz / Activity 6', value: maxItems.Midterm.act6 })} className="p-1 border-r border-slate-100 w-12 bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Midterm.act6}
+                                </td>
+                                <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
+                                  {maxItems.Midterm.act1 + maxItems.Midterm.act2 + maxItems.Midterm.act3 + maxItems.Midterm.act4 + maxItems.Midterm.act5 + maxItems.Midterm.act6}
+                                </td>
+                                <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">50%</td>
+                                <td onClick={() => setEditingColumn({ period: 'Midterm', key: 'char', label: 'Character Rating', value: maxItems.Midterm.char })} className="p-1 border-r border-slate-100 w-16 bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Midterm.char}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Midterm', key: 'exam', label: 'Exam Max Score', value: maxItems.Midterm.exam })} className="p-1 border-r border-slate-100 w-12 bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Midterm.exam}
+                                </td>
+                                <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">40%</td>
+                                <td className="px-2 py-3 font-mono font-bold bg-indigo-100/80 border-r border-slate-200 text-indigo-900 w-14 text-center text-[10px]">100%</td>
                               </>
                             )}
 
-                            {/* Semi-Final sub-headers */}
+                            {/* Midterm Rating (MR) */}
+                            {(viewMode === 'All' || viewMode === 'Midterm') && (
+                              <td className="px-3 py-3 border-r border-slate-200 bg-indigo-100/40 text-center"></td>
+                            )}
+
+                            {/* Semi-Final Period */}
                             {(viewMode === 'All' || viewMode === 'Semi-Final') && (
                               <>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">4</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">5</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">6</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Raw</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-2 py-1.5 border-r border-slate-200 bg-amber-100/30 font-bold w-14 text-slate-800">Rating</th>
+                                <td onClick={() => setEditingColumn({ period: 'Semi-Final', key: 'act1', label: 'Quiz / Activity 1', value: maxItems['Semi-Final'].act1 })} className="p-1 border-r border-slate-100 w-12 bg-amber-50/30 hover:bg-amber-105/55 hover:text-amber-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems['Semi-Final'].act1}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Semi-Final', key: 'act2', label: 'Quiz / Activity 2', value: maxItems['Semi-Final'].act2 })} className="p-1 border-r border-slate-100 w-12 bg-amber-50/30 hover:bg-amber-105/55 hover:text-amber-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems['Semi-Final'].act2}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Semi-Final', key: 'act3', label: 'Quiz / Activity 3', value: maxItems['Semi-Final'].act3 })} className="p-1 border-r border-slate-100 w-12 bg-amber-50/30 hover:bg-amber-105/55 hover:text-amber-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems['Semi-Final'].act3}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Semi-Final', key: 'act4', label: 'Quiz / Activity 4', value: maxItems['Semi-Final'].act4 })} className="p-1 border-r border-slate-100 w-12 bg-amber-50/30 hover:bg-amber-105/55 hover:text-amber-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems['Semi-Final'].act4}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Semi-Final', key: 'act5', label: 'Quiz / Activity 5', value: maxItems['Semi-Final'].act5 })} className="p-1 border-r border-slate-100 w-12 bg-amber-50/30 hover:bg-amber-105/55 hover:text-amber-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems['Semi-Final'].act5}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Semi-Final', key: 'act6', label: 'Quiz / Activity 6', value: maxItems['Semi-Final'].act6 })} className="p-1 border-r border-slate-100 w-12 bg-amber-50/30 hover:bg-amber-105/55 hover:text-amber-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems['Semi-Final'].act6}
+                                </td>
+                                <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
+                                  {maxItems['Semi-Final'].act1 + maxItems['Semi-Final'].act2 + maxItems['Semi-Final'].act3 + maxItems['Semi-Final'].act4 + maxItems['Semi-Final'].act5 + maxItems['Semi-Final'].act6}
+                                </td>
+                                <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">50%</td>
+                                <td onClick={() => setEditingColumn({ period: 'Semi-Final', key: 'char', label: 'Character Rating', value: maxItems['Semi-Final'].char })} className="p-1 border-r border-slate-100 w-16 bg-amber-50/30 hover:bg-amber-105/55 hover:text-amber-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems['Semi-Final'].char}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Semi-Final', key: 'exam', label: 'Exam Max Score', value: maxItems['Semi-Final'].exam })} className="p-1 border-r border-slate-100 w-12 bg-amber-50/30 hover:bg-amber-105/55 hover:text-amber-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems['Semi-Final'].exam}
+                                </td>
+                                <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">40%</td>
+                                <td className="px-2 py-3 font-mono font-bold bg-amber-100/85 border-r border-slate-200 text-amber-900 w-14 text-center text-[10px]">100%</td>
                               </>
                             )}
 
-                            {/* Final sub-headers */}
+                            {/* Final Period */}
                             {(viewMode === 'All' || viewMode === 'Final') && (
                               <>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">4</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">5</th>
-                                <th className="px-1 py-1.5 border-r border-slate-100 w-12">6</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Raw</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-2 py-1.5 border-r border-slate-200 bg-orange-100/30 font-bold w-14 text-slate-800">Rating</th>
+                                <td onClick={() => setEditingColumn({ period: 'Final', key: 'act1', label: 'Quiz / Activity 1', value: maxItems.Final.act1 })} className="p-1 border-r border-slate-100 w-12 bg-orange-50/30 hover:bg-orange-100/50 hover:text-orange-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Final.act1}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Final', key: 'act2', label: 'Quiz / Activity 2', value: maxItems.Final.act2 })} className="p-1 border-r border-slate-100 w-12 bg-orange-50/30 hover:bg-orange-100/50 hover:text-orange-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Final.act2}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Final', key: 'act3', label: 'Quiz / Activity 3', value: maxItems.Final.act3 })} className="p-1 border-r border-slate-100 w-12 bg-orange-50/30 hover:bg-orange-100/50 hover:text-orange-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Final.act3}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Final', key: 'act4', label: 'Quiz / Activity 4', value: maxItems.Final.act4 })} className="p-1 border-r border-slate-100 w-12 bg-orange-50/30 hover:bg-orange-100/50 hover:text-orange-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Final.act4}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Final', key: 'act5', label: 'Quiz / Activity 5', value: maxItems.Final.act5 })} className="p-1 border-r border-slate-100 w-12 bg-orange-50/30 hover:bg-orange-100/50 hover:text-orange-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Final.act5}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Final', key: 'act6', label: 'Quiz / Activity 6', value: maxItems.Final.act6 })} className="p-1 border-r border-slate-100 w-12 bg-orange-50/30 hover:bg-orange-100/50 hover:text-orange-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Final.act6}
+                                </td>
+                                <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
+                                  {maxItems.Final.act1 + maxItems.Final.act2 + maxItems.Final.act3 + maxItems.Final.act4 + maxItems.Final.act5 + maxItems.Final.act6}
+                                </td>
+                                <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">50%</td>
+                                <td onClick={() => setEditingColumn({ period: 'Final', key: 'char', label: 'Character Rating', value: maxItems.Final.char })} className="p-1 border-r border-slate-100 w-16 bg-orange-50/30 hover:bg-orange-100/50 hover:text-orange-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Final.char}
+                                </td>
+                                <td onClick={() => setEditingColumn({ period: 'Final', key: 'exam', label: 'Exam Max Score', value: maxItems.Final.exam })} className="p-1 border-r border-slate-100 w-12 bg-orange-50/30 hover:bg-orange-100/50 hover:text-orange-900 cursor-pointer text-center font-mono text-xs font-bold text-slate-800 transition-colors">
+                                  {maxItems.Final.exam}
+                                </td>
+                                <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">40%</td>
+                                <td className="px-2 py-3 font-mono font-bold bg-orange-100/80 border-r border-slate-200 text-orange-900 w-14 text-center text-[10px]">100%</td>
                               </>
                             )}
+
+                            {/* Final calculations placeholders */}
+                            {(viewMode === 'All' || viewMode === 'Final') && (
+                              <>
+                                <td className="px-3 py-3 border-r border-slate-200 bg-orange-100/40 text-center"></td>
+                                <td className="px-3 py-3 border-r border-slate-200 bg-emerald-50/40 text-center"></td>
+                                <td className="px-3 py-3 border-r border-slate-200 bg-emerald-100/40 text-center"></td>
+                                <td className="px-4 py-3 border-r border-slate-200 bg-emerald-100/40 text-center"></td>
+                              </>
+                            )}
+
+                            {/* Action cell placeholder */}
+                            <td className="px-4 py-3 bg-slate-50/80"></td>
                           </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
+
                           {activeStudents.map((student, idx) => (
                             <StudentRow 
                               key={student.id} 
@@ -413,6 +612,7 @@ export default function ScoreInput() {
                               rowNo={idx + 1}
                               initialPeriods={student.periods}
                               viewMode={viewMode}
+                              maxItems={maxItems}
                             />
                           ))}
                       </tbody>
@@ -421,6 +621,86 @@ export default function ScoreInput() {
           </div>
           
       </div>
+
+      {/* 📐 Accidental Edit Prevention Confirmation Modal */}
+      {editingColumn && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-slate-250 shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                <span>📐 Update Column Maximum Score</span>
+              </h3>
+              <button 
+                onClick={() => setEditingColumn(null)}
+                className="text-slate-400 hover:text-slate-650 transition-colors text-lg font-semibold"
+              >
+                &times;
+              </button>
+            </div>
+            
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Grading Term & Column</p>
+                <p className="text-sm font-bold text-slate-800 mt-1">
+                  {editingColumn.period} Period — {editingColumn.label}
+                </p>
+              </div>
+              
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Maximum Points</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="1"
+                    max="500"
+                    autoFocus
+                    defaultValue={editingColumn.value}
+                    id="max-items-modal-input"
+                    className="block w-28 border border-slate-200 rounded-lg px-3.5 py-2 text-sm font-mono text-center font-bold text-slate-800 focus:ring-1 focus:ring-sage-500 focus:border-sage-500 transition-all outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const val = Number(e.currentTarget.value);
+                        if (val > 0) handleConfirmMaxItem(val);
+                      }
+                    }}
+                  />
+                  <span className="text-xs text-slate-500 font-semibold font-mono">pts</span>
+                </div>
+              </div>
+              
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-[11px] text-amber-805 leading-relaxed">
+                <strong>⚠️ Warning:</strong> Confirming this change will instantly update the maximum score for this column and immediately recalculate the grades and ratings of all enrolled students.
+              </div>
+            </div>
+            
+            {/* Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setEditingColumn(null)}
+                className="px-4 py-2 text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const input = document.getElementById('max-items-modal-input');
+                  if (input) {
+                    const val = Number(input.value);
+                    if (val > 0) handleConfirmMaxItem(val);
+                  }
+                }}
+                className="px-4 py-2 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm"
+              >
+                Confirm & Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
