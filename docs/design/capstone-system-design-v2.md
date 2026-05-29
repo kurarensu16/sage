@@ -243,6 +243,20 @@ The SAGE database consists of 19 tables hosted on Supabase (PostgreSQL). Tables 
 | `max_score` | DECIMAL | |
 | `created_at` | TIMESTAMP | |
 
+#### Table: `class_grading_columns`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | PK |
+| `class_record_id` | UUID | FK → `class_records` |
+| `term` | VARCHAR | e.g., Prelim, Midterm, Semi-Final, Final |
+| `act1_max` | INT | Default 20 |
+| `act2_max` | INT | Default 20 |
+| `act3_max` | INT | Default 20 |
+| `act4_max` | INT | Default 20 |
+| `act5_max` | INT | Default 20 |
+| `act6_max` | INT | Default 10 |
+| `exam_max` | INT | Default 40 |
+
 #### Table: `component_scores`
 | Column | Type | Notes |
 |---|---|---|
@@ -372,6 +386,7 @@ The SAGE database consists of 19 tables hosted on Supabase (PostgreSQL). Tables 
 | `class_faculty_log` | `class_records` | Many-to-One |
 | `class_faculty_log` | `users` (faculty) | Many-to-One |
 | `grade_components` | `class_records` | Many-to-One |
+| `class_grading_columns` | `class_records` | Many-to-One |
 | `component_scores` | `grade_components` | Many-to-One |
 | `component_scores` | `users` (student) | Many-to-One |
 | `posted_grades` | `class_records` | Many-to-One |

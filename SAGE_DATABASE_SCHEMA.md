@@ -151,6 +151,22 @@ Defines weight criteria for terms (Prelim, Midterm, Semi-Final, Final).
 | `max_score` | DECIMAL(6,2) | NOT NULL | Maximum possible points (e.g. 50.00) |
 | `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Date components created |
 
+#### Table: `class_grading_columns`
+Stores maximum scores for each activity/quiz and exam column per class term (dynamic spreadsheet column max scores).
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique ID of configuration |
+| `class_record_id` | UUID | REFERENCES `class_records` | Associated class record |
+| `term` | VARCHAR(20) | NOT NULL | e.g. `'Prelim'`, `'Midterm'`, `'Semi-Final'`, `'Final'` |
+| `act1_max` | INT | DEFAULT 20, CHECK(act1_max > 0) | Quiz 1 Max Points |
+| `act2_max` | INT | DEFAULT 20, CHECK(act2_max > 0) | Quiz 2 Max Points |
+| `act3_max` | INT | DEFAULT 20, CHECK(act3_max > 0) | Quiz 3 Max Points |
+| `act4_max` | INT | DEFAULT 20, CHECK(act4_max > 0) | Quiz 4 Max Points |
+| `act5_max` | INT | DEFAULT 20, CHECK(act5_max > 0) | Quiz 5 Max Points |
+| `act6_max` | INT | DEFAULT 10, CHECK(act6_max > 0) | Quiz 6 Max Points |
+| `exam_max` | INT | DEFAULT 40, CHECK(exam_max > 0) | Term Exam Max Points |
+| UNIQUE(class_record_id, term) | | | Prevent duplicate setups for same term |
+
 #### Table: `component_scores`
 Stores raw points earned by students in individual components.
 | Column | Type | Constraints | Notes |
@@ -414,6 +430,21 @@ CREATE TABLE posted_grades (
     is_locked BOOLEAN DEFAULT TRUE,
     override_by UUID REFERENCES users(user_id),
     override_at TIMESTAMP
+);
+
+-- Table: class_grading_columns
+CREATE TABLE class_grading_columns (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    class_record_id UUID NOT NULL REFERENCES class_records(class_record_id) ON DELETE CASCADE,
+    term VARCHAR(20) NOT NULL,
+    act1_max INT DEFAULT 20 CHECK (act1_max > 0),
+    act2_max INT DEFAULT 20 CHECK (act2_max > 0),
+    act3_max INT DEFAULT 20 CHECK (act3_max > 0),
+    act4_max INT DEFAULT 20 CHECK (act4_max > 0),
+    act5_max INT DEFAULT 20 CHECK (act5_max > 0),
+    act6_max INT DEFAULT 10 CHECK (act6_max > 0),
+    exam_max INT DEFAULT 40 CHECK (exam_max > 0),
+    UNIQUE(class_record_id, term)
 );
 
 -- Table: evaluation_forms
