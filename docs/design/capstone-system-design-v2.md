@@ -42,6 +42,8 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 ### 2.2 Dean
 * View all class records across departments and sections
 * Monitor grade posting status per faculty per grading period
+* Use the **Registry Unlock Override Dashboard** to selectively unlock specific grading milestones for faculty edits
+* Approve or reject real-time **Unlock Requests** sent by faculty members for specific class records and milestones
 * View grade distribution summaries per subject and section
 * View AI-generated faculty fitness predictions for all faculty under their department
 * View the list of AI-flagged at-risk students
@@ -50,11 +52,13 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 ### 2.3 Faculty
 * Create class records per subject and section
 * Define grade components (activity, quiz, exam, project) with percentage weights
-* Input student scores per component
+* Input student scores per component (inputs locked individually per milestone term when posted)
 * View real-time running grade and Early Warning System indicators per student
-* Post grades per grading period (Prelim, Midterm, Semi-Final, Final)
+* Post grades dynamically per milestone grading period (Prelim, Midterm, Semi-Final, Final) via a selective choices modal
+* Request the Dean to unlock locked milestones directly from the Posted Grades view (sets status to "Unlock Requested" and notifies the Dean)
 * View faculty evaluation results per section (anonymized)
-* Receive notifications when an evaluation window closes
+* Receive notifications when an evaluation window closes or when a milestone unlock request is approved by the Dean
+
 
 ### 2.4 Student
 * View own grades per subject per grading period
@@ -97,10 +101,13 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 | **FR14** | The system shall compute a real-time running grade per student based on currently encoded score components (Class Standing, Character Rating, and Term Exam). |
 | **FR15** | The system shall display a visual standing indicator per student: Safe (green), At-Risk (yellow), or Failing Trajectory (red), based on the running grade GWA. |
 | **FR16** | The system shall display a tooltip on At-Risk and Failing Trajectory indicators showing the exact running percentage. |
-| **FR17** | Faculty shall be able to post grades per grading period (Prelim, Midterm, Semi-Final, Final). |
+| **FR17** | Faculty shall be able to post grades selectively per grading period milestone (Prelim, Midterm, MR, Semi-Final, Final, TFR, Semestral Grade) via a milestone choice modal. |
 | **FR17a** | The system shall allow faculty to filter the class record view by individual grading period (Prelim, Midterm, Semi-Final, Final) or view all terms side-by-side. |
 | **FR17b** | The system shall provide a fullscreen expand/collapse toggle on class record tables (Score Input, Computation Preview, and Posted Grades) to maximize viewing area, with Escape key and backdrop-click to exit. |
-| **FR18** | The system shall prevent editing of posted grades without an admin override. |
+| **FR18** | The system shall lock specific grading milestone columns from faculty editing once posted. |
+| **FR18a** | Faculty shall be able to submit a dynamic "Request Unlock" for any locked milestone column, transitioning its state to "Unlock Requested" and notifying the Dean. |
+| **FR18b** | The Dean Portal shall display active faculty unlock requests and provide a "Registry Override Dashboard" to approve/reject unlock requests in real-time or selectively force-unlock any milestone column for a class record. |
+
 
 ### 3.4 Student Portal
 | FR # | Description |
@@ -274,13 +281,32 @@ The SAGE database consists of 19 tables hosted on Supabase (PostgreSQL). Tables 
 | `class_record_id` | UUID | FK → `class_records` |
 | `student_id` | UUID | FK → `users` |
 | `grade_period` | ENUM | prelim \| midterm \| semi_final \| final |
-| `computed_grade` | DECIMAL | |
-| `remarks` | VARCHAR | passed \| failed \| incomplete |
+| `computed_grade` | DECIMAL | Raw system-computed rating, always preserved |
+| `effective_grade` | DECIMAL | Grade displayed after remark override (NULL = use computed_grade). Grace Passed caps at 3.00; INC/FDA/Dropped retain computed_grade |
+| `remarks` | VARCHAR | passed \| failed \| incomplete \| fda \| dropped |
+| `remarks_note` | TEXT | Optional faculty note explaining manual remark override, nullable |
+| `remarks_set_by` | UUID | FK → `users` (faculty), nullable — who manually changed the remark |
+| `remarks_set_at` | TIMESTAMP | When the remark was manually changed, nullable |
 | `posted_by` | UUID | FK → `users` (faculty) |
 | `posted_at` | TIMESTAMP | |
 | `is_locked` | BOOLEAN | DEFAULT true |
+| `locked_milestones` | VARCHAR[] | Array of milestones currently locked |
 | `override_by` | UUID | FK → `users` (admin), nullable |
 | `override_at` | TIMESTAMP | Nullable |
+
+
+#### Table: `unlock_requests`
+| Column | Type | Notes |
+|---|---|---|
+| `request_id` | UUID | PK |
+| `class_record_id` | UUID | FK → `class_records` |
+| `milestone` | VARCHAR | e.g. Prelim, Midterm, Semi-Final, Final |
+| `requested_by` | UUID | FK → `users` (faculty) |
+| `requested_at` | TIMESTAMP | |
+| `status` | VARCHAR | pending \| approved \| rejected |
+| `resolved_by` | UUID | FK → `users` (dean), nullable |
+| `resolved_at` | TIMESTAMP | Nullable |
+
 
 #### Table: `notifications`
 | Column | Type | Notes |
@@ -391,6 +417,8 @@ The SAGE database consists of 19 tables hosted on Supabase (PostgreSQL). Tables 
 | `component_scores` | `users` (student) | Many-to-One |
 | `posted_grades` | `class_records` | Many-to-One |
 | `posted_grades` | `users` (student) | Many-to-One |
+| `unlock_requests` | `class_records` | Many-to-One |
+| `unlock_requests` | `users` (faculty/dean) | Many-to-One |
 | `notifications` | `users` | Many-to-One |
 | `evaluation_criteria` | `evaluation_forms` | Many-to-One |
 | `evaluation_windows` | `evaluation_forms` | Many-to-One |
@@ -407,7 +435,7 @@ The SAGE database consists of 19 tables hosted on Supabase (PostgreSQL). Tables 
 
 ## 6. Use Case Diagram
 
-SAGE has 31 use cases across 9 modules distributed among 4 actors.
+SAGE has 33 use cases across 9 modules distributed among 4 actors.
 
 | UC # | Module | Use Case | Actors |
 |---|---|---|---|
@@ -429,11 +457,13 @@ SAGE has 31 use cases across 9 modules distributed among 4 actors.
 | **UC16** | Dean Oversight | View AI Faculty Predictions | Dean |
 | **UC17** | Dean Oversight | View At-Risk Students | Dean |
 | **UC18** | Dean Oversight | Generate Summary Reports | Dean |
+| **UC18a** | Dean Oversight | Override / Approve Milestone Grade Unlock | Dean |
 | **UC19** | Class Record | Create Class Record | Faculty |
 | **UC20** | Class Record | Define Grade Components & Weights | Faculty |
 | **UC21** | Class Record | Input Student Scores | Faculty |
 | **UC22** | Class Record | View Early Warning Indicators | Faculty |
-| **UC23** | Class Record | Post Grades per Period | Faculty |
+| **UC23** | Class Record | Post Grades per Milestone | Faculty |
+| **UC23a** | Class Record | Request Milestone Grade Unlock | Faculty |
 | **UC24** | Faculty Evaluation | View Evaluation Results per Section | Faculty |
 | **UC25** | Faculty Evaluation | Receive Evaluation Notification | Faculty |
 | **UC26** | Student Portal | View Own Grades | Student |
@@ -442,6 +472,7 @@ SAGE has 31 use cases across 9 modules distributed among 4 actors.
 | **UC29** | Student Portal | Submit Faculty Evaluation | Student |
 | **UC30** | AI Features | Generate Student Recommendation | Student, Dean |
 | **UC31** | AI Features | Generate Faculty Fitness Prediction | Faculty, Dean |
+
 
 ---
 
@@ -454,8 +485,8 @@ The Level 0 DFD treats the entire system as a single process and identifies all 
 | Entity | Data Sent to System | Data Received from System |
 |---|---|---|
 | **Admin** | User data, classroom setup, CSV imports, eval forms, windows, grade overrides, archive commands | System reports, confirmations, audit logs |
-| **Dean** | Report and filter requests | Grade reports, eval results, AI predictions, at-risk student lists |
-| **Faculty** | Scores, grade components, post commands | Computed grades, running grade indicators, eval results, notifications |
+| **Dean** | Report and filter requests, milestone unlock approvals/overrides | Grade reports, eval results, AI predictions, at-risk student lists, unlock request alerts |
+| **Faculty** | Scores, grade components, post commands, milestone unlock requests | Computed grades, running grade indicators, eval results, notifications, unlock status updates |
 | **Student** | Evaluation responses, grade view requests | Grades, lapses, AI recommendations, notifications |
 
 ### 7.2 Level 1 — Process Decomposition
@@ -464,11 +495,11 @@ The Level 0 DFD treats the entire system as a single process and identifies all 
 |---|---|---|
 | **P1** | Authentication | Validates credentials and issues role-based session tokens. |
 | **P2** | User & Class Management | Admin creates users, classrooms, imports students via CSV, reassigns faculty, archives classes. |
-| **P3** | Class Record & Grade Management | Faculty creates class records, defines components, inputs scores, auto-computes grades, triggers Early Warning System indicators, posts grades. |
+| **P3** | Class Record & Grade Management | Faculty creates class records, defines components, inputs scores, auto-computes grades, triggers Early Warning System indicators, posts grades, submits milestone unlock requests. |
 | **P4** | Student Grade Portal | Students view posted grades, component breakdowns, and lapses. |
 | **P5** | Faculty Evaluation | Admin manages eval forms and windows. Students submit anonymous responses. Faculty view results. |
 | **P6** | AI Recommendation Engine | Reads grade and evaluation data and generates student recommendations and faculty fitness predictions. |
-| **P7** | Dean Oversight & Reporting | Dean views all grade and evaluation data, AI predictions, and generates reports. |
+| **P7** | Dean Oversight & Reporting | Dean views all grade and evaluation data, AI predictions, manages milestone unlock approvals/overrides, and generates reports. |
 | **P8** | Notification Service | Dispatches notifications to students and faculty on key system events. |
 
 ### 7.3 Data Stores
@@ -478,12 +509,13 @@ The Level 0 DFD treats the entire system as a single process and identifies all 
 | **D1** | `users` |
 | **D2** | `departments`, `subjects`, `sections` |
 | **D3** | `enrollments`, `class_records`, `class_faculty_log` |
-| **D4** | `grade_components`, `component_scores`, `posted_grades` |
+| **D4** | `grade_components`, `component_scores`, `posted_grades`, `unlock_requests` |
 | **D5** | `evaluation_forms`, `evaluation_criteria`, `evaluation_windows` |
 | **D6** | `evaluation_responses`, `evaluation_ratings`, `evaluation_comments` |
 | **D7** | `ai_student_recommendations` |
 | **D8** | `ai_faculty_predictions` |
 | **D9** | `notifications` |
+
 
 ---
 
@@ -521,7 +553,7 @@ SAGE consists of 37 screens distributed across 4 role portals plus shared public
 | Screen # | Screen Name | Key Elements |
 |---|---|---|
 | **S19** | Dean Dashboard | KPI row: Total Faculty, Total Sections, At-Risk Students, Pending Grade Posts. Quick links to reports and AI summaries. |
-| **S20** | Grade Posting Status — Overview | Table per faculty: subjects, sections, periods posted vs pending. Filter by department, semester, school year. |
+| **S20** | Grade Posting Status — Overview | Table per faculty: subjects, sections, periods posted vs pending. Filter by department, semester, school year. Includes the top-level **Dean's Registry Unlock Override Dashboard** with active faculty unlock requests list (showing "Approve Request" button) and custom force-override buttons to lock or unlock individual milestones. |
 | **S21** | Grade Distribution — View | Select subject, section, period. View breakdown: passed, failed, grade ranges. Visual chart representation. |
 | **S22** | Faculty Evaluation Results — Overview | List of all faculty with average evaluation rating per semester. Click to drill down per faculty. |
 | **S23** | Faculty Evaluation Results — Per Faculty | Breakdown per section. Ratings per criterion. Anonymized comments. AI fitness prediction summary and verdict. |
@@ -532,12 +564,12 @@ SAGE consists of 37 screens distributed across 4 role portals plus shared public
 | Screen # | Screen Name | Key Elements |
 |---|---|---|
 | **S26** | Faculty Dashboard | KPI row: Active Class Records, Pending Grade Posts, At-Risk Students (across all classes), Open Eval Windows. Upcoming deadlines card. |
-| **S27** | Class Records — List | Table: subject, section, school year, semester, status, posting status per period. Create Class Record button. |
+| **S27** | Class Records — List | Table: subject, section, school year, semester, status, posting status per period. Create Class Record button. Actions card updated to show both "Input Scores" and "View Posted" side-by-side. |
 | **S28** | Class Record — Create | Select subject, section, school year, semester. Confirm and proceed to grade component setup. |
 | **S29** | Grade Components — Setup | Per grading period (Prelim/Midterm/Semi-Final/Final). Add components: type, name, max score, weight. Live weight total validator (must equal 100%). |
-| **S30** | Score Input — Student List | Select class record. **View Period dropdown** to filter by individual term (Prelim, Midterm, Semi-Final, Final) or view all terms side-by-side. Editable table per student: columns for Class Standing (Max 110), Character Rating (Max 100), and Term Exam (Max 40). Running Grade column (mono GWA equivalent, color-coded), Early Warning indicator dot (green/yellow/red) with hover tooltip. Inline save per row. **Fullscreen expand button** on table card header with Escape key / backdrop-click to exit. |
-| **S31** | Grade Computation — Preview | Auto-computed grade per student showing full progression chain (PG, MG, MR, SFG, FG, TFR, SG, GWA, Remarks). Component breakdown. Missing scores highlighted. Summary bar: passed, failed, incomplete counts. Post Grades button with lock confirmation dialog. **Fullscreen expand button** on table card header with sticky column headers and Escape key to exit. |
-| **S32** | Posted Grades — View | Read-only view of posted grades. Displays locked GWA report columns (MR, TFR, SG, GWA, Remarks) matching the official printed format. **Fullscreen expand button** on table card header with sticky column headers and Escape key to exit. |
+| **S30** | Score Input — Student List | Select class record. **View Period dropdown** to filter by individual term (Prelim, Midterm, Semi-Final, Final) or view all terms side-by-side. Editable table per student: columns for Class Standing (Max 110), Character Rating (Max 100), and Term Exam (Max 40). Running Grade column (mono GWA equivalent, color-coded), Early Warning indicator dot (green/yellow/red) with hover tooltip. Inline save per row. Inputs disabled dynamically based on milestone lock state. **Fullscreen expand button** on table card header with Escape key / backdrop-click to exit. |
+| **S31** | Grade Computation — Preview | Auto-computed grade per student showing full progression chain (PG, MG, MR, SFG, FG, TFR, SG, GWA, Remarks). Component breakdown. Missing scores highlighted. Summary bar: passed, failed, incomplete counts. Post Grades button with highly aesthetic milestone selection modal (enabling selective term posting) and lock confirmation dialog. **Fullscreen expand button** on table card header with sticky column headers and Escape key to exit. |
+| **S32** | Posted Grades — View | Read-only view of posted grades. Displays locked GWA report columns (MR, TFR, SG, GWA, Remarks) matching the official printed format. Includes status badges per milestone and a **"📨 Request Unlock"** button next to locked terms, notifying the Dean when clicked. Top header navigation shortcuts provided. **Fullscreen expand button** on table card header with sticky column headers and Escape key to exit. |
 | **S33** | Faculty Evaluation Results — My Results | Select section and eval window. View ratings per criterion (anonymized). View comments. AI fitness prediction (own result). |
 | **S34** | Faculty Notifications | Eval window closed alerts, grade override notifications, AI prediction ready alerts. |
 

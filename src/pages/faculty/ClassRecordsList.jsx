@@ -55,12 +55,6 @@ export default function ClassRecordsList() {
   return (
     <>
       <PageHeader title="My Class Records" breadcrumb="Faculty Portal">
-        <Link 
-          to="/faculty/classrecordcreate" 
-          className="px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm flex items-center gap-2"
-        >
-          <Plus className="h-4 w-4" /> Initialize Class Record
-        </Link>
         <button className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:border-sage-300 rounded-lg transition-colors bg-white flex items-center gap-2">
             <Filter className="h-4 w-4" /> Filter
         </button>
@@ -138,23 +132,18 @@ export default function ClassRecordsList() {
                         </div>
                     </div>
                     
-                    {/* Card Footer (Actions) */}
                     <div className="p-4 bg-slate-50 border-t border-slate-100 rounded-b-xl grid grid-cols-2 gap-3">
                         {cls.status === 'Pending Setup' ? (
                             <Link to="/faculty/gradecomponentssetup" className="col-span-2 flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm">
                                 <Settings className="h-4 w-4" /> Setup Grade Weights
-                            </Link>
-                        ) : cls.status === 'Grades Posted' ? (
-                            <Link to="/faculty/postedgradesview" className="col-span-2 flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:border-sage-305 hover:text-slate-900 rounded-lg transition-colors shadow-sm">
-                                <Lock className="h-4 w-4 text-slate-400" /> View Posted Grades
                             </Link>
                         ) : (
                             <>
                                 <Link to="/faculty/scoreinput" className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm">
                                     <Edit3 className="h-4 w-4" /> Input Scores
                                 </Link>
-                                <Link to="/faculty/gradecomputationpreview" className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-lg transition-colors">
-                                    <Eye className="h-4 w-4" /> View Computed
+                                <Link to="/faculty/postedgradesview" className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-lg transition-colors">
+                                    <Lock className="h-4 w-4 text-slate-450" /> View Posted
                                 </Link>
                             </>
                         )}

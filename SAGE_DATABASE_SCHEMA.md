@@ -30,6 +30,9 @@ erDiagram
     class_records ||--o{ posted_grades : "grades for"
     users ||--o{ posted_grades : "student grade"
     
+    class_records ||--o{ unlock_requests : "requests unlock for"
+    users ||--o{ unlock_requests : "requested by / resolved by"
+    
     users ||--o{ notifications : "recipient"
     
     evaluation_forms ||--o{ evaluation_criteria : "contains"
@@ -179,20 +182,39 @@ Stores raw points earned by students in individual components.
 | `encoded_by` | UUID | REFERENCES `users` | Instructor encoding score |
 
 #### Table: `posted_grades`
-Stores finalized term grades with override records.
+Stores finalized term grades with override records and faculty remark audit trail.
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `posted_grade_id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique ID of posted grade |
 | `class_record_id` | UUID | REFERENCES `class_records` | Class record |
 | `student_id` | UUID | REFERENCES `users` | Student |
 | `grade_period` | VARCHAR(15) | NOT NULL | Check: prelim, midterm, semi_final, final |
-| `computed_grade` | DECIMAL(5,2) | NOT NULL | Computed numeric rating |
-| `remarks` | VARCHAR(15) | NOT NULL | Check: passed, failed, incomplete |
+| `computed_grade` | DECIMAL(5,2) | NOT NULL | Raw system-computed numeric rating (always preserved) |
+| `effective_grade` | DECIMAL(5,2) | NULL | Grade displayed/recorded after remark override (NULL = use computed_grade). Capped at 3.00 for grace Passed; equals computed_grade for INC/FDA/Dropped |
+| `remarks` | VARCHAR(15) | NOT NULL | Check: passed, failed, incomplete, fda, dropped |
+| `remarks_note` | TEXT | NULL | Optional faculty note explaining a manual remark override (e.g. "Student missed finals due to hospitalization") |
+| `remarks_set_by` | UUID | REFERENCES `users` | Faculty member who manually overrode the system remark |
+| `remarks_set_at` | TIMESTAMP | NULL | Timestamp of when the remark was manually changed |
 | `posted_by` | UUID | REFERENCES `users` | Instructor posting grade |
 | `posted_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Posting date |
 | `is_locked` | BOOLEAN | DEFAULT TRUE | Locked from faculty edits |
+| `locked_milestones` | VARCHAR[] | DEFAULT '{}'::VARCHAR[] | Array of milestones currently locked for editing (e.g. `{'prelim', 'midterm'}`) |
 | `override_by` | UUID | REFERENCES `users` | Admin authorizing override |
 | `override_at` | TIMESTAMP | NULL | Date override applied |
+
+#### Table: `unlock_requests`
+Stores faculty requests to unlock specific grading milestones for Dean review and override.
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `request_id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique ID of the unlock request |
+| `class_record_id` | UUID | REFERENCES `class_records` ON DELETE CASCADE | Associated class record |
+| `milestone` | VARCHAR(20) | NOT NULL | Milestone term (e.g. `'Prelim'`, `'Midterm'`, `'Semi-Final'`, `'Final'`) |
+| `requested_by` | UUID | REFERENCES `users` | Faculty member requesting the unlock |
+| `requested_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Timestamp when requested |
+| `status` | VARCHAR(20) | DEFAULT 'pending' | Status check: `'pending'`, `'approved'`, `'rejected'` |
+| `resolved_by` | UUID | REFERENCES `users` | Dean resolving request (approved/rejected) |
+| `resolved_at` | TIMESTAMP | NULL | Timestamp of Dean resolution |
+
 
 ---
 
@@ -320,7 +342,7 @@ CREATE TYPE semester_period AS ENUM ('1st', '2nd', 'Summer');
 CREATE TYPE class_status AS ENUM ('active', 'archived');
 CREATE TYPE term_period AS ENUM ('prelim', 'midterm', 'semi_final', 'final');
 CREATE TYPE component_category AS ENUM ('activity', 'quiz', 'exam', 'project');
-CREATE TYPE grade_remarks AS ENUM ('passed', 'failed', 'incomplete');
+CREATE TYPE grade_remarks AS ENUM ('passed', 'failed', 'incomplete', 'fda', 'dropped');
 CREATE TYPE ai_student_verdict AS ENUM ('continue', 'at_risk', 'recommend_shift');
 CREATE TYPE ai_faculty_verdict AS ENUM ('recommended', 'needs_improvement', 'not_recommended');
 
@@ -424,13 +446,31 @@ CREATE TABLE posted_grades (
     student_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
     grade_period term_period NOT NULL,
     computed_grade DECIMAL(5,2) NOT NULL,
+    effective_grade DECIMAL(5,2) DEFAULT NULL,
     remarks grade_remarks NOT NULL,
+    remarks_note TEXT DEFAULT NULL,
+    remarks_set_by UUID REFERENCES users(user_id),
+    remarks_set_at TIMESTAMP DEFAULT NULL,
     posted_by UUID REFERENCES users(user_id),
     posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     is_locked BOOLEAN DEFAULT TRUE,
+    locked_milestones VARCHAR[] DEFAULT '{}'::VARCHAR[],
     override_by UUID REFERENCES users(user_id),
     override_at TIMESTAMP
 );
+
+-- Table: unlock_requests
+CREATE TABLE unlock_requests (
+    request_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    class_record_id UUID REFERENCES class_records(class_record_id) ON DELETE CASCADE,
+    milestone VARCHAR(20) NOT NULL,
+    requested_by UUID REFERENCES users(user_id),
+    requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    resolved_by UUID REFERENCES users(user_id),
+    resolved_at TIMESTAMP
+);
+
 
 -- Table: class_grading_columns
 CREATE TABLE class_grading_columns (

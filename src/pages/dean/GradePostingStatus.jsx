@@ -13,24 +13,65 @@ export default function GradePostingStatus() {
   const [syFilter, setSyFilter] = useState('2025-2026');
   const [searchTerm, setSearchTerm] = useState('');
 
+  const [triggerRefresh, setTriggerRefresh] = useState(0);
+  const [selectedOverrideClass, setSelectedOverrideClass] = useState('BSITCPR323');
+  const [lockedMilestones, setLockedMilestones] = useState([]);
+
   useEffect(() => {
     setClassrooms(mockDb.getClassrooms().filter(c => c.status === 'active'));
     setPostedGrades(mockDb.getPostedGrades());
-  }, []);
+
+    const locked = JSON.parse(localStorage.getItem(`locked_milestones_${selectedOverrideClass}`) || '[]');
+    setLockedMilestones(locked);
+  }, [triggerRefresh, selectedOverrideClass]);
+
+  const handleApproveUnlock = (classCode, milestone) => {
+    // 1. Remove from locked milestones
+    const locked = JSON.parse(localStorage.getItem(`locked_milestones_${classCode}`) || '[]');
+    const updatedLocks = locked.filter(m => m !== milestone);
+    localStorage.setItem(`locked_milestones_${classCode}`, JSON.stringify(updatedLocks));
+    
+    // 2. Remove from pending unlock requests
+    const reqs = JSON.parse(localStorage.getItem(`unlock_requests_${classCode}`) || '[]');
+    const updatedReqs = reqs.filter(m => m !== milestone);
+    localStorage.setItem(`unlock_requests_${classCode}`, JSON.stringify(updatedReqs));
+    
+    // Refresh UI
+    setTriggerRefresh(prev => prev + 1);
+  };
 
   const getStatusBadge = (classId, period) => {
-    // A period is posted if there is any posted grade matching this classId and period
-    const isPosted = postedGrades.some(g => g.classRecordId === classId && g.gradePeriod === period);
+    const classroom = classrooms.find(cl => cl.id === classId);
+    const classCode = classroom ? classroom.subjectCode : '';
+    
+    const lockedMilestones = JSON.parse(localStorage.getItem(`locked_milestones_${classCode}`) || '[]');
+    const unlockRequests = JSON.parse(localStorage.getItem(`unlock_requests_${classCode}`) || '[]');
+    
+    const normalizedPeriod = period === 'prelim' ? 'Prelim' : period === 'midterm' ? 'Midterm' : period === 'final' ? 'Final' : period;
+    const isPosted = lockedMilestones.includes(normalizedPeriod) || lockedMilestones.includes('Semestral Grade');
+    const isRequested = unlockRequests.includes(normalizedPeriod);
     
     if (isPosted) {
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-          Posted
-        </span>
+        <div className="flex flex-col items-center gap-1.5 justify-center">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            Posted
+          </span>
+          {isRequested && (
+            <button
+              onClick={() => handleApproveUnlock(classCode, normalizedPeriod)}
+              className="px-2 py-0.5 text-[9px] font-extrabold bg-amber-500 hover:bg-amber-600 text-white rounded shadow-sm transition-colors flex items-center gap-1 animate-pulse outline-none"
+              title="Click to approve faculty request and unlock registry"
+            >
+              🔓 Approve Request
+            </button>
+          )}
+        </div>
       );
     }
+    
     return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
         Pending
       </span>
     );
@@ -63,6 +104,74 @@ export default function GradePostingStatus() {
       
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
         
+        {/* 🔑 Dean's Administrative Registry Override Dashboard */}
+        <div className="bg-amber-50/45 border border-amber-205 rounded-xl p-5 space-y-4 shadow-sm">
+          <div className="flex flex-wrap justify-between items-start gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                <span>🔑 Dean's Administrative Registry Overrides</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Select a class record to bypass registry locks and manually unlock any term milestone score entries.
+              </p>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Select</label>
+              <select
+                value={selectedOverrideClass}
+                onChange={(e) => setSelectedOverrideClass(e.target.value)}
+                className="bg-white border border-slate-200 hover:border-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all cursor-pointer text-slate-700 shadow-sm"
+              >
+                <option value="BSITCPR323">BSITCPR323 - Capstone 1</option>
+                <option value="IT101">IT101 - Intro to Computing</option>
+                <option value="IT201">IT201 - Data Structures</option>
+                <option value="CS301">CS301 - Artificial Intelligence</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="p-4 bg-white rounded-lg border border-amber-100/70 space-y-3 shadow-inner">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Registry Locks</span>
+              <div className="flex flex-wrap gap-1">
+                {lockedMilestones.length === 0 ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-250">
+                    No active locks
+                  </span>
+                ) : (
+                  lockedMilestones.map(m => (
+                    <span key={m} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 font-mono">
+                      🔒 {m}
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {lockedMilestones.length === 0 ? (
+              <p className="text-xs font-semibold text-slate-450 italic text-center py-2">This class currently has no locked milestones.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 pt-1">
+                {lockedMilestones.map(milestone => (
+                  <div key={milestone} className="flex justify-between items-center bg-slate-50/50 p-2.5 rounded-lg border border-slate-200 shadow-sm">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-slate-800">{milestone}</span>
+                      <span className="text-[9px] text-slate-405 font-mono mt-0.5">Status: LOCKED</span>
+                    </div>
+                    <button
+                      onClick={() => handleApproveUnlock(selectedOverrideClass, milestone)}
+                      className="px-2.5 py-1 text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors shadow-sm outline-none"
+                    >
+                      🔓 Unlock Override
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Filters Toolbar */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
