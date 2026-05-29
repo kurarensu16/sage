@@ -1,13 +1,21 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import StudentRow from '../../components/StudentRow';
 import PageHeader from '../../components/layout/PageHeader';
 import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2 } from 'lucide-react';
 
 export default function ScoreInput() {
+  const navigate = useNavigate();
   const [selectedClass, setSelectedClass] = useState('BSITCPR323');
   const [showBulkSavedMessage, setShowBulkSavedMessage] = useState(false);
   const [viewMode, setViewMode] = useState('All');
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [lockedMilestones, setLockedMilestones] = useState([]);
+
+  useEffect(() => {
+    const locked = JSON.parse(localStorage.getItem(`locked_milestones_${selectedClass}`) || '[]');
+    setLockedMilestones(locked);
+  }, [selectedClass]);
 
   // Maximum items configuration for activities and exams per period
   const [maxItems, setMaxItems] = useState({
@@ -171,6 +179,12 @@ export default function ScoreInput() {
     <>
       {/* Header */}
       <PageHeader title="Log Class Scores" breadcrumb="Faculty Portal">
+        <button 
+          onClick={() => navigate('/faculty/postedgradesview')}
+          className="px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-lg transition-all flex items-center gap-1.5"
+        >
+          🔒 View Posted Grades
+        </button>
         <button className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:border-sage-300 rounded-lg transition-colors bg-white flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" /> Export CSV Template
         </button>
@@ -352,10 +366,6 @@ export default function ScoreInput() {
                                 </th>
                               )}
                               
-                              {/* Action */}
-                              <th rowSpan={2} className="px-4 py-3 w-20">
-                                Action
-                              </th>
                           </tr>
                                                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
                              {/* text-slate-600 text-[9px] font-bold text-center */}
@@ -613,6 +623,7 @@ export default function ScoreInput() {
                               initialPeriods={student.periods}
                               viewMode={viewMode}
                               maxItems={maxItems}
+                              lockedMilestones={lockedMilestones}
                             />
                           ))}
                       </tbody>

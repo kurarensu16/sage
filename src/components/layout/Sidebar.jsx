@@ -1,8 +1,9 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { BookOpen, LayoutDashboard, Users, FileText, Bell, LogOut, Plus, Calendar, AlertCircle, BarChart3, Star, FileDown, Layers, BookMarked, Shield } from 'lucide-react';
+import { BookOpen, LayoutDashboard, Users, FileText, Bell, LogOut, Plus, Calendar, AlertCircle, BarChart3, Star, FileDown, Layers, BookMarked, Shield, ClipboardList } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import SageLogo from './SageLogo';
+
 
 export default function Sidebar({ isCollapsed }) {
   const location = useLocation();
@@ -31,6 +32,7 @@ export default function Sidebar({ isCollapsed }) {
     dean: [
       { to: '/dean/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/dean/gradepostingstatus', icon: BookOpen, label: 'Grading Status' },
+      { to: '/dean/remarkoverriderequests', icon: ClipboardList, label: 'Remark Requests' },
       { to: '/dean/gradedistribution', icon: BarChart3, label: 'Grade Distribution' },
       { to: '/dean/evalresultsoverview', icon: Star, label: 'Faculty Evaluations' },
       { to: '/dean/atriskstudents', icon: AlertCircle, label: 'At-Risk Students' },

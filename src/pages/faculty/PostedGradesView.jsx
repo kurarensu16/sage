@@ -11,15 +11,87 @@ import {
   AlertTriangle,
   ChevronDown,
   Maximize2,
-  Minimize2
+  Minimize2,
+  MessageSquare,
+  Send,
+  X
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+
 
 export default function PostedGradesView() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClass, setSelectedClass] = useState('BSITCPR323');
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [lockedMilestones, setLockedMilestones] = useState([]);
+  const [showDeanPanel, setShowDeanPanel] = useState(false);
+  const [unlockRequests, setUnlockRequests] = useState([]);
+
+  // Remark override request modal state
+  const [showRemarkModal, setShowRemarkModal] = useState(false);
+  const [remarkReqStudent, setRemarkReqStudent] = useState('');
+  const [remarkReqFrom, setRemarkReqFrom] = useState('Failed');
+  const [remarkReqTo, setRemarkReqTo] = useState('INC');
+  const [remarkReqNote, setRemarkReqNote] = useState('');
+  const [remarkReqSent, setRemarkReqSent] = useState(false);
+
+
+  useEffect(() => {
+    const locked = JSON.parse(localStorage.getItem(`locked_milestones_${selectedClass}`) || '[]');
+    if (locked.length === 0 && selectedClass === 'BSITCPR323') {
+      const demoLock = ['Prelim'];
+      localStorage.setItem(`locked_milestones_${selectedClass}`, JSON.stringify(demoLock));
+      setLockedMilestones(demoLock);
+    } else {
+      setLockedMilestones(locked);
+    }
+
+    const reqs = JSON.parse(localStorage.getItem(`unlock_requests_${selectedClass}`) || '[]');
+    setUnlockRequests(reqs);
+  }, [selectedClass]);
+
+  const handleRequestUnlock = (milestone) => {
+    const reqs = JSON.parse(localStorage.getItem(`unlock_requests_${selectedClass}`) || '[]');
+    if (!reqs.includes(milestone)) {
+      reqs.push(milestone);
+      localStorage.setItem(`unlock_requests_${selectedClass}`, JSON.stringify(reqs));
+      setUnlockRequests(reqs);
+    }
+  };
+
+  const handleSubmitRemarkRequest = () => {
+    if (!remarkReqStudent || !remarkReqNote.trim()) return;
+    const existing = JSON.parse(localStorage.getItem('remark_override_requests') || '[]');
+    const newReq = {
+      id: `ror-${Date.now()}`,
+      classCode: selectedClass,
+      subjectName: classesList.find(c => c.code === selectedClass)?.label.split(' - ')[1] || selectedClass,
+      facultyName: 'Reyes, Maria', // In real system: logged-in user
+      section: 'IT3A',
+      studentId: `stu-${remarkReqStudent}`,
+      studentName: remarkReqStudent,
+      computedGrade: '5.00', // Would be computed from actual scores
+      effectiveGrade: remarkReqTo === 'Passed' ? '3.00' : '5.00',
+      currentRemark: remarkReqFrom,
+      requestedRemark: remarkReqTo,
+      note: remarkReqNote,
+      requestedAt: new Date().toISOString(),
+      status: 'pending',
+      resolvedAt: null,
+    };
+    existing.push(newReq);
+    localStorage.setItem('remark_override_requests', JSON.stringify(existing));
+    setRemarkReqSent(true);
+    setTimeout(() => {
+      setShowRemarkModal(false);
+      setRemarkReqSent(false);
+      setRemarkReqStudent('');
+      setRemarkReqNote('');
+      setRemarkReqTo('INC');
+    }, 1800);
+  };
+
 
   // Escape key closes fullscreen
   useEffect(() => {
@@ -153,11 +225,20 @@ export default function PostedGradesView() {
   return (
     <>
       <PageHeader title="View Posted Grades" breadcrumb="Faculty Portal">
-        <button className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:border-sage-300 rounded-lg transition-colors bg-white flex items-center gap-2">
-          <Download className="h-4 w-4" /> Export PDF Report
+        <button 
+          onClick={() => navigate('/faculty/scoreinput')}
+          className="px-4 py-2 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm flex items-center gap-1.5"
+        >
+          📝 Input Scores
         </button>
-        <button className="px-4 py-2 text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:border-sage-300 rounded-lg transition-colors flex items-center gap-2">
-          <FileSpreadsheet className="h-4 w-4" /> Export CSV
+        <button 
+          onClick={() => navigate('/faculty/gradecomputationpreview')}
+          className="px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-lg transition-all flex items-center gap-1.5"
+        >
+          👁️ Computation Preview
+        </button>
+        <button className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:border-sage-300 rounded-lg transition-colors bg-white flex items-center gap-2">
+          <Download className="h-4 w-4" /> Export PDF
         </button>
       </PageHeader>
 
@@ -172,14 +253,57 @@ export default function PostedGradesView() {
           <span className="font-medium text-slate-900">{classesList.find(c => c.code === selectedClass)?.label} (Grades Locked)</span>
         </div>
 
-        {/* Lock Alert Banner */}
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-3">
-          <Lock className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
-          <div>
-            <h4 className="font-bold text-sm text-slate-800">Finalized Class Record</h4>
-            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-              Grades for this class record were posted on <strong>May 24, 2026 at 10:45 AM</strong>. To edit, modify, or correct any record entries, you must submit a formal Grade Correction Form to the College Dean.
-            </p>
+        {/* Dynamic Lock Alert Banner with Dean's Override Panel */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+          <div className="flex flex-wrap justify-between items-start gap-4">
+            <div className="flex gap-3">
+              <Lock className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
+              <div>
+                <h4 className="font-bold text-sm text-slate-800">Class Record Registry Lock</h4>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  Active registry locks are applied dynamically based on posted term milestones. To modify locked records, Dean approval is required.
+                </p>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {lockedMilestones.length === 0 ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold bg-emerald-50 border border-emerald-250 text-emerald-700">
+                      🔓 No Active Locks (Fully Editable)
+                    </span>
+                  ) : (
+                    lockedMilestones.map(m => {
+                      const hasRequested = unlockRequests.includes(m);
+                      return (
+                        <div key={m} className="inline-flex items-center gap-2 bg-rose-50/50 border border-rose-200 rounded-lg p-1.5 pr-2.5">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-55 border border-rose-250 text-rose-700 font-mono">
+                            🔒 {m} Posted
+                          </span>
+                          {hasRequested ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold bg-amber-50 border border-amber-250 text-amber-700">
+                              ⏳ Unlock Requested
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleRequestUnlock(m)}
+                              className="px-2 py-0.5 text-[9px] font-bold bg-white border border-slate-200 hover:border-sage-300 text-slate-650 hover:text-sage-700 rounded transition-colors outline-none"
+                            >
+                              📨 Request Unlock
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Request Remark Change button ── */}
+            <button
+              onClick={() => setShowRemarkModal(true)}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-300 rounded-lg transition-colors shadow-sm outline-none flex-shrink-0"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              Request Remark Change
+            </button>
           </div>
         </div>
 
@@ -312,10 +436,6 @@ export default function PostedGradesView() {
                               Remarks
                             </th>
                             
-                            {/* Action */}
-                            <th rowSpan={2} className="px-4 py-3 w-20">
-                              Action
-                            </th>
                         </tr>
                         
                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
@@ -384,7 +504,8 @@ export default function PostedGradesView() {
                               student={student} 
                               rowNo={idx + 1}
                               initialPeriods={student.periods}
-                              readOnly={true}
+                              readOnly={false}
+                              lockedMilestones={lockedMilestones}
                             />
                           ))
                         ) : (
@@ -400,7 +521,124 @@ export default function PostedGradesView() {
         </div>
 
       </div>
+
+      {/* ══════ Remark Override Request Modal ══════ */}
+      {showRemarkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+            onClick={() => setShowRemarkModal(false)}
+          />
+
+          <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md mx-4 p-6 space-y-5 z-10">
+            {/* Header */}
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-violet-500" />
+                  Request Remark Change
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Submit to Dean for approval. Grade row will be unlocked only after Dean approves.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowRemarkModal(false)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <X className="h-4 w-4 text-slate-400" />
+              </button>
+            </div>
+
+            {/* Student selector */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Student</label>
+              <select
+                value={remarkReqStudent}
+                onChange={e => setRemarkReqStudent(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 bg-white cursor-pointer"
+              >
+                <option value="">— Select a student —</option>
+                {activeStudents && activeStudents.map(s => (
+                  <option key={s.id} value={s.name}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Remark change */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Current Remark</label>
+                <select
+                  value={remarkReqFrom}
+                  onChange={e => setRemarkReqFrom(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 bg-white cursor-pointer"
+                >
+                  {['Passed','Failed','INC','FDA','Dropped'].map(r => <option key={r}>{r}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Change To</label>
+                <select
+                  value={remarkReqTo}
+                  onChange={e => setRemarkReqTo(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 bg-white cursor-pointer"
+                >
+                  {['Passed','Failed','INC','FDA','Dropped'].map(r => <option key={r}>{r}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Grace pass info */}
+            {remarkReqTo === 'Passed' && (
+              <div className="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2.5 text-xs text-violet-700">
+                <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-violet-500" />
+                <span>Grace Pass: if approved, effective grade will be recorded as <strong>3.00</strong> regardless of computed grade.</span>
+              </div>
+            )}
+
+            {/* Reason note */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Reason / Justification <span className="text-rose-500">*</span></label>
+              <textarea
+                rows={3}
+                value={remarkReqNote}
+                onChange={e => setRemarkReqNote(e.target.value)}
+                placeholder="Explain why this remark change is needed…"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 resize-none bg-white transition-colors"
+              />
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setShowRemarkModal(false)}
+                className="flex-1 px-4 py-2 text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmitRemarkRequest}
+                disabled={!remarkReqStudent || !remarkReqNote.trim() || remarkReqSent}
+                className={cn(
+                  'flex-1 px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2',
+                  remarkReqSent
+                    ? 'bg-emerald-500 text-white'
+                    : !remarkReqStudent || !remarkReqNote.trim()
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : 'bg-violet-600 hover:bg-violet-700 text-white shadow-sm'
+                )}
+              >
+                {remarkReqSent
+                  ? '✓ Request Sent'
+                  : <><Send className="h-3.5 w-3.5" /> Submit to Dean</>
+                }
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
-

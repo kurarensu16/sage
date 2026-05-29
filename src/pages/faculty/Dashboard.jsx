@@ -123,12 +123,6 @@ export default function Dashboard() {
           
           <div className="flex gap-4">
             <Link 
-              to="/faculty/classrecordcreate" 
-              className="px-5 py-3 text-sm font-semibold bg-sage-700/80 hover:bg-sage-600/90 text-white rounded-xl transition-all border border-sage-600/30 flex items-center gap-2 whitespace-nowrap"
-            >
-              <Plus className="h-4 w-4" /> Initialize Class
-            </Link>
-            <Link 
               to="/faculty/classrecordslist" 
               className="px-5 py-3 text-sm font-semibold bg-white text-sage-900 hover:bg-sage-50 rounded-xl transition-all shadow-md flex items-center gap-2 whitespace-nowrap"
             >
