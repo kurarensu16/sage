@@ -10,6 +10,13 @@ export default function GradeComputationPreview() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedClass, setSelectedClass] = useState('BSITCPR323');
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [selectedMilestone, setSelectedMilestone] = useState('Prelim');
+  const [lockedMilestones, setLockedMilestones] = useState([]);
+
+  useEffect(() => {
+    const locked = JSON.parse(localStorage.getItem(`locked_milestones_${selectedClass}`) || '[]');
+    setLockedMilestones(locked);
+  }, [selectedClass]);
 
   // Escape key closes fullscreen
   useEffect(() => {
@@ -137,6 +144,11 @@ export default function GradeComputationPreview() {
   const activeStudents = classStudents[selectedClass] || classStudents.IT101;
 
   const handlePostGrades = () => {
+    const currentLocked = JSON.parse(localStorage.getItem(`locked_milestones_${selectedClass}`) || '[]');
+    if (!currentLocked.includes(selectedMilestone)) {
+      currentLocked.push(selectedMilestone);
+    }
+    localStorage.setItem(`locked_milestones_${selectedClass}`, JSON.stringify(currentLocked));
     setShowConfirmModal(false);
     navigate('/faculty/postedgradesview');
   };
@@ -144,6 +156,12 @@ export default function GradeComputationPreview() {
   return (
     <>
       <PageHeader title="Computation Preview" breadcrumb="Faculty Portal">
+        <button 
+          onClick={() => navigate('/faculty/scoreinput')}
+          className="px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-lg transition-all flex items-center gap-1.5"
+        >
+          📝 Input Scores
+        </button>
         <button className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:border-sage-300 rounded-lg transition-colors bg-white flex items-center gap-2">
             <Download className="h-4 w-4" /> Export Report
         </button>
@@ -292,10 +310,6 @@ export default function GradeComputationPreview() {
                               Remarks
                             </th>
                             
-                            {/* Action */}
-                            <th rowSpan={2} className="px-4 py-3 w-20">
-                              Action
-                            </th>
                         </tr>
                         
                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
@@ -364,6 +378,7 @@ export default function GradeComputationPreview() {
                             rowNo={idx + 1}
                             initialPeriods={student.periods}
                             readOnly={true}
+                            lockedMilestones={lockedMilestones}
                           />
                         ))}
                     </tbody>
@@ -373,29 +388,70 @@ export default function GradeComputationPreview() {
         
         {/* Confirmation Modal */}
         {showConfirmModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
-                <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+                <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                     <div className="p-6">
-                        <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mb-4">
-                            <AlertTriangle className="h-6 w-6" />
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-full bg-sage-50 text-sage-600 flex items-center justify-center">
+                                <Send className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-900">Post Milestone Grades</h3>
+                                <p className="text-xs text-slate-455">Finalize scores and lock editing for chosen term milestones.</p>
+                            </div>
                         </div>
-                        <h3 className="text-xl font-bold font-display text-slate-900">Post Final Grades?</h3>
-                        <p className="text-sm text-slate-500 mt-2">
-                            You are about to post the Semestral grades for <strong>{classesList.find(c => c.code === selectedClass)?.label}</strong>. Once posted, you will no longer be able to edit these scores without an administrative override.
+
+                        <p className="text-xs text-slate-500 mb-4 bg-slate-50 p-3 rounded-lg border border-slate-100 leading-relaxed">
+                            Posting grades for <strong>{classesList.find(c => c.code === selectedClass)?.label}</strong>. Select the specific term milestone or final grade to publish:
                         </p>
+
+                        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                          {[
+                            { value: 'Prelim', label: 'Preliminary Grade', desc: 'Locks Quiz, Char (10%), and Exam (40%) scores for the Prelim period.' },
+                            { value: 'Midterm', label: 'Midterm Grade', desc: 'Locks Quiz, Char (10%), and Exam (40%) scores for the Midterm period.' },
+                            { value: 'Midterm Rating', label: 'Midterm Rating (MR)', desc: 'Finalizes the computed Midterm Rating. Locks both Prelim and Midterm columns.' },
+                            { value: 'Semi-Final', label: 'Semi-Final Grade', desc: 'Locks Quiz, Char (10%), and Exam (40%) scores for the Semi-Final period.' },
+                            { value: 'Final', label: 'Final Grade', desc: 'Locks Quiz, Char (10%), and Exam (40%) scores for the Final period.' },
+                            { value: 'Tentative Final Rating', label: 'Tentative Final Rating (TFR)', desc: 'Finalizes computed TFR. Locks both Semi-Final and Final columns.' },
+                            { value: 'Semestral Grade', label: 'Semestral Grade with GWA', desc: 'Locks all columns across all terms. Finalizes Semestral Grade (SG), GWA, and Remarks.' }
+                          ].map(milestone => (
+                            <button
+                              key={milestone.value}
+                              onClick={() => setSelectedMilestone(milestone.value)}
+                              className={cn(
+                                "w-full flex flex-col text-left p-3 rounded-xl border transition-all duration-200 outline-none",
+                                selectedMilestone === milestone.value 
+                                  ? "border-sage-500 bg-sage-50/50 ring-1 ring-sage-500/50 shadow-sm" 
+                                  : "border-slate-200 hover:border-sage-200 hover:bg-slate-50/50"
+                              )}
+                            >
+                              <div className="flex items-center justify-between w-full">
+                                <span className={cn("text-xs font-bold", selectedMilestone === milestone.value ? "text-sage-800" : "text-slate-700")}>
+                                  {milestone.label}
+                                </span>
+                                {selectedMilestone === milestone.value && (
+                                  <span className="w-2.5 h-2.5 rounded-full bg-sage-600"></span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-slate-400 mt-1 leading-normal">
+                                {milestone.desc}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
                     </div>
                     <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
                         <button 
                             onClick={() => setShowConfirmModal(false)}
-                            className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                            className="px-4 py-2 text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
                         >
                             Cancel
                         </button>
                         <button 
                             onClick={handlePostGrades}
-                            className="px-4 py-2 text-sm font-medium bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors shadow-sm"
+                            className="px-4 py-2 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
                         >
-                            Yes, Post Grades Now
+                            <Send className="h-3.5 w-3.5" /> Confirm & Post Grade
                         </button>
                     </div>
                 </div>

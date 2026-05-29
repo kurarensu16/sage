@@ -29,9 +29,9 @@ import DeanEvalResultsFaculty from './pages/dean/EvalResultsFaculty';
 import DeanAtRiskStudents from './pages/dean/AtRiskStudents';
 import DeanSummaryReports from './pages/dean/SummaryReports';
 import DeanNotifications from './pages/dean/Notifications';
+import DeanRemarkOverrideRequests from './pages/dean/RemarkOverrideRequests';
 import FacultyDashboard from './pages/faculty/Dashboard';
 import FacultyClassRecordsList from './pages/faculty/ClassRecordsList';
-import FacultyClassRecordCreate from './pages/faculty/ClassRecordCreate';
 import FacultyGradeComponentsSetup from './pages/faculty/GradeComponentsSetup';
 import FacultyScoreInput from './pages/faculty/ScoreInput';
 import FacultyGradeComputationPreview from './pages/faculty/GradeComputationPreview';
@@ -78,6 +78,7 @@ function App() {
           <Route path="/admin/settings" element={<Settings />} />
           <Route path="/dean/dashboard" element={<DeanDashboard />} />
           <Route path="/dean/gradepostingstatus" element={<DeanGradePostingStatus />} />
+          <Route path="/dean/remarkoverriderequests" element={<DeanRemarkOverrideRequests />} />
           <Route path="/dean/gradedistribution" element={<DeanGradeDistribution />} />
           <Route path="/dean/evalresultsoverview" element={<DeanEvalResultsOverview />} />
           <Route path="/dean/evalresultsfaculty" element={<DeanEvalResultsFaculty />} />
@@ -87,7 +88,6 @@ function App() {
           <Route path="/dean/settings" element={<Settings />} />
           <Route path="/faculty/dashboard" element={<FacultyDashboard />} />
           <Route path="/faculty/classrecordslist" element={<FacultyClassRecordsList />} />
-          <Route path="/faculty/classrecordcreate" element={<FacultyClassRecordCreate />} />
           <Route path="/faculty/gradecomponentssetup" element={<FacultyGradeComponentsSetup />} />
           <Route path="/faculty/scoreinput" element={<FacultyScoreInput />} />
           <Route path="/faculty/gradecomputationpreview" element={<FacultyGradeComputationPreview />} />
