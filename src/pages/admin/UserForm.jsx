@@ -165,6 +165,17 @@ export default function UserForm() {
           throw new Error(data.error);
         }
 
+        // Client-side fallback update to ensure user_number is persisted in public.users
+        if (data?.user?.id) {
+          const { error: updateErr } = await supabase
+            .from('users')
+            .update({ user_number: formData.userNumber.trim() })
+            .eq('user_id', data.user.id);
+          if (updateErr) {
+            console.error('Failed to set user number on new user profile client-side:', updateErr);
+          }
+        }
+
         await logActivity(
           'User Creation',
           `Registered new ${formData.role} account: ${formData.lastName}, ${formData.firstName} (${formData.email.trim().toLowerCase()}) — College: ${formData.department}${formData.role === 'student' ? `, Section: ${formData.section}, Year: ${formData.yearLevel}` : ''}.`,
@@ -186,15 +197,27 @@ export default function UserForm() {
       const year = new Date().getFullYear();
       const prefix = role === 'student' ? '' : role === 'admin' ? 'ADM-' : role === 'faculty' ? 'FAC-' : 'DN-';
       
-      const { count, error } = await supabase
+      const { data, error } = await supabase
         .from('users')
-        .select('*', { count: 'exact', head: true })
-        .eq('role', role);
+        .select('user_number')
+        .eq('role', role)
+        .not('user_number', 'is', null);
         
       if (error) throw error;
       
-      const nextSeq = String((count || 0) + 1).padStart(5, '0');
-      return `${prefix}${year}-${nextSeq}`;
+      const existingNumbers = new Set(data.map(u => u.user_number));
+      
+      let seq = 1;
+      let suggested = '';
+      while (true) {
+        const seqStr = String(seq).padStart(5, '0');
+        suggested = `${prefix}${year}-${seqStr}`;
+        if (!existingNumbers.has(suggested)) {
+          break;
+        }
+        seq++;
+      }
+      return suggested;
     } catch (e) {
       console.error('Failed to suggest user number:', e);
       const randomSeq = String(Math.floor(Math.random() * 90000) + 10000);

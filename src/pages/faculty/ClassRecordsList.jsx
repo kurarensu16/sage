@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, Filter, Users, Calendar, Clock, BookOpen, Settings, Edit3, ChevronRight, Eye, Plus, Lock } from 'lucide-react';
+import { Search, Filter, Users, Calendar, BookOpen, Settings, Edit3, Lock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
@@ -70,7 +70,7 @@ export default function ClassRecordsList() {
         });
 
         // Map classes to their visual representation
-        const mappedClasses = classesData.map((cls, idx) => {
+        const mappedClasses = classesData.map((cls) => {
           const matchingCols = (gradingCols || []).filter(col => col.class_record_id === cls.class_record_id);
           const matchingPosted = (postedGrades || []).filter(g => g.class_record_id === cls.class_record_id && g.is_locked);
 
@@ -92,14 +92,6 @@ export default function ClassRecordsList() {
             }
           }
 
-          // Generate consistent mock schedule and room since they are not in schema
-          const schedules = [
-            { schedule: 'MWF 9:00AM - 10:30AM', room: 'Lab 1' },
-            { schedule: 'TTh 1:00PM - 3:00PM', room: 'Lab 3' },
-            { schedule: 'MWF 1:00PM - 2:30PM', room: 'Lec 5' },
-            { schedule: 'TTh 9:00AM - 12:00PM', room: 'Lab 2' },
-          ];
-          const { schedule, room } = schedules[idx % schedules.length];
           const enrolledCount = enrolledCountsMap[`${cls.section_id}|${cls.subject_id}`] || 0;
 
           return {
@@ -107,8 +99,7 @@ export default function ClassRecordsList() {
             subjectCode: cls.subjects?.code || 'N/A',
             subjectName: cls.subjects?.name || 'N/A',
             section: cls.sections?.name || 'N/A',
-            schedule,
-            room,
+            units: cls.subjects?.units || 0,
             enrolled: enrolledCount,
             status: statusLabel,
             gradingPeriod,
@@ -236,12 +227,12 @@ export default function ClassRecordsList() {
                       {/* Card Body (Details) */}
                       <div className="p-5 flex-1 space-y-3">
                           <div className="flex items-center gap-3 text-sm text-slate-600">
-                              <Clock className="h-4 w-4 text-sage-500 flex-shrink-0" />
-                              <span>{cls.schedule}</span>
+                              <Calendar className="h-4 w-4 text-sage-500 flex-shrink-0" />
+                              <span>{cls.schoolYear} • {cls.semester} Sem</span>
                           </div>
                           <div className="flex items-center gap-3 text-sm text-slate-600">
-                              <Calendar className="h-4 w-4 text-sage-500 flex-shrink-0" />
-                              <span>{cls.room}</span>
+                              <BookOpen className="h-4 w-4 text-sage-500 flex-shrink-0" />
+                              <span>{cls.units} Units</span>
                           </div>
                           <div className="flex items-center gap-3 text-sm text-slate-600">
                               <Users className="h-4 w-4 text-sage-500 flex-shrink-0" />
