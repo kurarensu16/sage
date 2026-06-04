@@ -831,6 +831,16 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
             console.error(`Failed to register ${u.email}:`, invokeErr || data?.error);
             failCount++;
           } else {
+            // Client-side fallback update to ensure user_number is persisted in public.users
+            if (data?.user?.id) {
+              const { error: updateErr } = await supabase
+                .from('users')
+                .update({ user_number: u.userNumber })
+                .eq('user_id', data.user.id);
+              if (updateErr) {
+                console.error(`Failed to set user number client-side for ${u.email}:`, updateErr);
+              }
+            }
             successCount++;
           }
         }

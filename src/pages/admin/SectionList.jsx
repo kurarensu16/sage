@@ -6,6 +6,35 @@ import { supabase } from '../../lib/supabase';
 import * as XLSX from 'xlsx';
 import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
 
+const PROGRAM_NAMES = {
+  "BSA": "Bachelor of Science in Accountancy",
+  "BSAIS": "Bachelor of Science in Accounting Information System",
+  "BAPS": "Bachelor of Arts in Political Science",
+  "BSBA": "Bachelor of Science in Business Administration",
+  "BSBA-HRDM": "Bachelor of Science in Business Administration Major in Human Resource Development Management",
+  "BSBA-FM": "Bachelor of Science in Business Administration Major in Financial Management",
+  "BSBA-OM": "Bachelor of Science in Business Administration Major in Operations Management",
+  "BSBA-MM": "Bachelor of Science in Business Administration Major in Marketing Management",
+  "BSCS": "Bachelor of Science in Computer Science",
+  "BSCPE": "Bachelor of Science in Computer Engineering",
+  "BSIT": "Bachelor of Science in Information Technology",
+  "ACT": "Associate in Computer Technology",
+  "BEED": "Bachelor of Elementary Education",
+  "BSED-MATH": "Bachelor of Secondary Education Major in Mathematics",
+  "BSED-FIL": "Bachelor of Secondary Education Major in Filipino",
+  "BSED-ENG": "Bachelor of Secondary Education Major in English",
+  "BSED-SCI": "Bachelor of Secondary Education Major in Sciences",
+  "CPTE": "Continuing Professional Teacher Education",
+  "BSN": "Bachelor of Science in Nursing",
+  "BSM": "Bachelor of Science in Midwifery",
+  "BSHM": "Bachelor of Science in Hospitality Management",
+  "BSTM": "Bachelor of Science in Tourism Management",
+  "BSMT": "Bachelor of Science in Marine Transportation",
+  "BSMARE": "Bachelor of Science in Marine Engineering",
+  "BSME": "Bachelor of Science in Mechanical Engineering",
+  "BAPSYCH": "Bachelor of Arts in Psychology"
+};
+
 export default function SectionList() {
   const navigate = useNavigate();
   const [sections, setSections] = useState([]);
@@ -166,19 +195,15 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
         department = parts[3].trim();
         if (department === 'College of IT' || department === 'College of CS' || department === 'College of Computer Studies') {
           department = 'College of Computer Studies';
-          program = name.toUpperCase().startsWith('BSCS') 
-            ? 'Bachelor of Science in Computer Science' 
-            : 'Bachelor of Science in Information Technology';
-        } else {
-          program = 'General Program';
         }
+        const prefix = name.split('-')[0].toUpperCase();
+        program = PROGRAM_NAMES[prefix] || 'General Program';
       } else {
         if (department === 'College of IT' || department === 'College of CS') {
           department = 'College of Computer Studies';
-          program = program || (name.toUpperCase().startsWith('BSCS') 
-            ? 'Bachelor of Science in Computer Science' 
-            : 'Bachelor of Science in Information Technology');
         }
+        const prefix = name.split('-')[0].toUpperCase();
+        program = program || PROGRAM_NAMES[prefix] || 'General Program';
       }
 
       // Validate uniqueness in current parsed list & database
@@ -396,8 +421,8 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
                         {sec.department === 'College of IT' || sec.department === 'College of CS' ? 'College of Computer Studies' : sec.department}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-650 font-medium">
-                        {sec.program || (sec.name.startsWith('BSIT') ? 'Bachelor of Science in Information Technology' : sec.name.startsWith('BSCS') ? 'Bachelor of Science in Computer Science' : 'General Program')}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-655 font-medium">
+                        {sec.program || PROGRAM_NAMES[(sec.programPrefix || '').toUpperCase()] || 'General Program'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex justify-end gap-2">

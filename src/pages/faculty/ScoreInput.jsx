@@ -90,23 +90,20 @@ export default function ScoreInput() {
         if (crErr) throw crErr;
         setClassInfo(cr);
 
-        // 2. Fetch enrolled students
-        const { data: enrolls, error: enrollErr } = await supabase
-          .from('enrollments')
-          .select(`
-            student_id,
-            users!student_id ( user_id, first_name, last_name, email, user_number )
-          `)
+        // 2. Fetch all students in this section directly from the users table
+        const { data: sectionStudents, error: studentErr } = await supabase
+          .from('users')
+          .select('user_id, first_name, last_name, email, user_number')
           .eq('section_id', cr.section_id)
-          .eq('subject_id', cr.subject_id);
+          .eq('role', 'student');
 
-        if (enrollErr) throw enrollErr;
+        if (studentErr) throw studentErr;
 
-        const studentList = (enrolls || []).map((e, idx) => ({
-          id: e.users?.user_id || `temp-${idx}`,
-          studentNo: e.users?.user_number || (e.users?.email ? e.users.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
-          name: e.users ? `${e.users.last_name}, ${e.users.first_name}` : 'Unknown Student',
-          email: e.users?.email
+        const studentList = (sectionStudents || []).map((u, idx) => ({
+          id: u.user_id,
+          studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
+          name: `${u.last_name}, ${u.first_name}`,
+          email: u.email
         }));
         studentList.sort((a, b) => a.name.localeCompare(b.name));
         setStudents(studentList);
@@ -157,7 +154,8 @@ export default function ScoreInput() {
               'Semi-Final': {},
               Final: {},
               customRemarks: '',
-              remarksNote: ''
+              remarksNote: '',
+              dbSavedAt: null
             };
           }
           
@@ -171,6 +169,11 @@ export default function ScoreInput() {
             char: row.char_rating,
             exam: row.exam
           };
+
+          const rowTime = row.saved_at ? new Date(row.saved_at).getTime() : 0;
+          if (!scoresByStudent[row.student_id].dbSavedAt || rowTime > scoresByStudent[row.student_id].dbSavedAt) {
+            scoresByStudent[row.student_id].dbSavedAt = rowTime;
+          }
         });
 
         // 5. Fetch posted grades to check customRemarks/overrides
@@ -189,7 +192,8 @@ export default function ScoreInput() {
               'Semi-Final': {},
               Final: {},
               customRemarks: '',
-              remarksNote: ''
+              remarksNote: '',
+              dbSavedAt: null
             };
           }
           // The final semestral remark override
@@ -224,22 +228,43 @@ export default function ScoreInput() {
           
           const dbData = scoresByStudent[stud.id] || {};
           let draftPayload = {};
+          let hasLocalDraft = false;
           if (existingDraft) {
             try {
               draftPayload = JSON.parse(existingDraft);
+              hasLocalDraft = true;
             } catch {
               // Ignore local storage JSON parse errors
             }
           }
+
+          // Determine if we should prioritize the database scores
+          let useDbData = true;
+          if (hasLocalDraft && draftPayload.savedAt) {
+            const localTime = new Date(draftPayload.savedAt).getTime();
+            const dbTime = dbData.dbSavedAt || 0;
+            // If local draft is strictly newer than database save, use the local draft
+            if (localTime > dbTime) {
+              useDbData = false;
+            }
+          }
           
-          const merged = {
+          const merged = useDbData ? {
+            Prelim: dbData.Prelim || {},
+            Midterm: dbData.Midterm || {},
+            'Semi-Final': dbData['Semi-Final'] || {},
+            Final: dbData.Final || {},
+            customRemarks: dbData.customRemarks || '',
+            remarksNote: dbData.remarksNote || '',
+            savedAt: dbData.dbSavedAt ? new Date(dbData.dbSavedAt).toISOString() : new Date().toISOString()
+          } : {
             Prelim: { ...dbData.Prelim, ...draftPayload.Prelim },
             Midterm: { ...dbData.Midterm, ...draftPayload.Midterm },
             'Semi-Final': { ...dbData['Semi-Final'], ...draftPayload['Semi-Final'] },
             Final: { ...dbData.Final, ...draftPayload.Final },
             customRemarks: draftPayload.customRemarks || dbData.customRemarks || '',
             remarksNote: draftPayload.remarksNote || dbData.remarksNote || '',
-            savedAt: new Date().toISOString()
+            savedAt: draftPayload.savedAt || new Date().toISOString()
           };
           
           localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));

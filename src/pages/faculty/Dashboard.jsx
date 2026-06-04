@@ -1,20 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   BookOpen, 
   Users, 
-  Award, 
-  Clock, 
   AlertCircle, 
   Calendar, 
   ChevronRight, 
   ArrowRight, 
   CheckSquare, 
-  TrendingUp, 
-  FileText,
-  UserCheck,
-  Plus
+  FileText
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -33,7 +28,7 @@ export default function Dashboard() {
   });
   const [urgentTasks, setUrgentTasks] = useState([]);
   const [activities, setActivities] = useState([]);
-  const [todaysSchedule, setTodaysSchedule] = useState([]);
+
 
   useEffect(() => {
     async function fetchDashboardData() {
@@ -98,7 +93,7 @@ export default function Dashboard() {
           });
 
           // Map active handled sections
-          mappedClasses = classesData.map((cls, idx) => {
+          mappedClasses = classesData.map((cls) => {
             const matchingCols = (gradingCols || []).filter(col => col.class_record_id === cls.class_record_id);
             const matchingPosted = (postedGrades || []).filter(g => g.class_record_id === cls.class_record_id && g.is_locked);
             const hasSetup = matchingCols.length > 0;
@@ -120,15 +115,6 @@ export default function Dashboard() {
             } else {
               pendingGrades++;
             }
-
-            // Generate mock schedule and room consistent with records
-            const schedules = [
-              { schedule: 'MWF 9:00AM - 10:30AM', room: 'Lab 1' },
-              { schedule: 'TTh 1:00PM - 3:00PM', room: 'Lab 3' },
-              { schedule: 'MWF 1:00PM - 2:30PM', room: 'Lec 5' },
-              { schedule: 'TTh 9:00AM - 12:00PM', room: 'Lab 2' },
-            ];
-            const { schedule, room } = schedules[idx % schedules.length];
 
             // Build alerts
             if (!hasSetup) {
@@ -156,25 +142,18 @@ export default function Dashboard() {
               subjectCode: cls.subjects?.code || 'N/A',
               subjectName: cls.subjects?.name || 'N/A',
               section: cls.sections?.name || 'N/A',
-              schedule,
-              room,
+              units: cls.subjects?.units || 0,
               enrolled: enrolledCount,
               status: statusLabel,
-              gradingPeriod
+              gradingPeriod,
+              semester: cls.semester,
+              schoolYear: cls.school_year
             };
           });
         }
 
         // Set urgent tasks (merge setup alerts first, then encoding alerts)
         setUrgentTasks([...setupAlerts, ...gradingAlerts].slice(0, 4));
-
-        // Create schedule preview using first two classes
-        setTodaysSchedule(mappedClasses.slice(0, 2).map(c => ({
-          time: c.schedule,
-          subject: c.subjectCode,
-          section: c.section,
-          room: c.room
-        })));
 
         setClasses(mappedClasses);
 
@@ -439,7 +418,7 @@ export default function Dashboard() {
                   <thead>
                     <tr className="text-slate-400 text-xs font-semibold tracking-wider">
                       <th className="pb-3 font-medium">Class / Section</th>
-                      <th className="pb-3 font-medium">Schedule</th>
+                      <th className="pb-3 font-medium">Term / Units</th>
                       <th className="pb-3 font-medium text-center">Students</th>
                       <th className="pb-3 font-medium">Status</th>
                       <th className="pb-3 font-medium text-right">Actions</th>
@@ -453,8 +432,8 @@ export default function Dashboard() {
                           <div className="text-slate-400 text-[10px] font-normal truncate max-w-[180px]">{cls.subjectName}</div>
                         </td>
                         <td className="py-4 text-slate-500">
-                          <div>{cls.schedule}</div>
-                          <div className="text-[10px] text-slate-400">{cls.room}</div>
+                          <div>{cls.schoolYear} • {cls.semester} Sem</div>
+                          <div className="text-[10px] text-slate-400">{cls.units} Units</div>
                         </td>
                         <td className="py-4 text-center font-mono font-semibold text-slate-900">
                           {cls.enrolled}
@@ -496,34 +475,7 @@ export default function Dashboard() {
           {/* Right Column details (schedule preview & activities) */}
           <div className="space-y-6">
             
-            {/* Today's Schedule Card */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-sage-600" />
-                <h3 className="text-sm font-bold font-display text-slate-900">Today's Class Schedule</h3>
-              </div>
 
-              <div className="space-y-3">
-                {todaysSchedule.length === 0 ? (
-                  <div className="text-center py-6 text-slate-400 text-xs">
-                    No classes scheduled for today.
-                  </div>
-                ) : (
-                  todaysSchedule.map((sched, idx) => (
-                    <div key={idx} className="p-3 bg-slate-50 border border-slate-100 rounded-lg flex items-center justify-between text-xs">
-                      <div className="space-y-1">
-                        <div className="font-bold text-slate-900">{sched.subject} ({sched.section})</div>
-                        <div className="text-[10px] text-slate-400">{sched.room}</div>
-                      </div>
-                      <div className="text-right text-slate-500 font-medium whitespace-nowrap">
-                        <Clock className="h-3 w-3 inline mr-1 text-slate-400" />
-                        {sched.time.split(' - ')[0]}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
 
             {/* Recent Activities Panel */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">

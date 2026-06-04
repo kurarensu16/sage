@@ -83,23 +83,20 @@ export default function PostedGradesView() {
         if (crErr) throw crErr;
         setClassInfo(cr);
 
-        // 2. Fetch enrolled students
-        const { data: enrolls, error: enrollErr } = await supabase
-          .from('enrollments')
-          .select(`
-            student_id,
-            users!student_id ( user_id, first_name, last_name, email, user_number )
-          `)
+        // 2. Fetch all students in this section directly from the users table
+        const { data: sectionStudents, error: studentErr } = await supabase
+          .from('users')
+          .select('user_id, first_name, last_name, email, user_number')
           .eq('section_id', cr.section_id)
-          .eq('subject_id', cr.subject_id);
+          .eq('role', 'student');
 
-        if (enrollErr) throw enrollErr;
+        if (studentErr) throw studentErr;
 
-        const studentList = (enrolls || []).map((e, idx) => ({
-          id: e.users?.user_id || `temp-${idx}`,
-          studentNo: e.users?.user_number || (e.users?.email ? e.users.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
-          name: e.users ? `${e.users.last_name}, ${e.users.first_name}` : 'Unknown Student',
-          email: e.users?.email
+        const studentList = (sectionStudents || []).map((u, idx) => ({
+          id: u.user_id,
+          studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
+          name: `${u.last_name}, ${u.first_name}`,
+          email: u.email
         }));
         studentList.sort((a, b) => a.name.localeCompare(b.name));
         setStudents(studentList);
