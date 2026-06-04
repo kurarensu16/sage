@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useAuth } from '../../lib/AuthContext';
+import { supabase } from '../../lib/supabase';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   User, 
@@ -7,37 +9,82 @@ import {
   Sliders, 
   Database, 
   Save, 
-  RefreshCw, 
-  FileDown, 
   Check, 
   Eye, 
   EyeOff, 
-  AlertCircle,
-  BellRing
+  AlertCircle
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { mockDb } from '../../lib/mockDb';
 
 export default function Settings() {
   const location = useLocation();
   const path = location.pathname;
   const role = path.split('/')[1] || 'faculty';
 
+  const { profile } = useAuth();
+
   // State definitions
   const [activeTab, setActiveTab] = useState('profile');
   const [showPassword, setShowPassword] = useState({ old: false, new: false, confirm: false });
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState('');
-  
-  // Profile Form state
-  const [profileData, setProfileData] = useState({
-    name: '',
-    email: '',
-    phone: '0917-123-4567',
-    title: '',
-    department: '',
-    college: ''
-  });
+  const [submittingPassword, setSubmittingPassword] = useState(false);
+
+  // Role metadata default configs
+  const roleMeta = {
+    admin: {
+      name: 'Admin System Control',
+      email: 'admin@sage.edu.ph',
+      title: 'Administrator',
+      department: 'System Administration',
+      college: 'ICT Services Division'
+    },
+    faculty: {
+      name: 'Prof. Amanda Rivera',
+      email: 'a.rivera@sage.edu.ph',
+      title: 'Senior Faculty',
+      department: 'Department of Information Technology',
+      college: 'College of Computer Studies'
+    },
+    dean: {
+      name: 'Dr. Carlos Valdes',
+      email: 'c.valdes@sage.edu.ph',
+      title: 'College Dean',
+      department: 'Dean\'s Office',
+      college: 'College of Computer Studies'
+    },
+    student: {
+      name: 'Sarah Jenkins',
+      email: 's.jenkins@student.sage.edu',
+      title: 'BSIT - 3rd Year',
+      department: 'IT Department',
+      college: 'College of Computer Studies'
+    }
+  };
+
+  const defaultData = roleMeta[role] || roleMeta.faculty;
+
+  // Compute profile data on render dynamically (avoids useEffect setState cascade)
+  const profileData = (() => {
+    if (!profile) return defaultData;
+    const displayName = profile.first_name ? `${profile.first_name} ${profile.last_name}` : defaultData.name;
+    const displayTitle = (() => {
+      if (role === 'student') {
+        const prog = profile.program || '';
+        const year = profile.year_level || profile.yearLevel || '';
+        return [prog, year].filter(Boolean).join(' • ') || defaultData.title;
+      }
+      return profile.departments?.name || profile.department || profile.department_name || defaultData.title;
+    })();
+
+    return {
+      name: displayName,
+      email: profile.email || defaultData.email,
+      title: displayTitle,
+      department: profile.departments?.name || profile.department || profile.department_name || defaultData.department,
+      college: profile.departments?.name || profile.college || defaultData.college
+    };
+  })();
 
   // Password Form state
   const [passwordData, setPasswordData] = useState({
@@ -46,92 +93,34 @@ export default function Settings() {
     confirmPassword: ''
   });
 
-  // Preferences Toggles based on role
-  const [preferences, setPreferences] = useState({
-    emailAlerts: true,
-    systemSounds: false,
-    ewsNotifications: true, // student, faculty
-    gradeAlerts: true, // student
-    evalAlerts: true, // faculty, dean
-    backupReminder: true, // admin
-    autoSync: true, // admin
-    syncFrequency: 'daily' // admin
-  });
-
-  // Load profile meta data on mount/role change
-  useEffect(() => {
-    const roleMeta = {
-      admin: {
-        name: 'Admin System Control',
-        email: 'admin@sage.edu.ph',
-        phone: '0917-888-9999',
-        title: 'Administrator',
-        department: 'System Administration',
-        college: 'ICT Services Division'
-      },
-      faculty: {
-        name: 'Prof. Amanda Rivera',
-        email: 'a.rivera@sage.edu.ph',
-        phone: '0917-222-3333',
-        title: 'Senior Faculty',
-        department: 'Department of Information Technology',
-        college: 'College of Computer Studies'
-      },
-      dean: {
-        name: 'Dr. Carlos Valdes',
-        email: 'c.valdes@sage.edu.ph',
-        phone: '0917-444-5555',
-        title: 'College Dean',
-        department: 'Dean\'s Office',
-        college: 'College of Computer Studies'
-      },
-      student: {
-        name: 'Sarah Jenkins',
-        email: 's.jenkins@student.sage.edu',
-        phone: '0917-777-8888',
-        title: 'BSIT - 3rd Year',
-        department: 'IT Department',
-        college: 'College of Computer Studies'
-      }
+  // Helper for initializing preferences based on role
+  const getInitialPreferences = (currentRole) => {
+    const base = {
+      emailAlerts: true,
+      systemSounds: false,
+      ewsNotifications: true, // student, faculty
+      gradeAlerts: true, // student
+      evalAlerts: true, // faculty, dean
+      backupReminder: true, // admin
+      autoSync: true, // admin
+      syncFrequency: 'daily' // admin
     };
-
-    const data = roleMeta[role] || roleMeta.faculty;
-    setProfileData(data);
-
-    // Save preferences specific to role
-    if (role === 'admin') {
-      setPreferences(prev => ({ ...prev, emailAlerts: true, autoSync: true, backupReminder: true }));
-    } else if (role === 'dean') {
-      setPreferences(prev => ({ ...prev, emailAlerts: true, evalAlerts: true }));
-    } else if (role === 'faculty') {
-      setPreferences(prev => ({ ...prev, emailAlerts: true, ewsNotifications: true, evalAlerts: true }));
+    if (currentRole === 'admin') {
+      return { ...base, emailAlerts: true, autoSync: true, backupReminder: true };
+    } else if (currentRole === 'dean') {
+      return { ...base, emailAlerts: true, evalAlerts: true };
+    } else if (currentRole === 'faculty') {
+      return { ...base, emailAlerts: true, ewsNotifications: true, evalAlerts: true };
     } else {
-      setPreferences(prev => ({ ...prev, emailAlerts: true, ewsNotifications: true, gradeAlerts: true }));
+      return { ...base, emailAlerts: true, ewsNotifications: true, gradeAlerts: true };
     }
-  }, [role]);
-
-  // Handle saving profile changes
-  const handleSaveProfile = (e) => {
-    e.preventDefault();
-    setSaveError('');
-    setSaveSuccess(false);
-
-    if (!profileData.name.trim()) {
-      setSaveError('Name field cannot be empty.');
-      return;
-    }
-    if (!profileData.email.includes('@')) {
-      setSaveError('Please enter a valid email address.');
-      return;
-    }
-
-    // Success simulation
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 4000);
   };
 
+  // Preferences Toggles initialized lazily
+  const [preferences, setPreferences] = useState(() => getInitialPreferences(role));
+
   // Handle changing password
-  const handleSavePassword = (e) => {
+  const handleSavePassword = async (e) => {
     e.preventDefault();
     setSaveError('');
     setSaveSuccess(false);
@@ -149,51 +138,61 @@ export default function Settings() {
       return;
     }
 
-    // Success simulation
-    setSaveSuccess(true);
-    setPasswordData({ oldPassword: '', newPassword: '', confirmPassword: '' });
-    setTimeout(() => setSaveSuccess(false), 4000);
-  };
+    setSubmittingPassword(true);
 
-  // Admin database operation: Reset database
-  const handleResetDatabase = () => {
-    if (window.confirm('Are you sure you want to reset the mock database? All local updates, user registrations, and overrides will be reverted back to default seed data.')) {
-      localStorage.removeItem('sage_users');
-      localStorage.removeItem('sage_classrooms');
-      localStorage.removeItem('sage_eval_windows');
-      localStorage.removeItem('sage_eval_forms');
-      localStorage.removeItem('sage_subjects');
-      localStorage.removeItem('sage_sections');
-      localStorage.removeItem('sage_logs');
-      
-      // Force reload to re-seed and refresh
+    try {
+      // 1. Verify current password by logging in again in the background
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email: profileData.email,
+        password: passwordData.oldPassword
+      });
+
+      if (verifyError) {
+        setSaveError('Incorrect current password.');
+        setSubmittingPassword(false);
+        return;
+      }
+
+      // 2. Update password in Supabase Auth
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: passwordData.newPassword
+      });
+
+      if (updateError) {
+        setSaveError(updateError.message);
+        setSubmittingPassword(false);
+        return;
+      }
+
+      // 3. Update public.users must_change_password flag if needed
+      if (profile?.must_change_password) {
+        const { error: dbError } = await supabase
+          .from('users')
+          .update({ must_change_password: false })
+          .eq('user_id', profile.user_id);
+        
+        if (dbError) {
+          console.error('Error updating must_change_password flag:', dbError);
+        }
+      }
+
       setSaveSuccess(true);
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
+      setPasswordData({ oldPassword: '', newPassword: '', confirmPassword: '' });
+      setTimeout(() => setSaveSuccess(false), 4000);
+    } catch (err) {
+      console.error('Error changing password:', err);
+      setSaveError(err.message || 'An unexpected error occurred.');
+    } finally {
+      setSubmittingPassword(false);
     }
   };
 
-  // Admin database operation: Export JSON
-  const handleExportDatabase = () => {
-    const backup = {
-      users: mockDb.getUsers(),
-      classrooms: mockDb.getClassrooms(),
-      evalWindows: mockDb.getEvalWindows(),
-      evalForms: mockDb.getEvalForms(),
-      subjects: mockDb.getSubjects(),
-      sections: mockDb.getSections(),
-      logs: mockDb.getLogs(),
-      exportedAt: new Date().toISOString()
-    };
-
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup, null, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `SAGE_DB_Backup_${new Date().toISOString().slice(0, 10)}.json`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
+  // Supabase Database Connection Details
+  const dbConnectionDetails = {
+    url: 'https://ettnwknyhdhehoclrwwh.supabase.co',
+    status: 'Connected',
+    engine: 'PostgreSQL 15 (Supabase Cloud)',
+    rlsStatus: 'Inactive (Disabled for development phase)'
   };
 
   // Helper: check password strength
@@ -278,10 +277,10 @@ export default function Settings() {
             
             {/* PROFILE PANEL */}
             {activeTab === 'profile' && (
-              <form onSubmit={handleSaveProfile} className="p-6 flex flex-col justify-between flex-1 space-y-6">
+              <div className="p-6 flex flex-col justify-between flex-1 space-y-6">
                 <div>
                   <h3 className="text-lg font-bold text-slate-950 font-display">Personal Profile Information</h3>
-                  <p className="text-xs text-slate-500 mt-1">Manage details regarding your academic portal profile.</p>
+                  <p className="text-xs text-slate-500 mt-1">View details regarding your academic portal profile.</p>
                   
                   {/* Decorative role cards */}
                   <div className="mt-5 p-4 rounded-xl border border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -301,8 +300,9 @@ export default function Settings() {
                       <input 
                         type="text" 
                         value={profileData.name} 
-                        onChange={(e) => setProfileData({ ...profileData, name: e.target.value })}
-                        className="block w-full border border-slate-200 rounded-lg p-2.5 text-sm focus:ring-1 focus:ring-sage-500 focus:border-sage-500 transition-all outline-none"
+                        readOnly
+                        disabled
+                        className="block w-full border border-slate-200 rounded-lg p-2.5 text-sm bg-slate-50 text-slate-500 cursor-not-allowed select-none outline-none"
                         placeholder="Full Name"
                       />
                     </div>
@@ -311,33 +311,20 @@ export default function Settings() {
                       <input 
                         type="email" 
                         value={profileData.email} 
-                        onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
-                        className="block w-full border border-slate-200 rounded-lg p-2.5 text-sm focus:ring-1 focus:ring-sage-500 focus:border-sage-500 transition-all outline-none"
+                        readOnly
+                        disabled
+                        className="block w-full border border-slate-200 rounded-lg p-2.5 text-sm bg-slate-50 text-slate-500 cursor-not-allowed select-none outline-none"
                         placeholder="Email Address"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Contact Number</label>
-                      <input 
-                        type="text" 
-                        value={profileData.phone} 
-                        onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
-                        className="block w-full border border-slate-200 rounded-lg p-2.5 text-sm focus:ring-1 focus:ring-sage-500 focus:border-sage-500 transition-all outline-none"
-                        placeholder="Contact Number"
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-slate-100 flex justify-end">
-                  <button 
-                    type="submit"
-                    className="px-5 py-2 text-sm font-semibold bg-slate-900 text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2"
-                  >
-                    <Save className="h-4 w-4" /> Save Profile Details
-                  </button>
+                <div className="pt-4 border-t border-slate-100 flex items-center gap-2 text-slate-400">
+                  <AlertCircle className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                  <span className="text-[11px] font-medium">Official profile and registration details can only be modified by the Registrar or IT Services.</span>
                 </div>
-              </form>
+              </div>
             )}
 
             {/* SECURITY PANEL */}
@@ -426,9 +413,10 @@ export default function Settings() {
                 <div className="pt-4 border-t border-slate-100 flex justify-end">
                   <button 
                     type="submit"
-                    className="px-5 py-2 text-sm font-semibold bg-slate-900 text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2"
+                    disabled={submittingPassword}
+                    className="px-5 py-2 text-sm font-semibold bg-slate-900 text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Save className="h-4 w-4" /> Change Portal Password
+                    <Save className="h-4 w-4" /> {submittingPassword ? 'Updating Password...' : 'Change Portal Password'}
                   </button>
                 </div>
               </form>
@@ -606,45 +594,51 @@ export default function Settings() {
             {activeTab === 'database' && role === 'admin' && (
               <div className="p-6 flex flex-col justify-between flex-1 space-y-6">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-950 font-display">Database & Platform Maintenance</h3>
-                  <p className="text-xs text-slate-500 mt-1">Direct system management operations and file backups.</p>
+                  <h3 className="text-lg font-bold text-slate-950 font-display">Database & Platform Connection</h3>
+                  <p className="text-xs text-slate-550 mt-1">Status of the system's live database infrastructure connection.</p>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
-                    
-                    {/* Reset Database */}
-                    <div className="p-5 border border-rose-200 bg-rose-50/20 rounded-xl space-y-3">
-                      <div className="flex items-center gap-2 text-rose-800">
-                        <RefreshCw className="h-5 w-5" />
-                        <h4 className="text-sm font-bold">Reset Mock Database</h4>
+                  <div className="mt-6 space-y-4">
+                    {/* Connection Status Card */}
+                    <div className="p-5 border border-slate-200 bg-slate-50/50 rounded-xl space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Database className="h-5 w-5 text-sage-600" />
+                          <h4 className="text-sm font-bold text-slate-900">Database Engine</h4>
+                        </div>
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-250">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                          {dbConnectionDetails.status}
+                        </span>
                       </div>
-                      <p className="text-xs text-slate-550 leading-relaxed">
-                        Revert the entire mock database back to initial seeds. This will overwrite all users, audit logs, and classrooms in client local cache.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleResetDatabase}
-                        className="w-full sm:w-auto px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-colors"
-                      >
-                        Reset Storage Cache
-                      </button>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 text-xs">
+                        <div className="space-y-1">
+                          <span className="text-slate-400 font-medium">Service Provider / Engine:</span>
+                          <p className="font-bold text-slate-800">{dbConnectionDetails.engine}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-slate-400 font-medium">Database Host Address:</span>
+                          <p className="font-mono font-bold text-slate-800 select-all">{dbConnectionDetails.url}</p>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-200/60 pt-4 text-xs">
+                        <p className="text-slate-600 leading-relaxed">
+                          SAGE is fully configured to fetch and persist data on the live remote **Supabase PostgreSQL instance**. 
+                          Schema definitions, tables, functions, and relational integrity are controlled via automated migrations.
+                        </p>
+                      </div>
                     </div>
 
-                    {/* Export DB */}
-                    <div className="p-5 border border-slate-200 bg-slate-50/50 rounded-xl space-y-3">
-                      <div className="flex items-center gap-2 text-slate-800">
-                        <FileDown className="h-5 w-5" />
-                        <h4 className="text-sm font-bold">Export JSON Database Backup</h4>
+                    {/* Console Redirection Warning/Notice */}
+                    <div className="p-4 bg-blue-50/40 border border-blue-200 text-blue-800 rounded-xl text-xs flex gap-3">
+                      <AlertCircle className="h-4.5 w-4.5 text-blue-500 flex-shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="font-bold">Supabase Console Management</p>
+                        <p className="text-blue-600 leading-relaxed">
+                          Backup logs, user credentials, row-level security policies, and SQL scripts must be managed and inspected directly in the official **Supabase Dashboard Console** to safeguard system integrity.
+                        </p>
                       </div>
-                      <p className="text-xs text-slate-550 leading-relaxed">
-                        Save all mock users, sections, class records, and logged auditor actions into a serialized JSON backup file.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleExportDatabase}
-                        className="w-full sm:w-auto px-4 py-2 bg-slate-950 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 justify-center"
-                      >
-                        <FileDown className="h-3.5 w-3.5" /> Export DB Backup
-                      </button>
                     </div>
 
                   </div>
@@ -652,7 +646,7 @@ export default function Settings() {
 
                 <div className="pt-4 border-t border-slate-100 flex items-center gap-2 text-slate-400">
                   <AlertCircle className="h-4 w-4 text-slate-400 flex-shrink-0" />
-                  <span className="text-[11px] font-medium">Database schema auto-migrates and manages structures locally on browser storage.</span>
+                  <span className="text-[11px] font-medium">Production database seeding and tables are secured by encrypted server keys.</span>
                 </div>
               </div>
             )}

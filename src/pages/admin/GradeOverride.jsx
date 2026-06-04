@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, ShieldAlert, Check, X } from 'lucide-react';
-import { mockDb } from '../../lib/mockDb';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
 
 export default function GradeOverride() {
-  const [students, setStudents] = useState([]);
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [postedGrades, setPostedGrades] = useState([]);
+  const [adminProfile, setAdminProfile] = useState(null);
   
   // Override Modal State
   const [isOverrideOpen, setIsOverrideOpen] = useState(false);
@@ -18,31 +20,116 @@ export default function GradeOverride() {
   const [successMsg, setSuccessMsg] = useState('');
 
   useEffect(() => {
-    // Load student directory
-    const users = mockDb.getUsers();
-    setStudents(users.filter(u => u.role === 'student' && u.status === 'active'));
-  }, []);
+    async function getAdmin() {
+      if (user?.id) {
+        const { data } = await supabase
+          .from('users')
+          .select('first_name, last_name, email')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (data) {
+          setAdminProfile(data);
+        }
+      }
+    }
+    getAdmin();
+  }, [user]);
 
-  const handleSearchStudent = () => {
+  const fetchStudentGrades = async (studentId) => {
+    try {
+      const { data: gradesData, error: gradesErr } = await supabase
+        .from('posted_grades')
+        .select(`
+          posted_grade_id,
+          computed_grade,
+          effective_grade,
+          grade_period,
+          remarks,
+          remarks_note,
+          is_locked,
+          class_records (
+            class_record_id,
+            sections (name),
+            subjects (code, name)
+          )
+        `)
+        .eq('student_id', studentId);
+
+      if (gradesErr) throw gradesErr;
+
+      const mappedGrades = gradesData?.map(g => ({
+        id: g.posted_grade_id,
+        subjectCode: g.class_records?.subjects?.code || 'N/A',
+        section: g.class_records?.sections?.name || 'N/A',
+        gradePeriod: g.grade_period,
+        computedGrade: g.effective_grade !== null ? g.effective_grade : g.computed_grade,
+        remarks: g.remarks,
+        isLocked: g.is_locked
+      })) || [];
+
+      setPostedGrades(mappedGrades);
+    } catch (err) {
+      console.error('Failed to load grades:', err);
+      setErrorMsg('Failed to fetch student grades: ' + err.message);
+    }
+  };
+
+  const handleSearchStudent = async () => {
     setErrorMsg('');
     setSuccessMsg('');
     setSelectedStudent(null);
     setPostedGrades([]);
 
-    const match = students.find(s => 
-      s.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.id.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    if (!searchQuery.trim()) {
+      setErrorMsg('Please enter a search query.');
+      return;
+    }
 
-    if (match) {
-      setSelectedStudent(match);
-      const allGrades = mockDb.getPostedGrades();
-      const studentGrades = allGrades.filter(g => g.studentId === match.id);
-      setPostedGrades(studentGrades);
-    } else {
-      setErrorMsg('No active student found matching that search query.');
+    try {
+      const query = supabase
+        .from('users')
+        .select(`
+          user_id,
+          first_name,
+          last_name,
+          middle_name,
+          email,
+          role,
+          status,
+          departments (name)
+        `)
+        .eq('role', 'student')
+        .eq('status', 'active');
+      
+      const searchPattern = `%${searchQuery.trim()}%`;
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(searchQuery.trim());
+      let orFilter = `last_name.ilike.${searchPattern},first_name.ilike.${searchPattern},email.ilike.${searchPattern}`;
+      if (isUUID) {
+        orFilter += `,user_id.eq.${searchQuery.trim()}`;
+      }
+      
+      const { data: matchedUsers, error: userErr } = await query.or(orFilter);
+
+      if (userErr) throw userErr;
+
+      if (matchedUsers && matchedUsers.length > 0) {
+        const match = matchedUsers[0];
+        setSelectedStudent({
+          id: match.user_id,
+          firstName: match.first_name,
+          lastName: match.last_name,
+          middleName: match.middle_name,
+          email: match.email,
+          department: match.departments?.name || 'College of Computer Studies',
+        });
+
+        await fetchStudentGrades(match.user_id);
+      } else {
+        setErrorMsg('No active student found matching that search query.');
+      }
+    } catch (err) {
+      console.error('Lookup failed:', err);
+      setErrorMsg('Failed to lookup student: ' + err.message);
     }
   };
 
@@ -54,14 +141,13 @@ export default function GradeOverride() {
     setIsOverrideOpen(true);
   };
 
-  const handleSaveOverride = (e) => {
+  const handleSaveOverride = async (e) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
 
     const parsedGrade = parseFloat(newGradeVal);
 
-    // Validate Philippine GWA (1.00 to 5.00)
     if (isNaN(parsedGrade) || parsedGrade < 1.00 || parsedGrade > 5.00) {
       setErrorMsg('Invalid GWA Grade. Must be a decimal between 1.00 (highest) and 5.00 (failing).');
       return;
@@ -72,24 +158,53 @@ export default function GradeOverride() {
       return;
     }
 
-    // Determine remarks based on GWA: passing threshold is 3.00
     const remarks = parsedGrade <= 3.00 ? 'passed' : 'failed';
 
-    mockDb.overrideGrade(
-      selectedGrade.id,
-      parsedGrade,
-      remarks,
-      overrideReason.trim(),
-      'Admin System Control'
-    );
+    try {
+      const { error: updateErr } = await supabase
+        .from('posted_grades')
+        .update({
+          effective_grade: parsedGrade,
+          remarks: remarks,
+          remarks_note: overrideReason.trim(),
+          override_at: new Date().toISOString(),
+          override_by: user?.id,
+          is_locked: true
+        })
+        .eq('posted_grade_id', selectedGrade.id);
 
-    setIsOverrideOpen(false);
-    setSuccessMsg('Grade override submitted successfully. Action logged to audit service.');
-    
-    // Refresh student grades view
-    if (selectedStudent) {
-      const studentGrades = mockDb.getPostedGrades().filter(g => g.studentId === selectedStudent.id);
-      setPostedGrades(studentGrades);
+      if (updateErr) throw updateErr;
+
+      const actorName = adminProfile 
+        ? `${adminProfile.first_name} ${adminProfile.last_name}` 
+        : (user?.email || 'Admin System Control');
+
+      const oldGradeVal = selectedGrade.computedGrade;
+      const oldRemarksVal = selectedGrade.remarks;
+
+      const logMessage = `Overrode ${selectedStudent.lastName}, ${selectedStudent.firstName}'s ${selectedGrade.gradePeriod} grade in ${selectedGrade.subjectCode} from ${oldGradeVal.toFixed(2)} (${oldRemarksVal}) to ${parsedGrade.toFixed(2)} (${remarks}). Reason: ${overrideReason.trim()}.`;
+
+      const { error: logErr } = await supabase
+        .from('activity_logs')
+        .insert({
+          action: 'Grade Override',
+          message: logMessage,
+          actor: actorName
+        });
+
+      if (logErr) {
+        console.error('Failed to write activity log:', logErr);
+      }
+
+      setIsOverrideOpen(false);
+      setSuccessMsg('Grade override submitted successfully. Action logged to audit service.');
+      
+      if (selectedStudent) {
+        await fetchStudentGrades(selectedStudent.id);
+      }
+    } catch (err) {
+      console.error('Override failed:', err);
+      setErrorMsg('Failed to override grade: ' + err.message);
     }
   };
 

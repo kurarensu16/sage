@@ -1,16 +1,16 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import SageLogo from '../../components/layout/SageLogo';
 import { Mail, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
-import { mockDb } from '../../lib/mockDb';
+import { supabase } from '../../lib/supabase';
+import { logActivity } from '../../lib/auditLog';
 
 export default function ForgotPassword() {
-  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -19,17 +19,41 @@ export default function ForgotPassword() {
       return;
     }
 
-    const users = mockDb.getUsers();
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
+    try {
+      // 1. Check if user exists in the public users table
+      const { data: userProfile, error: profileError } = await supabase
+        .from('users')
+        .select('email, first_name, last_name')
+        .eq('email', email.trim().toLowerCase())
+        .maybeSingle();
 
-    if (!user) {
-      setErrorMsg('No active user account found matching that email.');
-      return;
+      if (profileError) throw profileError;
+
+      if (!userProfile) {
+        setErrorMsg('No active user account found matching that email.');
+        return;
+      }
+
+      // 2. Trigger password reset via Supabase Auth
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+        redirectTo: `${window.location.origin}/resetpassword`
+      });
+
+      if (resetError) throw resetError;
+
+      // 3. Log reset request to audit system
+      const displayName = `${userProfile.first_name} ${userProfile.last_name}`;
+      await logActivity(
+        'Password Reset Request',
+        `Password reset token requested for user ${userProfile.email}.`,
+        displayName
+      );
+
+      setIsSubmitted(true);
+    } catch (err) {
+      console.error('Password reset request error:', err);
+      setErrorMsg(err.message || 'An error occurred while sending the recovery link.');
     }
-
-    // Simulate sending recovery token
-    mockDb.addLog('Password Reset Request', `Password reset token requested for user ${user.email}.`, 'Public Account Service');
-    setIsSubmitted(true);
   };
 
   return (

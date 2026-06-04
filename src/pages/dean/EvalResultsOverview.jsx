@@ -1,117 +1,227 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, Star, ArrowRight, Award, GraduationCap, Filter } from 'lucide-react';
-import { mockDb } from '../../lib/mockDb';
-import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
+import { Search, Star, ArrowRight, Filter, Users, AlertTriangle, Building2 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
 
 export default function EvalResultsOverview() {
   const navigate = useNavigate();
-  
+  const { profile } = useAuth();
+
   const [facultyList, setFacultyList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [deptFilter, setDeptFilter] = useState('');
 
   useEffect(() => {
-    const users = mockDb.getUsers().filter(u => u.role === 'faculty');
-    const classrooms = mockDb.getClassrooms();
-    
-    // Enrich faculty data with classes taught and simulated ratings
-    const enriched = users.map(f => {
-      const classes = classrooms.filter(c => c.facultyId === f.id && c.status === 'active');
-      const subjectCodes = classes.map(c => `${c.subjectCode}-${c.section}`);
-      
-      // Seed rating: Amanda has 4.75, John has 4.18, others default to 4.50
-      let rating = 4.50;
-      if (f.id === 'usr-003') rating = 4.75;
-      if (f.id === 'usr-004') rating = 4.18;
+    // Wait until the dean's profile (and department_id) is loaded
+    if (!profile?.department_id) return;
 
-      return {
-        ...f,
-        subjectCodes,
-        sectionsCount: classes.length,
-        rating
-      };
-    });
+    let cancelled = false;
 
-    setFacultyList(enriched);
-  }, []);
+    async function load() {
+      try {
+        // 1. Fetch faculty scoped to the Dean's own college/department
+        const { data: facultyData, error: fErr } = await supabase
+          .from('users')
+          .select(`
+            user_id,
+            first_name,
+            last_name,
+            email,
+            department_id,
+            departments ( name )
+          `)
+          .eq('role', 'faculty')
+          .eq('department_id', profile.department_id)
+          .order('last_name');
 
-  const filteredFaculty = facultyList.filter(f => {
-    const matchesSearch = 
-      `${f.firstName} ${f.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      f.email.toLowerCase().includes(searchTerm.toLowerCase());
-      
-    // Normalise department comparison for legacy data
-    let fDept = f.department;
-    if (fDept === 'College of IT' || fDept === 'College of CS') {
-      fDept = 'College of Computer Studies';
+        if (fErr) throw fErr;
+
+        // 2. Fetch all evaluation windows with nested responses → ratings
+        const { data: windowData, error: wErr } = await supabase
+          .from('evaluation_windows')
+          .select(`
+            window_id,
+            faculty_id,
+            section_id,
+            is_closed,
+            sections ( name ),
+            evaluation_responses (
+              response_id,
+              evaluation_ratings (
+                rating,
+                criteria_id,
+                evaluation_criteria ( label, max_rating )
+              )
+            )
+          `);
+
+        if (wErr) throw wErr;
+
+        // 3. Aggregate per faculty: group windows → responses → ratings
+        //    Compute: overall avg rating, number of windows, sections taught
+        const aggregated = (facultyData || []).map(f => {
+          const myWindows = (windowData || []).filter(w => w.faculty_id === f.user_id);
+
+          // Gather all rating values across all windows
+          const allRatings = myWindows.flatMap(w =>
+            (w.evaluation_responses || []).flatMap(r =>
+              (r.evaluation_ratings || []).map(er => er.rating)
+            )
+          );
+
+          const rating = allRatings.length > 0
+            ? allRatings.reduce((acc, r) => acc + r, 0) / allRatings.length
+            : null;
+
+          const responseCount = myWindows.reduce(
+            (acc, w) => acc + (w.evaluation_responses?.length || 0), 0
+          );
+
+          const sectionCodes = myWindows
+            .filter(w => w.sections?.name)
+            .map(w => w.sections.name);
+
+          return {
+            id: f.user_id,
+            firstName: f.first_name,
+            lastName: f.last_name,
+            email: f.email,
+            department: f.departments?.name || '—',
+            sectionsCount: myWindows.length,
+            subjectCodes: [...new Set(sectionCodes)],
+            rating,
+            responseCount,
+            hasResponses: allRatings.length > 0,
+          };
+        });
+
+        if (!cancelled) {
+          setFacultyList(aggregated);
+          setError(null);
+        }
+      } catch (err) {
+        console.error('Error loading eval overview:', err);
+        if (!cancelled) setError('Could not load evaluation data from the database.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-    
-    let filterDept = deptFilter;
-    if (filterDept === 'College of IT' || filterDept === 'College of CS') {
-      filterDept = 'College of Computer Studies';
-    }
-    
-    const matchesDept = !filterDept || fDept === filterDept;
 
-    return matchesSearch && matchesDept;
-  });
+    load();
+    return () => { cancelled = true; };
+  }, [profile?.department_id]);
+
+  // ── Filtering — search only (dept is already scoped to dean's college) ───────
+  const filtered = facultyList.filter(f =>
+    `${f.firstName} ${f.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    f.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Dean's college label
+  const deanCollege = profile?.departments?.name || profile?.department_id || '—';
+
+  const ratingColor = (r) => {
+    if (r === null) return 'text-slate-400';
+    if (r >= 3.5) return 'text-emerald-700';
+    if (r >= 2.5) return 'text-amber-700';
+    return 'text-rose-700';
+  };
+
+  const ratingBg = (r) => {
+    if (r === null) return 'bg-slate-50 border-slate-200';
+    if (r >= 3.5) return 'bg-emerald-50 border-emerald-100';
+    if (r >= 2.5) return 'bg-amber-50 border-amber-100';
+    return 'bg-rose-50 border-rose-100';
+  };
 
   return (
     <>
       <PageHeader title="Faculty Evaluation Overview" breadcrumb="Dean Portal" />
-      
+
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
-        
-        {/* Filters and search */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
-            <Filter className="h-3.5 w-3.5 text-sage-600" /> Filter Options
-          </h3>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            
-            {/* Search */}
-            <div className="sm:col-span-2 relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-4 w-4 text-slate-400" />
+
+        {/* ── Error banner ── */}
+        {error && (
+          <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 text-xs text-amber-800 shadow-sm">
+            <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+            {error}
+          </div>
+        )}
+
+        {/* ── Stats strip ── */}
+        {!loading && (
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: 'Total Faculty', value: facultyList.length, color: 'text-sage-700', bg: 'bg-sage-50 border-sage-200' },
+              { label: 'With Responses', value: facultyList.filter(f => f.hasResponses).length, color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+              { label: 'Pending Evaluation', value: facultyList.filter(f => !f.hasResponses).length, color: 'text-amber-700', bg: 'bg-amber-50 border-amber-200' },
+            ].map(s => (
+              <div key={s.label} className={`rounded-xl border p-4 shadow-sm flex items-center gap-3 ${s.bg}`}>
+                <span className={`text-2xl font-extrabold font-mono ${s.color}`}>{s.value}</span>
+                <span className="text-xs font-semibold text-slate-600">{s.label}</span>
               </div>
-              <input 
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search faculty name or email..."
-                className="block w-full pl-9 pr-3 py-2 border border-slate-200 focus:border-sage-500 rounded-lg text-xs outline-none bg-slate-50/20 focus:bg-white transition-colors"
-              />
-            </div>
+            ))}
+          </div>
+        )}
 
-            {/* Department */}
-            <div className="flex flex-col gap-1">
-              <select
-                value={deptFilter}
-                onChange={(e) => setDeptFilter(e.target.value)}
-                className="block w-full border border-slate-200 px-3 py-2 rounded-lg text-xs bg-white outline-none cursor-pointer"
-              >
-                <option value="">All Colleges</option>
-                {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
-                  <option key={college} value={college}>{college}</option>
-                ))}
-              </select>
+        {/* ── Filters ── */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+              <Filter className="h-3.5 w-3.5 text-sage-600" /> Search Faculty
+            </h3>
+            {/* Dean's college badge — read-only scope indicator */}
+            <div className="flex items-center gap-1.5 bg-sage-50 border border-sage-200 text-sage-700 text-[10px] font-bold px-3 py-1.5 rounded-lg">
+              <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
+              {deanCollege}
             </div>
+          </div>
 
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-4 w-4 text-slate-400" />
+            </div>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Search faculty name or email..."
+              className="block w-full pl-9 pr-3 py-2 border border-slate-200 focus:border-sage-500 rounded-lg text-xs outline-none bg-slate-50/20 focus:bg-white transition-colors"
+            />
           </div>
         </div>
 
-        {/* Directory Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {filteredFaculty.length > 0 ? (
-            filteredFaculty.map((f) => (
-              <div 
-                key={f.id} 
+        {/* ── Loading skeleton ── */}
+        {loading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-pulse">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-slate-100" />
+                  <div className="space-y-2 flex-1">
+                    <div className="h-3 bg-slate-200 rounded w-3/4" />
+                    <div className="h-2 bg-slate-100 rounded w-1/2" />
+                  </div>
+                </div>
+                <div className="h-12 bg-slate-100 rounded-lg" />
+                <div className="h-8 bg-slate-100 rounded-lg" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Faculty Cards Grid ── */}
+        {!loading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {filtered.length > 0 ? filtered.map(f => (
+              <div
+                key={f.id}
                 className="bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-all p-6 flex flex-col justify-between space-y-5"
               >
-                {/* Header info */}
+                {/* Header */}
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-sage-50 border border-sage-200 text-sage-700 font-bold text-xs flex items-center justify-center font-mono">
@@ -124,10 +234,11 @@ export default function EvalResultsOverview() {
                       <p className="text-[10px] text-slate-500 font-mono mt-0.5">{f.email}</p>
                     </div>
                   </div>
-                  
+
                   {/* Rating badge */}
-                  <div className="flex items-center gap-1 bg-amber-50 border border-amber-100 text-amber-700 px-2 py-1 rounded-lg text-xs font-mono font-bold">
-                    <Star className="h-3.5 w-3.5 fill-current" /> {f.rating.toFixed(2)}
+                  <div className={`flex items-center gap-1 border px-2 py-1 rounded-lg text-xs font-mono font-bold ${ratingBg(f.rating)} ${ratingColor(f.rating)}`}>
+                    <Star className={`h-3.5 w-3.5 ${f.rating !== null ? 'fill-current' : ''}`} />
+                    {f.rating !== null ? f.rating.toFixed(2) : 'N/A'}
                   </div>
                 </div>
 
@@ -135,19 +246,25 @@ export default function EvalResultsOverview() {
                 <div className="space-y-2 border-t border-b border-slate-100 py-3 text-xs leading-normal">
                   <div className="flex justify-between">
                     <span className="text-slate-500 font-medium">Department:</span>
-                    <span className="font-bold text-slate-800">{f.department === 'College of IT' || f.department === 'College of CS' ? 'College of Computer Studies' : f.department}</span>
+                    <span className="font-bold text-slate-800 text-right max-w-[55%] truncate">{f.department}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500 font-medium">Active Sections:</span>
-                    <span className="font-bold text-slate-800">{f.sectionsCount} classes</span>
+                    <span className="text-slate-500 font-medium">Eval Windows:</span>
+                    <span className="font-bold text-slate-800">{f.sectionsCount} window{f.sectionsCount !== 1 ? 's' : ''}</span>
                   </div>
-                  
-                  {/* Sections list */}
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-medium">Responses Received:</span>
+                    <span className={`font-bold ${f.responseCount > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
+                      {f.responseCount} student{f.responseCount !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+
+                  {/* Section tags */}
                   {f.subjectCodes.length > 0 && (
                     <div className="pt-1 flex flex-wrap gap-1">
                       {f.subjectCodes.map(code => (
-                        <span 
-                          key={code} 
+                        <span
+                          key={code}
                           className="px-1.5 py-0.5 bg-slate-100 text-[10px] font-mono font-medium rounded text-slate-600 border border-slate-200"
                         >
                           {code}
@@ -155,9 +272,17 @@ export default function EvalResultsOverview() {
                       ))}
                     </div>
                   )}
+
+                  {/* No responses notice */}
+                  {!f.hasResponses && (
+                    <div className="flex items-center gap-1.5 mt-1 text-[10px] text-amber-600">
+                      <Users className="h-3 w-3" />
+                      <span>No student responses yet</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Drilldown button */}
+                {/* Drilldown */}
                 <button
                   onClick={() => navigate(`/dean/evalresultsfaculty?id=${f.id}`)}
                   className="w-full py-2.5 bg-slate-50 hover:bg-sage-600 text-slate-700 hover:text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-slate-200/50 hover:border-transparent"
@@ -165,13 +290,13 @@ export default function EvalResultsOverview() {
                   Inspect Ratings Dashboard <ArrowRight className="h-3.5 w-3.5" />
                 </button>
               </div>
-            ))
-          ) : (
-            <div className="col-span-full bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-400 text-sm">
-              No faculty evaluation overview cards found.
-            </div>
-          )}
-        </div>
+            )) : (
+              <div className="col-span-full bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-400 text-sm">
+                No faculty evaluation records found.
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
     </>

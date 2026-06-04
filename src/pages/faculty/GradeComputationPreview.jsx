@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import StudentRow from '../../components/StudentRow';
@@ -145,8 +145,8 @@ export default function GradeComputationPreview() {
 
   const handlePostGrades = () => {
     const currentLocked = JSON.parse(localStorage.getItem(`locked_milestones_${selectedClass}`) || '[]');
-    if (!currentLocked.includes(selectedMilestone)) {
-      currentLocked.push(selectedMilestone);
+    if (!currentLocked.includes('Semestral Grade')) {
+      currentLocked.push('Semestral Grade');
     }
     localStorage.setItem(`locked_milestones_${selectedClass}`, JSON.stringify(currentLocked));
     setShowConfirmModal(false);
@@ -396,48 +396,14 @@ export default function GradeComputationPreview() {
                                 <Send className="h-5 w-5" />
                             </div>
                             <div>
-                                <h3 className="text-lg font-bold text-slate-900">Post Milestone Grades</h3>
-                                <p className="text-xs text-slate-455">Finalize scores and lock editing for chosen term milestones.</p>
+                                <h3 className="text-lg font-bold text-slate-900">Post Semestral Grades</h3>
+                                <p className="text-xs text-slate-455">Finalize scores and lock editing for all term milestones.</p>
                             </div>
                         </div>
 
-                        <p className="text-xs text-slate-500 mb-4 bg-slate-50 p-3 rounded-lg border border-slate-100 leading-relaxed">
-                            Posting grades for <strong>{classesList.find(c => c.code === selectedClass)?.label}</strong>. Select the specific term milestone or final grade to publish:
-                        </p>
-
-                        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                          {[
-                            { value: 'Prelim', label: 'Preliminary Grade', desc: 'Locks Quiz, Char (10%), and Exam (40%) scores for the Prelim period.' },
-                            { value: 'Midterm', label: 'Midterm Grade', desc: 'Locks Quiz, Char (10%), and Exam (40%) scores for the Midterm period.' },
-                            { value: 'Midterm Rating', label: 'Midterm Rating (MR)', desc: 'Finalizes the computed Midterm Rating. Locks both Prelim and Midterm columns.' },
-                            { value: 'Semi-Final', label: 'Semi-Final Grade', desc: 'Locks Quiz, Char (10%), and Exam (40%) scores for the Semi-Final period.' },
-                            { value: 'Final', label: 'Final Grade', desc: 'Locks Quiz, Char (10%), and Exam (40%) scores for the Final period.' },
-                            { value: 'Tentative Final Rating', label: 'Tentative Final Rating (TFR)', desc: 'Finalizes computed TFR. Locks both Semi-Final and Final columns.' },
-                            { value: 'Semestral Grade', label: 'Semestral Grade with GWA', desc: 'Locks all columns across all terms. Finalizes Semestral Grade (SG), GWA, and Remarks.' }
-                          ].map(milestone => (
-                            <button
-                              key={milestone.value}
-                              onClick={() => setSelectedMilestone(milestone.value)}
-                              className={cn(
-                                "w-full flex flex-col text-left p-3 rounded-xl border transition-all duration-200 outline-none",
-                                selectedMilestone === milestone.value 
-                                  ? "border-sage-500 bg-sage-50/50 ring-1 ring-sage-500/50 shadow-sm" 
-                                  : "border-slate-200 hover:border-sage-200 hover:bg-slate-50/50"
-                              )}
-                            >
-                              <div className="flex items-center justify-between w-full">
-                                <span className={cn("text-xs font-bold", selectedMilestone === milestone.value ? "text-sage-800" : "text-slate-700")}>
-                                  {milestone.label}
-                                </span>
-                                {selectedMilestone === milestone.value && (
-                                  <span className="w-2.5 h-2.5 rounded-full bg-sage-600"></span>
-                                )}
-                              </div>
-                              <span className="text-[10px] text-slate-400 mt-1 leading-normal">
-                                {milestone.desc}
-                              </span>
-                            </button>
-                          ))}
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 leading-relaxed space-y-2">
+                            <p><strong>⚠️ Action is irreversible:</strong> Finalizing and posting will lock this class record (<strong>{classesList.find(c => c.code === selectedClass)?.label}</strong>) across all periods (Prelim, Midterm, Semi-Final, and Final).</p>
+                            <p>Once posted, these grades will be visible to students. Any subsequent changes will require formal Dean administrative override approval.</p>
                         </div>
                     </div>
                     <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
@@ -451,7 +417,7 @@ export default function GradeComputationPreview() {
                             onClick={handlePostGrades}
                             className="px-4 py-2 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
                         >
-                            <Send className="h-3.5 w-3.5" /> Confirm & Post Grade
+                            <Send className="h-3.5 w-3.5" /> Confirm & Post Grades
                         </button>
                     </div>
                 </div>

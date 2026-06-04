@@ -1,42 +1,154 @@
-import React from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { MessageSquare, Calendar, ChevronRight, CheckCircle2, Clock } from 'lucide-react';
+import { MessageSquare, Clock, CheckCircle2, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
+
+// Helper to compute SHA-256 hash for evaluation anonymity (FR25)
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 export default function EvalList() {
-  const evaluations = [
-    {
-      id: 1,
-      subjectCode: 'IT201',
-      subjectName: 'Data Structures and Algorithms',
-      instructor: 'Prof. Amanda Rivera',
-      status: 'Pending',
-      deadline: 'Jun 15, 2026',
-      daysLeft: 4,
-      avatarBg: 'bg-sage-100 text-sage-800'
-    },
-    {
-      id: 2,
-      subjectCode: 'MATH104',
-      subjectName: 'Discrete Mathematics',
-      instructor: 'Dr. Carlos Valdes',
-      status: 'Pending',
-      deadline: 'Jun 15, 2026',
-      daysLeft: 4,
-      avatarBg: 'bg-emerald-100 text-emerald-850'
-    },
-    {
-      id: 3,
-      subjectCode: 'IT101',
-      subjectName: 'Introduction to Computing',
-      instructor: 'Prof. Amanda Rivera',
-      status: 'Submitted',
-      deadline: 'Completed',
-      daysLeft: 0,
-      avatarBg: 'bg-sage-100 text-sage-800'
+  const { user, profile } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [evaluations, setEvaluations] = useState([]);
+  const [termLabel, setTermLabel] = useState('');
+
+  useEffect(() => {
+    async function loadActiveEvaluations() {
+      if (!user || !profile?.section_id) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const now = new Date().toISOString();
+
+        // 1. Fetch section information
+        const { data: currentSec } = await supabase
+          .from('sections')
+          .select('*')
+          .eq('section_id', profile.section_id)
+          .single();
+
+        if (currentSec) {
+          const semName = currentSec.semester === '1st' ? 'First' : currentSec.semester === '2nd' ? 'Second' : currentSec.semester;
+          setTermLabel(`Academic Year ${currentSec.school_year} — ${semName} Semester`);
+        }
+
+        // 2. Fetch open evaluation windows
+        const { data: windows, error: winErr } = await supabase
+          .from('evaluation_windows')
+          .select(`
+            window_id,
+            open_at,
+            close_at,
+            is_closed,
+            faculty_id,
+            faculty:users!evaluation_windows_faculty_id_fkey ( first_name, last_name )
+          `)
+          .eq('section_id', profile.section_id)
+          .lte('open_at', now)
+          .gte('close_at', now)
+          .eq('is_closed', false);
+
+        if (winErr) throw winErr;
+
+        if (!windows || windows.length === 0) {
+          setEvaluations([]);
+          setLoading(false);
+          return;
+        }
+
+        // 3. Fetch active class records for section to match subject details
+        const { data: classRecords } = await supabase
+          .from('class_records')
+          .select(`
+            class_record_id,
+            faculty_id,
+            subjects ( code, name )
+          `)
+          .eq('section_id', profile.section_id)
+          .eq('status', 'active');
+
+        // Map faculty_id -> subject details
+        const facultySubjectMap = {};
+        classRecords?.forEach(cr => {
+          if (cr.subjects && cr.faculty_id) {
+            facultySubjectMap[cr.faculty_id] = cr.subjects;
+          }
+        });
+
+        // 4. Compute tokens and check submissions
+        const tokens = await Promise.all(windows.map(async w => {
+          return await sha256(user.id + "_" + w.window_id);
+        }));
+
+        const { data: responses } = await supabase
+          .from('evaluation_responses')
+          .select('anonymous_token')
+          .in('anonymous_token', tokens);
+
+        const submittedTokens = new Set(responses?.map(r => r.anonymous_token) || []);
+
+        const list = await Promise.all(windows.map(async (win, idx) => {
+          const hasSubmitted = submittedTokens.has(tokens[idx]);
+          const subj = facultySubjectMap[win.faculty_id] || { code: 'N/A', name: 'Unknown Subject' };
+          const closeDate = new Date(win.close_at);
+          const daysLeft = Math.max(0, Math.ceil((closeDate - new Date()) / (1000 * 60 * 60 * 24)));
+          
+          const instructorName = win.faculty 
+            ? `${win.faculty.first_name} ${win.faculty.last_name}` 
+            : 'Unknown Instructor';
+
+          // Assign deterministic avatar colors
+          const avatarColors = [
+            'bg-sage-100 text-sage-800 border-sage-200',
+            'bg-emerald-100 text-emerald-850 border-emerald-200',
+            'bg-indigo-100 text-indigo-850 border-indigo-200',
+            'bg-sky-100 text-sky-850 border-sky-200'
+          ];
+          const colorClass = avatarColors[idx % avatarColors.length];
+
+          return {
+            id: win.window_id,
+            subjectCode: subj.code,
+            subjectName: subj.name,
+            instructor: instructorName,
+            status: hasSubmitted ? 'Submitted' : 'Pending',
+            deadline: closeDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+            daysLeft,
+            avatarBg: colorClass
+          };
+        }));
+
+        setEvaluations(list);
+
+      } catch (err) {
+        console.error('Error loading active evaluations:', err);
+      } finally {
+        setLoading(false);
+      }
     }
-  ];
+
+    loadActiveEvaluations();
+  }, [user, profile]);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
+          <p className="text-sm text-slate-500 font-medium font-sans">Loading evaluations...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -57,7 +169,9 @@ export default function EvalList() {
 
         {/* Evaluation list grid */}
         <div className="space-y-4">
-          <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Academic Year 2025-2026 — 1st Semester</h3>
+          {termLabel && (
+            <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">{termLabel}</h3>
+          )}
           
           <div className="grid grid-cols-1 gap-4">
             {evaluations.map((evalItem) => (
@@ -73,7 +187,7 @@ export default function EvalList() {
                 {/* Faculty Info Block */}
                 <div className="flex gap-4 items-center">
                   <div className={cn(
-                    "w-10 h-10 rounded-full flex items-center justify-center font-bold font-mono text-sm border",
+                    "w-10 h-10 rounded-full flex items-center justify-center font-bold font-mono text-xs border",
                     evalItem.avatarBg
                   )}>
                     {evalItem.instructor.split(' ').map(n => n[0]).filter(Boolean).slice(-2).join('')}
@@ -94,7 +208,7 @@ export default function EvalList() {
                       <div className="space-y-1">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">Deadline</span>
                         <div className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-                          <Clock className="h-3.5 w-3.5 text-amber-500" /> Closes in {evalItem.daysLeft} days
+                          <Clock className="h-3.5 w-3.5 text-amber-500" /> Closes in {evalItem.daysLeft} {evalItem.daysLeft === 1 ? 'day' : 'days'}
                         </div>
                       </div>
                     ) : (
@@ -110,7 +224,7 @@ export default function EvalList() {
                   {/* Actions button */}
                   {evalItem.status === 'Pending' ? (
                     <Link 
-                      to="/student/evalform"
+                      to={`/student/evalform?id=${evalItem.id}`}
                       className="px-4 py-2 text-xs font-bold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors flex items-center gap-1"
                     >
                       Evaluate <ChevronRight className="h-4 w-4" />
@@ -128,6 +242,13 @@ export default function EvalList() {
 
               </div>
             ))}
+            {evaluations.length === 0 && (
+              <div className="text-center py-16 bg-white border border-slate-200 rounded-xl">
+                <CheckCircle2 className="h-10 w-10 text-slate-350 mx-auto mb-3" />
+                <h3 className="text-sm font-bold text-slate-900">All appraisal forms completed</h3>
+                <p className="text-xs text-slate-400 mt-1">There are no pending scheduled evaluations for your section at this time.</p>
+              </div>
+            )}
           </div>
 
         </div>

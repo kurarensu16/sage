@@ -13,13 +13,13 @@ const STORAGE_KEYS = {
 
 // Seed Data
 const defaultUsers = [
-  { id: 'usr-001', lastName: 'System', firstName: 'Admin', middleName: 'Control', email: 'admin@sage.edu.ph', role: 'admin', department: 'College of Computer Studies', program: '', status: 'active' },
-  { id: 'usr-002', lastName: 'Valdes', firstName: 'Carlos', middleName: 'Mendoza', email: 'c.valdes@sage.edu.ph', role: 'dean', department: 'College of Computer Studies', program: '', status: 'active' },
-  { id: 'usr-003', lastName: 'Rivera', firstName: 'Amanda', middleName: 'Santos', email: 'a.rivera@sage.edu.ph', role: 'faculty', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', status: 'active' },
-  { id: 'usr-004', lastName: 'Doe', firstName: 'John', middleName: 'Smith', email: 'j.doe@sage.edu.ph', role: 'faculty', department: 'College of Computer Studies', program: 'Bachelor of Science in Computer Science', status: 'active' },
-  { id: 'usr-005', lastName: 'Jenkins', firstName: 'Sarah', middleName: 'Lee', email: 's.jenkins@student.sage.edu', role: 'student', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', section: 'BSIT-1A', yearLevel: '1st Year', status: 'active' },
-  { id: 'usr-006', lastName: 'Smith', firstName: 'John', middleName: 'Davis', email: 'j.smith@student.sage.edu', role: 'student', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', section: 'BSIT-2B', yearLevel: '2nd Year', status: 'active' },
-  { id: 'usr-007', lastName: 'Johnson', firstName: 'Mary', middleName: 'Cruz', email: 'm.johnson@student.sage.edu', role: 'student', department: 'College of Computer Studies', program: 'Bachelor of Science in Computer Science', section: 'BSCS-3A', yearLevel: '3rd Year', status: 'active' }
+  { id: 'usr-001', lastName: 'System', firstName: 'Admin', middleName: 'Control', email: 'admin@sage.edu.ph', role: 'admin', userNumber: 'ADM-2026-00001', department: 'College of Computer Studies', program: '', status: 'active' },
+  { id: 'usr-002', lastName: 'Valdes', firstName: 'Carlos', middleName: 'Mendoza', email: 'c.valdes@sage.edu.ph', role: 'dean', userNumber: 'DN-2026-00002', department: 'College of Computer Studies', program: '', status: 'active' },
+  { id: 'usr-003', lastName: 'Rivera', firstName: 'Amanda', middleName: 'Santos', email: 'a.rivera@sage.edu.ph', role: 'faculty', userNumber: 'FAC-2026-00003', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', status: 'active' },
+  { id: 'usr-004', lastName: 'Doe', firstName: 'John', middleName: 'Smith', email: 'j.doe@sage.edu.ph', role: 'faculty', userNumber: 'FAC-2026-00004', department: 'College of Computer Studies', program: 'Bachelor of Science in Computer Science', status: 'active' },
+  { id: 'usr-005', lastName: 'Jenkins', firstName: 'Sarah', middleName: 'Lee', email: 's.jenkins@student.sage.edu', role: 'student', userNumber: '2026-00005', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', section: 'BSIT-1A', yearLevel: '1st Year', status: 'active' },
+  { id: 'usr-006', lastName: 'Smith', firstName: 'John', middleName: 'Davis', email: 'j.smith@student.sage.edu', role: 'student', userNumber: '2026-00006', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', section: 'BSIT-2B', yearLevel: '2nd Year', status: 'active' },
+  { id: 'usr-007', lastName: 'Johnson', firstName: 'Mary', middleName: 'Cruz', email: 'm.johnson@student.sage.edu', role: 'student', userNumber: '2026-00007', department: 'College of Computer Studies', program: 'Bachelor of Science in Computer Science', section: 'BSCS-3A', yearLevel: '3rd Year', status: 'active' }
 ];
 
 const defaultClassrooms = [
@@ -208,6 +208,14 @@ export const mockDb = {
     } else {
       // Create
       user.id = `usr-${Math.random().toString(36).substr(2, 9)}`;
+      if (!user.userNumber) {
+        const year = new Date().getFullYear();
+        const role = user.role;
+        const prefix = role === 'student' ? '' : role === 'admin' ? 'ADM-' : role === 'faculty' ? 'FAC-' : 'DN-';
+        const sameRoleUsers = users.filter(u => u.role === role);
+        const nextSeq = String(sameRoleUsers.length + 1).padStart(5, '0');
+        user.userNumber = `${prefix}${year}-${nextSeq}`;
+      }
       users.push(user);
     }
     setToStorage(STORAGE_KEYS.USERS, users);

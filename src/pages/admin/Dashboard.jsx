@@ -14,7 +14,7 @@ import {
   ChevronRight,
   TrendingUp
 } from 'lucide-react';
-import { mockDb } from '../../lib/mockDb';
+import { supabase } from '../../lib/supabase';
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState({
@@ -24,32 +24,60 @@ export default function Dashboard() {
     archivedClasses: 0
   });
   const [recentLogs, setRecentLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Fetch data from local storage database
-    const users = mockDb.getUsers();
-    const classrooms = mockDb.getClassrooms();
-    const windows = mockDb.getEvalWindows();
-    const logs = mockDb.getLogs();
+    async function fetchDashboardData() {
+      try {
+        setLoading(true);
 
-    const activeWindowsCount = windows.filter(w => !w.isClosed).length;
-    const archivedCount = classrooms.filter(c => c.status === 'archived').length;
+        // Fetch counts directly
+        const { count: usersCount } = await supabase
+          .from('users')
+          .select('*', { count: 'exact', head: true });
+
+        const { count: archivedCount } = await supabase
+          .from('class_records')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'archived');
+
+        const { count: pendingCount } = await supabase
+          .from('class_records')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'active'); // Simulate pending posts for active classes
+
+        const { count: activeWindowsCount } = await supabase
+          .from('evaluation_windows')
+          .select('*', { count: 'exact', head: true })
+          .eq('is_closed', false);
+
+        setMetrics({
+          totalUsers: usersCount || 0,
+          activeWindows: activeWindowsCount || 0,
+          pendingPosts: pendingCount || 0,
+          archivedClasses: archivedCount || 0
+        });
+
+        // Fetch top 5 recent logs
+        const { data: logsData } = await supabase
+          .from('activity_logs')
+          .select('*')
+          .order('timestamp', { ascending: false })
+          .limit(5);
+
+        setRecentLogs(logsData || []);
+      } catch (err) {
+        console.error("Failed to load dashboard data", err);
+      } finally {
+        setLoading(false);
+      }
+    }
     
-    // Simulate pending grade posts: classes that are active but don't have all grades posted
-    // For simplicity, we count classes that have status active
-    const pendingCount = classrooms.filter(c => c.status === 'active').length;
-
-    setMetrics({
-      totalUsers: users.length,
-      activeWindows: activeWindowsCount,
-      pendingPosts: pendingCount,
-      archivedClasses: archivedCount
-    });
-
-    setRecentLogs(logs.slice(0, 5)); // Get top 5 recent activities
+    fetchDashboardData();
   }, []);
 
   const formatTimestamp = (isoString) => {
+    if (!isoString) return '';
     const date = new Date(isoString);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' - ' + date.toLocaleDateString();
   };

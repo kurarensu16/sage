@@ -1,24 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronRight, Save, Calendar, Clock, AlertCircle } from 'lucide-react';
-import { mockDb } from '../../lib/mockDb';
+import { ChevronRight, ChevronDown, Search, Save, Calendar, Clock, AlertCircle } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
+import SuccessModal from '../../components/SuccessModal';
+import { logActivity, resolveActorName } from '../../lib/auditLog';
 
 export default function EvalWindowForm() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, profile } = useAuth();
   const params = new URLSearchParams(location.search);
   const windowId = params.get('id');
 
   const [templates, setTemplates] = useState([]);
   const [facultyUsers, setFacultyUsers] = useState([]);
   const [classrooms, setClassrooms] = useState([]);
-  const [filteredClassrooms, setFilteredClassrooms] = useState([]);
 
   const [formData, setFormData] = useState({
     templateId: '',
     facultyId: '',
-    section: '',
+    sectionId: '',
     openAt: '',
     closeAt: ''
   });
@@ -26,57 +29,152 @@ export default function EvalWindowForm() {
   const [errorMsg, setErrorMsg] = useState('');
   const [isEditMode, setIsEditMode] = useState(false);
 
+  const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
+  const [successModalMessage, setSuccessModalMessage] = useState('');
+
+  const [departments, setDepartments] = useState([]);
+  const [selectedCollege, setSelectedCollege] = useState('');
+  const [schedulingMode, setSchedulingMode] = useState('single');
+
+  const [isFacultyDropdownOpen, setIsFacultyDropdownOpen] = useState(false);
+  const [facultySearchQuery, setFacultySearchQuery] = useState('');
+  const facultyDropdownRef = useRef(null);
+
   useEffect(() => {
-    // Load lists from mockDb
-    const tmpls = mockDb.getEvalTemplates();
-    const users = mockDb.getUsers();
-    const classes = mockDb.getClassrooms();
-
-    setTemplates(tmpls);
-    setFacultyUsers(users.filter(u => u.role === 'faculty' && u.status === 'active'));
-    setClassrooms(classes.filter(c => c.status === 'active'));
-
-    if (windowId) {
-      setIsEditMode(true);
-      const windows = mockDb.getEvalWindows();
-      const existing = windows.find(w => w.id === windowId);
-      if (existing) {
-        setFormData({
-          templateId: existing.templateId,
-          facultyId: existing.facultyId,
-          section: existing.section,
-          openAt: existing.openAt,
-          closeAt: existing.closeAt
-        });
-      } else {
-        setErrorMsg('Evaluation window scheduler entry not found.');
+    function handleClickOutside(event) {
+      if (facultyDropdownRef.current && !facultyDropdownRef.current.contains(event.target)) {
+        setIsFacultyDropdownOpen(false);
       }
     }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const { data: tmpls } = await supabase.from('evaluation_forms').select('form_id, title');
+        setTemplates(tmpls?.map(t => ({ id: t.form_id, title: t.title })) || []);
+
+        const { data: depts } = await supabase
+          .from('departments')
+          .select('department_id, name')
+          .order('name', { ascending: true });
+        setDepartments(depts || []);
+
+        const { data: facs } = await supabase
+          .from('users')
+          .select('user_id, first_name, last_name, email, department_id, departments(name)')
+          .eq('role', 'faculty');
+        setFacultyUsers(facs?.map(f => ({ 
+          id: f.user_id, 
+          firstName: f.first_name, 
+          lastName: f.last_name,
+          email: f.email,
+          department: f.departments?.name || '',
+          departmentId: f.department_id || ''
+        })) || []);
+
+        const { data: classRecords } = await supabase
+          .from('class_records')
+          .select(`
+            class_record_id,
+            faculty_id,
+            section_id,
+            sections (name, department_id, departments(name)),
+            subjects (code, name, department_id, departments(name))
+          `)
+          .eq('status', 'active');
+
+        setClassrooms(classRecords?.map(c => ({
+          id: c.class_record_id,
+          facultyId: c.faculty_id,
+          sectionId: c.section_id,
+          section: c.sections?.name || '',
+          sectionDept: c.sections?.departments?.name || '',
+          sectionDeptId: c.sections?.department_id || '',
+          subjectCode: c.subjects?.code || '',
+          subjectName: c.subjects?.name || '',
+          subjectDept: c.subjects?.departments?.name || '',
+          subjectDeptId: c.subjects?.department_id || ''
+        })) || []);
+
+        if (windowId) {
+          setIsEditMode(true);
+          const { data: existing, error } = await supabase
+            .from('evaluation_windows')
+            .select('*')
+            .eq('window_id', windowId)
+            .single();
+
+          if (error) throw error;
+          if (existing) {
+            setFormData({
+              templateId: existing.form_id,
+              facultyId: existing.faculty_id,
+              sectionId: existing.section_id,
+              openAt: existing.open_at.slice(0, 16),
+              closeAt: existing.close_at.slice(0, 16)
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load data:', err);
+        setErrorMsg('Failed to load form details.');
+      }
+    }
+    loadData();
   }, [windowId]);
 
-  // Dynamically filter sections when facultyId changes
-  useEffect(() => {
-    if (formData.facultyId) {
-      const filtered = classrooms.filter(c => c.facultyId === formData.facultyId);
-      setFilteredClassrooms(filtered);
-      
-      // Auto-reset section if it doesn't belong to the newly selected faculty
-      if (filtered.length > 0 && !filtered.some(c => c.section === formData.section)) {
-        setFormData(prev => ({ ...prev, section: '' }));
-      }
-    } else {
-      setFilteredClassrooms([]);
-      setFormData(prev => ({ ...prev, section: '' }));
-    }
-  }, [formData.facultyId, classrooms]);
 
-  const handleSubmit = (e) => {
+  const getFacultyName = (facId) => {
+    const fac = facultyUsers.find(f => f.id === facId);
+    return fac ? `${fac.firstName} ${fac.lastName}` : 'Unknown';
+  };
+
+  const handleClassSectionChange = (val) => {
+    if (!val) {
+      setFormData(prev => ({ ...prev, sectionId: '' }));
+      return;
+    }
+    const [sectionId, facultyId] = val.split('_');
+    setFormData(prev => ({
+      ...prev,
+      sectionId,
+      facultyId
+    }));
+  };
+
+  const handleCollegeChange = (collegeId) => {
+    setSelectedCollege(collegeId);
+    if (collegeId) {
+      const currentFac = facultyUsers.find(f => f.id === formData.facultyId);
+      if (currentFac && currentFac.departmentId !== collegeId) {
+        setFormData(prev => ({ ...prev, facultyId: '', sectionId: '' }));
+      }
+    }
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
-    if (!formData.templateId || !formData.facultyId || !formData.section || !formData.openAt || !formData.closeAt) {
-      setErrorMsg('Please complete all form fields.');
-      return;
+    if (schedulingMode === 'single') {
+      if (!formData.templateId || !formData.facultyId || !formData.sectionId || !formData.openAt || !formData.closeAt) {
+        setErrorMsg('Please complete all form fields.');
+        return;
+      }
+    } else {
+      if (!formData.templateId || !selectedCollege || !formData.openAt || !formData.closeAt) {
+        setErrorMsg('Please complete all batch form fields.');
+        return;
+      }
+      if (uniqueBatchPairs.length === 0) {
+        setErrorMsg('No active classrooms found in this college/department to schedule evaluations for.');
+        return;
+      }
     }
 
     const openDate = new Date(formData.openAt);
@@ -87,29 +185,132 @@ export default function EvalWindowForm() {
       return;
     }
 
-    // Get student count for selected classroom to set totalStudents count
-    const selectedClass = classrooms.find(
-      c => c.facultyId === formData.facultyId && c.section === formData.section
-    );
-    const totalStudentsCount = selectedClass ? selectedClass.enrolledCount : 35; // Fallback to 35 if not matched
+    try {
+      if (schedulingMode === 'single') {
+        const windowData = {
+          form_id: formData.templateId,
+          faculty_id: formData.facultyId,
+          section_id: formData.sectionId,
+          open_at: openDate.toISOString(),
+          close_at: closeDate.toISOString(),
+          is_closed: false,
+          created_by: user?.id
+        };
 
-    const windowData = {
-      templateId: formData.templateId,
-      facultyId: formData.facultyId,
-      section: formData.section,
-      openAt: formData.openAt,
-      closeAt: formData.closeAt,
-      totalStudents: totalStudentsCount,
-      isClosed: false
-    };
+        if (isEditMode) {
+          const { error } = await supabase
+            .from('evaluation_windows')
+            .update(windowData)
+            .eq('window_id', windowId);
+          if (error) throw error;
 
-    if (isEditMode) {
-      windowData.id = windowId;
+          const faculty = facultyUsers.find(f => f.id === formData.facultyId);
+          const facultyName = faculty ? `${faculty.firstName} ${faculty.lastName}` : 'Unknown';
+          await logActivity(
+            'Eval Window Update',
+            `Updated evaluation window for ${facultyName} (opens: ${new Date(formData.openAt).toLocaleString()}, closes: ${new Date(formData.closeAt).toLocaleString()}).`,
+            resolveActorName(profile, user)
+          );
+        } else {
+          const { error } = await supabase
+            .from('evaluation_windows')
+            .insert(windowData);
+          if (error) throw error;
+
+          const faculty = facultyUsers.find(f => f.id === formData.facultyId);
+          const facultyName = faculty ? `${faculty.firstName} ${faculty.lastName}` : 'Unknown';
+          const template = templates.find(t => t.id === formData.templateId);
+          const templateTitle = template ? template.title : 'Unknown Template';
+          await logActivity(
+            'Eval Window Creation',
+            `Scheduled evaluation window for ${facultyName} using template "${templateTitle}" (opens: ${new Date(formData.openAt).toLocaleString()}, closes: ${new Date(formData.closeAt).toLocaleString()}).`,
+            resolveActorName(profile, user)
+          );
+        }
+        setSuccessModalMessage(isEditMode ? "Evaluation window updated successfully!" : "Evaluation window scheduled successfully!");
+      } else {
+        // Batch Mode scheduling
+        const insertData = uniqueBatchPairs.map(pair => ({
+          form_id: formData.templateId,
+          faculty_id: pair.facultyId,
+          section_id: pair.sectionId,
+          open_at: openDate.toISOString(),
+          close_at: closeDate.toISOString(),
+          is_closed: false,
+          created_by: user?.id
+        }));
+
+        const { error } = await supabase
+          .from('evaluation_windows')
+          .insert(insertData);
+        if (error) throw error;
+
+        const collegeObj = departments.find(d => d.department_id === selectedCollege);
+        const collegeName = collegeObj ? collegeObj.name : 'Unknown';
+        const template = templates.find(t => t.id === formData.templateId);
+        const templateTitle = template ? template.title : 'Unknown Template';
+
+        await logActivity(
+          'Eval Window Batch Creation',
+          `Scheduled batch evaluations for ${collegeName} (Total: ${uniqueBatchPairs.length} classes) using template "${templateTitle}" (opens: ${new Date(formData.openAt).toLocaleString()}, closes: ${new Date(formData.closeAt).toLocaleString()}).`,
+          resolveActorName(profile, user)
+        );
+
+        setSuccessModalMessage(`Successfully scheduled evaluations for ${uniqueBatchPairs.length} active classes in ${collegeName}!`);
+      }
+      setIsSuccessModalOpen(true);
+    } catch (err) {
+      console.error('Error saving window(s):', err);
+      setErrorMsg('Error saving window(s): ' + err.message);
     }
-
-    mockDb.saveEvalWindow(windowData);
-    navigate('/admin/evalwindowlist');
   };
+
+  const selectedFaculty = facultyUsers.find(f => f.id === formData.facultyId);
+  const facultyClassesCount = classrooms.filter(c => c.facultyId === formData.facultyId).length;
+  
+  const filteredClassrooms = classrooms.filter(c => {
+    if (formData.facultyId && c.facultyId !== formData.facultyId) {
+      return false;
+    }
+    if (selectedCollege && c.sectionDeptId !== selectedCollege && c.subjectDeptId !== selectedCollege) {
+      return false;
+    }
+    return true;
+  });
+
+  const filteredFaculty = facultyUsers.filter(fac => {
+    if (selectedCollege && fac.departmentId !== selectedCollege) {
+      return false;
+    }
+    const search = facultySearchQuery.toLowerCase();
+    return (
+      `${fac.firstName} ${fac.lastName}`.toLowerCase().includes(search) ||
+      (fac.email && fac.email.toLowerCase().includes(search)) ||
+      (fac.department && fac.department.toLowerCase().includes(search))
+    );
+  });
+
+  // Unique (faculty_id, section_id) pairs in selected college for batch scheduling
+  const batchClassrooms = classrooms.filter(c => 
+    selectedCollege && (c.sectionDeptId === selectedCollege || c.subjectDeptId === selectedCollege)
+  );
+  const uniqueBatchPairs = [];
+  const seenPairs = new Set();
+  batchClassrooms.forEach(c => {
+    const key = `${c.facultyId}_${c.sectionId}`;
+    if (!seenPairs.has(key)) {
+      seenPairs.add(key);
+      uniqueBatchPairs.push({
+        facultyId: c.facultyId,
+        sectionId: c.sectionId,
+        section: c.section,
+        subjectCode: c.subjectCode,
+        subjectName: c.subjectName,
+        sectionDept: c.sectionDept,
+        subjectDept: c.subjectDept
+      });
+    }
+  });
 
   return (
     <>
@@ -149,6 +350,40 @@ export default function EvalWindowForm() {
           </div>
 
           <div className="space-y-4">
+            {/* Mode Toggle Switch */}
+            {!isEditMode && (
+              <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSchedulingMode('single');
+                    setErrorMsg('');
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                    schedulingMode === 'single'
+                      ? 'bg-white text-slate-800 shadow-sm border border-slate-150'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Single Class Window
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSchedulingMode('batch');
+                    setErrorMsg('');
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                    schedulingMode === 'batch'
+                      ? 'bg-white text-slate-800 shadow-sm border border-slate-150'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Batch Schedule College
+                </button>
+              </div>
+            )}
+
             {/* Select Template */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Evaluation Form Template <span className="text-rose-500">*</span></label>
@@ -156,7 +391,7 @@ export default function EvalWindowForm() {
                 required
                 value={formData.templateId}
                 onChange={(e) => setFormData({...formData, templateId: e.target.value})}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer font-sans"
               >
                 <option value="">Select evaluation template...</option>
                 {templates.map((tmpl) => (
@@ -165,42 +400,222 @@ export default function EvalWindowForm() {
               </select>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Select Faculty */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Instructor <span className="text-rose-500">*</span></label>
-                <select
-                  required
-                  value={formData.facultyId}
-                  onChange={(e) => setFormData({...formData, facultyId: e.target.value})}
-                  className="block w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
-                >
-                  <option value="">Select instructor...</option>
-                  {facultyUsers.map((fac) => (
-                    <option key={fac.id} value={fac.id}>Prof. {fac.firstName} {fac.lastName}</option>
-                  ))}
-                </select>
+            {/* Filter by College */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                {schedulingMode === 'batch' ? 'Target College/Department' : 'Filter by College/Department'} {schedulingMode === 'batch' && <span className="text-rose-500">*</span>}
+              </label>
+              <select
+                required={schedulingMode === 'batch'}
+                value={selectedCollege}
+                onChange={(e) => handleCollegeChange(e.target.value)}
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer font-sans"
+              >
+                <option value="">{schedulingMode === 'batch' ? 'Select college/department...' : 'All Colleges / Departments'}</option>
+                {departments.map((dept) => (
+                  <option key={dept.department_id} value={dept.department_id}>
+                    {dept.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {schedulingMode === 'single' ? (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Select Faculty */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Instructor <span className="text-rose-500">*</span></label>
+                    <div className="relative" ref={facultyDropdownRef}>
+                      <button
+                        type="button"
+                        onClick={() => setIsFacultyDropdownOpen(!isFacultyDropdownOpen)}
+                        className="w-full flex items-center justify-between bg-white border border-slate-200 px-3.5 py-2.5 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 focus:ring-1 focus:ring-sage-500 outline-none transition-all cursor-pointer text-left font-sans"
+                      >
+                        {selectedFaculty ? (
+                          <span className="text-slate-900 font-medium">
+                            Prof. {selectedFaculty.firstName} {selectedFaculty.lastName}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">Select instructor...</span>
+                        )}
+                        <ChevronDown className="h-4 w-4 text-slate-400" />
+                      </button>
+
+                      {isFacultyDropdownOpen && (
+                        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden flex flex-col max-h-72">
+                          <div className="p-2 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+                            <Search className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                            <input
+                              type="text"
+                              value={facultySearchQuery}
+                              onChange={(e) => setFacultySearchQuery(e.target.value)}
+                              placeholder="Search by name, email, or department..."
+                              className="w-full bg-transparent border-none text-xs outline-none focus:ring-0 placeholder-slate-400 text-slate-700 font-sans"
+                              autoFocus
+                            />
+                            {facultySearchQuery && (
+                              <button 
+                                type="button" 
+                                onClick={() => setFacultySearchQuery('')}
+                                className="text-xs text-slate-400 hover:text-slate-600 font-bold px-1"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="overflow-y-auto flex-1 max-h-56 divide-y divide-slate-50 table-container">
+                            {filteredFaculty.length > 0 ? (
+                              filteredFaculty.map((fac) => {
+                                const initials = `${fac.firstName?.[0] || ''}${fac.lastName?.[0] || ''}`.toUpperCase();
+                                const isSelected = formData.facultyId === fac.id;
+                                return (
+                                  <button
+                                    key={fac.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setFormData(prev => ({ ...prev, facultyId: fac.id, sectionId: '' }));
+                                      setIsFacultyDropdownOpen(false);
+                                      setFacultySearchQuery('');
+                                    }}
+                                    className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left transition-colors ${
+                                      isSelected ? 'bg-sage-50' : ''
+                                    }`}
+                                  >
+                                    <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold font-display flex-shrink-0 ${
+                                      isSelected ? 'bg-sage-600 text-white' : 'bg-slate-100 text-slate-600'
+                                    }`}>
+                                      {initials}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <p className={`text-xs font-semibold truncate ${
+                                        isSelected ? 'text-sage-800' : 'text-slate-800'
+                                      }`}>
+                                        Prof. {fac.firstName} {fac.lastName}
+                                      </p>
+                                      <p className="text-[10px] text-slate-400 truncate mt-0.5 font-sans">
+                                        {fac.email} {fac.department ? `• ${fac.department}` : ''}
+                                      </p>
+                                    </div>
+                                  </button>
+                                );
+                              })
+                            ) : (
+                              <div className="p-4 text-center text-xs text-slate-400 font-sans">
+                                No instructors found
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                {/* Select Section */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Class Section <span className="text-rose-500">*</span></label>
+                  <select
+                    required
+                    value={formData.sectionId && formData.facultyId ? `${formData.sectionId}_${formData.facultyId}` : ''}
+                    onChange={(e) => handleClassSectionChange(e.target.value)}
+                    className="block w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer font-sans"
+                  >
+                    <option value="">Select section...</option>
+                    {filteredClassrooms.map((cls) => {
+                      const deptLabel = cls.subjectDept || cls.sectionDept;
+                      return (
+                        <option key={cls.id} value={`${cls.sectionId}_${cls.facultyId}`}>
+                          {deptLabel ? `[${deptLabel}] ` : ''}{cls.section} - {cls.subjectCode} ({cls.subjectName}){!formData.facultyId ? ` — Prof. ${getFacultyName(cls.facultyId)}` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
               </div>
 
-              {/* Select Section */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Class Section <span className="text-rose-500">*</span></label>
-                <select
-                  required
-                  disabled={!formData.facultyId}
-                  value={formData.section}
-                  onChange={(e) => setFormData({...formData, section: e.target.value})}
-                  className="block w-full bg-white disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed border border-slate-200 px-3.5 py-2.5 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
-                >
-                  <option value="">Select section...</option>
-                  {filteredClassrooms.map((cls) => (
-                    <option key={cls.id} value={cls.section}>
-                      {cls.section} - {cls.subjectCode} ({cls.subjectName})
-                    </option>
-                  ))}
-                </select>
+              {/* Selected Instructor Details Card */}
+              {selectedFaculty && (
+                <div className="bg-sage-50/50 border border-sage-100 rounded-xl p-4 flex items-center justify-between gap-4 animate-fade-in transition-all">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-10 w-10 rounded-full bg-sage-600 text-white flex items-center justify-center font-bold font-display text-sm flex-shrink-0">
+                      {`${selectedFaculty.firstName?.[0] || ''}${selectedFaculty.lastName?.[0] || ''}`.toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-bold text-slate-850 truncate">Prof. {selectedFaculty.firstName} {selectedFaculty.lastName}</h4>
+                      <p className="text-[10px] text-slate-500 truncate mt-0.5 font-sans">{selectedFaculty.email}</p>
+                      {selectedFaculty.department && (
+                        <p className="text-[10px] text-sage-600 font-semibold mt-1 font-sans">{selectedFaculty.department}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <div className="bg-white border border-slate-150 rounded-lg px-3 py-1.5 shadow-sm text-center">
+                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wide font-sans">Assigned Classes</span>
+                      <span className="block text-sm font-extrabold font-mono text-slate-700">{facultyClassesCount}</span>
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setFormData(prev => ({ ...prev, facultyId: '', sectionId: '' }));
+                      }}
+                      className="text-xs text-slate-400 hover:text-rose-600 font-medium px-2 py-1 rounded border border-slate-200 hover:border-rose-200 hover:bg-rose-50/50 transition-colors font-sans"
+                    >
+                      Clear Choice
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            /* Batch Roster Preview */
+            selectedCollege && (
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                    Target Classes Preview ({uniqueBatchPairs.length})
+                  </h4>
+                  <span className="text-[10px] bg-sage-50 text-sage-600 font-semibold px-2.5 py-0.5 rounded-full font-sans">
+                    Active Roster
+                  </span>
+                </div>
+
+                <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50">
+                  <div className="max-h-48 overflow-y-auto divide-y divide-slate-150 table-container">
+                    {uniqueBatchPairs.length > 0 ? (
+                      uniqueBatchPairs.map((pair, idx) => {
+                        const rawName = getFacultyName(pair.facultyId);
+                        const cleanName = rawName.replace('Prof. ', '');
+                        const previewInitials = `${cleanName?.[0] || ''}${cleanName.split(' ')[1]?.[0] || ''}`.toUpperCase();
+                        return (
+                          <div key={idx} className="flex items-center justify-between px-4 py-3 text-xs bg-white">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="h-8 w-8 rounded-full bg-slate-105 text-slate-600 flex items-center justify-center font-bold font-sans text-xs flex-shrink-0">
+                                {previewInitials}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-slate-800 truncate">{rawName}</p>
+                                <p className="text-[10px] text-slate-500 truncate mt-0.5 font-sans">
+                                  {pair.section} • {pair.subjectCode} ({pair.subjectName})
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] text-sage-600 font-bold whitespace-nowrap bg-sage-50 border border-sage-150 px-2 py-0.5 rounded font-sans">
+                              To schedule
+                            </span>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="p-6 text-center text-xs text-slate-400 font-sans">
+                        No active classes found for this college.
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
+            )
+          )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Open Time */}
@@ -259,6 +674,15 @@ export default function EvalWindowForm() {
         </form>
 
       </div>
+
+      <SuccessModal
+        isOpen={isSuccessModalOpen}
+        message={successModalMessage}
+        onClose={() => {
+          setIsSuccessModalOpen(false);
+          navigate('/admin/evalwindowlist');
+        }}
+      />
     </>
   );
 }

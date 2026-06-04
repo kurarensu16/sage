@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import StudentRow from '../../components/StudentRow';
 import { 
@@ -9,87 +9,396 @@ import {
   Download, 
   FileSpreadsheet, 
   AlertTriangle,
-  ChevronDown,
   Maximize2,
   Minimize2,
   MessageSquare,
   Send,
-  X
+  X,
+  Check
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
+import { logActivity, resolveActorName } from '../../lib/auditLog';
 
 export default function PostedGradesView() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { user, profile } = useAuth();
+  const classRecordId = new URLSearchParams(location.search).get('id');
+
+  const [classInfo, setClassInfo] = useState(null);
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedClass, setSelectedClass] = useState('BSITCPR323');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lockedMilestones, setLockedMilestones] = useState([]);
-  const [showDeanPanel, setShowDeanPanel] = useState(false);
   const [unlockRequests, setUnlockRequests] = useState([]);
+
+  // Success modals
+  const [showPopup, setShowPopup] = useState(false);
+  const [popupTitle, setPopupTitle] = useState('');
+  const [popupDesc, setPopupDesc] = useState('');
 
   // Remark override request modal state
   const [showRemarkModal, setShowRemarkModal] = useState(false);
   const [remarkReqStudent, setRemarkReqStudent] = useState('');
+  const [remarkReqStudentId, setRemarkReqStudentId] = useState('');
   const [remarkReqFrom, setRemarkReqFrom] = useState('Failed');
   const [remarkReqTo, setRemarkReqTo] = useState('INC');
   const [remarkReqNote, setRemarkReqNote] = useState('');
   const [remarkReqSent, setRemarkReqSent] = useState(false);
 
+  // Maximum items configuration for activities and exams per period
+  const [maxItems, setMaxItems] = useState({
+    Prelim: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+    Midterm: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+    'Semi-Final': { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+    Final: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 }
+  });
+
+
 
   useEffect(() => {
-    const locked = JSON.parse(localStorage.getItem(`locked_milestones_${selectedClass}`) || '[]');
-    if (locked.length === 0 && selectedClass === 'BSITCPR323') {
-      const demoLock = ['Prelim'];
-      localStorage.setItem(`locked_milestones_${selectedClass}`, JSON.stringify(demoLock));
-      setLockedMilestones(demoLock);
-    } else {
-      setLockedMilestones(locked);
+    async function loadPostedGradesData() {
+      if (!classRecordId || !user) return;
+      setLoading(true);
+      try {
+        // 1. Fetch class record info
+        const { data: cr, error: crErr } = await supabase
+          .from('class_records')
+          .select(`
+            class_record_id,
+            status,
+            school_year,
+            semester,
+            subject_id,
+            section_id,
+            subjects ( code, name, units ),
+            sections ( name )
+          `)
+          .eq('class_record_id', classRecordId)
+          .single();
+
+        if (crErr) throw crErr;
+        setClassInfo(cr);
+
+        // 2. Fetch enrolled students
+        const { data: enrolls, error: enrollErr } = await supabase
+          .from('enrollments')
+          .select(`
+            student_id,
+            users!student_id ( user_id, first_name, last_name, email, user_number )
+          `)
+          .eq('section_id', cr.section_id)
+          .eq('subject_id', cr.subject_id);
+
+        if (enrollErr) throw enrollErr;
+
+        const studentList = (enrolls || []).map((e, idx) => ({
+          id: e.users?.user_id || `temp-${idx}`,
+          studentNo: e.users?.user_number || (e.users?.email ? e.users.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
+          name: e.users ? `${e.users.last_name}, ${e.users.first_name}` : 'Unknown Student',
+          email: e.users?.email
+        }));
+        studentList.sort((a, b) => a.name.localeCompare(b.name));
+        setStudents(studentList);
+
+        // 3. Fetch column setup configurations
+        const { data: cols } = await supabase
+          .from('class_grading_columns')
+          .select('*')
+          .eq('class_record_id', classRecordId);
+
+        const newMax = {
+          Prelim: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+          Midterm: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+          'Semi-Final': { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+          Final: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 }
+        };
+
+        if (cols && cols.length > 0) {
+          cols.forEach(row => {
+            if (newMax[row.term]) {
+              newMax[row.term] = {
+                act1: row.act1_max,
+                act2: row.act2_max,
+                act3: row.act3_max,
+                act4: row.act4_max,
+                act5: row.act5_max,
+                act6: row.act6_max,
+                char: 100,
+                exam: row.exam_max
+              };
+            }
+          });
+        }
+        setMaxItems(newMax);
+
+        // 4. Fetch saved term scores from db
+        const { data: savedScores } = await supabase
+          .from('student_term_scores')
+          .select('*')
+          .eq('class_record_id', classRecordId);
+
+        const scoresByStudent = {};
+        (savedScores || []).forEach(row => {
+          if (!scoresByStudent[row.student_id]) {
+            scoresByStudent[row.student_id] = {
+              Prelim: {},
+              Midterm: {},
+              'Semi-Final': {},
+              Final: {},
+              customRemarks: '',
+              remarksNote: ''
+            };
+          }
+          
+          scoresByStudent[row.student_id][row.term] = {
+            act1: row.act1,
+            act2: row.act2,
+            act3: row.act3,
+            act4: row.act4,
+            act5: row.act5,
+            act6: row.act6,
+            char: row.char_rating,
+            exam: row.exam
+          };
+        });
+
+        // 5. Fetch posted grades to check customRemarks/overrides and locked milestones
+        const { data: pgData } = await supabase
+          .from('posted_grades')
+          .select('*')
+          .eq('class_record_id', classRecordId);
+
+        const locked = new Set();
+
+        (pgData || []).forEach(row => {
+          if (!scoresByStudent[row.student_id]) {
+            scoresByStudent[row.student_id] = {
+              Prelim: {},
+              Midterm: {},
+              'Semi-Final': {},
+              Final: {},
+              customRemarks: '',
+              remarksNote: ''
+            };
+          }
+          if (row.grade_period === 'final') {
+            scoresByStudent[row.student_id].customRemarks = row.remarks === 'passed' ? 'Passed' : row.remarks === 'failed' ? 'Failed' : row.remarks.toUpperCase();
+            scoresByStudent[row.student_id].remarksNote = row.remarks_note || '';
+          }
+
+          if (row.is_locked) {
+            if (row.grade_period === 'final') {
+              locked.add('Final');
+              locked.add('Semestral Grade');
+            }
+            if (row.locked_milestones) {
+              row.locked_milestones.forEach(m => {
+                const norm = m.toLowerCase();
+                if (norm === 'final' || norm === 'semestral grade' || norm === 'semestral_grade') {
+                  locked.add('Final');
+                  locked.add('Semestral Grade');
+                }
+              });
+            }
+          }
+        });
+
+        setLockedMilestones(Array.from(locked));
+
+        // 6. Fetch unlock requests from database
+        const { data: dbReqs } = await supabase
+          .from('unlock_requests')
+          .select('milestone, status')
+          .eq('class_record_id', classRecordId);
+
+        // Fetch unlock requests from localStorage (to merge/sync)
+        const localReqs = JSON.parse(localStorage.getItem(`unlock_requests_${classRecordId}`) || '[]');
+        const pendingSet = new Set(localReqs);
+        (dbReqs || []).forEach(r => {
+          if (r.status === 'pending') {
+            pendingSet.add(r.milestone);
+          } else {
+            pendingSet.delete(r.milestone);
+          }
+        });
+        setUnlockRequests(Array.from(pendingSet));
+
+        // 7. Initialize local draft caches
+        studentList.forEach(stud => {
+          const STORAGE_KEY = `sage_scores_${classRecordId}_${stud.id}`;
+          const existingDraft = localStorage.getItem(STORAGE_KEY);
+          
+          const dbData = scoresByStudent[stud.id] || {};
+          let draftPayload = {};
+          if (existingDraft) {
+            try {
+              draftPayload = JSON.parse(existingDraft);
+            } catch {
+              // Ignore invalid JSON in local storage
+            }
+          }
+          
+          const merged = {
+            Prelim: { ...draftPayload.Prelim, ...dbData.Prelim },
+            Midterm: { ...draftPayload.Midterm, ...dbData.Midterm },
+            'Semi-Final': { ...draftPayload['Semi-Final'], ...dbData['Semi-Final'] },
+            Final: { ...draftPayload.Final, ...dbData.Final },
+            customRemarks: dbData.customRemarks || draftPayload.customRemarks || '',
+            remarksNote: dbData.remarksNote || draftPayload.remarksNote || '',
+            savedAt: new Date().toISOString()
+          };
+          
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+        });
+
+      } catch (err) {
+        console.error('Error loading PostedGradesView data:', err);
+      } finally {
+        setLoading(false);
+      }
     }
 
-    const reqs = JSON.parse(localStorage.getItem(`unlock_requests_${selectedClass}`) || '[]');
-    setUnlockRequests(reqs);
-  }, [selectedClass]);
+    loadPostedGradesData();
+  }, [classRecordId, user]);
 
-  const handleRequestUnlock = (milestone) => {
-    const reqs = JSON.parse(localStorage.getItem(`unlock_requests_${selectedClass}`) || '[]');
-    if (!reqs.includes(milestone)) {
-      reqs.push(milestone);
-      localStorage.setItem(`unlock_requests_${selectedClass}`, JSON.stringify(reqs));
-      setUnlockRequests(reqs);
+  const handleRequestUnlock = async (milestone) => {
+    if (!classRecordId) return;
+
+    try {
+      // 1. Database: Insert to unlock_requests
+      const { error } = await supabase
+        .from('unlock_requests')
+        .insert({
+          class_record_id: classRecordId,
+          milestone: milestone,
+          requested_by: user.id,
+          status: 'pending'
+        });
+
+      if (error) throw error;
+
+      // 2. LocalStorage: Dual-write for Dean UI compatibility
+      const localReqs = JSON.parse(localStorage.getItem(`unlock_requests_${classRecordId}`) || '[]');
+      if (!localReqs.includes(milestone)) {
+        localReqs.push(milestone);
+        localStorage.setItem(`unlock_requests_${classRecordId}`, JSON.stringify(localReqs));
+      }
+
+      // Update state
+      setUnlockRequests(prev => [...prev, milestone]);
+
+      // 3. Log audit activity
+      const actorName = resolveActorName(profile, user);
+      await logActivity(
+        'Unlock Request',
+        `Requested unlock of ${milestone} milestone for subject ${classInfo?.subjects?.code}`,
+        actorName
+      );
+
+      setPopupTitle('Unlock Requested');
+      setPopupDesc(`Request to unlock ${milestone} has been sent to the Dean. Modifying scores will be enabled once approved.`);
+      setShowPopup(true);
+    } catch (err) {
+      console.error('Error requesting milestone unlock:', err);
     }
   };
 
-  const handleSubmitRemarkRequest = () => {
-    if (!remarkReqStudent || !remarkReqNote.trim()) return;
-    const existing = JSON.parse(localStorage.getItem('remark_override_requests') || '[]');
-    const newReq = {
-      id: `ror-${Date.now()}`,
-      classCode: selectedClass,
-      subjectName: classesList.find(c => c.code === selectedClass)?.label.split(' - ')[1] || selectedClass,
-      facultyName: 'Reyes, Maria', // In real system: logged-in user
-      section: 'IT3A',
-      studentId: `stu-${remarkReqStudent}`,
-      studentName: remarkReqStudent,
-      computedGrade: '5.00', // Would be computed from actual scores
-      effectiveGrade: remarkReqTo === 'Passed' ? '3.00' : '5.00',
-      currentRemark: remarkReqFrom,
-      requestedRemark: remarkReqTo,
-      note: remarkReqNote,
-      requestedAt: new Date().toISOString(),
-      status: 'pending',
-      resolvedAt: null,
-    };
-    existing.push(newReq);
-    localStorage.setItem('remark_override_requests', JSON.stringify(existing));
-    setRemarkReqSent(true);
-    setTimeout(() => {
-      setShowRemarkModal(false);
-      setRemarkReqSent(false);
-      setRemarkReqStudent('');
-      setRemarkReqNote('');
-      setRemarkReqTo('INC');
-    }, 1800);
+  const handleSubmitRemarkRequest = async () => {
+    if (!remarkReqStudent || !remarkReqNote.trim() || !classRecordId) return;
+
+    try {
+      const subjCode = classInfo?.subjects?.code || '';
+      const subjName = classInfo?.subjects?.name || '';
+      const sectName = classInfo?.sections?.name || '';
+      const actorName = resolveActorName(profile, user);
+      const effectiveGradeVal = remarkReqTo === 'Passed' ? 3.00 : 5.00;
+
+      // 1. Database: Insert into remark_override_requests (primary store)
+      const { data: rorRow, error: rorErr } = await supabase
+        .from('remark_override_requests')
+        .insert({
+          class_record_id: classRecordId,
+          student_id: remarkReqStudentId || null,
+          requested_by: user.id,
+          subject_name: `${subjCode} - ${subjName}`,
+          section_name: sectName,
+          faculty_name: actorName,
+          computed_grade: 5.00,
+          effective_grade: effectiveGradeVal,
+          current_remark: remarkReqFrom,
+          requested_remark: remarkReqTo,
+          note: remarkReqNote,
+          status: 'pending'
+        })
+        .select('request_id')
+        .single();
+
+      // 2. Database: Insert unlock_requests row for 'Semestral Grade' milestone
+      //    so Dean's Grade Posting Status page shows the pending indicator
+      await supabase
+        .from('unlock_requests')
+        .insert({
+          class_record_id: classRecordId,
+          milestone: 'Semestral Grade',
+          requested_by: user.id,
+          status: 'pending'
+        });
+
+      // 3. LocalStorage: Dual-write fallback for backward compatibility
+      const existing = JSON.parse(localStorage.getItem('remark_override_requests') || '[]');
+      const newReq = {
+        id: rorRow?.request_id || `ror-${Date.now()}`,
+        classCode: classRecordId,
+        subjectName: `${subjCode} - ${subjName}`,
+        facultyName: actorName,
+        section: sectName,
+        studentId: remarkReqStudentId,
+        studentName: remarkReqStudent,
+        computedGrade: '5.00',
+        effectiveGrade: effectiveGradeVal.toFixed(2),
+        currentRemark: remarkReqFrom,
+        requestedRemark: remarkReqTo,
+        note: remarkReqNote,
+        requestedAt: new Date().toISOString(),
+        status: 'pending',
+        resolvedAt: null,
+      };
+      if (rorErr) {
+        console.warn('DB insert failed, storing to localStorage only:', rorErr.message);
+        existing.push(newReq);
+        localStorage.setItem('remark_override_requests', JSON.stringify(existing));
+      } else {
+        existing.push(newReq);
+        localStorage.setItem('remark_override_requests', JSON.stringify(existing));
+      }
+
+      // 4. Log activity
+      await logActivity(
+        'Remark Override Request',
+        `Requested remark override for student ${remarkReqStudent} (${remarkReqFrom} -> ${remarkReqTo}) in ${subjCode}`,
+        actorName
+      );
+
+      setRemarkReqSent(true);
+      setTimeout(() => {
+        setShowRemarkModal(false);
+        setRemarkReqSent(false);
+        setRemarkReqStudent('');
+        setRemarkReqStudentId('');
+        setRemarkReqNote('');
+        setRemarkReqTo('INC');
+        setPopupTitle('Override Submitted');
+        setPopupDesc(`Remark change request for ${newReq.studentName} has been submitted to the Dean.`);
+        setShowPopup(true);
+      }, 1500);
+
+    } catch (err) {
+      console.error('Error submitting remark change request:', err);
+    }
   };
 
 
@@ -100,125 +409,22 @@ export default function PostedGradesView() {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [isFullScreen]);
 
-  // Class record data mapping
-  const classesList = [
-    { code: 'BSITCPR323', label: 'BSITCPR323 - IT3A (Capstone and Research 1)' },
-    { code: 'IT101', label: 'IT101 - BSIT-1A (Intro to Computing)' },
-    { code: 'IT201', label: 'IT201 - BSIT-2B (Data Structures)' },
-    { code: 'CS301', label: 'CS301 - BSCS-3A (Artificial Intelligence)' }
-  ];
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
+          <p className="text-sm text-slate-500 font-medium font-sans">Loading locked grade logs...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const periodsList = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+  const subjectCode = classInfo?.subjects?.code || '';
+  const subjectName = classInfo?.subjects?.name || '';
+  const sectionName = classInfo?.sections?.name || '';
 
-  // Helper to generate mock period scores for standard students
-  const generateMockStudentPeriods = (id, baseActTotal, baseChar, baseExam) => {
-    const distributeCS = (total) => {
-      let remaining = total;
-      const act6 = Math.min(10, Math.round(total * (10 / 110)));
-      remaining -= act6;
-      const baseAct = Math.floor(remaining / 5);
-      const acts = [baseAct, baseAct, baseAct, baseAct, baseAct];
-      let diff = remaining - (baseAct * 5);
-      for (let i = 0; i < diff; i++) {
-        acts[i] += 1;
-      }
-      return {
-        act1: acts[0],
-        act2: acts[1],
-        act3: acts[2],
-        act4: acts[3],
-        act5: acts[4],
-        act6: act6
-      };
-    };
-
-    const periods = {};
-    periodsList.forEach((period, idx) => {
-      const actTotal = Math.max(50, Math.min(110, baseActTotal - (idx % 2) * 5));
-      const cs = distributeCS(actTotal);
-      periods[period] = {
-        ...cs,
-        char: Math.max(50, Math.min(100, baseChar - (idx % 2) * 5)),
-        exam: Math.max(0, Math.min(40, baseExam - (idx % 2) * 2))
-      };
-    });
-    return periods;
-  };
-
-  // Student score mock datasets depending on active class
-  const classStudents = {
-    BSITCPR323: [
-      {
-        id: 11,
-        name: 'Gabriel, John Christian C.',
-        periods: {
-          Prelim: { act1: 18, act2: 19, act3: 17, act4: 20, act5: 18, act6: 9, char: 100, exam: 35 },
-          Midterm: { act1: 15, act2: 14, act3: 17, act4: 20, act5: 18, act6: 9, char: 100, exam: 35 },
-          'Semi-Final': { act1: 18, act2: 19, act3: 17, act4: 20, act5: 18, act6: 9, char: 100, exam: 35 },
-          Final: { act1: 18, act2: 19, act3: 17, act4: 20, act5: 18, act6: 9, char: 100, exam: 35 }
-        }
-      },
-      {
-        id: 12,
-        name: 'Santiago, Mark Angelo',
-        periods: {
-          Prelim: { act1: 20, act2: 18, act3: 20, act4: 17, act5: 15, act6: 5, char: 80, exam: 40 },
-          Midterm: { act1: 19, act2: 17, act3: 18, act4: 19, act5: 17, act6: 10, char: 90, exam: 37 },
-          'Semi-Final': { act1: 20, act2: 18, act3: 20, act4: 17, act5: 15, act6: 5, char: 85, exam: 30 },
-          Final: { act1: 15, act2: 14, act3: 17, act4: 20, act5: 18, act6: 9, char: 100, exam: 25 }
-        }
-      },
-      {
-        id: 13,
-        name: 'Celestino, Carlo',
-        periods: {
-          Prelim: { act1: 19, act2: 17, act3: 18, act4: 19, act5: 17, act6: 10, char: 95, exam: 30 },
-          Midterm: { act1: 20, act2: 18, act3: 20, act4: 17, act5: 15, act6: 5, char: 85, exam: 40 },
-          'Semi-Final': { act1: 15, act2: 14, act3: 17, act4: 20, act5: 18, act6: 9, char: 95, exam: 33 },
-          Final: { act1: 18, act2: 19, act3: 17, act4: 20, act5: 18, act6: 9, char: 100, exam: 29 }
-        }
-      },
-      {
-        id: 14,
-        name: 'Reyes, Mark T.',
-        periods: {
-          Prelim: { act1: 12, act2: 12, act3: 12, act4: 12, act5: 12, act6: 10, char: 60, exam: 30 },
-          Midterm: { act1: 11, act2: 11, act3: 11, act4: 11, act5: 11, act6: 10, char: 70, exam: 29 },
-          'Semi-Final': { act1: 10, act2: 10, act3: 10, act4: 10, act5: 10, act6: 10, char: 60, exam: 27 },
-          Final: { act1: 9, act2: 9, act3: 9, act4: 9, act5: 10, act6: 9, char: 60, exam: 25 }
-        }
-      },
-      {
-        id: 15,
-        name: 'Villanueva, Anna C.',
-        periods: {
-          Prelim: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 38 },
-          Midterm: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 38 },
-          'Semi-Final': { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 38 },
-          Final: { act1: 19, act2: 19, act3: 19, act4: 19, act5: 20, act6: 9, char: 100, exam: 38 }
-        }
-      }
-    ],
-    IT101: [
-      { id: 1, name: 'Dela Cruz, Juan M.', periods: generateMockStudentPeriods(1, 95, 88, 36) },
-      { id: 2, name: 'Santos, Maria A.', periods: generateMockStudentPeriods(2, 75, 68, 28) },
-      { id: 3, name: 'Reyes, Mark T.', periods: generateMockStudentPeriods(3, 82, 55, 26) },
-      { id: 4, name: 'Villanueva, Anna C.', periods: generateMockStudentPeriods(4, 98, 92, 38) },
-    ],
-    IT201: [
-      { id: 5, name: 'Bautista, Kevin L.', periods: generateMockStudentPeriods(5, 88, 84, 32) },
-      { id: 6, name: 'Gomez, Elena R.', periods: generateMockStudentPeriods(6, 70, 65, 25) },
-      { id: 7, name: 'Pascual, Jaime F.', periods: generateMockStudentPeriods(7, 92, 90, 36) },
-    ],
-    CS301: [
-      { id: 8, name: 'Aquino, Teresa S.', periods: generateMockStudentPeriods(8, 95, 92, 38) },
-      { id: 9, name: 'Lim, Dexter J.', periods: generateMockStudentPeriods(9, 60, 58, 22) },
-      { id: 10, name: 'Cruz, Patricia N.', periods: generateMockStudentPeriods(10, 85, 80, 33) },
-    ]
-  };
-
-  const activeStudents = classStudents[selectedClass] || classStudents.IT101;
-  const filteredStudents = activeStudents.filter(student => 
+  const filteredStudents = students.filter(student => 
     student.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -226,31 +432,25 @@ export default function PostedGradesView() {
     <>
       <PageHeader title="View Posted Grades" breadcrumb="Faculty Portal">
         <button 
-          onClick={() => navigate('/faculty/scoreinput')}
-          className="px-4 py-2 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm flex items-center gap-1.5"
+          onClick={() => navigate(`/faculty/scoreinput?id=${classRecordId}`)}
+          className="px-4 py-2 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm flex items-center gap-1.5 font-sans"
         >
           📝 Input Scores
         </button>
-        <button 
-          onClick={() => navigate('/faculty/gradecomputationpreview')}
-          className="px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-lg transition-all flex items-center gap-1.5"
-        >
-          👁️ Computation Preview
-        </button>
-        <button className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:border-sage-300 rounded-lg transition-colors bg-white flex items-center gap-2">
+        <button className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:border-sage-300 rounded-lg transition-colors bg-white flex items-center gap-2 font-sans">
           <Download className="h-4 w-4" /> Export PDF
         </button>
       </PageHeader>
 
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
         
-        {/* Navigation Breadcrumb detail */}
+        {/* Navigation Breadcrumb */}
         <div className="flex items-center gap-2 text-sm text-slate-500">
-          <span className="hover:text-sage-600 cursor-pointer" onClick={() => navigate('/faculty/classrecordslist')}>
+          <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/faculty/classrecordslist')}>
             Class Records
           </span>
           <ChevronRight className="h-3 w-3" />
-          <span className="font-medium text-slate-900">{classesList.find(c => c.code === selectedClass)?.label} (Grades Locked)</span>
+          <span className="font-medium text-slate-900">{subjectCode} ({sectionName}) — Locked Grades</span>
         </div>
 
         {/* Dynamic Lock Alert Banner with Dean's Override Panel */}
@@ -264,42 +464,37 @@ export default function PostedGradesView() {
                   Active registry locks are applied dynamically based on posted term milestones. To modify locked records, Dean approval is required.
                 </p>
                 <div className="flex flex-wrap gap-2 mt-3">
-                  {lockedMilestones.length === 0 ? (
+                  {!(lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final')) ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold bg-emerald-50 border border-emerald-250 text-emerald-700">
-                      🔓 No Active Locks (Fully Editable)
+                      🔓 Draft Mode (Fully Editable)
                     </span>
                   ) : (
-                    lockedMilestones.map(m => {
-                      const hasRequested = unlockRequests.includes(m);
-                      return (
-                        <div key={m} className="inline-flex items-center gap-2 bg-rose-50/50 border border-rose-200 rounded-lg p-1.5 pr-2.5">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-55 border border-rose-250 text-rose-700 font-mono">
-                            🔒 {m} Posted
-                          </span>
-                          {hasRequested ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold bg-amber-50 border border-amber-250 text-amber-700">
-                              ⏳ Unlock Requested
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => handleRequestUnlock(m)}
-                              className="px-2 py-0.5 text-[9px] font-bold bg-white border border-slate-200 hover:border-sage-300 text-slate-650 hover:text-sage-700 rounded transition-colors outline-none"
-                            >
-                              📨 Request Unlock
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })
+                    <div className="inline-flex items-center gap-2 bg-rose-50/50 border border-rose-200 rounded-lg p-1.5 pr-2.5">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 border border-rose-200 text-rose-700 font-mono">
+                        🔒 Semestral Grades Posted (Locked)
+                      </span>
+                      {unlockRequests.includes('Semestral Grade') || unlockRequests.includes('Final') ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold bg-amber-50 border border-amber-250 text-amber-700">
+                          ⏳ Unlock Requested
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleRequestUnlock('Semestral Grade')}
+                          className="px-2 py-0.5 text-[9px] font-bold bg-white border border-slate-200 hover:border-sage-300 text-slate-650 hover:text-sage-700 rounded transition-colors outline-none"
+                        >
+                          📨 Request Unlock
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* ── Request Remark Change button ── */}
+            {/* Request Remark Change button */}
             <button
               onClick={() => setShowRemarkModal(true)}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-300 rounded-lg transition-colors shadow-sm outline-none flex-shrink-0"
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-300 rounded-lg transition-colors shadow-sm outline-none flex-shrink-0 font-sans"
             >
               <MessageSquare className="h-3.5 w-3.5" />
               Request Remark Change
@@ -309,20 +504,11 @@ export default function PostedGradesView() {
 
         {/* Class Selection & Search Toolbar */}
         <div className="flex flex-wrap justify-between items-center gap-4 p-4 rounded-xl border border-slate-200 bg-white shadow-sm">
-          {/* Class Record Selector */}
+          {/* Class Record */}
           <div className="flex flex-col gap-1 flex-1 min-w-[240px]">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
-            <div className="relative">
-              <select
-                value={selectedClass}
-                onChange={(e) => setSelectedClass(e.target.value)}
-                className="appearance-none w-full bg-white border border-slate-200 hover:border-sage-300 px-3 py-2 pr-8 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer text-slate-700"
-              >
-                {classesList.map(c => (
-                  <option key={c.code} value={c.code}>{c.label}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            <div className="text-xs font-bold text-slate-800 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+              {subjectCode} - {sectionName} ({subjectName})
             </div>
           </div>
 
@@ -349,7 +535,7 @@ export default function PostedGradesView() {
 
           {/* Verification lock badge */}
           <div className="text-xs text-slate-400 font-medium flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Verified Registry Lock Active
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-400/45"></span> Verified Registry Lock Active
           </div>
         </div>
 
@@ -361,17 +547,15 @@ export default function PostedGradesView() {
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="h-4 w-4 text-sage-600" />
                 <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  {isFullScreen ? classesList.find(c => c.code === selectedClass)?.label : 'Posted Grades'}
+                  Posted Grades — {subjectCode} ({sectionName})
                 </span>
-                {isFullScreen && (
-                  <span className="text-[10px] font-medium text-slate-400 ml-2">
-                    Posted Record · {filteredStudents.length} students
-                  </span>
-                )}
+                <span className="text-[10px] font-medium text-slate-400 ml-2">
+                  Posted Record · {filteredStudents.length} students
+                </span>
               </div>
               <button
                 onClick={() => setIsFullScreen(!isFullScreen)}
-                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-sage-50 hover:border-sage-300 text-slate-500 hover:text-sage-700 transition-all"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-sage-50 hover:border-sage-300 text-slate-500 hover:text-slate-700 transition-all"
                 title={isFullScreen ? 'Exit fullscreen' : 'View fullscreen'}
               >
                 {isFullScreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
@@ -381,61 +565,18 @@ export default function PostedGradesView() {
                 <table className={`w-full min-w-max text-left border-collapse ${isFullScreen ? 'fullscreen-table' : ''}`}>
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 text-xs font-bold text-center">
-                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-10">
-                              No.
-                            </th>
-                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24">
-                              Student No.
-                            </th>
-                            <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-0 bg-slate-50 border-r border-slate-200 z-20 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">
-                              Student Name
-                            </th>
-                            
-                            {/* Prelim Period */}
-                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">
-                              PRELIMINARY GRADE
-                            </th>
-                            
-                            {/* Midterm Period */}
-                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">
-                              MIDTERM GRADE
-                            </th>
-                            
-                            {/* Midterm Rating */}
-                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-indigo-100 text-indigo-950 font-bold uppercase tracking-wider w-16">
-                              Midterm Rating (MR)
-                            </th>
-                            
-                            {/* Semi-Final Period */}
-                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-amber-50 text-amber-850">
-                              SEMI-FINAL GRADE
-                            </th>
-                            
-                            {/* Final Period */}
-                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-orange-50 text-orange-850">
-                              FINAL GRADE
-                            </th>
-                            
-                            {/* Tentative Final Rating */}
-                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-orange-100 text-orange-950 font-bold uppercase tracking-wider w-16">
-                              Tentative Final Rating (TFR)
-                            </th>
-                            
-                            {/* Semestral Grade */}
-                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-50 text-emerald-800 font-extrabold uppercase tracking-wider w-16">
-                              Semestral Grade (SG)
-                            </th>
-                            
-                            {/* Equivalent (GWA) */}
-                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-16">
-                              Equivalent GWA
-                            </th>
-                            
-                            {/* Remarks */}
-                            <th rowSpan={2} className="px-4 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-20">
-                              Remarks
-                            </th>
-                            
+                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-10">No.</th>
+                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24">Student No.</th>
+                            <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-0 bg-slate-50 border-r border-slate-200 z-20 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
+                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
+                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">MIDTERM GRADE</th>
+                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-indigo-100 text-indigo-950 font-bold uppercase tracking-wider w-16">Midterm Rating (MR)</th>
+                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-amber-50 text-amber-850">SEMI-FINAL GRADE</th>
+                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-orange-50 text-orange-850">FINAL GRADE</th>
+                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-orange-100 text-orange-950 font-bold uppercase tracking-wider w-16">Tentative Final Rating (TFR)</th>
+                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-50 text-emerald-800 font-extrabold uppercase tracking-wider w-16">Semestral Grade (SG)</th>
+                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-16">Equivalent GWA</th>
+                            <th rowSpan={2} className="px-4 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-20">Remarks</th>
                         </tr>
                         
                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
@@ -503,8 +644,15 @@ export default function PostedGradesView() {
                               key={student.id} 
                               student={student} 
                               rowNo={idx + 1}
-                              initialPeriods={student.periods}
-                              readOnly={false}
+                              initialPeriods={{
+                                Prelim: {},
+                                Midterm: {},
+                                'Semi-Final': {},
+                                Final: {}
+                              }}
+                              readOnly={true}
+                              classCode={classRecordId}
+                              maxItems={maxItems}
                               lockedMilestones={lockedMilestones}
                             />
                           ))
@@ -524,19 +672,18 @@ export default function PostedGradesView() {
 
       {/* ══════ Remark Override Request Modal ══════ */}
       {showRemarkModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          {/* Backdrop */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center animate-in fade-in duration-200">
           <div
-            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-xs"
             onClick={() => setShowRemarkModal(false)}
           />
 
-          <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md mx-4 p-6 space-y-5 z-10">
+          <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md mx-4 p-6 space-y-5 z-10 animate-in zoom-in-95 duration-200">
             {/* Header */}
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4 text-violet-500" />
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2 font-display">
+                  <MessageSquare className="h-4 w-4 text-violet-550 text-violet-650" />
                   Request Remark Change
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
@@ -556,11 +703,15 @@ export default function PostedGradesView() {
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Student</label>
               <select
                 value={remarkReqStudent}
-                onChange={e => setRemarkReqStudent(e.target.value)}
+                onChange={e => {
+                  setRemarkReqStudent(e.target.value);
+                  const selected = students.find(s => s.name === e.target.value);
+                  if (selected) setRemarkReqStudentId(selected.id);
+                }}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 bg-white cursor-pointer"
               >
                 <option value="">— Select a student —</option>
-                {activeStudents && activeStudents.map(s => (
+                {students.map(s => (
                   <option key={s.id} value={s.name}>{s.name}</option>
                 ))}
               </select>
@@ -600,7 +751,7 @@ export default function PostedGradesView() {
 
             {/* Reason note */}
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Reason / Justification <span className="text-rose-500">*</span></label>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans">Reason / Justification <span className="text-rose-500">*</span></label>
               <textarea
                 rows={3}
                 value={remarkReqNote}
@@ -614,7 +765,7 @@ export default function PostedGradesView() {
             <div className="flex gap-3 pt-1">
               <button
                 onClick={() => setShowRemarkModal(false)}
-                className="flex-1 px-4 py-2 text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+                className="flex-1 px-4 py-2 text-xs font-bold border border-slate-200 bg-white text-slate-650 hover:bg-slate-50 rounded-lg transition-colors font-sans"
               >
                 Cancel
               </button>
@@ -622,7 +773,7 @@ export default function PostedGradesView() {
                 onClick={handleSubmitRemarkRequest}
                 disabled={!remarkReqStudent || !remarkReqNote.trim() || remarkReqSent}
                 className={cn(
-                  'flex-1 px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2',
+                  'flex-1 px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 font-sans',
                   remarkReqSent
                     ? 'bg-emerald-500 text-white'
                     : !remarkReqStudent || !remarkReqNote.trim()
@@ -636,6 +787,27 @@ export default function PostedGradesView() {
                 }
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Popup Modal */}
+      {showPopup && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl border border-slate-100 flex flex-col items-center text-center space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+              <Check className="h-6 w-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-lg font-bold text-slate-900 font-display">{popupTitle}</h3>
+              <p className="text-xs text-slate-500">{popupDesc}</p>
+            </div>
+            <button
+              onClick={() => setShowPopup(false)}
+              className="w-full py-2 bg-sage-600 hover:bg-sage-700 text-white font-medium text-sm rounded-xl transition-colors shadow-sm font-sans"
+            >
+              OK
+            </button>
           </div>
         </div>
       )}

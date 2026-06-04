@@ -1,131 +1,488 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   Users, 
   Award, 
   MessageSquare, 
-  Calendar, 
-  TrendingUp, 
   ChevronDown, 
   ShieldCheck, 
   Star,
   CheckCircle,
-  HelpCircle,
-  FileSpreadsheet
+  FileSpreadsheet,
+  BrainCircuit,
+  Activity,
+  Lightbulb,
+  Zap,
+  CheckCircle2,
+  X,
+  ChevronRight
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
+
+// Fallback Mock Data matching the Redesign Spec
+const mockFacultyInsight = {
+  facultyId: "usr-003",
+  name: "Prof. Amanda Rivera",
+  overallVerdict: "needs_improvement",
+  overallRating: 3.20,
+  overallSummary: "Your classroom communication and subject knowledge scores remain highly satisfactory. However, student feedback indicates significant delays in encoding activity and quiz scores. Bringing your grading turnaround times within the 7-day threshold next term will resolve this warning flag.",
+  overallSpotlight: {
+    highestCriteria: "Subject Knowledge",
+    highestScore: 3.95,
+    lowestCriteria: "Classroom Turnaround & Grading",
+    lowestScore: 3.20
+  },
+  sections: [
+    {
+      sectionCode: "BSIT-1A",
+      subjectName: "Introduction to Computing",
+      sectionRating: 3.85,
+      ratingsSummary: {
+        subjectKnowledge: 3.95,
+        methodology: 3.80,
+        communication: 3.90,
+        turnaround: 3.20
+      },
+      insight: "Students in BSIT-1A highly appreciate your practical programming challenges and active assistance in the lab. Methodology and clarity scores are near perfect. Keep up this teaching structure!",
+      perceptions: {
+        workload: "Students perceive lab assignments as highly practical, challenging but highly rewarding.",
+        delivery: "The use of real-time coding examples on the whiteboard greatly helps visual learners.",
+        topSuggestion: "A significant cluster of students requested uploading lab slides 24 hours prior to the actual lab session."
+      }
+    },
+    {
+      sectionCode: "BSIT-2B",
+      subjectName: "Data Structures and Algorithms",
+      sectionRating: 3.65,
+      ratingsSummary: {
+        subjectKnowledge: 3.85,
+        methodology: 3.70,
+        communication: 3.75,
+        turnaround: 3.30
+      },
+      insight: "BSIT-2B students responded very well to the algorithmic visualization exercises. Focus on guiding struggling students during individual coding tasks.",
+      perceptions: {
+        workload: "Moderate workload, but logic design tasks require extra guided lab hours.",
+        delivery: "Visual animations of memory pointers significantly improved concept retention.",
+        topSuggestion: "Provide more practice problems before the mid-term rating exams."
+      }
+    }
+  ]
+};
 
 export default function EvalResultsMy() {
-  const [selectedSemester, setSelectedSemester] = useState('First Semester, AY 2025-2026');
+  const { user, profile } = useAuth();
+  
+  const [loading, setLoading] = useState(true);
+  const [semestersList, setSemestersList] = useState([]);
+  const [selectedSemester, setSelectedSemester] = useState('');
+  const [classesList, setClassesList] = useState([]);
   const [selectedClass, setSelectedClass] = useState('All');
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [dbInsight, setDbInsight] = useState(null);
 
-  // Academic year and semesters list
-  const semesters = [
-    'First Semester, AY 2025-2026',
-    'Second Semester, AY 2024-2025',
-    'First Semester, AY 2024-2025',
-  ];
-
-  // List of courses/sections evaluated for this professor
-  const classesEvaluated = [
-    { id: 'All', code: 'All Classes', section: 'Aggregate' },
-    { id: 'IT101', code: 'IT101', section: 'BSIT-1A' },
-    { id: 'IT201', code: 'IT201', section: 'BSIT-2B' },
-    { id: 'CS301', code: 'CS301', section: 'BSCS-3A' },
-  ];
-
-  // Mock evaluation data rescaled out of 4
-  const evaluationStats = {
-    All: {
-      overall: 3.72,
-      totalEvaluators: 125,
-      participationRate: '92.5%',
-      collegeRank: 'Top 8%',
-      criteria: [
-        { name: 'Content Knowledge and Pedagogy', description: 'Instructional methods, higher-order thinking skills, language proficiency, verbal/non-verbal strategies.', score: 3.82, max: 4 },
-        { name: 'Learning Environment', description: 'Safe, learning-focused environment, behavior management, supportive collaboration.', score: 3.71, max: 4 },
-        { name: 'Diversity of Learners', description: 'Learner-centered culture, linguistic and cultural responsiveness, addressing unique educational needs.', score: 3.65, max: 4 },
-        { name: 'Teaching, Learning, and Planning', description: 'Sequential teaching-learning process, curriculum alignment, technology integration.', score: 3.76, max: 4 },
-        { name: 'Assessment and Reporting', description: 'Assessment design, monitoring student progress, informing stakeholders of accomplishments.', score: 3.69, max: 4 },
-        { name: 'Community Linkages and Professional Engagement', description: 'School community relations, professional ethics, compliance with rules/regulations.', score: 3.73, max: 4 },
-        { name: 'Personal Growth and Professional Development', description: 'Protection of teaching honor, professional collaboration, self-reflection.', score: 3.80, max: 4 }
-      ],
-      comments: [
-        { course: 'IT101', text: "Very accommodating and explains the lab exercises clearly. I learned a lot from the hands-on sessions." },
-        { course: 'IT201', text: "Could provide more coding examples during lectures, but overall very helpful during consultation hours." },
-        { course: 'CS301', text: "Awesome professor! Data structures and algorithms became very easy to understand because of the interactive assignments." },
-        { course: 'IT101', text: "Always punctual and returns graded works with constructive feedback in a timely manner. Thank you, Prof!" },
-        { course: 'IT201', text: "The exams are challenging but fair. The lectures perfectly align with the practical laboratory activities." }
-      ]
-    },
-    IT101: {
-      overall: 3.80,
-      totalEvaluators: 42,
-      participationRate: '93.3%',
-      collegeRank: 'Top 5%',
-      criteria: [
-        { name: 'Content Knowledge and Pedagogy', description: 'Instructional methods, higher-order thinking skills, language proficiency, verbal/non-verbal strategies.', score: 3.88, max: 4 },
-        { name: 'Learning Environment', description: 'Safe, learning-focused environment, behavior management, supportive collaboration.', score: 3.79, max: 4 },
-        { name: 'Diversity of Learners', description: 'Learner-centered culture, linguistic and cultural responsiveness, addressing unique educational needs.', score: 3.72, max: 4 },
-        { name: 'Teaching, Learning, and Planning', description: 'Sequential teaching-learning process, curriculum alignment, technology integration.', score: 3.82, max: 4 },
-        { name: 'Assessment and Reporting', description: 'Assessment design, monitoring student progress, informing stakeholders of accomplishments.', score: 3.75, max: 4 },
-        { name: 'Community Linkages and Professional Engagement', description: 'School community relations, professional ethics, compliance with rules/regulations.', score: 3.81, max: 4 },
-        { name: 'Personal Growth and Professional Development', description: 'Protection of teaching honor, professional collaboration, self-reflection.', score: 3.87, max: 4 }
-      ],
-      comments: [
-        { course: 'IT101', text: "Very accommodating and explains the lab exercises clearly. I learned a lot from the hands-on sessions." },
-        { course: 'IT101', text: "Always punctual and returns graded works with constructive feedback in a timely manner. Thank you, Prof!" }
-      ]
-    },
-    IT201: {
-      overall: 3.64,
-      totalEvaluators: 35,
-      participationRate: '92.1%',
-      collegeRank: 'Top 15%',
-      criteria: [
-        { name: 'Content Knowledge and Pedagogy', description: 'Instructional methods, higher-order thinking skills, language proficiency, verbal/non-verbal strategies.', score: 3.75, max: 4 },
-        { name: 'Learning Environment', description: 'Safe, learning-focused environment, behavior management, supportive collaboration.', score: 3.63, max: 4 },
-        { name: 'Diversity of Learners', description: 'Learner-centered culture, linguistic and cultural responsiveness, addressing unique educational needs.', score: 3.58, max: 4 },
-        { name: 'Teaching, Learning, and Planning', description: 'Sequential teaching-learning process, curriculum alignment, technology integration.', score: 3.68, max: 4 },
-        { name: 'Assessment and Reporting', description: 'Assessment design, monitoring student progress, informing stakeholders of accomplishments.', score: 3.61, max: 4 },
-        { name: 'Community Linkages and Professional Engagement', description: 'School community relations, professional ethics, compliance with rules/regulations.', score: 3.65, max: 4 },
-        { name: 'Personal Growth and Professional Development', description: 'Protection of teaching honor, professional collaboration, self-reflection.', score: 3.72, max: 4 }
-      ],
-      comments: [
-        { course: 'IT201', text: "Could provide more coding examples during lectures, but overall very helpful during consultation hours." },
-        { course: 'IT201', text: "The exams are challenging but fair. The lectures perfectly align with the practical laboratory activities." }
-      ]
-    },
-    CS301: {
-      overall: 3.73,
-      totalEvaluators: 48,
-      participationRate: '92.3%',
-      collegeRank: 'Top 7%',
-      criteria: [
-        { name: 'Content Knowledge and Pedagogy', description: 'Instructional methods, higher-order thinking skills, language proficiency, verbal/non-verbal strategies.', score: 3.84, max: 4 },
-        { name: 'Learning Environment', description: 'Safe, learning-focused environment, behavior management, supportive collaboration.', score: 3.72, max: 4 },
-        { name: 'Diversity of Learners', description: 'Learner-centered culture, linguistic and cultural responsiveness, addressing unique educational needs.', score: 3.66, max: 4 },
-        { name: 'Teaching, Learning, and Planning', description: 'Sequential teaching-learning process, curriculum alignment, technology integration.', score: 3.77, max: 4 },
-        { name: 'Assessment and Reporting', description: 'Assessment design, monitoring student progress, informing stakeholders of accomplishments.', score: 3.70, max: 4 },
-        { name: 'Community Linkages and Professional Engagement', description: 'School community relations, professional ethics, compliance with rules/regulations.', score: 3.74, max: 4 },
-        { name: 'Personal Growth and Professional Development', description: 'Protection of teaching honor, professional collaboration, self-reflection.', score: 3.81, max: 4 }
-      ],
-      comments: [
-        { course: 'CS301', text: "Awesome professor! Data structures and algorithms became very easy to understand because of the interactive assignments." }
-      ]
-    }
-  };
-
-  const activeStats = evaluationStats[selectedClass] || evaluationStats.All;
+  const [stats, setStats] = useState({
+    overall: 0,
+    totalEvaluators: 0,
+    participationRate: '0%',
+    collegeRank: 'Top —',
+    criteria: [],
+    comments: []
+  });
 
   // Helper to determine score color / label
   const getRatingLabel = (score) => {
-    if (score >= 3.60) return { text: 'Exemplary', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    if (score >= 3.60) return { text: 'Exemplary', color: 'bg-emerald-50 text-emerald-700 border-emerald-250' };
     if (score >= 3.00) return { text: 'Satisfactory', color: 'bg-blue-50 text-blue-700 border-blue-200' };
     if (score >= 2.00) return { text: 'Needs Improvement', color: 'bg-amber-50 text-amber-700 border-amber-200' };
     return { text: 'Poor', color: 'bg-rose-50 text-rose-700 border-rose-200' };
   };
 
-  const ratingLabel = getRatingLabel(activeStats.overall);
+  useEffect(() => {
+    async function loadEvaluationsSetup() {
+      if (!user) return;
+      setLoading(true);
+      try {
+        // 1. Fetch Evaluation Windows for this faculty
+        const { data: winData, error: winErr } = await supabase
+          .from('evaluation_windows')
+          .select(`
+            window_id,
+            section_id,
+            sections ( name, school_year, semester )
+          `)
+          .eq('faculty_id', user.id);
+
+        if (winErr) throw winErr;
+
+        if (!winData || winData.length === 0) {
+          setLoading(false);
+          return;
+        }
+
+        // Build semesters list
+        const sems = [];
+        const seenSem = new Set();
+        winData.forEach(w => {
+          if (w.sections) {
+            const sy = w.sections.school_year.startsWith('AY') ? w.sections.school_year : `AY ${w.sections.school_year}`;
+            const semName = w.sections.semester === '1st' ? 'First' : w.sections.semester === '2nd' ? 'Second' : w.sections.semester;
+            const label = `${semName} Semester, ${sy}`;
+            if (!seenSem.has(label)) {
+              seenSem.add(label);
+              sems.push({
+                label,
+                school_year: w.sections.school_year,
+                semester: w.sections.semester
+              });
+            }
+          }
+        });
+
+        setSemestersList(sems);
+        if (sems.length > 0) {
+          setSelectedSemester(sems[0].label);
+        } else {
+          setLoading(false);
+        }
+
+      } catch (err) {
+        console.error('Error loading evaluations configuration:', err);
+        setLoading(false);
+      }
+    }
+
+    loadEvaluationsSetup();
+  }, [user]);
+
+  useEffect(() => {
+    async function loadStatsData() {
+      if (!user || !selectedSemester) return;
+      try {
+        const activeSem = semestersList.find(s => s.label === selectedSemester);
+        if (!activeSem) return;
+
+        // 1. Fetch class records for subjects metadata
+        const { data: classRecs } = await supabase
+          .from('class_records')
+          .select('class_record_id, subject_id, section_id, subjects(*), sections(*)')
+          .eq('faculty_id', user.id);
+
+        const classMap = {}; // section_id -> class_record
+        classRecs?.forEach(cr => {
+          classMap[cr.section_id] = cr;
+        });
+
+        // 2. Fetch evaluation windows for this semester
+        const { data: windows } = await supabase
+          .from('evaluation_windows')
+          .select(`
+            window_id,
+            section_id,
+            form_id,
+            sections!inner ( name, school_year, semester )
+          `)
+          .eq('faculty_id', user.id)
+          .eq('sections.school_year', activeSem.school_year)
+          .eq('sections.semester', activeSem.semester);
+
+        if (!windows || windows.length === 0) {
+          setStats({
+            overall: 0,
+            totalEvaluators: 0,
+            participationRate: '0%',
+            collegeRank: 'Top —',
+            criteria: [],
+            comments: []
+          });
+          setClassesList([]);
+          return;
+        }
+
+        // Build classes list buttons
+        const classes = [{ id: 'All', code: 'All Classes', section: 'Aggregate' }];
+        windows.forEach(w => {
+          const cr = classMap[w.section_id];
+          if (cr && cr.subjects) {
+            classes.push({
+              id: w.window_id,
+              code: cr.subjects.code,
+              section: cr.sections?.name || 'Unknown'
+            });
+          }
+        });
+        setClassesList(classes);
+
+        // Filter windows
+        const filteredWindows = selectedClass === 'All'
+          ? windows
+          : windows.filter(w => w.window_id === selectedClass);
+
+        const windowIds = filteredWindows.map(w => w.window_id);
+
+        // 3. Fetch responses
+        const { data: responses } = await supabase
+          .from('evaluation_responses')
+          .select('response_id, window_id')
+          .in('window_id', windowIds);
+
+        const responseIds = responses?.map(r => r.response_id) || [];
+
+        // 4. Fetch total enrolled student counts for these sections & subjects
+        const sectionIds = filteredWindows.map(w => w.section_id);
+        const subjectIds = filteredWindows.map(w => classMap[w.section_id]?.subject_id).filter(Boolean);
+
+        const { data: enrollmentData } = await supabase
+          .from('enrollments')
+          .select('student_id')
+          .in('section_id', sectionIds)
+          .in('subject_id', subjectIds);
+
+        const enrolledCount = enrollmentData ? new Set(enrollmentData.map(e => e.student_id)).size : 0;
+
+        // 5. Fetch ratings
+        const { data: ratings } = await supabase
+          .from('evaluation_ratings')
+          .select(`
+            rating,
+            criteria_id,
+            evaluation_criteria ( label, description, max_rating )
+          `)
+          .in('response_id', responseIds);
+
+        // 6. Fetch comments
+        const { data: comments } = await supabase
+          .from('evaluation_comments')
+          .select('response_id, comment')
+          .in('response_id', responseIds);
+
+        // Calculate Overall rating
+        let ratingsSum = 0;
+        ratings?.forEach(r => { ratingsSum += r.rating; });
+        const overallRating = ratings && ratings.length > 0 ? ratingsSum / ratings.length : 0;
+
+        // Calculate Criteria breakdown
+        const categorySum = {};
+        const categoryCount = {};
+        const categoryDesc = {};
+        
+        ratings?.forEach(r => {
+          const crit = r.evaluation_criteria;
+          if (crit) {
+            const label = crit.label;
+            categorySum[label] = (categorySum[label] || 0) + r.rating;
+            categoryCount[label] = (categoryCount[label] || 0) + 1;
+            categoryDesc[label] = crit.description;
+          }
+        });
+
+        const criteriaBreakdown = Object.entries(categorySum).map(([name, sum]) => {
+          const count = categoryCount[name];
+          const score = count > 0 ? sum / count : 0;
+          return {
+            name,
+            description: categoryDesc[name] || '',
+            score,
+            max: 4
+          };
+        });
+
+        criteriaBreakdown.sort((a, b) => a.name.localeCompare(b.name));
+
+        // Map comments
+        const responseToWindowMap = {};
+        responses?.forEach(r => {
+          responseToWindowMap[r.response_id] = r.window_id;
+        });
+
+        const mappedComments = [];
+        comments?.forEach(c => {
+          const winId = responseToWindowMap[c.response_id];
+          const win = windows.find(w => w.window_id === winId);
+          const cr = win ? classMap[win.section_id] : null;
+          const courseCode = cr?.subjects?.code || 'N/A';
+          mappedComments.push({
+            course: courseCode,
+            text: c.comment
+          });
+        });
+
+        // 7. Calculate Rank compared to all other faculty
+        const { data: allRatings } = await supabase
+          .from('evaluation_ratings')
+          .select(`
+            rating,
+            evaluation_responses!inner (
+              window_id,
+              evaluation_windows!inner (
+                faculty_id
+              )
+            )
+          `);
+
+        const facultySums = {};
+        const facultyCounts = {};
+        allRatings?.forEach(r => {
+          const facId = r.evaluation_responses?.evaluation_windows?.faculty_id;
+          if (facId) {
+            facultySums[facId] = (facultySums[facId] || 0) + r.rating;
+            facultyCounts[facId] = (facultyCounts[facId] || 0) + 1;
+          }
+        });
+
+        const facultyAverages = {};
+        Object.keys(facultySums).forEach(facId => {
+          facultyAverages[facId] = facultySums[facId] / facultyCounts[facId];
+        });
+
+        const sortedFaculty = Object.entries(facultyAverages)
+          .map(([facId, avg]) => ({ facId, avg }))
+          .sort((a, b) => b.avg - a.avg);
+
+        const totalFaculty = sortedFaculty.length;
+        const ourIndex = sortedFaculty.findIndex(f => f.facId === user.id);
+        
+        let collegeRank = 'Top —';
+        if (ourIndex !== -1 && totalFaculty > 0) {
+          const percentile = (ourIndex / totalFaculty) * 100;
+          collegeRank = `Top ${percentile === 0 ? '1' : Math.max(1, Math.round(percentile))}%`;
+        }
+
+        const totalEvaluatorsCount = responses?.length || 0;
+        const participationRatePercent = enrolledCount > 0 
+          ? `${Math.round((totalEvaluatorsCount / enrolledCount) * 100)}%` 
+          : '0%';
+
+        setStats({
+          overall: overallRating,
+          totalEvaluators: totalEvaluatorsCount,
+          participationRate: participationRatePercent,
+          collegeRank,
+          criteria: criteriaBreakdown,
+          comments: mappedComments
+        });
+
+      } catch (err) {
+        console.error('Error loading evaluations statistics:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadStatsData();
+  }, [user, selectedSemester, selectedClass, semestersList]);
+
+  useEffect(() => {
+    async function loadFacultyInsights() {
+      if (!user || !selectedSemester) return;
+      try {
+        const activeSem = semestersList.find(s => s.label === selectedSemester);
+        if (!activeSem) return;
+        
+        const { data, error } = await supabase
+          .from('faculty_performance_insights')
+          .select('*')
+          .eq('faculty_id', user.id)
+          .eq('school_year', activeSem.school_year)
+          .order('generated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (error) throw error;
+        setDbInsight(data);
+      } catch (err) {
+        console.error("Error loading faculty performance insights from Supabase:", err);
+      }
+    }
+    loadFacultyInsights();
+  }, [user, selectedSemester, semestersList]);
+
+  const activeClassObj = classesList.find(c => c.id === selectedClass);
+  const sectionName = activeClassObj?.section; // e.g. "BSIT-1A"
+
+  const activeInsight = dbInsight?.basis_snapshot || {
+    ...mockFacultyInsight,
+    name: profile ? `Prof. ${profile.first_name} ${profile.last_name}` : "Prof. Amanda Rivera",
+    facultyId: user?.id || "usr-003"
+  };
+
+  // Find section-specific insight
+  let activeSectionInsight = null;
+  if (selectedClass !== 'All' && sectionName) {
+    activeSectionInsight = activeInsight.sections?.find(s => s.sectionCode === sectionName);
+    
+    // Dynamic fallback construction if not found in db snapshot
+    if (!activeSectionInsight) {
+      const getScore = (name) => {
+        const crit = stats.criteria.find(c => c.name.toLowerCase().includes(name.toLowerCase()));
+        return crit ? crit.score : 0;
+      };
+      
+      activeSectionInsight = {
+        sectionCode: sectionName,
+        subjectName: activeClassObj?.code || 'Subject',
+        sectionRating: stats.overall,
+        ratingsSummary: {
+          subjectKnowledge: getScore('Content Knowledge') || getScore('Subject Knowledge') || stats.overall,
+          methodology: getScore('Teaching, Learning, and Planning') || getScore('Methodology') || stats.overall,
+          communication: getScore('Learning Environment') || getScore('Communication') || stats.overall,
+          turnaround: getScore('Assessment and Reporting') || getScore('Classroom Turnaround') || stats.overall
+        },
+        insight: `Your overall rating for this class is ${stats.overall.toFixed(2)}. Student comments indicate positive feedback on instructional delivery and guidance.`,
+        perceptions: {
+          workload: "Students perceive the class workload to be reasonable and aligned with course units.",
+          delivery: "Lecture delivery and discussions are noted to be structured and engaging.",
+          topSuggestion: stats.comments.length > 0 
+            ? "Ensure grading feedback is returned in a timely manner to help student tracking."
+            : "Maintain current teaching methodologies and lecture preparations."
+        }
+      };
+    }
+  }
+
+  // Derive dynamic or snapshot values for overall standing
+  const sortedCriteria = [...stats.criteria].sort((a, b) => b.score - a.score);
+  const highestCriteria = activeInsight.overallSpotlight?.highestCriteria || sortedCriteria[0]?.name || 'N/A';
+  const highestScore = activeInsight.overallSpotlight?.highestScore || sortedCriteria[0]?.score || 0;
+  const lowestCriteria = activeInsight.overallSpotlight?.lowestCriteria || sortedCriteria[sortedCriteria.length - 1]?.name || 'N/A';
+  const lowestScore = activeInsight.overallSpotlight?.lowestScore || sortedCriteria[sortedCriteria.length - 1]?.score || 0;
+
+  // Verdict enums display colors & standing
+  const getVerdictDetails = (verdict) => {
+    switch (verdict) {
+      case 'excellent':
+        return { text: 'EXCELLENT', color: 'bg-emerald-50 text-emerald-700 border-emerald-250' };
+      case 'satisfactory':
+        return { text: 'SATISFACTORY', color: 'bg-blue-50 text-blue-700 border-blue-200' };
+      case 'needs_improvement':
+      default:
+        return { text: 'NEEDS IMPROVEMENT', color: 'bg-amber-50 text-amber-700 border-amber-200' };
+    }
+  };
+
+  const verdictDetails = getVerdictDetails(selectedClass === 'All' ? activeInsight.overallVerdict : (activeSectionInsight?.sectionRating >= 3.60 ? 'excellent' : activeSectionInsight?.sectionRating >= 3.00 ? 'satisfactory' : 'needs_improvement'));
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
+          <p className="text-sm text-slate-500 font-medium font-sans">Loading evaluation stats...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (semestersList.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-slate-50">
+        <p className="text-sm text-slate-500 font-sans">No evaluation records found.</p>
+      </div>
+    );
+  }
+
+  const ratingLabel = getRatingLabel(stats.overall);
 
   return (
     <>
@@ -138,8 +495,8 @@ export default function EvalResultsMy() {
               onChange={(e) => setSelectedSemester(e.target.value)}
               className="appearance-none bg-white border border-slate-200 hover:border-sage-300 text-slate-700 px-4 py-2 pr-10 rounded-lg text-sm font-medium focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer"
             >
-              {semesters.map((sem, idx) => (
-                <option key={idx} value={sem}>{sem}</option>
+              {semestersList.map((sem, idx) => (
+                <option key={idx} value={sem.label}>{sem.label}</option>
               ))}
             </select>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
@@ -157,8 +514,8 @@ export default function EvalResultsMy() {
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-start gap-3">
           <ShieldCheck className="h-5 w-5 text-sage-600 mt-0.5 flex-shrink-0" />
           <div>
-            <h4 className="font-semibold text-slate-900 text-sm">Faculty Evaluation Privacy Protection</h4>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <h4 className="font-semibold text-slate-900 text-sm text-left">Faculty Evaluation Privacy Protection</h4>
+            <p className="text-xs text-slate-505 mt-0.5 text-left leading-relaxed">
               In compliance with academic evaluation policy FR25, student identities are completely anonymized. Data is aggregated to protect student confidentiality.
             </p>
           </div>
@@ -167,7 +524,7 @@ export default function EvalResultsMy() {
         {/* Filters and Sub-navigation */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
           <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0">
-            {classesEvaluated.map((cls) => (
+            {classesList.map((cls) => (
               <button
                 key={cls.id}
                 onClick={() => setSelectedClass(cls.id)}
@@ -183,7 +540,7 @@ export default function EvalResultsMy() {
           </div>
 
           <div className="text-xs text-slate-400 italic">
-            Currently showing results for: <span className="font-medium text-slate-600">{selectedSemester}</span>
+            Currently showing results for: <span className="font-medium text-slate-650">{selectedSemester}</span>
           </div>
         </div>
 
@@ -193,9 +550,9 @@ export default function EvalResultsMy() {
           {/* Main Stat Card - Overall Rating */}
           <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col items-center justify-center text-center relative overflow-hidden group hover:border-sage-300 transition-all md:col-span-1">
             <div className="absolute top-0 inset-x-0 h-1 bg-sage-500"></div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Overall Rating</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 font-display">Overall Rating</p>
             <div className="mt-4 flex items-baseline gap-1">
-              <span className="text-5xl font-extrabold font-mono text-slate-900">{activeStats.overall.toFixed(2)}</span>
+              <span className="text-5xl font-extrabold font-mono text-slate-900">{stats.overall.toFixed(2)}</span>
               <span className="text-lg text-slate-400 font-mono">/4.00</span>
             </div>
             
@@ -204,7 +561,7 @@ export default function EvalResultsMy() {
                 <Star 
                   key={star} 
                   className={`h-4 w-4 ${
-                    star <= Math.round(activeStats.overall) 
+                    star <= Math.round(stats.overall) 
                       ? 'text-amber-400 fill-amber-400' 
                       : 'text-slate-200'
                   }`} 
@@ -225,8 +582,8 @@ export default function EvalResultsMy() {
                 <Users className="h-5 w-5" />
               </div>
             </div>
-            <div className="mt-6">
-              <h3 className="text-3xl font-extrabold font-mono text-slate-900">{activeStats.totalEvaluators}</h3>
+            <div className="mt-6 text-left">
+              <h3 className="text-3xl font-extrabold font-mono text-slate-900">{stats.totalEvaluators}</h3>
               <p className="text-xs text-slate-500 mt-1">Anonymized responses submitted</p>
             </div>
           </div>
@@ -239,8 +596,8 @@ export default function EvalResultsMy() {
                 <CheckCircle className="h-5 w-5" />
               </div>
             </div>
-            <div className="mt-6">
-              <h3 className="text-3xl font-extrabold font-mono text-slate-900">{activeStats.participationRate}</h3>
+            <div className="mt-6 text-left">
+              <h3 className="text-3xl font-extrabold font-mono text-slate-900">{stats.participationRate}</h3>
               <p className="text-xs text-slate-500 mt-1">Out of total registered students</p>
             </div>
           </div>
@@ -253,8 +610,8 @@ export default function EvalResultsMy() {
                 <Award className="h-5 w-5" />
               </div>
             </div>
-            <div className="mt-6">
-              <h3 className="text-3xl font-extrabold font-mono text-slate-900">{activeStats.collegeRank}</h3>
+            <div className="mt-6 text-left">
+              <h3 className="text-3xl font-extrabold font-mono text-slate-900">{stats.collegeRank}</h3>
               <p className="text-xs text-slate-500 mt-1">Relative to department faculty</p>
             </div>
           </div>
@@ -267,21 +624,21 @@ export default function EvalResultsMy() {
           {/* Detailed Criteria Breakdown */}
           <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm lg:col-span-2 space-y-6">
             <div>
-              <h3 className="text-lg font-bold font-display text-slate-900">Criteria Breakdown</h3>
-              <p className="text-xs text-slate-500">Evaluation scores categorized by official teaching effectiveness metrics.</p>
+              <h3 className="text-lg font-bold font-display text-slate-900 text-left">Criteria Breakdown</h3>
+              <p className="text-xs text-slate-500 text-left">Evaluation scores categorized by official teaching effectiveness metrics.</p>
             </div>
 
             <div className="space-y-5">
-              {activeStats.criteria.map((item, idx) => {
+              {stats.criteria.map((item, idx) => {
                 const percentage = (item.score / item.max) * 100;
                 return (
                   <div key={idx} className="space-y-2">
                     <div className="flex justify-between items-start">
-                      <div>
+                      <div className="text-left">
                         <h4 className="text-sm font-semibold text-slate-800">{item.name}</h4>
                         <p className="text-xs text-slate-400 pr-4 mt-0.5 line-clamp-1">{item.description}</p>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right whitespace-nowrap">
                         <span className="text-sm font-bold font-mono text-slate-900">{item.score.toFixed(2)}</span>
                         <span className="text-xs text-slate-400 font-mono"> / {item.max.toFixed(2)}</span>
                       </div>
@@ -296,45 +653,255 @@ export default function EvalResultsMy() {
                   </div>
                 );
               })}
+              {stats.criteria.length === 0 && (
+                <div className="text-center py-10 text-slate-400 text-sm">
+                  No criteria scores available for this selection.
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Student Comments list */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col space-y-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-sage-600" />
-                <h3 className="text-lg font-bold font-display text-slate-900">Student Feedback</h3>
+          {/* Student Feedback & Professional Growth Insights Column */}
+          <div className="lg:col-span-1 space-y-6 flex flex-col">
+            {/* Professional Growth Insights Trigger Card */}
+            <div 
+              onClick={() => setIsDrawerOpen(true)}
+              className="bg-white rounded-xl border border-slate-200 hover:border-sage-300 p-5 shadow-sm cursor-pointer transition-all flex items-center justify-between group relative overflow-hidden text-left"
+            >
+              <div className="absolute top-0 inset-x-0 h-1 bg-sage-500"></div>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-sage-50 text-sage-700 rounded-lg group-hover:scale-105 transition-transform flex-shrink-0">
+                  <BrainCircuit className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">Professional Growth Insights</h4>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">View qualitative summary & development plans</p>
+                </div>
               </div>
-              <p className="text-xs text-slate-500 mt-1">Anonymized, direct excerpts of student feedback responses.</p>
+              <ChevronRight className="h-5 w-5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-4 max-h-[360px] pr-2 table-container">
-              {activeStats.comments.length > 0 ? (
-                activeStats.comments.map((comment, index) => (
-                  <div key={index} className="bg-slate-50 border border-slate-150 rounded-lg p-4 text-xs space-y-2">
-                    <p className="text-slate-700 leading-relaxed italic">"{comment.text}"</p>
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
-                      <span>Verified Student Submission</span>
-                      <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-mono font-bold">
-                        {comment.course}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center py-10 text-slate-400">
-                  <MessageSquare className="h-8 w-8 text-slate-300 mb-2" />
-                  <p className="text-xs font-medium">No comments recorded for this filter selection.</p>
+            {/* Student Comments list */}
+            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col space-y-4 flex-1">
+              <div>
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="h-5 w-5 text-sage-600" />
+                  <h3 className="text-lg font-bold font-display text-slate-900">Student Feedback</h3>
                 </div>
-              )}
+                <p className="text-xs text-slate-500 mt-1 text-left">Anonymized, direct excerpts of student feedback responses.</p>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-4 max-h-[360px] pr-2 table-container">
+                {stats.comments.length > 0 ? (
+                  stats.comments.map((comment, index) => (
+                    <div key={index} className="bg-slate-50 border border-slate-150 rounded-lg p-4 text-xs space-y-2 text-left">
+                      <p className="text-slate-700 leading-relaxed italic whitespace-pre-line">"{comment.text}"</p>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
+                        <span>Verified Student Submission</span>
+                        <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-mono font-bold">
+                          {comment.course}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center py-10 text-slate-400">
+                    <MessageSquare className="h-8 w-8 text-slate-305 mb-2" />
+                    <p className="text-xs font-medium">No comments recorded for this filter selection.</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
         </div>
 
       </div>
+
+      {/* Drawer Overlay & Side Panel */}
+      {isDrawerOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 animate-in fade-in duration-305"
+          onClick={() => setIsDrawerOpen(false)}
+        />
+      )}
+
+      <div 
+        className={`fixed top-0 right-0 h-full w-full max-w-md bg-white border-l border-slate-200 shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-out ${
+          isDrawerOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        {/* Drawer Header */}
+        <div className="p-6 border-b border-slate-150 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sage-700">
+            <BrainCircuit className="h-5 w-5" />
+            <h3 className="text-base font-bold text-slate-900 font-display">Growth Insights</h3>
+          </div>
+          <button 
+            onClick={() => setIsDrawerOpen(false)}
+            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Drawer Body (Scrollable) */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          
+          {selectedClass === 'All' ? (
+            /* OVERALL STANDING VIEW */
+            <div className="space-y-6 text-left">
+              
+              {/* Performance Summary Banner */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">My Performance Standing</span>
+                  <div className="mt-2 flex items-baseline gap-1.5">
+                    <span className="text-3xl font-extrabold text-slate-900 font-mono">{stats.overall.toFixed(2)}</span>
+                    <span className="text-sm text-slate-400 font-mono">/ 4.00</span>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${verdictDetails.color}`}>
+                    STATUS: {verdictDetails.text}
+                  </span>
+                </div>
+              </div>
+
+              {/* Criteria Performance Spotlight */}
+              <div className="space-y-3.5">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Award className="h-4 w-4 text-sage-600" /> Overall Criteria Spotlight
+                </h4>
+
+                <div className="space-y-3">
+                  {/* Peak Performance */}
+                  <div className="bg-emerald-50/35 border border-emerald-200/50 rounded-xl p-4 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-emerald-800">
+                      <Zap className="h-4 w-4 text-amber-550 fill-amber-400" />
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider">Peak Performance Criteria</span>
+                    </div>
+                    <h5 className="text-xs font-bold text-slate-900">{highestCriteria}</h5>
+                    <p className="text-xs text-slate-500 font-medium">Rating: <span className="font-bold text-emerald-700 font-mono">{highestScore.toFixed(2)} / 4.00</span></p>
+                  </div>
+
+                  {/* Development Focus */}
+                  <div className="bg-amber-50/30 border border-amber-250/40 rounded-xl p-4 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-amber-700">
+                      <Lightbulb className="h-4 w-4 text-amber-605" />
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider">Development Area / Focus</span>
+                    </div>
+                    <h5 className="text-xs font-bold text-slate-900">{lowestCriteria}</h5>
+                    <p className="text-xs text-slate-500 font-medium">Rating: <span className="font-bold text-amber-700 font-mono">{lowestScore.toFixed(2)} / 4.00</span></p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Overall Performance Insight text */}
+              <div className="space-y-2 bg-slate-50 border border-slate-200/80 rounded-xl p-4">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <CheckCircle2 className="h-4.5 w-4.5 text-sage-600" /> Overall Performance Insight
+                </h4>
+                <p className="text-xs font-medium text-slate-700 leading-relaxed italic text-left">
+                  "{activeInsight.overallSummary}"
+                </p>
+              </div>
+
+            </div>
+          ) : (
+            /* SECTION-SPECIFIC VIEW */
+            <div className="space-y-6 text-left">
+              
+              {activeSectionInsight && (
+                <>
+                  <div className="border-b border-slate-150 pb-4">
+                    <span className="text-[10px] font-extrabold font-mono text-sage-800 uppercase tracking-wider bg-sage-50 border border-sage-200 px-2.5 py-0.5 rounded-full">
+                      {activeSectionInsight.sectionCode}
+                    </span>
+                    <h4 className="text-sm font-bold text-slate-900 mt-2">{activeSectionInsight.subjectName}</h4>
+                    <p className="text-xs text-slate-500 font-medium mt-1">
+                      Section Rating: <span className="font-bold text-slate-900 font-mono">{activeSectionInsight.sectionRating.toFixed(2)} / 4.00</span>
+                    </p>
+                  </div>
+
+                  {/* Summarized Student Ratings */}
+                  <div className="space-y-3.5">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Activity className="h-4 w-4 text-sage-600" /> Summarized Student Ratings
+                    </h4>
+
+                    <div className="space-y-3">
+                      {[
+                        { name: 'Subject Knowledge', score: activeSectionInsight.ratingsSummary.subjectKnowledge },
+                        { name: 'Teaching Methodology', score: activeSectionInsight.ratingsSummary.methodology },
+                        { name: 'Communication Skills', score: activeSectionInsight.ratingsSummary.communication },
+                        { name: 'Classroom Turnaround', score: activeSectionInsight.ratingsSummary.turnaround }
+                      ].map((item, idx) => (
+                        <div key={idx} className="space-y-1.5">
+                          <div className="flex justify-between items-center text-xs font-medium">
+                            <span className="text-slate-700 font-semibold">{item.name}</span>
+                            <span className="font-mono text-slate-800 font-bold">{item.score.toFixed(2)} / 4.00</span>
+                          </div>
+                          <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                            <div 
+                              className="bg-sage-600 h-full rounded-full transition-all duration-300"
+                              style={{ width: `${(item.score / 4.00) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Section-Specific Insight */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+                    <div className="flex items-center gap-1.5 text-sage-700">
+                      <Lightbulb className="h-4.5 w-4.5" />
+                      <h4 className="text-xs font-bold uppercase tracking-wider">Section Specific Insight</h4>
+                    </div>
+                    <p className="text-xs font-medium text-slate-700 leading-relaxed italic">
+                      "{activeSectionInsight.insight}"
+                    </p>
+                  </div>
+
+                  {/* Student Perceptions Digest */}
+                  <div className="space-y-3.5">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <MessageSquare className="h-4 w-4 text-sage-600" /> Student Perceptions Digest
+                    </h4>
+
+                    <div className="space-y-3">
+                      <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 text-xs space-y-1.5 text-left">
+                        <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Workload Comments</span>
+                        <p className="text-slate-700 leading-relaxed font-medium">"{activeSectionInsight.perceptions.workload}"</p>
+                      </div>
+
+                      <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 text-xs space-y-1.5 text-left">
+                        <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Lecture Delivery</span>
+                        <p className="text-slate-700 leading-relaxed font-medium">"{activeSectionInsight.perceptions.delivery}"</p>
+                      </div>
+
+                      <div className="bg-amber-50/20 border border-amber-250/30 rounded-xl p-4 text-xs space-y-1.5 text-left">
+                        <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-wider block">Top Constructive Suggestion</span>
+                        <p className="text-slate-700 leading-relaxed font-semibold italic">"{activeSectionInsight.perceptions.topSuggestion}"</p>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+            </div>
+          )}
+
+        </div>
+
+        {/* Drawer Footer */}
+        <div className="p-6 border-t border-slate-150 bg-slate-50 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+          <span>Aggregated Evaluations Summary</span>
+          <span className="font-mono">SAGE System</span>
+        </div>
+      </div>
     </>
   );
 }
-

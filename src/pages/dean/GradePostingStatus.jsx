@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, ClipboardCheck, Filter, Users } from 'lucide-react';
+import { Search, Filter } from 'lucide-react';
 import { mockDb } from '../../lib/mockDb';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
 
 export default function GradePostingStatus() {
-  const [classrooms, setClassrooms] = useState([]);
-  const [postedGrades, setPostedGrades] = useState([]);
+  const { user } = useAuth();
   
   // Filters
   const [deptFilter, setDeptFilter] = useState('');
@@ -15,41 +16,88 @@ export default function GradePostingStatus() {
 
   const [triggerRefresh, setTriggerRefresh] = useState(0);
   const [selectedOverrideClass, setSelectedOverrideClass] = useState('BSITCPR323');
-  const [lockedMilestones, setLockedMilestones] = useState([]);
 
-  useEffect(() => {
-    setClassrooms(mockDb.getClassrooms().filter(c => c.status === 'active'));
-    setPostedGrades(mockDb.getPostedGrades());
+  const classrooms = useMemo(() => {
+    return mockDb.getClassrooms().filter(c => c.status === 'active');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerRefresh]);
 
-    const locked = JSON.parse(localStorage.getItem(`locked_milestones_${selectedOverrideClass}`) || '[]');
-    setLockedMilestones(locked);
+  const lockedMilestones = useMemo(() => {
+    return JSON.parse(localStorage.getItem(`locked_milestones_${selectedOverrideClass}`) || '[]');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [triggerRefresh, selectedOverrideClass]);
 
-  const handleApproveUnlock = (classCode, milestone) => {
+  const getSupabaseClassRecordId = async (subjectCode, sectionName) => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (uuidRegex.test(subjectCode)) return subjectCode;
+
+    try {
+      const { data, error } = await supabase
+        .from('class_records')
+        .select('class_record_id, subjects!inner(code), sections!inner(name)');
+      if (error) throw error;
+      
+      const match = data?.find(cr => 
+        cr.subjects?.code === subjectCode && 
+        cr.sections?.name === sectionName
+      );
+      return match ? match.class_record_id : null;
+    } catch (err) {
+      console.error('Error finding Supabase class record:', err);
+      return null;
+    }
+  };
+
+  const handleApproveUnlock = async (classCode, milestone) => {
+    const classroom = classrooms.find(c => c.subjectCode === classCode);
+    const sectionName = classroom ? classroom.section : '';
+    const realClassRecordId = await getSupabaseClassRecordId(classCode, sectionName);
+
     // 1. Remove from locked milestones
     const locked = JSON.parse(localStorage.getItem(`locked_milestones_${classCode}`) || '[]');
-    const updatedLocks = locked.filter(m => m !== milestone);
+    const updatedLocks = locked.filter(m => m !== milestone && m !== 'Final');
     localStorage.setItem(`locked_milestones_${classCode}`, JSON.stringify(updatedLocks));
     
     // 2. Remove from pending unlock requests
     const reqs = JSON.parse(localStorage.getItem(`unlock_requests_${classCode}`) || '[]');
-    const updatedReqs = reqs.filter(m => m !== milestone);
+    const updatedReqs = reqs.filter(m => m !== milestone && m !== 'Final');
     localStorage.setItem(`unlock_requests_${classCode}`, JSON.stringify(updatedReqs));
     
+    if (realClassRecordId) {
+      try {
+        const resolvedAt = new Date().toISOString();
+        const resolvedBy = user?.id;
+
+        await supabase
+          .from('unlock_requests')
+          .update({ status: 'approved', resolved_by: resolvedBy, resolved_at: resolvedAt })
+          .eq('class_record_id', realClassRecordId)
+          .eq('milestone', milestone)
+          .eq('status', 'pending');
+
+        await supabase
+          .from('posted_grades')
+          .update({ is_locked: false })
+          .eq('class_record_id', realClassRecordId)
+          .eq('grade_period', 'final');
+      } catch (dbErr) {
+        console.error('Error updating unlock request in Supabase:', dbErr);
+      }
+    }
+
     // Refresh UI
     setTriggerRefresh(prev => prev + 1);
   };
 
-  const getStatusBadge = (classId, period) => {
+  const getStatusBadge = (classId) => {
     const classroom = classrooms.find(cl => cl.id === classId);
     const classCode = classroom ? classroom.subjectCode : '';
     
-    const lockedMilestones = JSON.parse(localStorage.getItem(`locked_milestones_${classCode}`) || '[]');
-    const unlockRequests = JSON.parse(localStorage.getItem(`unlock_requests_${classCode}`) || '[]');
+    const lockedMilestonesList = JSON.parse(localStorage.getItem(`locked_milestones_${classCode}`) || '[]');
+    const unlockRequestsList = JSON.parse(localStorage.getItem(`unlock_requests_${classCode}`) || '[]');
     
-    const normalizedPeriod = period === 'prelim' ? 'Prelim' : period === 'midterm' ? 'Midterm' : period === 'final' ? 'Final' : period;
-    const isPosted = lockedMilestones.includes(normalizedPeriod) || lockedMilestones.includes('Semestral Grade');
-    const isRequested = unlockRequests.includes(normalizedPeriod);
+    const isPosted = lockedMilestonesList.includes('Semestral Grade') || lockedMilestonesList.includes('Final');
+    const isRequested = unlockRequestsList.includes('Semestral Grade') || unlockRequestsList.includes('Final');
     
     if (isPosted) {
       return (
@@ -59,7 +107,7 @@ export default function GradePostingStatus() {
           </span>
           {isRequested && (
             <button
-              onClick={() => handleApproveUnlock(classCode, normalizedPeriod)}
+              onClick={() => handleApproveUnlock(classCode, 'Semestral Grade')}
               className="px-2 py-0.5 text-[9px] font-extrabold bg-amber-500 hover:bg-amber-600 text-white rounded shadow-sm transition-colors flex items-center gap-1 animate-pulse outline-none"
               title="Click to approve faculty request and unlock registry"
             >
@@ -135,38 +183,34 @@ export default function GradePostingStatus() {
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Registry Locks</span>
               <div className="flex flex-wrap gap-1">
-                {lockedMilestones.length === 0 ? (
+                {!(lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final')) ? (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-250">
                     No active locks
                   </span>
                 ) : (
-                  lockedMilestones.map(m => (
-                    <span key={m} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 font-mono">
-                      🔒 {m}
-                    </span>
-                  ))
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 font-mono">
+                    🔒 Semestral Grade
+                  </span>
                 )}
               </div>
             </div>
 
-            {lockedMilestones.length === 0 ? (
-              <p className="text-xs font-semibold text-slate-450 italic text-center py-2">This class currently has no locked milestones.</p>
+            {!(lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final')) ? (
+              <p className="text-xs font-semibold text-slate-455 italic text-center py-2">This class currently has no locked milestones.</p>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 pt-1">
-                {lockedMilestones.map(milestone => (
-                  <div key={milestone} className="flex justify-between items-center bg-slate-50/50 p-2.5 rounded-lg border border-slate-200 shadow-sm">
-                    <div className="flex flex-col">
-                      <span className="text-xs font-bold text-slate-800">{milestone}</span>
-                      <span className="text-[9px] text-slate-405 font-mono mt-0.5">Status: LOCKED</span>
-                    </div>
-                    <button
-                      onClick={() => handleApproveUnlock(selectedOverrideClass, milestone)}
-                      className="px-2.5 py-1 text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors shadow-sm outline-none"
-                    >
-                      🔓 Unlock Override
-                    </button>
+              <div className="grid grid-cols-1 gap-2.5 pt-1">
+                <div className="flex justify-between items-center bg-slate-50/50 p-2.5 rounded-lg border border-slate-200 shadow-sm">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-800">Semestral Grade</span>
+                    <span className="text-[9px] text-rose-600 font-mono mt-0.5 font-bold">Status: LOCKED</span>
                   </div>
-                ))}
+                  <button
+                    onClick={() => handleApproveUnlock(selectedOverrideClass, 'Semestral Grade')}
+                    className="px-2.5 py-1 text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors shadow-sm outline-none"
+                  >
+                    🔓 Unlock Override
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -175,7 +219,7 @@ export default function GradePostingStatus() {
         {/* Filters Toolbar */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
-            <Filter className="h-3.5 w-3.5 text-sage-600" /> Filter Options
+            <Filter className="h-3.5 w-3.5 text-slate-400" /> Filter Options
           </h3>
           
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
@@ -247,9 +291,7 @@ export default function GradePostingStatus() {
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Assigned Faculty</th>
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Subject & Title</th>
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Section</th>
-                  <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Prelim Grades</th>
-                  <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Midterm Grades</th>
-                  <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Final Grades</th>
+                  <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Semestral Grades</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-100">
@@ -274,19 +316,13 @@ export default function GradePostingStatus() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {getStatusBadge(c.id, 'prelim')}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {getStatusBadge(c.id, 'midterm')}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {getStatusBadge(c.id, 'final')}
+                        {getStatusBadge(c.id)}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="6" className="px-6 py-10 text-center text-slate-400 text-sm">
+                    <td colSpan="4" className="px-6 py-10 text-center text-slate-400 text-sm">
                       No matching class posting status reports found.
                     </td>
                   </tr>
