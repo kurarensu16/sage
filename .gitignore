@@ -3,7 +3,6 @@ logs
 *.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
@@ -11,6 +10,22 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+
+# Supabase Local Environments
+supabase/.env
+supabase/.env.local
+
+# Temp Scratch Scripts & Extracted Dumps
+scratch_*.js
+extracted*.txt
+comparison-report.md
+
+# Document Reference Files
+*.xlsx
+*.docx
+*.pdf
 
 # Editor directories and files
 .vscode/*

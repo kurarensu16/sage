@@ -103,8 +103,8 @@ export function buildRecordSheet(ws, metadata, students) {
     
     setCell(ws, r, 0, idx + 1);
     
-    // Generate clean mock student ID
-    const studentNo = student.id === 11 ? '2025-1001' : student.id === 12 ? '2025-1002' : student.id === 13 ? '2025-1003' : `2025-100${student.id}`;
+    // Use student's real student number or fall back to clean mock student ID
+    const studentNo = student.studentNo || (student.id === 11 ? '2025-1001' : student.id === 12 ? '2025-1002' : student.id === 13 ? '2025-1003' : `2025-100${student.id}`);
     setCell(ws, r, 1, studentNo);
     setCell(ws, r, 2, student.name.toUpperCase());
 

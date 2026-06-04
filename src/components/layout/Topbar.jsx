@@ -1,4 +1,5 @@
 import React from 'react';
+import { useAuth } from '../../lib/AuthContext';
 import { useLocation, Link } from 'react-router-dom';
 import { Search, Bell, Settings, PanelLeft } from 'lucide-react';
 
@@ -28,14 +29,27 @@ export default function Topbar({ toggleSidebar, isCollapsed }) {
       avatarBg: 'bg-emerald-100 text-emerald-800 border-emerald-200'
     },
     student: {
-      name: 'Sarah Jenkins',
-      email: 's.jenkins@student.sage.edu',
-      title: 'BSIT - 3rd Year',
+      name: 'Student',
+      email: 'student@sage.edu.ph',
+      title: 'Student',
       avatarBg: 'bg-blue-100 text-blue-800 border-blue-200'
     }
   };
 
+  const { profile } = useAuth();
   const currentMeta = roleMeta[role] || roleMeta.faculty;
+  const displayName = profile?.first_name ? `${profile.first_name} ${profile.last_name}` : currentMeta.name;
+  // Determine title based on role
+  const displayTitle = (() => {
+    if (role === 'student') {
+      const prog = profile?.program || '';
+      const year = profile?.year_level || profile?.yearLevel || '';
+      return [prog, year].filter(Boolean).join(' • ') || currentMeta.title;
+    }
+    // faculty and dean (and admin) show department/college
+    const dept = profile?.departments?.name || profile?.department || profile?.department_name || '';
+    return dept || currentMeta.title;
+  })();
 
   return (
     <header className="bg-white border-b border-slate-200 h-16 px-8 flex items-center justify-between flex-shrink-0 z-20">
@@ -102,10 +116,10 @@ export default function Topbar({ toggleSidebar, isCollapsed }) {
           
           <div className="hidden lg:block text-left">
             <h4 className="text-xs font-bold text-slate-800 leading-tight group-hover:text-slate-900">
-              {currentMeta.name}
+              {displayName}
             </h4>
             <span className="text-[10px] text-slate-400 font-medium">
-              {currentMeta.title}
+              {displayTitle}
             </span>
           </div>
         </div>

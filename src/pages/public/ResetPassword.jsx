@@ -1,17 +1,19 @@
-import React, { useState } from 'react';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react';
-import { mockDb } from '../../lib/mockDb';
+import { supabase } from '../../lib/supabase';
+import { logActivity } from '../../lib/auditLog';
 import SageLogo from '../../components/layout/SageLogo';
 
 export default function ResetPassword() {
-  const navigate = useNavigate();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -25,9 +27,23 @@ export default function ResetPassword() {
       return;
     }
 
-    // Simulate password update
-    mockDb.addLog('Password Reset Success', 'Password successfully updated for user account.', 'Public Account Service');
-    setIsSubmitted(true);
+    try {
+      // 1. Update password in Supabase Auth
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+
+      // 2. Log password update success to audit log
+      await logActivity(
+        'Password Reset Success',
+        'Password successfully updated for user account via recovery link.',
+        'Public Account Service'
+      );
+
+      setIsSubmitted(true);
+    } catch (err) {
+      console.error('Password reset update error:', err);
+      setErrorMsg(err.message || 'Failed to update password. Recovery link may have expired.');
+    }
   };
 
   return (
@@ -82,13 +98,24 @@ export default function ResetPassword() {
                     <Lock className="h-4 w-4 text-slate-400" />
                   </div>
                   <input 
-                    type="password" 
+                    type={showNewPassword ? "text" : "password"} 
                     required
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 focus:border-sage-500 rounded-xl text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500 bg-slate-50/30 focus:bg-white"
+                    className="block w-full pl-10 pr-10 py-2.5 border border-slate-200 focus:border-sage-500 rounded-xl text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500 bg-slate-50/30 focus:bg-white"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    {showNewPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -100,13 +127,24 @@ export default function ResetPassword() {
                     <Lock className="h-4 w-4 text-slate-400" />
                   </div>
                   <input 
-                    type="password" 
+                    type={showConfirmPassword ? "text" : "password"} 
                     required
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 focus:border-sage-500 rounded-xl text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500 bg-slate-50/30 focus:bg-white"
+                    className="block w-full pl-10 pr-10 py-2.5 border border-slate-200 focus:border-sage-500 rounded-xl text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500 bg-slate-50/30 focus:bg-white"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    {showConfirmPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
                 </div>
               </div>
 

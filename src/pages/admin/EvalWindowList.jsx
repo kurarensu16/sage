@@ -2,25 +2,99 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, Plus, Calendar, Edit2, Trash2, Clock, Trash } from 'lucide-react';
-import { mockDb } from '../../lib/mockDb';
+import { supabase } from '../../lib/supabase';
 
 export default function EvalWindowList() {
   const navigate = useNavigate();
   const [windows, setWindows] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const loadWindows = () => {
-    setWindows(mockDb.getEvalWindows());
+  const loadWindows = async () => {
+    try {
+      const { data: winData, error } = await supabase
+        .from('evaluation_windows')
+        .select(`
+          window_id,
+          open_at,
+          close_at,
+          is_closed,
+          faculty:users!evaluation_windows_faculty_id_fkey (
+            first_name,
+            last_name
+          ),
+          sections (
+            section_id,
+            name
+          ),
+          evaluation_forms (
+            title
+          ),
+          evaluation_responses (
+            response_id
+          )
+        `)
+        .order('open_at', { ascending: false });
+
+      if (error) throw error;
+
+      const { data: enrollments, error: enrolErr } = await supabase
+        .from('enrollments')
+        .select('section_id, student_id');
+
+      if (enrolErr) throw enrolErr;
+
+      const uniqueStudentsBySection = {};
+      enrollments?.forEach(e => {
+        if (!uniqueStudentsBySection[e.section_id]) {
+          uniqueStudentsBySection[e.section_id] = new Set();
+        }
+        uniqueStudentsBySection[e.section_id].add(e.student_id);
+      });
+
+      const countsBySection = {};
+      Object.keys(uniqueStudentsBySection).forEach(secId => {
+        countsBySection[secId] = uniqueStudentsBySection[secId].size;
+      });
+
+      const mapped = (winData || []).map(w => {
+        const total = countsBySection[w.sections?.section_id] || 0;
+        return {
+          id: w.window_id,
+          facultyName: w.faculty ? `${w.faculty.first_name} ${w.faculty.last_name}` : 'Unknown Faculty',
+          section: w.sections?.name || 'Unknown Section',
+          templateTitle: w.evaluation_forms?.title || 'Unknown Template',
+          openAt: w.open_at,
+          closeAt: w.close_at,
+          isClosed: w.is_closed,
+          responsesCount: w.evaluation_responses ? w.evaluation_responses.length : 0,
+          totalStudents: total
+        };
+      });
+
+      setWindows(mapped);
+    } catch (err) {
+      console.error('Failed to load evaluation windows:', err);
+    }
   };
 
   useEffect(() => {
     loadWindows();
   }, []);
 
-  const handleCancelWindow = (winId) => {
+  const handleCancelWindow = async (winId) => {
     if (confirm('Are you sure you want to cancel this scheduled evaluation window? This will delete the scheduler entry.')) {
-      mockDb.deleteEvalWindow(winId);
-      loadWindows();
+      try {
+        const { error } = await supabase
+          .from('evaluation_windows')
+          .delete()
+          .eq('window_id', winId);
+
+        if (error) throw error;
+        loadWindows();
+      } catch (err) {
+        console.error('Error canceling window:', err);
+        alert('Error canceling window: ' + err.message);
+      }
     }
   };
 

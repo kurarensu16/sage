@@ -19,6 +19,7 @@ The system is split into **4 main portals** plus public authentication screens, 
 * **Login Page (S01)**: Split-screen authentication layout. Features server-side simulated role resolution and a **Quick Demo Accounts Selector** drawer.
 * **Forgot Password (S02)**: Registered account verification and token dispatch logger.
 * **Reset Password (S03)**: Password constraints validator that updates local credentials.
+* **Force Change Password**: Intercepts first-time logins and requires them to update their password before proceeding.
 
 ### 2. Admin Portal (S04 – S14)
 * **Dashboard (S04)**: Global metrics and live system-wide transaction activity ledger feed.
@@ -212,6 +213,7 @@ This document provides a highly granular breakdown of the development phases for
 *   **Supabase Migration:** Complete replacement of `mockDb.js` with a live Supabase PostgreSQL database utilizing the fully mapped 19-table schema.
 *   **Security & RLS:** Implementation of strict Row Level Security (RLS) policies and explicit Postgres role grants (`anon`, `authenticated`, `service_role`).
 *   **Production Authentication:** Transition to genuine JWT-based authentication via Supabase Auth. Removal of the "Quick Demo Accounts Selector" for production deployment.
+*   **Force Change Password on First Login:** Integrated a security flow where new accounts or seeded accounts must update their password on their first login before they can access their role-specific dashboards.
 
 ---
 

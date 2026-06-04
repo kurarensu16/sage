@@ -1,56 +1,141 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, Filter, Users, Calendar, Clock, BookOpen, Settings, Edit3, ChevronRight, Eye, Plus, Lock } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
 
 export default function ClassRecordsList() {
-  // Mock data for assigned classes
-  const classes = [
-    {
-      id: 1,
-      subjectCode: 'IT101',
-      subjectName: 'Introduction to Computing',
-      section: 'BSIT-1A',
-      schedule: 'MWF 9:00AM - 10:30AM',
-      room: 'Lab 1',
-      enrolled: 45,
-      status: 'Ongoing',
-      gradingPeriod: 'Midterm',
-    },
-    {
-      id: 2,
-      subjectCode: 'IT201',
-      subjectName: 'Data Structures and Algorithms',
-      section: 'BSIT-2B',
-      schedule: 'TTh 1:00PM - 3:00PM',
-      room: 'Lab 3',
-      enrolled: 38,
-      status: 'Ongoing',
-      gradingPeriod: 'Midterm',
-    },
-    {
-      id: 3,
-      subjectCode: 'CS301',
-      subjectName: 'Artificial Intelligence',
-      section: 'BSCS-3A',
-      schedule: 'MWF 1:00PM - 2:30PM',
-      room: 'Lec 5',
-      enrolled: 42,
-      status: 'Pending Setup',
-      gradingPeriod: 'Prelim',
-    },
-    {
-      id: 4,
-      subjectCode: 'IT401',
-      subjectName: 'Capstone Project 1',
-      section: 'BSIT-4A',
-      schedule: 'TTh 9:00AM - 12:00PM',
-      room: 'Lab 2',
-      enrolled: 25,
-      status: 'Grades Posted',
-      gradingPeriod: 'Midterm',
+  const { user } = useAuth();
+  const [classes, setClasses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState('current'); // 'current' or 'past'
+
+  useEffect(() => {
+    async function fetchClasses() {
+      if (!user) return;
+      setLoading(true);
+      try {
+        const { data: classesData, error: classesError } = await supabase
+          .from('class_records')
+          .select(`
+            class_record_id,
+            status,
+            school_year,
+            semester,
+            subject_id,
+            section_id,
+            subjects ( subject_id, code, name, units ),
+            sections ( section_id, name, school_year, semester )
+          `)
+          .eq('faculty_id', user.id)
+          .eq('status', filterType === 'current' ? 'active' : 'archived');
+
+        if (classesError) throw classesError;
+
+        if (!classesData || classesData.length === 0) {
+          setClasses([]);
+          setLoading(false);
+          return;
+        }
+
+        const classIds = classesData.map(c => c.class_record_id);
+
+        const { data: gradingCols, error: colsError } = await supabase
+          .from('class_grading_columns')
+          .select('class_record_id, term')
+          .in('class_record_id', classIds);
+
+        if (colsError) throw colsError;
+
+        const { data: postedGrades, error: gradesError } = await supabase
+          .from('posted_grades')
+          .select('class_record_id, grade_period, is_locked')
+          .in('class_record_id', classIds);
+
+        if (gradesError) throw gradesError;
+
+        const { data: enrollments, error: enrollError } = await supabase
+          .from('enrollments')
+          .select('section_id, subject_id');
+
+        if (enrollError) throw enrollError;
+
+        // Count enrollments by section_id + subject_id
+        const enrolledCountsMap = {};
+        (enrollments || []).forEach(e => {
+          const key = `${e.section_id}|${e.subject_id}`;
+          enrolledCountsMap[key] = (enrolledCountsMap[key] || 0) + 1;
+        });
+
+        // Map classes to their visual representation
+        const mappedClasses = classesData.map((cls, idx) => {
+          const matchingCols = (gradingCols || []).filter(col => col.class_record_id === cls.class_record_id);
+          const matchingPosted = (postedGrades || []).filter(g => g.class_record_id === cls.class_record_id && g.is_locked);
+
+          const hasSetup = matchingCols.length > 0;
+          
+          // Determine status and active term
+          let statusLabel = 'Pending Setup';
+          let gradingPeriod = 'Prelim';
+
+          if (hasSetup) {
+            const postedPeriods = new Set(matchingPosted.map(g => g.grade_period.toLowerCase()));
+            
+            if (postedPeriods.has('final')) {
+              statusLabel = 'Grades Posted';
+              gradingPeriod = 'Final';
+            } else {
+              statusLabel = 'Ongoing';
+              gradingPeriod = 'Semestral';
+            }
+          }
+
+          // Generate consistent mock schedule and room since they are not in schema
+          const schedules = [
+            { schedule: 'MWF 9:00AM - 10:30AM', room: 'Lab 1' },
+            { schedule: 'TTh 1:00PM - 3:00PM', room: 'Lab 3' },
+            { schedule: 'MWF 1:00PM - 2:30PM', room: 'Lec 5' },
+            { schedule: 'TTh 9:00AM - 12:00PM', room: 'Lab 2' },
+          ];
+          const { schedule, room } = schedules[idx % schedules.length];
+          const enrolledCount = enrolledCountsMap[`${cls.section_id}|${cls.subject_id}`] || 0;
+
+          return {
+            id: cls.class_record_id,
+            subjectCode: cls.subjects?.code || 'N/A',
+            subjectName: cls.subjects?.name || 'N/A',
+            section: cls.sections?.name || 'N/A',
+            schedule,
+            room,
+            enrolled: enrolledCount,
+            status: statusLabel,
+            gradingPeriod,
+            semester: cls.semester,
+            schoolYear: cls.school_year
+          };
+        });
+
+        setClasses(mappedClasses);
+      } catch (err) {
+        console.error('Error fetching classes:', err);
+      } finally {
+        setLoading(false);
+      }
     }
-  ];
+
+    fetchClasses();
+  }, [user, filterType]);
+
+  const filteredClasses = classes.filter(cls => {
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      cls.subjectCode.toLowerCase().includes(searchLower) ||
+      cls.subjectName.toLowerCase().includes(searchLower) ||
+      cls.section.toLowerCase().includes(searchLower)
+    );
+  });
 
   return (
     <>
@@ -70,90 +155,124 @@ export default function ClassRecordsList() {
                 </div>
                 <input 
                   type="text" 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                   className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-lg focus:ring-1 focus:ring-sage-400 focus:border-sage-400 sm:text-sm transition-colors outline-none" 
                   placeholder="Search by subject code, name, or section..." 
                 />
             </div>
             
             <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-1">
-                <button className="px-3 py-1.5 text-sm font-medium bg-sage-50 text-sage-700 rounded-md transition-colors">Current Semester</button>
-                <button className="px-3 py-1.5 text-sm font-medium text-slate-500 hover:text-slate-700 rounded-md transition-colors">Past Archives</button>
+                <button 
+                  onClick={() => setFilterType('current')}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                    filterType === 'current' ? 'bg-sage-50 text-sage-700' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Current Semester
+                </button>
+                <button 
+                  onClick={() => setFilterType('past')}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                    filterType === 'past' ? 'bg-sage-50 text-sage-700' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Past Archives
+                </button>
             </div>
         </div>
 
         {/* Classes Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {classes.map((cls) => (
-                <div key={cls.id} className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-sage-300 transition-all flex flex-col group">
-                    
-                    {/* Card Header */}
-                    <div className="p-5 border-b border-slate-100 relative">
-                        <div className="flex justify-between items-start mb-2">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                                {cls.section}
-                            </span>
-                            
-                            {cls.status === 'Pending Setup' && (
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                                    {cls.status}
-                                </span>
-                            )}
-                            {cls.status === 'Ongoing' && (
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                                    {cls.gradingPeriod} Ongoing
-                                </span>
-                            )}
-                            {cls.status === 'Grades Posted' && (
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    {cls.gradingPeriod} Posted
-                                </span>
-                            )}
-                        </div>
-                        
-                        <h3 className="text-xl font-bold font-display text-slate-900 leading-tight">
-                            {cls.subjectCode}
-                        </h3>
-                        <p className="text-sm text-slate-500 mt-1 line-clamp-1">{cls.subjectName}</p>
-                    </div>
-                    
-                    {/* Card Body (Details) */}
-                    <div className="p-5 flex-1 space-y-3">
-                        <div className="flex items-center gap-3 text-sm text-slate-600">
-                            <Clock className="h-4 w-4 text-sage-500 flex-shrink-0" />
-                            <span>{cls.schedule}</span>
-                        </div>
-                        <div className="flex items-center gap-3 text-sm text-slate-600">
-                            <Calendar className="h-4 w-4 text-sage-500 flex-shrink-0" />
-                            <span>{cls.room}</span>
-                        </div>
-                        <div className="flex items-center gap-3 text-sm text-slate-600">
-                            <Users className="h-4 w-4 text-sage-500 flex-shrink-0" />
-                            <span><strong className="text-slate-900 font-mono">{cls.enrolled}</strong> Students Enrolled</span>
-                        </div>
-                    </div>
-                    
-                    <div className="p-4 bg-slate-50 border-t border-slate-100 rounded-b-xl grid grid-cols-2 gap-3">
-                        {cls.status === 'Pending Setup' ? (
-                            <Link to="/faculty/gradecomponentssetup" className="col-span-2 flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm">
-                                <Settings className="h-4 w-4" /> Setup Grade Weights
-                            </Link>
-                        ) : (
-                            <>
-                                <Link to="/faculty/scoreinput" className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm">
-                                    <Edit3 className="h-4 w-4" /> Input Scores
-                                </Link>
-                                <Link to="/faculty/postedgradesview" className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-lg transition-colors">
-                                    <Lock className="h-4 w-4 text-slate-450" /> View Posted
-                                </Link>
-                            </>
-                        )}
-                    </div>
-                </div>
-            ))}
-        </div>
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center py-20 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+            <div className="flex flex-col items-center gap-3">
+              <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-sage-600"></div>
+              <p className="text-sm text-slate-500 font-medium font-sans">Loading class records...</p>
+            </div>
+          </div>
+        ) : filteredClasses.length === 0 ? (
+          <div className="bg-white rounded-xl border border-slate-200 p-12 text-center max-w-xl mx-auto">
+            <BookOpen className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+            <h3 className="text-lg font-bold text-slate-900 font-display">No classes found</h3>
+            <p className="text-sm text-slate-500 mt-2">
+              {searchTerm ? "No classes match your search query." : "You do not have any assigned classes."}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+              {filteredClasses.map((cls) => (
+                  <div key={cls.id} className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-sage-300 transition-all flex flex-col group">
+                      
+                      {/* Card Header */}
+                      <div className="p-5 border-b border-slate-100 relative">
+                          <div className="flex justify-between items-start mb-2">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                                  {cls.section}
+                              </span>
+                              
+                              {cls.status === 'Pending Setup' && (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                      {cls.status}
+                                  </span>
+                              )}
+                              {cls.status === 'Ongoing' && (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                      {cls.gradingPeriod} Ongoing
+                                  </span>
+                              )}
+                              {cls.status === 'Grades Posted' && (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                      {cls.gradingPeriod} Posted
+                                  </span>
+                              )}
+                          </div>
+                          
+                          <h3 className="text-xl font-bold font-display text-slate-900 leading-tight">
+                              {cls.subjectCode}
+                          </h3>
+                          <p className="text-sm text-slate-500 mt-1 line-clamp-1">{cls.subjectName}</p>
+                      </div>
+                      
+                      {/* Card Body (Details) */}
+                      <div className="p-5 flex-1 space-y-3">
+                          <div className="flex items-center gap-3 text-sm text-slate-600">
+                              <Clock className="h-4 w-4 text-sage-500 flex-shrink-0" />
+                              <span>{cls.schedule}</span>
+                          </div>
+                          <div className="flex items-center gap-3 text-sm text-slate-600">
+                              <Calendar className="h-4 w-4 text-sage-500 flex-shrink-0" />
+                              <span>{cls.room}</span>
+                          </div>
+                          <div className="flex items-center gap-3 text-sm text-slate-600">
+                              <Users className="h-4 w-4 text-sage-500 flex-shrink-0" />
+                              <span><strong className="text-slate-900 font-mono">{cls.enrolled}</strong> Students Enrolled</span>
+                          </div>
+                      </div>
+                      
+                      <div className="p-4 bg-slate-50 border-t border-slate-100 rounded-b-xl grid grid-cols-2 gap-3">
+                          {cls.status === 'Pending Setup' ? (
+                              <Link to={`/faculty/gradecomponentssetup?id=${cls.id}`} className="col-span-2 flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm">
+                                  <Settings className="h-4 w-4" /> Setup Grade Weights
+                              </Link>
+                          ) : (
+                              <>
+                                  <Link to={`/faculty/scoreinput?id=${cls.id}`} className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm">
+                                      <Edit3 className="h-4 w-4" /> Input Scores
+                                  </Link>
+                                  <Link to={`/faculty/postedgradesview?id=${cls.id}`} className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-lg transition-colors">
+                                      <Lock className="h-4 w-4 text-slate-450" /> View Posted
+                                  </Link>
+                              </>
+                          )}
+                      </div>
+                  </div>
+              ))}
+          </div>
+        )}
 
       </div>
     </>
   );
 }
+
 

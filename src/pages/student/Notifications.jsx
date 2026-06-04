@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   Bell, 
@@ -11,62 +11,134 @@ import {
   MailOpen
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
+
+const formatRelativeTime = (isoString) => {
+  if (!isoString) return '';
+  const diffMs = new Date() - new Date(isoString);
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return 'Yesterday';
+  return `${diffDays} days ago`;
+};
 
 export default function Notifications() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      type: 'grade',
-      title: 'New Midterm Grade Posted',
-      message: 'Prof. Amanda Rivera has posted the official Midterm grades for IT101 (Introduction to Computing). Your computed grade is 1.25.',
-      time: '1 hour ago',
-      read: false,
-      icon: Award,
-      iconColor: 'text-emerald-600 bg-emerald-50 border-emerald-250'
-    },
-    {
-      id: 2,
-      type: 'eval',
-      title: 'Faculty Evaluation Surveys Opened',
-      message: 'The student evaluation survey window for First Semester AY 2025-2026 is now open. Submit evaluations for Prof. Rivera and Dr. Valdes.',
-      time: '1 day ago',
-      read: false,
-      icon: MessageSquare,
-      iconColor: 'text-blue-600 bg-blue-50 border-blue-200'
-    },
-    {
-      id: 3,
-      type: 'ai',
-      title: 'AI Counseling Verdict Ready',
-      message: 'Your monthly AI Counseling feedback report and risk assessment verdict have been calculated. Review recommended academic guidelines.',
-      time: '3 days ago',
-      read: true,
-      icon: BrainCircuit,
-      iconColor: 'text-purple-600 bg-purple-50 border-purple-200'
-    },
-    {
-      id: 4,
-      type: 'system',
-      title: 'Platform Maintenance Alert',
-      message: 'The SAGE portal will be temporarily unavailable on Sunday, June 1, from 2:00 AM to 5:00 AM for scheduled database registry maintenance.',
-      time: '1 week ago',
-      read: true,
-      icon: Info,
-      iconColor: 'text-slate-650 bg-slate-50 border-slate-205'
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    async function loadNotifications() {
+      if (!user) return;
+      try {
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('recipient_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const mapped = (data || []).map(n => {
+          let type = 'system';
+          let title = 'System Notification';
+          let icon = Info;
+          let iconColor = 'text-slate-650 bg-slate-50 border-slate-205';
+
+          if (n.type === 'grade_posted') {
+            type = 'grade';
+            title = 'New Grade Posted';
+            icon = Award;
+            iconColor = 'text-emerald-600 bg-emerald-50 border-emerald-250';
+          } else if (n.type === 'eval_window_open') {
+            type = 'eval';
+            title = 'Faculty Evaluation Surveys Opened';
+            icon = MessageSquare;
+            iconColor = 'text-blue-600 bg-blue-50 border-blue-200';
+          } else if (n.type === 'eval_closed') {
+            type = 'eval';
+            title = 'Faculty Evaluation Surveys Closed';
+            icon = MessageSquare;
+            iconColor = 'text-blue-650 bg-blue-50 border-blue-200';
+          } else if (n.type === 'ai_recommendation') {
+            type = 'ai';
+            title = 'AI Counseling Verdict Ready';
+            icon = BrainCircuit;
+            iconColor = 'text-purple-600 bg-purple-50 border-purple-200';
+          }
+
+          return {
+            id: n.notification_id,
+            type,
+            title,
+            message: n.message,
+            time: formatRelativeTime(n.created_at),
+            read: n.is_read,
+            icon,
+            iconColor
+          };
+        });
+
+        setNotifications(mapped);
+
+      } catch (err) {
+        console.error('Error loading notifications:', err);
+      } finally {
+        setLoading(false);
+      }
     }
-  ]);
 
-  const markAllRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+    loadNotifications();
+  }, [user]);
+
+  const markAllRead = async () => {
+    if (!user || notifications.length === 0) return;
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('recipient_id', user.id);
+
+      if (error) throw error;
+      setNotifications(notifications.map(n => ({ ...n, read: true })));
+    } catch (err) {
+      console.error('Error marking all notifications as read:', err);
+    }
   };
 
-  const deleteNotification = (id) => {
-    setNotifications(notifications.filter(n => n.id !== id));
+  const deleteNotification = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('notification_id', id);
+
+      if (error) throw error;
+      setNotifications(notifications.filter(n => n.id !== id));
+    } catch (err) {
+      console.error('Error deleting notification:', err);
+    }
   };
 
-  const toggleRead = (id) => {
-    setNotifications(notifications.map(n => n.id === id ? { ...n, read: !n.read } : n));
+  const toggleRead = async (id, currentReadState) => {
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: !currentReadState })
+        .eq('notification_id', id);
+
+      if (error) throw error;
+      setNotifications(notifications.map(n => n.id === id ? { ...n, read: !currentReadState } : n));
+    } catch (err) {
+      console.error('Error toggling notification read state:', err);
+    }
   };
 
   const filtered = notifications.filter(n => {
@@ -74,6 +146,17 @@ export default function Notifications() {
     if (activeFilter === 'Academics') return n.type === 'grade' || n.type === 'ai';
     return true;
   });
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
+          <p className="text-sm text-slate-500 font-medium font-sans">Loading notifications...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -140,15 +223,15 @@ export default function Notifications() {
                         <span className="w-2 h-2 bg-sage-600 rounded-full"></span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">{noti.message}</p>
-                    <span className="text-[10px] text-slate-400 font-medium block pt-1">{noti.time}</span>
+                    <p className="text-xs text-slate-650 leading-relaxed max-w-2xl text-left">{noti.message}</p>
+                    <span className="text-[10px] text-slate-400 font-medium block pt-1 text-left">{noti.time}</span>
                   </div>
                 </div>
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
-                    onClick={() => toggleRead(noti.id)}
+                    onClick={() => toggleRead(noti.id, noti.read)}
                     className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors"
                     title={noti.read ? "Mark as unread" : "Mark as read"}
                   >

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, Plus, Edit2, Trash2, BookOpen, Upload, X, Check, FileSpreadsheet, AlertCircle, CheckCircle } from 'lucide-react';
-import { mockDb } from '../../lib/mockDb';
+import { Search, Plus, Edit2, Trash2, BookOpen, Upload, X, Check, FileSpreadsheet, AlertCircle, CheckCircle, SlidersHorizontal } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 import * as XLSX from 'xlsx';
 import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
 
@@ -11,6 +11,8 @@ export default function SubjectList() {
   const [subjects, setSubjects] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
+  const [filterYearLevel, setFilterYearLevel] = useState('');
+  const [filterUnits, setFilterUnits] = useState('');
 
   // Batch CSV Import Modal State
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -24,40 +26,83 @@ export default function SubjectList() {
 IT202,Database Management Systems 1,3,College of Computer Studies
 CS202,Object Oriented Programming,3,College of Computer Studies`;
 
-  const loadSubjects = () => {
-    setSubjects(mockDb.getSubjects());
+  const [loading, setLoading] = useState(true);
+
+  const loadSubjects = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('subjects')
+        .select('*, departments(name)')
+        .order('code', { ascending: true });
+        
+      if (error) throw error;
+      
+      const mappedSubjects = data.map(sub => {
+        // Derive year level from subject code digit (e.g. IT113 -> '1' -> '1st Year')
+        const codeDigit = (sub.code || '').match(/([1-4])/)?.[1] || '';
+        const yearLevelMap = { '1': '1st Year', '2': '2nd Year', '3': '3rd Year', '4': '4th Year' };
+        return {
+          id: sub.subject_id,
+          code: sub.code,
+          name: sub.name,
+          units: sub.units,
+          department: sub.departments?.name || '',
+          yearLevel: yearLevelMap[codeDigit] || ''
+        };
+      });
+      setSubjects(mappedSubjects);
+    } catch (err) {
+      console.error('Failed to load subjects:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     loadSubjects();
   }, []);
 
-  const handleDeleteSubject = (id, code, name) => {
+  const handleDeleteSubject = async (id, code, name) => {
     if (confirm(`Are you sure you want to delete subject "${code} - ${name}"? This will affect new classroom creations.`)) {
-      mockDb.deleteSubject(id);
-      loadSubjects();
+      const { error } = await supabase.from('subjects').delete().eq('subject_id', id);
+      if (error) {
+        alert('Failed to delete subject: ' + error.message);
+      } else {
+        loadSubjects();
+      }
     }
   };
 
+  // Unique filter options derived from loaded data
+  const uniqueColleges = [...new Set(subjects.map(s => s.department).filter(Boolean))].sort();
+  const yearLevels = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+  const uniqueUnits = [...new Set(subjects.map(s => s.units).filter(Boolean))].sort((a, b) => a - b);
+
+  const activeFilterCount = [deptFilter, filterYearLevel, filterUnits].filter(Boolean).length;
+
+  const clearFilters = () => {
+    setDeptFilter('');
+    setFilterYearLevel('');
+    setFilterUnits('');
+  };
+
   const filteredSubjects = subjects.filter(sub => {
-    const matchesSearch = 
-      sub.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      sub.name.toLowerCase().includes(searchTerm.toLowerCase());
-      
+    const matchesSearch =
+      sub.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      sub.name?.toLowerCase().includes(searchTerm.toLowerCase());
+
     // Normalise department comparison for legacy data
     let subDept = sub.department;
-    if (subDept === 'College of IT' || subDept === 'College of CS') {
-      subDept = 'College of Computer Studies';
-    }
-    
+    if (subDept === 'College of IT' || subDept === 'College of CS') subDept = 'College of Computer Studies';
     let filterDept = deptFilter;
-    if (filterDept === 'College of IT' || filterDept === 'College of CS') {
-      filterDept = 'College of Computer Studies';
-    }
-    
-    const matchesDept = filterDept ? subDept === filterDept : true;
-    
-    return matchesSearch && matchesDept;
+    if (filterDept === 'College of IT' || filterDept === 'College of CS') filterDept = 'College of Computer Studies';
+
+    const matchesDept     = !filterDept      || subDept       === filterDept;
+    const matchesYearLvl  = !filterYearLevel || sub.yearLevel === filterYearLevel;
+    const matchesUnits    = !filterUnits     || String(sub.units) === filterUnits;
+
+    return matchesSearch && matchesDept && matchesYearLvl && matchesUnits;
   });
 
   const handleFileUpload = (file) => {
@@ -146,18 +191,11 @@ CS202,Object Oriented Programming,3,College of Computer Studies`;
     }
   };
 
-  const handleSaveImport = () => {
+  const handleSaveImport = async () => {
     if (parsedSubjects.length === 0) return;
 
-    parsedSubjects.forEach(sub => {
-      mockDb.saveSubject(sub);
-    });
-
+    alert("Batch CSV import will be enabled for Supabase in a future update.");
     setIsImportOpen(false);
-    setCsvText('');
-    setParsedSubjects([]);
-    setImportSuccess('');
-    loadSubjects();
   };
 
   return (
@@ -190,32 +228,92 @@ CS202,Object Oriented Programming,3,College of Computer Studies`;
           </div>
         </div>
 
-        {/* Filters Toolbar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="relative max-w-md w-full">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-4 w-4 text-slate-400" />
-            </div>
-            <input 
-              type="text" 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors" 
-              placeholder="Search by code or name..." 
-            />
+        {/* Search */}
+        <div className="relative max-w-md w-full">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-4 w-4 text-slate-400" />
+          </div>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors"
+            placeholder="Search by code or name..."
+          />
+        </div>
+
+        {/* ── Filter Bar ─────────────────────────────────────────────── */}
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm px-4 py-3 flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider flex-shrink-0">
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Filter by
+            {activeFilterCount > 0 && (
+              <span className="ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-sage-600 text-white text-[9px] font-bold">
+                {activeFilterCount}
+              </span>
+            )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="w-px h-5 bg-slate-200 hidden sm:block" />
+
+          {/* College */}
+          <div className="flex flex-col gap-0.5 min-w-[180px]">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">College</span>
             <select
               value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
-              className="bg-white border border-slate-200 rounded-lg text-sm px-3 py-2 outline-none cursor-pointer hover:border-sage-300 transition-colors"
+              onChange={e => setDeptFilter(e.target.value)}
+              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer"
             >
               <option value="">All Colleges</option>
-              {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
-                <option key={college} value={college}>{college}</option>
+              {uniqueColleges.map(c => (
+                <option key={c} value={c}>{c}</option>
               ))}
             </select>
+          </div>
+
+          {/* Year Level */}
+          <div className="flex flex-col gap-0.5 min-w-[130px]">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Year Level</span>
+            <select
+              value={filterYearLevel}
+              onChange={e => setFilterYearLevel(e.target.value)}
+              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer"
+            >
+              <option value="">All Year Levels</option>
+              {yearLevels.map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Units */}
+          <div className="flex flex-col gap-0.5 min-w-[100px]">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Units</span>
+            <select
+              value={filterUnits}
+              onChange={e => setFilterUnits(e.target.value)}
+              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer"
+            >
+              <option value="">All Units</option>
+              {uniqueUnits.map(u => (
+                <option key={u} value={String(u)}>{u} Unit{u !== 1 ? 's' : ''}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Clear + result count */}
+          <div className="ml-auto flex items-center gap-3">
+            {activeFilterCount > 0 && (
+              <button
+                onClick={clearFilters}
+                className="flex items-center gap-1 text-xs font-semibold text-rose-500 hover:text-rose-700 transition-colors"
+              >
+                <X className="h-3 w-3" /> Clear Filters
+              </button>
+            )}
+            <span className="text-xs text-slate-400 font-mono">
+              {filteredSubjects.length} / {subjects.length} shown
+            </span>
           </div>
         </div>
 

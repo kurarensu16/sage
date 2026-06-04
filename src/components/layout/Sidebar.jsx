@@ -1,12 +1,14 @@
-import React from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
-import { BookOpen, LayoutDashboard, Users, FileText, Bell, LogOut, Plus, Calendar, AlertCircle, BarChart3, Star, FileDown, Layers, BookMarked, Shield, ClipboardList } from 'lucide-react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { BookOpen, LayoutDashboard, Users, FileText, Bell, LogOut, Plus, Calendar, AlertCircle, BarChart3, Star, FileDown, Layers, BookMarked, Shield, ClipboardList, BrainCircuit } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import SageLogo from './SageLogo';
+import { useAuth } from '../../lib/AuthContext';
 
 
 export default function Sidebar({ isCollapsed }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
   const path = location.pathname;
   
   const role = path.split('/')[1] || 'faculty';
@@ -41,6 +43,7 @@ export default function Sidebar({ isCollapsed }) {
     student: [
       { to: '/student/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/student/mygradeslist', icon: FileText, label: 'My Grades' },
+      { to: '/student/academic-insights', icon: BrainCircuit, label: 'Academic Insights' },
       { to: '/student/evallist', icon: BookOpen, label: 'Evaluations' },
     ]
   };
@@ -92,17 +95,20 @@ export default function Sidebar({ isCollapsed }) {
         
         {/* Sign out section */}
         <div className="p-3 border-t border-sage-800">
-            <NavLink 
-              to="/login" 
+            <button 
+              onClick={() => {
+                signOut();
+                navigate('/login');
+              }}
               title={isCollapsed ? "Sign Out" : undefined}
               className={cn(
-                "flex items-center text-slate-400 hover:text-white cursor-pointer transition-colors",
+                "w-full flex items-center text-slate-400 hover:text-white cursor-pointer transition-colors border-0 bg-transparent text-left",
                 isCollapsed ? "justify-center py-2" : "gap-3 px-4 py-2 text-sm"
               )}
             >
                 <LogOut className="h-4 w-4 flex-shrink-0" />
                 {!isCollapsed && <span>Sign Out</span>}
-            </NavLink>
+            </button>
         </div>
     </aside>
   );

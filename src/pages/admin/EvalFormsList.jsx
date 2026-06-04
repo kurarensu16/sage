@@ -2,34 +2,77 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, Plus, Edit2, Trash2, Calendar, FileText } from 'lucide-react';
-import { mockDb } from '../../lib/mockDb';
+import { supabase } from '../../lib/supabase';
 
 export default function EvalFormsList() {
   const navigate = useNavigate();
   const [templates, setTemplates] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const loadTemplates = () => {
-    setTemplates(mockDb.getEvalTemplates());
+  const loadTemplates = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('evaluation_forms')
+        .select(`
+          form_id,
+          title,
+          created_at,
+          users (
+            first_name,
+            last_name
+          ),
+          evaluation_criteria (
+            criteria_id
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setTemplates(data.map(f => ({
+        id: f.form_id,
+        title: f.title,
+        author: f.users ? `Prof. ${f.users.first_name} ${f.users.last_name}` : 'Admin',
+        createdDate: f.created_at,
+        criteria: f.evaluation_criteria || []
+      })));
+    } catch (err) {
+      console.error('Failed to load evaluation forms:', err);
+    }
   };
 
   useEffect(() => {
     loadTemplates();
   }, []);
 
-  const handleDeleteTemplate = (tmplId, title) => {
-    // Check if form is used in any active/scheduled windows
-    const windows = mockDb.getEvalWindows();
-    const isUsed = windows.some(w => w.templateId === tmplId);
+  const handleDeleteTemplate = async (tmplId, title) => {
+    try {
+      // Check if form is used in any active/scheduled windows
+      const { data: windows, error: winErr } = await supabase
+        .from('evaluation_windows')
+        .select('window_id')
+        .eq('form_id', tmplId)
+        .limit(1);
 
-    if (isUsed) {
-      alert(`Cannot delete "${title}" template because it is linked to one or more active or scheduled evaluation windows. Remove those windows first.`);
-      return;
-    }
+      if (winErr) throw winErr;
 
-    if (confirm(`Are you sure you want to delete the "${title}" evaluation template? This will erase all criteria fields.`)) {
-      mockDb.deleteEvalTemplate(tmplId);
-      loadTemplates();
+      if (windows && windows.length > 0) {
+        alert(`Cannot delete "${title}" template because it is linked to one or more active or scheduled evaluation windows. Remove those windows first.`);
+        return;
+      }
+
+      if (confirm(`Are you sure you want to delete the "${title}" evaluation template? This will erase all criteria fields.`)) {
+        const { error } = await supabase
+          .from('evaluation_forms')
+          .delete()
+          .eq('form_id', tmplId);
+
+        if (error) throw error;
+        loadTemplates();
+      }
+    } catch (err) {
+      console.error('Error deleting form:', err);
+      alert('Error deleting form: ' + err.message);
     }
   };
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
@@ -16,92 +16,256 @@ import {
   UserCheck,
   Plus
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
 
 export default function Dashboard() {
-  // Handled classes summary data
-  const assignedClasses = [
-    {
-      id: 1,
-      subjectCode: 'IT101',
-      subjectName: 'Introduction to Computing',
-      section: 'BSIT-1A',
-      schedule: 'MWF 9:00AM - 10:30AM',
-      room: 'Lab 1',
-      enrolled: 45,
-      status: 'Ongoing',
-      gradingPeriod: 'Midterm',
-      completion: 75,
-    },
-    {
-      id: 2,
-      subjectCode: 'IT201',
-      subjectName: 'Data Structures and Algorithms',
-      section: 'BSIT-2B',
-      schedule: 'TTh 1:00PM - 3:00PM',
-      room: 'Lab 3',
-      enrolled: 38,
-      status: 'Ongoing',
-      gradingPeriod: 'Midterm',
-      completion: 60,
-    },
-    {
-      id: 3,
-      subjectCode: 'CS301',
-      subjectName: 'Artificial Intelligence',
-      section: 'BSCS-3A',
-      schedule: 'MWF 1:00PM - 2:30PM',
-      room: 'Lec 5',
-      enrolled: 42,
-      status: 'Pending Setup',
-      gradingPeriod: 'Prelim',
-      completion: 0,
-    },
-    {
-      id: 4,
-      subjectCode: 'IT401',
-      subjectName: 'Capstone Project 1',
-      section: 'BSIT-4A',
-      schedule: 'TTh 9:00AM - 12:00PM',
-      room: 'Lab 2',
-      enrolled: 25,
-      status: 'Grades Posted',
-      gradingPeriod: 'Midterm',
-      completion: 100,
+  const { user, profile } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [classes, setClasses] = useState([]);
+  const [stats, setStats] = useState({
+    handledClassesCount: 0,
+    pendingGradesCount: 0,
+    evalWindowStatus: 'Closed',
+    evalWindowDate: '',
+    notificationsCount: 0,
+    atRiskCount: 0
+  });
+  const [urgentTasks, setUrgentTasks] = useState([]);
+  const [activities, setActivities] = useState([]);
+  const [todaysSchedule, setTodaysSchedule] = useState([]);
+
+  useEffect(() => {
+    async function fetchDashboardData() {
+      if (!user) return;
+      setLoading(true);
+      try {
+        // 1. Fetch Classes
+        const { data: classesData, error: classesError } = await supabase
+          .from('class_records')
+          .select(`
+            class_record_id,
+            status,
+            school_year,
+            semester,
+            subject_id,
+            section_id,
+            subjects ( subject_id, code, name, units ),
+            sections ( section_id, name, school_year, semester )
+          `)
+          .eq('faculty_id', user.id)
+          .eq('status', 'active');
+
+        if (classesError) throw classesError;
+
+        let mappedClasses = [];
+        let pendingGrades = 0;
+        let atRiskCount = 0;
+        let setupAlerts = [];
+        let gradingAlerts = [];
+
+        if (classesData && classesData.length > 0) {
+          const classIds = classesData.map(c => c.class_record_id);
+
+          // Get grading column configurations
+          const { data: gradingCols } = await supabase
+            .from('class_grading_columns')
+            .select('class_record_id, term')
+            .in('class_record_id', classIds);
+
+          // Get posted grades details
+          const { data: postedGrades } = await supabase
+            .from('posted_grades')
+            .select('class_record_id, grade_period, is_locked, remarks')
+            .in('class_record_id', classIds);
+
+          // Get student counts
+          const { data: enrollments } = await supabase
+            .from('enrollments')
+            .select('section_id, subject_id');
+
+          const enrolledCountsMap = {};
+          (enrollments || []).forEach(e => {
+            const key = `${e.section_id}|${e.subject_id}`;
+            enrolledCountsMap[key] = (enrolledCountsMap[key] || 0) + 1;
+          });
+
+          // Calculate at risk students from posted grades
+          (postedGrades || []).forEach(g => {
+            if (g.is_locked && (g.remarks === 'failed' || g.remarks === 'incomplete')) {
+              atRiskCount++;
+            }
+          });
+
+          // Map active handled sections
+          mappedClasses = classesData.map((cls, idx) => {
+            const matchingCols = (gradingCols || []).filter(col => col.class_record_id === cls.class_record_id);
+            const matchingPosted = (postedGrades || []).filter(g => g.class_record_id === cls.class_record_id && g.is_locked);
+            const hasSetup = matchingCols.length > 0;
+            const enrolledCount = enrolledCountsMap[`${cls.section_id}|${cls.subject_id}`] || 0;
+
+            let statusLabel = 'Pending Setup';
+            let gradingPeriod = 'Prelim';
+
+            if (hasSetup) {
+              const postedPeriods = new Set(matchingPosted.map(g => g.grade_period.toLowerCase()));
+              if (postedPeriods.has('final')) {
+                statusLabel = 'Grades Posted';
+                gradingPeriod = 'Final';
+              } else {
+                statusLabel = 'Ongoing';
+                gradingPeriod = 'Semestral';
+                pendingGrades++;
+              }
+            } else {
+              pendingGrades++;
+            }
+
+            // Generate mock schedule and room consistent with records
+            const schedules = [
+              { schedule: 'MWF 9:00AM - 10:30AM', room: 'Lab 1' },
+              { schedule: 'TTh 1:00PM - 3:00PM', room: 'Lab 3' },
+              { schedule: 'MWF 1:00PM - 2:30PM', room: 'Lec 5' },
+              { schedule: 'TTh 9:00AM - 12:00PM', room: 'Lab 2' },
+            ];
+            const { schedule, room } = schedules[idx % schedules.length];
+
+            // Build alerts
+            if (!hasSetup) {
+              setupAlerts.push({
+                id: `setup-${cls.class_record_id}`,
+                title: 'Pending Grade Weights Setup',
+                description: `${cls.subjects?.code || 'Subject'} (${cls.sections?.name || 'Section'}) requires grading scale setup before scoring.`,
+                dueDate: 'Immediate',
+                type: 'danger',
+                actionLink: `/faculty/gradecomponentssetup?id=${cls.class_record_id}`
+              });
+            } else if (statusLabel === 'Ongoing') {
+              gradingAlerts.push({
+                id: `grade-${cls.class_record_id}`,
+                title: `Encode ${gradingPeriod} Scores`,
+                description: `Grades are active for ${cls.subjects?.code || 'Subject'} (${cls.sections?.name || 'Section'}) in the ${gradingPeriod} period.`,
+                dueDate: 'In 3 days',
+                type: 'warning',
+                actionLink: `/faculty/scoreinput?id=${cls.class_record_id}`
+              });
+            }
+
+            return {
+              id: cls.class_record_id,
+              subjectCode: cls.subjects?.code || 'N/A',
+              subjectName: cls.subjects?.name || 'N/A',
+              section: cls.sections?.name || 'N/A',
+              schedule,
+              room,
+              enrolled: enrolledCount,
+              status: statusLabel,
+              gradingPeriod
+            };
+          });
+        }
+
+        // Set urgent tasks (merge setup alerts first, then encoding alerts)
+        setUrgentTasks([...setupAlerts, ...gradingAlerts].slice(0, 4));
+
+        // Create schedule preview using first two classes
+        setTodaysSchedule(mappedClasses.slice(0, 2).map(c => ({
+          time: c.schedule,
+          subject: c.subjectCode,
+          section: c.section,
+          room: c.room
+        })));
+
+        setClasses(mappedClasses);
+
+        // 2. Fetch Evaluation Windows
+        const { data: evalWins } = await supabase
+          .from('evaluation_windows')
+          .select('close_at')
+          .eq('faculty_id', user.id)
+          .eq('is_closed', false)
+          .gt('close_at', new Date().toISOString())
+          .order('close_at', { ascending: true })
+          .limit(1);
+
+        let evalStatus = 'Closed';
+        let evalDate = '';
+        if (evalWins && evalWins.length > 0) {
+          evalStatus = 'Open';
+          evalDate = 'Until ' + new Date(evalWins[0].close_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        // 3. Fetch Unread Notifications
+        const { count: notificationsCount } = await supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('recipient_id', user.id)
+          .eq('is_read', false);
+
+        setStats({
+          handledClassesCount: classesData?.length || 0,
+          pendingGradesCount: pendingGrades,
+          evalWindowStatus: evalStatus,
+          evalWindowDate: evalDate,
+          notificationsCount: notificationsCount || 0,
+          atRiskCount: atRiskCount
+        });
+
+        // 4. Fetch Recent Activities from Audit Log
+        const actorName = profile ? `${profile.first_name} ${profile.last_name}` : '';
+        if (actorName) {
+          const { data: logs } = await supabase
+            .from('activity_logs')
+            .select('timestamp, action, message')
+            .ilike('actor', `%${actorName}%`)
+            .order('timestamp', { ascending: false })
+            .limit(3);
+
+          if (logs && logs.length > 0) {
+            setActivities(logs.map(l => {
+              const diffMs = new Date() - new Date(l.timestamp);
+              const diffMins = Math.floor(diffMs / 60000);
+              let timeString = 'Just now';
+              if (diffMins > 0 && diffMins < 60) {
+                timeString = `${diffMins} mins ago`;
+              } else if (diffMins >= 60 && diffMins < 1440) {
+                const diffHours = Math.floor(diffMins / 60);
+                timeString = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+              } else if (diffMins >= 1440) {
+                timeString = new Date(l.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' });
+              }
+
+              return {
+                time: timeString,
+                message: `${l.action}: ${l.message}`
+              };
+            }));
+          } else {
+            setActivities([
+              { time: 'System', message: 'No recent activity logs recorded.' }
+            ]);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching dashboard data:', err);
+      } finally {
+        setLoading(false);
+      }
     }
-  ];
 
-  // Outstanding tasks requiring immediate attention
-  const urgentTasks = [
-    {
-      id: 1,
-      title: 'Submit Midterm Grades',
-      description: 'Midterm grade submittal deadline for BSIT-4A (Capstone Project 1) is approaching.',
-      dueDate: 'In 2 days',
-      type: 'warning',
-      actionLink: '/faculty/scoreinput'
-    },
-    {
-      id: 2,
-      title: 'Pending Grade Weights Setup',
-      description: 'CS301 (Artificial Intelligence) requires class record setup before score logging.',
-      dueDate: 'Immediate',
-      type: 'danger',
-      actionLink: '/faculty/gradecomponentssetup'
-    }
-  ];
+    fetchDashboardData();
+  }, [user, profile]);
 
-  // Quick activity logs
-  const activities = [
-    { time: '10 mins ago', message: 'Logged Exam scores for IT201 - BSIT-2B' },
-    { time: '2 hours ago', message: 'Grade weight setup approved for IT101' },
-    { time: 'Yesterday', message: 'Exported final grades datasheet for IT401 - BSIT-4A' },
-  ];
-
-  // Today's schedule preview
-  const todaysSchedule = [
-    { time: '9:00 AM - 10:30 AM', subject: 'IT101', section: 'BSIT-1A', room: 'Lab 1' },
-    { time: '1:00 PM - 2:30 PM', subject: 'CS301', section: 'BSCS-3A', room: 'Lec 5' },
-  ];
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
+          <p className="text-sm text-slate-500 font-medium font-sans">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -115,7 +279,7 @@ export default function Dashboard() {
             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-sage-700/50 text-sage-100 border border-sage-600/30">
               Active Term: AY 2025-2026 • First Semester
             </span>
-            <h1 className="text-3xl font-extrabold tracking-tight font-display">Welcome Back, Instructor!</h1>
+            <h1 className="text-3xl font-extrabold tracking-tight font-display">Welcome Back, {profile?.first_name || 'Instructor'}!</h1>
             <p className="text-sm text-sage-200/90 max-w-xl">
               Monitor class submissions, track student performance metrics, and submit calculated grades securely to the Dean's Office.
             </p>
@@ -191,8 +355,8 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="mt-4">
-              <h3 className="text-2xl font-extrabold text-slate-900 font-mono">04</h3>
-              <p className="text-[10px] text-slate-500 mt-1">Across 2 courses / sections</p>
+              <h3 className="text-2xl font-extrabold text-slate-900 font-mono">{String(stats.handledClassesCount).padStart(2, '0')}</h3>
+              <p className="text-[10px] text-slate-500 mt-1">Assigned class records</p>
             </div>
           </div>
 
@@ -204,8 +368,8 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="mt-4">
-              <h3 className="text-2xl font-extrabold text-slate-900 font-mono">01</h3>
-              <p className="text-[10px] text-amber-600 mt-1 font-semibold">CS301 (BSCS-3A)</p>
+              <h3 className="text-2xl font-extrabold text-slate-900 font-mono">{String(stats.pendingGradesCount).padStart(2, '0')}</h3>
+              <p className="text-[10px] text-slate-500 mt-1">Ongoing class terms</p>
             </div>
           </div>
 
@@ -217,8 +381,8 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="mt-4">
-              <h3 className="text-2xl font-extrabold text-slate-900 font-mono">Open</h3>
-              <p className="text-[10px] text-slate-500 mt-1">Until Jun 15, 2026</p>
+              <h3 className={`text-2xl font-extrabold font-display ${stats.evalWindowStatus === 'Open' ? 'text-sage-600' : 'text-slate-900'}`}>{stats.evalWindowStatus}</h3>
+              <p className="text-[10px] text-slate-500 mt-1">{stats.evalWindowDate || 'No open windows'}</p>
             </div>
           </div>
 
@@ -230,8 +394,8 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="mt-4">
-              <h3 className="text-2xl font-extrabold text-slate-900 font-mono">02</h3>
-              <p className="text-[10px] text-slate-500 mt-1">Urgent alerts pending</p>
+              <h3 className="text-2xl font-extrabold text-slate-900 font-mono">{String(stats.notificationsCount).padStart(2, '0')}</h3>
+              <p className="text-[10px] text-slate-500 mt-1">Unread alerts pending</p>
             </div>
           </div>
 
@@ -243,8 +407,8 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="mt-4">
-              <h3 className="text-2xl font-extrabold text-rose-600 font-mono">08</h3>
-              <p className="text-[10px] text-rose-500 mt-1 font-semibold">Flagged across classes</p>
+              <h3 className={`text-2xl font-extrabold font-mono ${stats.atRiskCount > 0 ? 'text-rose-600' : 'text-slate-900'}`}>{String(stats.atRiskCount).padStart(2, '0')}</h3>
+              <p className="text-[10px] text-rose-500 mt-1 font-semibold">Flagged (Failed/INC) from posted</p>
             </div>
           </div>
 
@@ -266,60 +430,66 @@ export default function Dashboard() {
             </div>
 
             <div className="overflow-x-auto table-container">
-              <table className="min-w-full divide-y divide-slate-100 text-left">
-                <thead>
-                  <tr className="text-slate-400 text-xs font-semibold tracking-wider">
-                    <th className="pb-3 font-medium">Class / Section</th>
-                    <th className="pb-3 font-medium">Schedule</th>
-                    <th className="pb-3 font-medium text-center">Students</th>
-                    <th className="pb-3 font-medium">Status</th>
-                    <th className="pb-3 font-medium text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-                  {assignedClasses.map((cls) => (
-                    <tr key={cls.id} className="group hover:bg-slate-50/50 transition-colors">
-                      <td className="py-4">
-                        <div className="font-bold text-slate-900 text-sm">{cls.subjectCode}</div>
-                        <div className="text-slate-400 text-[10px] font-normal truncate max-w-[180px]">{cls.subjectName}</div>
-                      </td>
-                      <td className="py-4 text-slate-500">
-                        <div>{cls.schedule}</div>
-                        <div className="text-[10px] text-slate-400">{cls.room}</div>
-                      </td>
-                      <td className="py-4 text-center font-mono font-semibold text-slate-900">
-                        {cls.enrolled}
-                      </td>
-                      <td className="py-4">
-                        {cls.status === 'Pending Setup' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                            Pending Setup
-                          </span>
-                        ) : cls.status === 'Ongoing' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                            Grading Ongoing
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            Grades Posted
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-4 text-right">
-                        {cls.status === 'Pending Setup' ? (
-                          <Link to="/faculty/gradecomponentssetup" className="text-sage-600 hover:text-sage-700 font-bold hover:underline">
-                            Setup Weights
-                          </Link>
-                        ) : (
-                          <Link to="/faculty/scoreinput" className="text-sage-600 hover:text-sage-700 font-bold hover:underline">
-                            Input Scores
-                          </Link>
-                        )}
-                      </td>
+              {classes.length === 0 ? (
+                <div className="text-center py-10 text-slate-400 text-sm">
+                  No active handled classes found.
+                </div>
+              ) : (
+                <table className="min-w-full divide-y divide-slate-100 text-left">
+                  <thead>
+                    <tr className="text-slate-400 text-xs font-semibold tracking-wider">
+                      <th className="pb-3 font-medium">Class / Section</th>
+                      <th className="pb-3 font-medium">Schedule</th>
+                      <th className="pb-3 font-medium text-center">Students</th>
+                      <th className="pb-3 font-medium">Status</th>
+                      <th className="pb-3 font-medium text-right">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+                    {classes.map((cls) => (
+                      <tr key={cls.id} className="group hover:bg-slate-50/50 transition-colors">
+                        <td className="py-4">
+                          <div className="font-bold text-slate-900 text-sm">{cls.subjectCode}</div>
+                          <div className="text-slate-400 text-[10px] font-normal truncate max-w-[180px]">{cls.subjectName}</div>
+                        </td>
+                        <td className="py-4 text-slate-500">
+                          <div>{cls.schedule}</div>
+                          <div className="text-[10px] text-slate-400">{cls.room}</div>
+                        </td>
+                        <td className="py-4 text-center font-mono font-semibold text-slate-900">
+                          {cls.enrolled}
+                        </td>
+                        <td className="py-4">
+                          {cls.status === 'Pending Setup' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                              Pending Setup
+                            </span>
+                          ) : cls.status === 'Ongoing' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                              Grading Ongoing
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Grades Posted
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-4 text-right">
+                          {cls.status === 'Pending Setup' ? (
+                            <Link to={`/faculty/gradecomponentssetup?id=${cls.id}`} className="text-sage-600 hover:text-sage-700 font-bold hover:underline">
+                              Setup Weights
+                            </Link>
+                          ) : (
+                            <Link to={`/faculty/scoreinput?id=${cls.id}`} className="text-sage-600 hover:text-sage-700 font-bold hover:underline">
+                              Input Scores
+                            </Link>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
 
@@ -334,18 +504,24 @@ export default function Dashboard() {
               </div>
 
               <div className="space-y-3">
-                {todaysSchedule.map((sched, idx) => (
-                  <div key={idx} className="p-3 bg-slate-50 border border-slate-100 rounded-lg flex items-center justify-between text-xs">
-                    <div className="space-y-1">
-                      <div className="font-bold text-slate-900">{sched.subject} ({sched.section})</div>
-                      <div className="text-[10px] text-slate-400">{sched.room}</div>
-                    </div>
-                    <div className="text-right text-slate-500 font-medium">
-                      <Clock className="h-3 w-3 inline mr-1 text-slate-400" />
-                      {sched.time.split(' - ')[0]}
-                    </div>
+                {todaysSchedule.length === 0 ? (
+                  <div className="text-center py-6 text-slate-400 text-xs">
+                    No classes scheduled for today.
                   </div>
-                ))}
+                ) : (
+                  todaysSchedule.map((sched, idx) => (
+                    <div key={idx} className="p-3 bg-slate-50 border border-slate-100 rounded-lg flex items-center justify-between text-xs">
+                      <div className="space-y-1">
+                        <div className="font-bold text-slate-900">{sched.subject} ({sched.section})</div>
+                        <div className="text-[10px] text-slate-400">{sched.room}</div>
+                      </div>
+                      <div className="text-right text-slate-500 font-medium whitespace-nowrap">
+                        <Clock className="h-3 w-3 inline mr-1 text-slate-400" />
+                        {sched.time.split(' - ')[0]}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -360,7 +536,7 @@ export default function Dashboard() {
                     </div>
                     <div>
                       <p className="text-slate-700 font-medium">{act.message}</p>
-                      <span className="text-[10px] text-slate-400 mt-1 block">{act.time}</span>
+                      <span className="text-[10px] text-slate-400 mt-1 block font-mono">{act.time}</span>
                     </div>
                   </div>
                 ))}
@@ -375,4 +551,3 @@ export default function Dashboard() {
     </>
   );
 }
-

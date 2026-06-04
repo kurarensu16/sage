@@ -1,8 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { cn } from "../lib/utils";
-import { Check, Lock, MessageSquare, CloudUpload } from 'lucide-react';
-
-
+import { Check, MessageSquare, CloudUpload } from 'lucide-react';
 
 export default function StudentRow({ 
   student, 
@@ -30,46 +28,45 @@ export default function StudentRow({
   const sf = saved?.['Semi-Final'] || initialPeriods?.['Semi-Final'] || {};
   const f = saved?.Final        || initialPeriods?.Final        || {};
 
-  // Prelim scores state
-  const [pAct1, setPAct1] = useState(p.act1 ?? 0);
-  const [pAct2, setPAct2] = useState(p.act2 ?? 0);
-  const [pAct3, setPAct3] = useState(p.act3 ?? 0);
-  const [pAct4, setPAct4] = useState(p.act4 ?? 0);
-  const [pAct5, setPAct5] = useState(p.act5 ?? 0);
-  const [pAct6, setPAct6] = useState(p.act6 ?? 0);
-  const [pChar, setPChar] = useState(p.char ?? 0);
-  const [pExam, setPExam] = useState(p.exam ?? 0);
+  // Prelim scores state (initialize 0 or undefined to empty string)
+  const [pAct1, setPAct1] = useState(p.act1 || '');
+  const [pAct2, setPAct2] = useState(p.act2 || '');
+  const [pAct3, setPAct3] = useState(p.act3 || '');
+  const [pAct4, setPAct4] = useState(p.act4 || '');
+  const [pAct5, setPAct5] = useState(p.act5 || '');
+  const [pAct6, setPAct6] = useState(p.act6 || '');
+  const [pChar, setPChar] = useState(p.char || '');
+  const [pExam, setPExam] = useState(p.exam || '');
 
   // Midterm scores state
-  const [mAct1, setMAct1] = useState(m.act1 ?? 0);
-  const [mAct2, setMAct2] = useState(m.act2 ?? 0);
-  const [mAct3, setMAct3] = useState(m.act3 ?? 0);
-  const [mAct4, setMAct4] = useState(m.act4 ?? 0);
-  const [mAct5, setMAct5] = useState(m.act5 ?? 0);
-  const [mAct6, setMAct6] = useState(m.act6 ?? 0);
-  const [mChar, setMChar] = useState(m.char ?? 0);
-  const [mExam, setMExam] = useState(m.exam ?? 0);
+  const [mAct1, setMAct1] = useState(m.act1 || '');
+  const [mAct2, setMAct2] = useState(m.act2 || '');
+  const [mAct3, setMAct3] = useState(m.act3 || '');
+  const [mAct4, setMAct4] = useState(m.act4 || '');
+  const [mAct5, setMAct5] = useState(m.act5 || '');
+  const [mAct6, setMAct6] = useState(m.act6 || '');
+  const [mChar, setMChar] = useState(m.char || '');
+  const [mExam, setMExam] = useState(m.exam || '');
 
   // Semi-Final scores state
-  const [sfAct1, setSfAct1] = useState(sf.act1 ?? 0);
-  const [sfAct2, setSfAct2] = useState(sf.act2 ?? 0);
-  const [sfAct3, setSfAct3] = useState(sf.act3 ?? 0);
-  const [sfAct4, setSfAct4] = useState(sf.act4 ?? 0);
-  const [sfAct5, setSfAct5] = useState(sf.act5 ?? 0);
-  const [sfAct6, setSfAct6] = useState(sf.act6 ?? 0);
-  const [sfChar, setSfChar] = useState(sf.char ?? 0);
-  const [sfExam, setSfExam] = useState(sf.exam ?? 0);
+  const [sfAct1, setSfAct1] = useState(sf.act1 || '');
+  const [sfAct2, setSfAct2] = useState(sf.act2 || '');
+  const [sfAct3, setSfAct3] = useState(sf.act3 || '');
+  const [sfAct4, setSfAct4] = useState(sf.act4 || '');
+  const [sfAct5, setSfAct5] = useState(sf.act5 || '');
+  const [sfAct6, setSfAct6] = useState(sf.act6 || '');
+  const [sfChar, setSfChar] = useState(sf.char || '');
+  const [sfExam, setSfExam] = useState(sf.exam || '');
 
   // Final scores state
-  const [fAct1, setFAct1] = useState(f.act1 ?? 0);
-  const [fAct2, setFAct2] = useState(f.act2 ?? 0);
-  const [fAct3, setFAct3] = useState(f.act3 ?? 0);
-  const [fAct4, setFAct4] = useState(f.act4 ?? 0);
-  const [fAct5, setFAct5] = useState(f.act5 ?? 0);
-  const [fAct6, setFAct6] = useState(f.act6 ?? 0);
-  const [fChar, setFChar] = useState(f.char ?? 0);
-  const [fExam, setFExam] = useState(f.exam ?? 0);
-
+  const [fAct1, setFAct1] = useState(f.act1 || '');
+  const [fAct2, setFAct2] = useState(f.act2 || '');
+  const [fAct3, setFAct3] = useState(f.act3 || '');
+  const [fAct4, setFAct4] = useState(f.act4 || '');
+  const [fAct5, setFAct5] = useState(f.act5 || '');
+  const [fAct6, setFAct6] = useState(f.act6 || '');
+  const [fChar, setFChar] = useState(f.char || '');
+  const [fExam, setFExam] = useState(f.exam || '');
 
   const [customRemarks, setCustomRemarks] = useState(saved?.customRemarks ?? '');
   const [remarksNote, setRemarksNote] = useState(saved?.remarksNote ?? '');
@@ -111,19 +108,29 @@ export default function StudentRow({
     sfAct1, sfAct2, sfAct3, sfAct4, sfAct5, sfAct6, sfChar, sfExam,
     fAct1, fAct2, fAct3, fAct4, fAct5, fAct6, fChar, fExam,
     customRemarks, remarksNote,
+    readOnly, STORAGE_KEY
   ]);
-
 
   // Helper change handler for ratings calculation per term using dynamic max items
   const calcPeriodRating = (act1, act2, act3, act4, act5, act6, char, exam, term) => {
     const termMax = maxItems[term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
     const totalActMax = termMax.act1 + termMax.act2 + termMax.act3 + termMax.act4 + termMax.act5 + termMax.act6;
-    const csTotal = act1 + act2 + act3 + act4 + act5 + act6;
+    
+    const val1 = Number(act1) || 0;
+    const val2 = Number(act2) || 0;
+    const val3 = Number(act3) || 0;
+    const val4 = Number(act4) || 0;
+    const val5 = Number(act5) || 0;
+    const val6 = Number(act6) || 0;
+    const charVal = Number(char) || 0;
+    const examVal = Number(exam) || 0;
+
+    const csTotal = val1 + val2 + val3 + val4 + val5 + val6;
     
     // Percentage based on dynamic total points
     const csPercent = totalActMax > 0 ? (csTotal / totalActMax) * 50 : 0;
-    const charPercent = termMax.char > 0 ? (char / termMax.char) * 10 : 0; // Weighted at 10%
-    const examPercent = termMax.exam > 0 ? (exam / termMax.exam) * 40 : 0; // Weighted at 40%
+    const charPercent = termMax.char > 0 ? (charVal / termMax.char) * 10 : 0; // Weighted at 10%
+    const examPercent = termMax.exam > 0 ? (examVal / termMax.exam) * 40 : 0; // Weighted at 40%
     
     const totalScore = csPercent + charPercent + examPercent;
     const rating = Math.min(100, Math.max(0, Math.round(totalScore)));
@@ -159,17 +166,13 @@ export default function StudentRow({
   const autoRemarks = parseFloat(rawGrade) <= 3.00 ? 'Passed' : 'Failed';
   const remarks = customRemarks || autoRemarks;
 
-  // Grade displayed is affected by remark override:
-  // - INC: show the actual computed (failing) grade as recorded
-  // - Passed override (on a failing grade): cap display to 3.00 (passing threshold)
-  // - All other cases: show raw computed grade
+  // Grade displayed is affected by remark override
   const grade = (() => {
-    if (remarks === 'INC') return rawGrade;           // INC retains the raw failing grade
-    if (remarks === 'Passed' && parseFloat(rawGrade) > 3.00) return '3.00'; // grace pass capped at 3.00
+    if (remarks === 'INC') return rawGrade;
+    if (remarks === 'Passed' && parseFloat(rawGrade) > 3.00) return '3.00';
     return rawGrade;
   })();
 
-  // Helper: is the remark one that implies a non-passing / flagged status
   const isNonPassing = ['Failed', 'INC', 'FDA', 'Dropped'].includes(remarks);
 
   // Determine status indicators
@@ -186,14 +189,34 @@ export default function StudentRow({
 
   const statusInfo = getStatus(sg);
 
-  const isPrelimLocked = readOnly || lockedMilestones.includes('Prelim') || lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Semestral Grade');
-  const isMidtermLocked = readOnly || lockedMilestones.includes('Midterm') || lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Semestral Grade');
-  const isSemiFinalLocked = readOnly || lockedMilestones.includes('Semi-Final') || lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Semestral Grade');
-  const isFinalLocked = readOnly || lockedMilestones.includes('Final') || lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Semestral Grade');
+  const isLocked = readOnly || lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final');
+  const isPrelimLocked = isLocked;
+  const isMidtermLocked = isLocked;
+  const isSemiFinalLocked = isLocked;
+  const isFinalLocked = isLocked;
 
-  const handleSave = () => {
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2000);
+  // Input Cell Renderer Helper (replaces raw input elements, adds onFocus select, cap checks and formatting)
+  const renderInputCell = (value, setValue, maxVal, isLocked, widthClass = "w-12") => {
+    if (isLocked) {
+      return <span className="font-mono text-xs">{value === '' ? '0' : value}</span>;
+    }
+    return (
+      <input
+        type="number"
+        min="0"
+        max={maxVal}
+        value={value}
+        onFocus={(e) => e.target.select()}
+        onChange={(e) => {
+          const val = e.target.value === '' ? '' : Math.max(0, Math.min(maxVal, Number(e.target.value)));
+          setValue(val);
+        }}
+        className={cn(
+          widthClass,
+          "px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs"
+        )}
+      />
+    );
   };
 
   return (
@@ -210,7 +233,7 @@ export default function StudentRow({
       
       {/* Student Number */}
       <td className="px-2 py-3 border-r border-slate-200 text-slate-500 font-mono text-[11px] w-24">
-        {student.id === 11 ? '2025-1001' : student.id === 12 ? '2025-1002' : student.id === 13 ? '2025-1003' : `2025-100${student.id}`}
+        {student.studentNo || student.id}
       </td>
       
       {/* Student Name (Sticky on Left) */}
@@ -221,48 +244,16 @@ export default function StudentRow({
       {/* ==================== PRELIMINARY GRADE ==================== */}
       {(viewMode === 'All' || viewMode === 'Prelim') && (
         <>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isPrelimLocked ? <span className="font-mono text-xs">{pAct1}</span> : (
-              <input type="number" min="0" max={pMax.act1} value={pAct1} onChange={(e) => { setPAct1(Math.max(0, Math.min(pMax.act1, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isPrelimLocked ? <span className="font-mono text-xs">{pAct2}</span> : (
-              <input type="number" min="0" max={pMax.act2} value={pAct2} onChange={(e) => { setPAct2(Math.max(0, Math.min(pMax.act2, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isPrelimLocked ? <span className="font-mono text-xs">{pAct3}</span> : (
-              <input type="number" min="0" max={pMax.act3} value={pAct3} onChange={(e) => { setPAct3(Math.max(0, Math.min(pMax.act3, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isPrelimLocked ? <span className="font-mono text-xs">{pAct4}</span> : (
-              <input type="number" min="0" max={pMax.act4} value={pAct4} onChange={(e) => { setPAct4(Math.max(0, Math.min(pMax.act4, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isPrelimLocked ? <span className="font-mono text-xs">{pAct5}</span> : (
-              <input type="number" min="0" max={pMax.act5} value={pAct5} onChange={(e) => { setPAct5(Math.max(0, Math.min(pMax.act5, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isPrelimLocked ? <span className="font-mono text-xs">{pAct6}</span> : (
-              <input type="number" min="0" max={pMax.act6} value={pAct6} onChange={(e) => { setPAct6(Math.max(0, Math.min(pMax.act6, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pAct1, setPAct1, pMax.act1, isPrelimLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pAct2, setPAct2, pMax.act2, isPrelimLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pAct3, setPAct3, pMax.act3, isPrelimLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pAct4, setPAct4, pMax.act4, isPrelimLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pAct5, setPAct5, pMax.act5, isPrelimLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pAct6, setPAct6, pMax.act6, isPrelimLocked)}</td>
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{prelimResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">
-            {isPrelimLocked ? <span className="font-mono text-xs">{pChar}</span> : (
-              <input type="number" min="0" max={pMax.char} value={pChar} onChange={(e) => { setPChar(Math.max(0, Math.min(pMax.char, Number(e.target.value)))); setIsSaved(false); }} className="w-16 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isPrelimLocked ? <span className="font-mono text-xs">{pExam}</span> : (
-              <input type="number" min="0" max={pMax.exam} value={pExam} onChange={(e) => { setPExam(Math.max(0, Math.min(pMax.exam, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
+          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell(pChar, setPChar, pMax.char, isPrelimLocked, "w-16")}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pExam, setPExam, pMax.exam, isPrelimLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-sky-50 border-r border-slate-200 text-sky-850 w-14 text-center">{prelimResult.rating}</td>
         </>
@@ -271,48 +262,16 @@ export default function StudentRow({
       {/* ==================== MIDTERM GRADE ==================== */}
       {(viewMode === 'All' || viewMode === 'Midterm') && (
         <>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isMidtermLocked ? <span className="font-mono text-xs">{mAct1}</span> : (
-              <input type="number" min="0" max={mMax.act1} value={mAct1} onChange={(e) => { setMAct1(Math.max(0, Math.min(mMax.act1, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isMidtermLocked ? <span className="font-mono text-xs">{mAct2}</span> : (
-              <input type="number" min="0" max={mMax.act2} value={mAct2} onChange={(e) => { setMAct2(Math.max(0, Math.min(mMax.act2, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isMidtermLocked ? <span className="font-mono text-xs">{mAct3}</span> : (
-              <input type="number" min="0" max={mMax.act3} value={mAct3} onChange={(e) => { setMAct3(Math.max(0, Math.min(mMax.act3, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isMidtermLocked ? <span className="font-mono text-xs">{mAct4}</span> : (
-              <input type="number" min="0" max={mMax.act4} value={mAct4} onChange={(e) => { setMAct4(Math.max(0, Math.min(mMax.act4, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isMidtermLocked ? <span className="font-mono text-xs">{mAct5}</span> : (
-              <input type="number" min="0" max={mMax.act5} value={mAct5} onChange={(e) => { setMAct5(Math.max(0, Math.min(mMax.act5, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isMidtermLocked ? <span className="font-mono text-xs">{mAct6}</span> : (
-              <input type="number" min="0" max={mMax.act6} value={mAct6} onChange={(e) => { setMAct6(Math.max(0, Math.min(mMax.act6, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mAct1, setMAct1, mMax.act1, isMidtermLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mAct2, setMAct2, mMax.act2, isMidtermLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mAct3, setMAct3, mMax.act3, isMidtermLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mAct4, setMAct4, mMax.act4, isMidtermLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mAct5, setMAct5, mMax.act5, isMidtermLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mAct6, setMAct6, mMax.act6, isMidtermLocked)}</td>
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{midtermResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">
-            {isMidtermLocked ? <span className="font-mono text-xs">{mChar}</span> : (
-              <input type="number" min="0" max={mMax.char} value={mChar} onChange={(e) => { setMChar(Math.max(0, Math.min(mMax.char, Number(e.target.value)))); setIsSaved(false); }} className="w-16 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isMidtermLocked ? <span className="font-mono text-xs">{mExam}</span> : (
-              <input type="number" min="0" max={mMax.exam} value={mExam} onChange={(e) => { setMExam(Math.max(0, Math.min(mMax.exam, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
+          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell(mChar, setMChar, mMax.char, isMidtermLocked, "w-16")}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mExam, setMExam, mMax.exam, isMidtermLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-indigo-50 border-r border-slate-200 text-indigo-800 w-14 text-center">{midtermResult.rating}</td>
         </>
@@ -326,48 +285,16 @@ export default function StudentRow({
       {/* ==================== SEMI-FINAL GRADE ==================== */}
       {(viewMode === 'All' || viewMode === 'Semi-Final') && (
         <>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isSemiFinalLocked ? <span className="font-mono text-xs">{sfAct1}</span> : (
-              <input type="number" min="0" max={sfMax.act1} value={sfAct1} onChange={(e) => { setSfAct1(Math.max(0, Math.min(sfMax.act1, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isSemiFinalLocked ? <span className="font-mono text-xs">{sfAct2}</span> : (
-              <input type="number" min="0" max={sfMax.act2} value={sfAct2} onChange={(e) => { setSfAct2(Math.max(0, Math.min(sfMax.act2, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isSemiFinalLocked ? <span className="font-mono text-xs">{sfAct3}</span> : (
-              <input type="number" min="0" max={sfMax.act3} value={sfAct3} onChange={(e) => { setSfAct3(Math.max(0, Math.min(sfMax.act3, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isSemiFinalLocked ? <span className="font-mono text-xs">{sfAct4}</span> : (
-              <input type="number" min="0" max={sfMax.act4} value={sfAct4} onChange={(e) => { setSfAct4(Math.max(0, Math.min(sfMax.act4, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isSemiFinalLocked ? <span className="font-mono text-xs">{sfAct5}</span> : (
-              <input type="number" min="0" max={sfMax.act5} value={sfAct5} onChange={(e) => { setSfAct5(Math.max(0, Math.min(sfMax.act5, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-250 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isSemiFinalLocked ? <span className="font-mono text-xs">{sfAct6}</span> : (
-              <input type="number" min="0" max={sfMax.act6} value={sfAct6} onChange={(e) => { setSfAct6(Math.max(0, Math.min(sfMax.act6, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfAct1, setSfAct1, sfMax.act1, isSemiFinalLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfAct2, setSfAct2, sfMax.act2, isSemiFinalLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfAct3, setSfAct3, sfMax.act3, isSemiFinalLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfAct4, setSfAct4, sfMax.act4, isSemiFinalLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfAct5, setSfAct5, sfMax.act5, isSemiFinalLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfAct6, setSfAct6, sfMax.act6, isSemiFinalLocked)}</td>
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{semiFinalResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">
-            {isSemiFinalLocked ? <span className="font-mono text-xs">{sfChar}</span> : (
-              <input type="number" min="0" max={sfMax.char} value={sfChar} onChange={(e) => { setSfChar(Math.max(0, Math.min(sfMax.char, Number(e.target.value)))); setIsSaved(false); }} className="w-16 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isSemiFinalLocked ? <span className="font-mono text-xs">{sfExam}</span> : (
-              <input type="number" min="0" max={sfMax.exam} value={sfExam} onChange={(e) => { setSfExam(Math.max(0, Math.min(sfMax.exam, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
+          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell(sfChar, setSfChar, sfMax.char, isSemiFinalLocked, "w-16")}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfExam, setSfExam, sfMax.exam, isSemiFinalLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-amber-50 border-r border-slate-200 text-amber-800 w-14 text-center">{semiFinalResult.rating}</td>
         </>
@@ -376,48 +303,16 @@ export default function StudentRow({
       {/* ==================== FINAL GRADE ==================== */}
       {(viewMode === 'All' || viewMode === 'Final') && (
         <>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isFinalLocked ? <span className="font-mono text-xs">{fAct1}</span> : (
-              <input type="number" min="0" max={fMax.act1} value={fAct1} onChange={(e) => { setFAct1(Math.max(0, Math.min(fMax.act1, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isFinalLocked ? <span className="font-mono text-xs">{fAct2}</span> : (
-              <input type="number" min="0" max={fMax.act2} value={fAct2} onChange={(e) => { setFAct2(Math.max(0, Math.min(fMax.act2, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isFinalLocked ? <span className="font-mono text-xs">{fAct3}</span> : (
-              <input type="number" min="0" max={fMax.act3} value={fAct3} onChange={(e) => { setFAct3(Math.max(0, Math.min(fMax.act3, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isFinalLocked ? <span className="font-mono text-xs">{fAct4}</span> : (
-              <input type="number" min="0" max={fMax.act4} value={fAct4} onChange={(e) => { setFAct4(Math.max(0, Math.min(fMax.act4, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isFinalLocked ? <span className="font-mono text-xs">{fAct5}</span> : (
-              <input type="number" min="0" max={fMax.act5} value={fAct5} onChange={(e) => { setFAct5(Math.max(0, Math.min(fMax.act5, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isFinalLocked ? <span className="font-mono text-xs">{fAct6}</span> : (
-              <input type="number" min="0" max={fMax.act6} value={fAct6} onChange={(e) => { setFAct6(Math.max(0, Math.min(fMax.act6, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fAct1, setFAct1, fMax.act1, isFinalLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fAct2, setFAct2, fMax.act2, isFinalLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fAct3, setFAct3, fMax.act3, isFinalLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fAct4, setFAct4, fMax.act4, isFinalLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fAct5, setFAct5, fMax.act5, isFinalLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fAct6, setFAct6, fMax.act6, isFinalLocked)}</td>
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{finalResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">
-            {isFinalLocked ? <span className="font-mono text-xs">{fChar}</span> : (
-              <input type="number" min="0" max={fMax.char} value={fChar} onChange={(e) => { setFChar(Math.max(0, Math.min(fMax.char, Number(e.target.value)))); setIsSaved(false); }} className="w-16 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
-          <td className="p-1 border-r border-slate-100 w-12">
-            {isFinalLocked ? <span className="font-mono text-xs">{fExam}</span> : (
-              <input type="number" min="0" max={fMax.exam} value={fExam} onChange={(e) => { setFExam(Math.max(0, Math.min(fMax.exam, Number(e.target.value)))); setIsSaved(false); }} className="w-12 px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs" />
-            )}
-          </td>
+          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell(fChar, setFChar, fMax.char, isFinalLocked, "w-16")}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fExam, setFExam, fMax.exam, isFinalLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-orange-50 border-r border-slate-200 text-orange-850 w-14 text-center">{finalResult.rating}</td>
         </>

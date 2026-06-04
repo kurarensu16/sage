@@ -11,6 +11,7 @@ erDiagram
     departments ||--o{ users : "belongs to"
     departments ||--o{ subjects : "belongs to"
     departments ||--o{ sections : "belongs to"
+    departments ||--o{ programs : "contains"
     
     users ||--o{ enrollments : "is enrolled"
     sections ||--o{ enrollments : "contains"
@@ -63,6 +64,15 @@ Stores organizational colleges or academic departments.
 | `name` | VARCHAR(150) | NOT NULL, UNIQUE | e.g. "College of Computer Studies" |
 | `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Date created |
 
+#### Table: `programs`
+Stores academic degree programs under each college/department.
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `program_id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique ID of the program |
+| `name` | VARCHAR(255) | NOT NULL, UNIQUE | Program name (e.g. "Bachelor of Science in Information Technology") |
+| `department_id` | UUID | REFERENCES `departments` ON DELETE CASCADE | Affiliated college/department |
+| `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Date created |
+
 #### Table: `users`
 Stores user profile information for all system roles.
 | Column | Type | Constraints | Notes |
@@ -76,6 +86,7 @@ Stores user profile information for all system roles.
 | `role` | VARCHAR(20) | NOT NULL | Check constraint: admin, dean, faculty, student |
 | `year_level` | VARCHAR(20) | NULL | e.g. "1st Year", "2nd Year" (Students only) |
 | `department_id` | UUID | REFERENCES `departments` | Affiliated college/division |
+| `must_change_password` | BOOLEAN | DEFAULT TRUE | Force change password on first login flag |
 | `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Account creation timestamp |
 
 ---
@@ -353,6 +364,14 @@ CREATE TABLE departments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Table: programs
+CREATE TABLE programs (
+    program_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL UNIQUE,
+    department_id UUID REFERENCES departments(department_id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Table: users
 CREATE TABLE users (
     user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -364,6 +383,7 @@ CREATE TABLE users (
     role user_role NOT NULL,
     year_level VARCHAR(20),
     department_id UUID REFERENCES departments(department_id),
+    must_change_password BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
