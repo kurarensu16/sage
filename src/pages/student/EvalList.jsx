@@ -6,13 +6,7 @@ import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
-// Helper to compute SHA-256 hash for evaluation anonymity (FR25)
-async function sha256(message) {
-  const msgBuffer = new TextEncoder().encode(message);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
+
 
 export default function EvalList() {
   const { user, profile } = useAuth();
@@ -84,20 +78,16 @@ export default function EvalList() {
           }
         });
 
-        // 4. Compute tokens and check submissions
-        const tokens = await Promise.all(windows.map(async w => {
-          return await sha256(user.id + "_" + w.window_id);
-        }));
-
+        // 4. Check submissions by student_id
         const { data: responses } = await supabase
           .from('evaluation_responses')
-          .select('anonymous_token')
-          .in('anonymous_token', tokens);
+          .select('window_id')
+          .eq('student_id', user.id);
 
-        const submittedTokens = new Set(responses?.map(r => r.anonymous_token) || []);
+        const submittedWindowIds = new Set(responses?.map(r => r.window_id) || []);
 
         const list = await Promise.all(windows.map(async (win, idx) => {
-          const hasSubmitted = submittedTokens.has(tokens[idx]);
+          const hasSubmitted = submittedWindowIds.has(win.window_id);
           const subj = facultySubjectMap[win.faculty_id] || { code: 'N/A', name: 'Unknown Subject' };
           const closeDate = new Date(win.close_at);
           const daysLeft = Math.max(0, Math.ceil((closeDate - new Date()) / (1000 * 60 * 60 * 24)));
@@ -160,9 +150,9 @@ export default function EvalList() {
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-3 items-start">
           <MessageSquare className="h-5 w-5 text-sage-600 mt-0.5 flex-shrink-0" />
           <div>
-            <h4 className="font-bold text-sm text-slate-900">Anonymity Guaranteed</h4>
+            <h4 className="font-bold text-sm text-slate-900">Feedback Logged</h4>
             <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-              Your feedback is completely confidential. Evaluated scores are strictly aggregated, and comments are randomized without any names or IDs attached, compliant with university privacy code FR25.
+              Your feedback is used to evaluate faculty performance and improve instruction. Individual scores are aggregated to compute the final performance rating.
             </p>
           </div>
         </div>

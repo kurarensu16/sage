@@ -161,7 +161,8 @@ export default function EvalForm() {
         .from('evaluation_responses')
         .insert({
           window_id: windowId,
-          anonymous_token: token
+          anonymous_token: token,
+          student_id: user.id
         })
         .select('response_id')
         .single();
@@ -283,13 +284,13 @@ export default function EvalForm() {
           <span className="font-medium text-slate-900 font-sans">Appraisal Form</span>
         </div>
 
-        {/* Anonymity Alert Box */}
+        {/* Privacy Alert Box */}
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-3">
           <ShieldAlert className="h-5 w-5 text-sage-600 mt-0.5 flex-shrink-0" />
           <div>
-            <h4 className="font-bold text-sm text-slate-900 text-left">Compliance & Privacy Guarantee</h4>
+            <h4 className="font-bold text-sm text-slate-900 text-left">Compliance & Privacy Notice</h4>
             <p className="text-xs text-slate-500 mt-0.5 leading-relaxed text-left">
-              In accordance with school policy, evaluations are fully anonymized. Individual ratings are converted to aggregated index scores, and comments are shuffled dynamically to prevent identification.
+              In accordance with school policy, individual ratings are converted to aggregated index scores, and comments are stored securely to help improve instruction.
             </p>
           </div>
         </div>
@@ -495,7 +496,7 @@ export default function EvalForm() {
                 </div>
                 <h3 className="text-xl font-extrabold font-display text-slate-900">Appraisal Submitted!</h3>
                 <p className="text-xs text-slate-500 mt-2 leading-relaxed px-4">
-                  Thank you! Your feedback has been securely hashed and recorded. The evaluation is completely anonymous.
+                  Thank you! Your feedback has been securely recorded.
                 </p>
               </div>
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-center">
