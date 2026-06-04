@@ -12,15 +12,9 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
-// Helper to compute SHA-256 hash for evaluation anonymity (FR25)
-async function sha256(message) {
-  const msgBuffer = new TextEncoder().encode(message);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
-// Helper to check pending evaluations anonymously
+
+// Helper to check pending evaluations
 const checkPendingEvals = async (studentId, sectionId) => {
   const now = new Date().toISOString();
   const { data: windows } = await supabase
@@ -33,21 +27,16 @@ const checkPendingEvals = async (studentId, sectionId) => {
 
   if (!windows || windows.length === 0) return 0;
 
-  // Compute tokens for all windows
-  const tokens = await Promise.all(windows.map(async w => {
-    return await sha256(studentId + "_" + w.window_id);
-  }));
-
-  // Fetch responses that match these tokens
+  // Fetch responses submitted by this student
   const { data: responses } = await supabase
     .from('evaluation_responses')
-    .select('anonymous_token')
-    .in('anonymous_token', tokens);
+    .select('window_id')
+    .eq('student_id', studentId);
 
-  const submittedTokens = new Set(responses?.map(r => r.anonymous_token) || []);
+  const submittedWindowIds = new Set(responses?.map(r => r.window_id) || []);
   let pendingCount = 0;
   for (let i = 0; i < windows.length; i++) {
-    if (!submittedTokens.has(tokens[i])) {
+    if (!submittedWindowIds.has(windows[i].window_id)) {
       pendingCount++;
     }
   }
@@ -386,7 +375,7 @@ export default function Dashboard() {
               </div>
               <p className="text-xs text-slate-500">
                 {pendingEvals > 0 
-                  ? `You have ${pendingEvals} pending instructor evaluation surveys. Submissions are entirely anonymous.` 
+                  ? `You have ${pendingEvals} pending instructor evaluation surveys.` 
                   : 'All scheduled faculty appraisals are fully completed. Thank you for your feedback!'}
               </p>
               <Link to="/student/evallist" className="inline-flex items-center gap-1 text-xs font-bold text-sage-600 hover:underline">
