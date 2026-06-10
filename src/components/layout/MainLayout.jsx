@@ -29,10 +29,11 @@ export default function MainLayout() {
       <Sidebar isCollapsed={sidebarCollapsed} />
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <Topbar toggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} isCollapsed={sidebarCollapsed} />
-        <main className="flex-1 flex flex-col h-full overflow-y-auto">
+        <main className="flex-1 flex flex-col h-full overflow-y-auto min-w-0">
           <Outlet />
         </main>
       </div>
+
     </div>
   );
 }

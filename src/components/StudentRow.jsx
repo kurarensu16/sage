@@ -11,6 +11,7 @@ export default function StudentRow({
   lockedMilestones = [],
   viewMode = 'All',
   classCode = 'default',
+  studentLocked,
   maxItems = {
     Prelim: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
     Midterm: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
@@ -295,7 +296,7 @@ export default function StudentRow({
 
   const statusInfo = getStatus(sg);
 
-  const isLocked = readOnly || lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final');
+  const isLocked = readOnly || (studentLocked !== undefined ? studentLocked : (lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final')));
   const isPrelimLocked = isLocked;
   const isMidtermLocked = isLocked;
   const isSemiFinalLocked = isLocked;
@@ -325,25 +326,31 @@ export default function StudentRow({
     );
   };
 
+  const stickyBgClass = cn(
+    statusInfo.label === 'Safe' && "bg-white group-hover:bg-slate-50",
+    statusInfo.label === 'At-Risk' && "bg-[#fffdf5] group-hover:bg-[#fff9e6]",
+    statusInfo.label === 'Failing' && "bg-[#fff8f8] group-hover:bg-[#ffebeb]"
+  );
+
   return (
     <tr className={cn(
-      "transition-colors text-center text-xs text-slate-700",
-      statusInfo.label === 'Safe' && "hover:bg-slate-50/60",
+      "group transition-colors text-center text-xs text-slate-700",
+      statusInfo.label === 'Safe' && "hover:bg-slate-50/60 bg-white",
       statusInfo.label === 'At-Risk' && "bg-amber-50/10 hover:bg-amber-50/30",
       statusInfo.label === 'Failing' && "bg-rose-50/10 hover:bg-rose-50/30 border-l-2 border-l-rose-400"
     )}>
       {/* Row Number */}
-      <td className="px-2 py-3 border-r border-slate-200 text-slate-500 font-mono text-[11px] w-10">
+      <td className={cn("px-2 py-3 border-r border-slate-200 text-slate-500 font-mono text-[11px] w-10 sticky left-0 z-10", stickyBgClass)}>
         {rowNo}
       </td>
       
       {/* Student Number */}
-      <td className="px-2 py-3 border-r border-slate-200 text-slate-500 font-mono text-[11px] w-24">
+      <td className={cn("px-2 py-3 border-r border-slate-200 text-slate-500 font-mono text-[11px] w-24 sticky left-[40px] z-10", stickyBgClass)}>
         {student.studentNo || student.id}
       </td>
       
       {/* Student Name (Sticky on Left) */}
-      <td className="px-4 py-3 text-left font-semibold text-slate-900 sticky left-0 bg-white border-r border-slate-200 z-10 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+      <td className={cn("px-4 py-3 text-left font-semibold text-slate-900 sticky left-[136px] border-r border-slate-200 z-10 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]", stickyBgClass)}>
         {student.name}
       </td>
       

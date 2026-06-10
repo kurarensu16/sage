@@ -156,11 +156,12 @@ export default function RemarkOverrideRequests() {
         .eq('milestone', 'Semestral Grade')
         .eq('status', 'pending');
 
-      // 3. Unlock posted_grades for the Final period in this class
+      // 3. Unlock posted_grades for the Final period in this class (ONLY for the specific student)
       await supabase
         .from('posted_grades')
         .update({ is_locked: false })
         .eq('class_record_id', req.classCode)
+        .eq('student_id', req.studentId)
         .eq('grade_period', 'final');
 
       // 4. Audit log

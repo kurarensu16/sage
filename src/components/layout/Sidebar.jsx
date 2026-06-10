@@ -23,7 +23,6 @@ export default function Sidebar({ isCollapsed }) {
       { to: '/admin/evalformslist', icon: FileText, label: 'Evaluation Forms' },
       { to: '/admin/evalwindowlist', icon: Calendar, label: 'Evaluation Windows' },
       { to: '/admin/termmanagement', icon: Calendar, label: 'Term Management' },
-      { to: '/admin/gradeoverride', icon: AlertCircle, label: 'Grade Override' },
       { to: '/admin/auditlog', icon: Shield, label: 'Audit Logs' },
     ],
     faculty: [

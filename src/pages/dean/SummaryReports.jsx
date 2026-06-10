@@ -567,7 +567,7 @@ export default function SummaryReports() {
                         <td className="py-2.5 font-bold">{row.name}</td>
                         <td className="py-2.5">{row.dept}</td>
                         <td className="py-2.5 text-center font-mono font-bold">
-                          {row.gwa !== null ? row.gwa.toFixed(2) : 'No grades yet'}
+                          {typeof row.gwa === 'number' ? row.gwa.toFixed(2) : 'No grades yet'}
                         </td>
                         <td className="py-2.5 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${

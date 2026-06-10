@@ -359,7 +359,6 @@ export default function PostedGradesView() {
             email: u.email
           }));
         studentList.sort((a, b) => a.name.localeCompare(b.name));
-        setStudents(studentList);
 
         // 3. Fetch column setup configurations
         const { data: cols } = await supabase
@@ -512,6 +511,19 @@ export default function PostedGradesView() {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
         });
 
+        const compiled = studentList.map(stud => {
+          const dbData = scoresByStudent[stud.id] || {};
+          const pgRow = (pgData || []).find(r => r.student_id === stud.id && r.grade_period === 'final');
+          return {
+            ...stud,
+            customRemarks: dbData.customRemarks || '',
+            remarksNote: dbData.remarksNote || '',
+            computedGrade: pgRow ? pgRow.computed_grade : null,
+            effectiveGrade: pgRow ? pgRow.effective_grade : null
+          };
+        });
+        setStudents(compiled);
+
       } catch (err) {
         console.error('Error loading PostedGradesView data:', err);
       } finally {
@@ -568,12 +580,14 @@ export default function PostedGradesView() {
     if (!remarkReqStudent || !remarkReqNote.trim() || !classRecordId) return;
 
     try {
+      const selectedStud = students.find(s => s.id === remarkReqStudentId);
+      const compGrade = selectedStud ? selectedStud.computedGrade : null;
+      const effGrade = selectedStud ? selectedStud.effectiveGrade : null;
+
       const subjCode = classInfo?.subjects?.code || '';
       const subjName = classInfo?.subjects?.name || '';
       const sectName = classInfo?.sections?.name || '';
       const actorName = resolveActorName(profile, user);
-      const effectiveGradeVal = remarkReqTo === 'Passed' ? 3.00 : 5.00;
-
       // 1. Database: Insert into remark_override_requests (primary store)
       const { data: rorRow, error: rorErr } = await supabase
         .from('remark_override_requests')
@@ -584,28 +598,17 @@ export default function PostedGradesView() {
           subject_name: `${subjCode} - ${subjName}`,
           section_name: sectName,
           faculty_name: actorName,
-          computed_grade: 5.00,
-          effective_grade: effectiveGradeVal,
+          computed_grade: compGrade,
+          effective_grade: effGrade,
           current_remark: remarkReqFrom,
-          requested_remark: remarkReqTo,
+          requested_remark: 'Pending Edit',
           note: remarkReqNote,
           status: 'pending'
         })
         .select('request_id')
         .single();
 
-      // 2. Database: Insert unlock_requests row for 'Semestral Grade' milestone
-      //    so Dean's Grade Posting Status page shows the pending indicator
-      await supabase
-        .from('unlock_requests')
-        .insert({
-          class_record_id: classRecordId,
-          milestone: 'Semestral Grade',
-          requested_by: user.id,
-          status: 'pending'
-        });
-
-      // 3. LocalStorage: Dual-write fallback for backward compatibility
+      // 2. LocalStorage: Dual-write fallback for backward compatibility
       const existing = JSON.parse(localStorage.getItem('remark_override_requests') || '[]');
       const newReq = {
         id: rorRow?.request_id || `ror-${Date.now()}`,
@@ -615,10 +618,10 @@ export default function PostedGradesView() {
         section: sectName,
         studentId: remarkReqStudentId,
         studentName: remarkReqStudent,
-        computedGrade: '5.00',
-        effectiveGrade: effectiveGradeVal.toFixed(2),
+        computedGrade: compGrade != null ? compGrade : '—',
+        effectiveGrade: effGrade != null ? effGrade : '—',
         currentRemark: remarkReqFrom,
-        requestedRemark: remarkReqTo,
+        requestedRemark: 'Pending Edit',
         note: remarkReqNote,
         requestedAt: new Date().toISOString(),
         status: 'pending',
@@ -804,7 +807,7 @@ export default function PostedGradesView() {
 
         {/* Data Table Card */}
         {isFullScreen && <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsFullScreen(false)} />}
-        <div className={isFullScreen ? "fixed inset-4 z-50 rounded-xl border border-slate-200 shadow-2xl bg-white overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200" : "rounded-xl border border-slate-200 shadow-sm bg-white overflow-hidden flex flex-col"}>
+        <div className={isFullScreen ? "fixed inset-4 z-50 rounded-xl border border-slate-200 shadow-2xl bg-white overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200" : "rounded-xl border border-slate-200 shadow-sm bg-white overflow-hidden flex flex-col w-full max-w-full"}>
             {/* Fullscreen header bar */}
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/80">
               <div className="flex items-center gap-2">
@@ -818,7 +821,7 @@ export default function PostedGradesView() {
               </div>
               <button
                 onClick={() => setIsFullScreen(!isFullScreen)}
-                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-sage-50 hover:border-sage-300 text-slate-500 hover:text-slate-700 transition-all"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-sage-50 hover:border-sage-300 text-slate-505 hover:text-slate-700 transition-all cursor-pointer"
                 title={isFullScreen ? 'Exit fullscreen' : 'View fullscreen'}
               >
                 {isFullScreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
@@ -828,9 +831,9 @@ export default function PostedGradesView() {
                 <table className={`w-full min-w-max text-left border-collapse ${isFullScreen ? 'fullscreen-table' : ''}`}>
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 text-xs font-bold text-center">
-                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-10">No.</th>
-                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24">Student No.</th>
-                            <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-0 bg-slate-50 border-r border-slate-200 z-20 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
+                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-10 sticky left-0 bg-slate-50 z-30">No.</th>
+                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24 sticky left-[40px] bg-slate-50 z-30">Student No.</th>
+                            <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-[136px] bg-slate-50 border-r border-slate-200 z-30 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
                             <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
                             <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">MIDTERM GRADE</th>
                             <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-indigo-100 text-indigo-950 font-bold uppercase tracking-wider w-16">Midterm Rating (MR)</th>
@@ -961,7 +964,6 @@ export default function PostedGradesView() {
               </button>
             </div>
 
-            {/* Student selector */}
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Student</label>
               <select
@@ -969,7 +971,10 @@ export default function PostedGradesView() {
                 onChange={e => {
                   setRemarkReqStudent(e.target.value);
                   const selected = students.find(s => s.name === e.target.value);
-                  if (selected) setRemarkReqStudentId(selected.id);
+                  if (selected) {
+                    setRemarkReqStudentId(selected.id);
+                    setRemarkReqFrom(selected.customRemarks || 'Passed');
+                  }
                 }}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 bg-white cursor-pointer"
               >
@@ -980,31 +985,14 @@ export default function PostedGradesView() {
               </select>
             </div>
 
-            {/* Remark change */}
-            <div className="grid grid-cols-2 gap-3">
+            {remarkReqStudent && (
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Current Remark</label>
-                <select
-                  value={remarkReqFrom}
-                  onChange={e => setRemarkReqFrom(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 bg-white cursor-pointer"
-                >
-                  {['Passed','Failed','INC','FDA','Dropped'].map(r => <option key={r}>{r}</option>)}
-                </select>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700">
+                  {remarkReqFrom}
+                </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Change To</label>
-                <select
-                  value={remarkReqTo}
-                  onChange={e => setRemarkReqTo(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 bg-white cursor-pointer"
-                >
-                  {['Passed','Failed','INC','FDA','Dropped'].map(r => <option key={r}>{r}</option>)}
-                </select>
-              </div>
-            </div>
-
-            {/* Grace pass info */}
+            )}
             {remarkReqTo === 'Passed' && (
               <div className="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2.5 text-xs text-violet-700">
                 <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-violet-500" />

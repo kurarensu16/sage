@@ -22,6 +22,7 @@ export default function ScoreInput() {
   const [viewMode, setViewMode] = useState('All');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lockedMilestones, setLockedMilestones] = useState([]);
+  const [studentLocks, setStudentLocks] = useState({});
   const [savingDrafts, setSavingDrafts] = useState(false);
   const [classesList, setClassesList] = useState([]);
 
@@ -453,6 +454,7 @@ export default function ScoreInput() {
           .eq('class_record_id', classRecordId);
 
         const locked = new Set();
+        const locksMap = {};
 
         (pgData || []).forEach(row => {
           if (!scoresByStudent[row.student_id]) {
@@ -470,6 +472,7 @@ export default function ScoreInput() {
           if (row.grade_period === 'final') {
             scoresByStudent[row.student_id].customRemarks = row.remarks === 'passed' ? 'Passed' : row.remarks === 'failed' ? 'Failed' : row.remarks.toUpperCase();
             scoresByStudent[row.student_id].remarksNote = row.remarks_note || '';
+            locksMap[row.student_id] = row.is_locked;
           }
 
           if (row.is_locked) {
@@ -490,6 +493,7 @@ export default function ScoreInput() {
         });
 
         setLockedMilestones(Array.from(locked));
+        setStudentLocks(locksMap);
 
         // 6. Initialize local draft caches
         studentList.forEach(stud => {
@@ -778,9 +782,10 @@ export default function ScoreInput() {
         };
 
         const existingId = existingMap[stud.id];
-        if (existingId) {
-          payloadRow.posted_grade_id = existingId;
-        }
+        payloadRow.posted_grade_id = existingId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = Math.random() * 16 | 0;
+          return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        }));
 
         postRows.push(payloadRow);
       });
@@ -1007,7 +1012,7 @@ export default function ScoreInput() {
 
         {/* Data Table Card */}
         {isFullScreen && <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsFullScreen(false)} />}
-        <div className={isFullScreen ? "fixed inset-4 z-50 rounded-xl border border-slate-200 shadow-2xl bg-white overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200" : "rounded-xl border border-slate-200 shadow-sm bg-white overflow-hidden flex flex-col"}>
+        <div className={isFullScreen ? "fixed inset-4 z-50 rounded-xl border border-slate-200 shadow-2xl bg-white overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200" : "rounded-xl border border-slate-200 shadow-sm bg-white overflow-hidden flex flex-col w-full max-w-full"}>
             {/* Fullscreen header bar */}
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/80">
               <div className="flex items-center gap-2">
@@ -1021,7 +1026,7 @@ export default function ScoreInput() {
               </div>
               <button
                 onClick={() => setIsFullScreen(!isFullScreen)}
-                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-sage-50 hover:border-sage-300 text-slate-500 hover:text-slate-700 transition-all"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-sage-50 hover:border-sage-300 text-slate-505 hover:text-slate-700 transition-all cursor-pointer"
                 title={isFullScreen ? 'Exit fullscreen' : 'View fullscreen'}
               >
                 {isFullScreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
@@ -1031,10 +1036,9 @@ export default function ScoreInput() {
                 <table className={`w-full min-w-max text-left border-collapse ${isFullScreen ? 'fullscreen-table' : ''}`}>
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 text-xs font-bold text-center">
-                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-10">No.</th>
-                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24">Student No.</th>
-                            <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-0 bg-slate-50 border-r border-slate-200 z-20 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
-                            
+                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-10 sticky left-0 bg-slate-50 z-30">No.</th>
+                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24 sticky left-[40px] bg-slate-50 z-30">Student No.</th>
+                            <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-[136px] bg-slate-50 border-r border-slate-200 z-30 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
                             {/* Prelim Period */}
                             {(viewMode === 'All' || viewMode === 'Prelim') && (
                               <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
@@ -1155,16 +1159,14 @@ export default function ScoreInput() {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {/* 📐 Max Column Items Configuration Row */}
                         <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-750 font-semibold h-11 select-none">
-                          <td className="px-2 py-3 border-r border-slate-200 bg-slate-50/80"></td>
-                          <td className="px-2 py-3 border-r border-slate-200 bg-slate-50/80"></td>
-                          <td className="px-4 py-3 text-left font-bold text-slate-800 sticky left-0 bg-slate-50 border-r border-slate-200 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                          <td className="px-2 py-3 border-r border-slate-200 bg-slate-50 sticky left-0 z-10 w-10"></td>
+                          <td className="px-2 py-3 border-r border-slate-200 bg-slate-50 sticky left-[40px] z-10 w-24"></td>
+                          <td className="px-4 py-3 text-left font-bold text-slate-800 sticky left-[136px] bg-slate-50 border-r border-slate-200 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] w-60">
                             <div className="flex items-center gap-1 text-sage-800 font-bold uppercase tracking-wider text-[10px]">
                               📐 Max Column Items
                             </div>
                           </td>
-
                           {/* Prelim Period */}
                           {(viewMode === 'All' || viewMode === 'Prelim') && (
                             <>
@@ -1536,6 +1538,7 @@ export default function ScoreInput() {
                             classCode={classRecordId}
                             maxItems={maxItems}
                             lockedMilestones={lockedMilestones}
+                            studentLocked={studentLocks[student.id]}
                           />
                         ))}
                     </tbody>
