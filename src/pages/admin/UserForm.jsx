@@ -271,13 +271,32 @@ export default function UserForm() {
         const nextSeq = String((count || 0) + 1).padStart(5, '0');
         const userNumber = `${prefix}${year}-${nextSeq}`;
         
-        userPayload.user_number = userNumber;
+        const { data: invokeData, error: invokeErr } = await supabase.functions.invoke('create-admin-user', {
+          body: {
+            email: formData.email.trim().toLowerCase(),
+            password: 'DemoPassword123!',
+            firstName: formData.firstName.trim(),
+            lastName: formData.lastName.trim(),
+            middleName: formData.middleName.trim(),
+            role: formData.role,
+            departmentId: departmentId,
+            yearLevel: formData.role === 'student' ? formData.yearLevel : null,
+            sectionId: sectionId,
+            userNumber: userNumber
+          }
+        });
 
-        const { error } = await supabase
-          .from('users')
-          .insert(userPayload);
-        
-        if (error) throw error;
+        if (invokeErr || invokeData?.error) {
+          throw new Error(invokeErr?.message || invokeData?.error || 'Failed to register authentication account.');
+        }
+
+        // Set user number client-side fallback
+        if (invokeData?.user?.id) {
+          await supabase
+            .from('users')
+            .update({ user_number: userNumber })
+            .eq('user_id', invokeData.user.id);
+        }
 
         const actorName = resolveActorName(profile, user);
         await logActivity(
