@@ -129,7 +129,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
         department: u.departments?.name || '',
         program: '', // Legacy mock data
         yearLevel: u.year_level || '',
-        section: u.sections?.name || '',
+        section: u.sections?.name || (u.role === 'student' ? 'Irregular' : ''),
         status: u.status || 'active',
         userNumber: u.user_number || ''
       }));
@@ -1130,7 +1130,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
 
         {/* User Table Grid */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="table-container overflow-x-auto">
+          <div className="table-container overflow-x-auto min-h-[320px]">
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">
                 <tr>
@@ -1642,6 +1642,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
                     {selectedUserProfile.status.toUpperCase()}
                   </span>
                   {selectedUserProfile.department && ` • College: ${selectedUserProfile.department}`}
+                  {selectedUserProfile.role === 'student' && selectedUserProfile.section && ` • Section: ${selectedUserProfile.section}`}
                 </div>
               </div>
               <button 

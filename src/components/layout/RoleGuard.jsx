@@ -2,7 +2,7 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext';
 
 export default function RoleGuard({ allowedRoles }) {
-  const { role, loading } = useAuth();
+  const { user, role, loading } = useAuth();
 
   if (loading) {
     return (
@@ -10,6 +10,10 @@ export default function RoleGuard({ allowedRoles }) {
         Checking permissions...
       </div>
     );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
   }
 
   if (!role || !allowedRoles.includes(role)) {

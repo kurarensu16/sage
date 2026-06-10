@@ -8,17 +8,17 @@ import { useAuth } from '../../lib/AuthContext';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const { session, role } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    if (session) {
-      navigate('/403', { replace: true });
+    if (session && role) {
+      navigate(`/${role}/dashboard`, { replace: true });
     }
-  }, [session, navigate]);
+  }, [session, role, navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();

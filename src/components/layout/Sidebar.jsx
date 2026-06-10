@@ -22,13 +22,14 @@ export default function Sidebar({ isCollapsed }) {
       { to: '/admin/classmanagementlist', icon: BookOpen, label: 'Classrooms' },
       { to: '/admin/evalformslist', icon: FileText, label: 'Evaluation Forms' },
       { to: '/admin/evalwindowlist', icon: Calendar, label: 'Evaluation Windows' },
-      { to: '/admin/gradeoverride', icon: AlertCircle, label: 'Grade Override' },
+      { to: '/admin/termmanagement', icon: Calendar, label: 'Term Management' },
       { to: '/admin/auditlog', icon: Shield, label: 'Audit Logs' },
     ],
     faculty: [
       { to: '/faculty/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/faculty/classrecordslist', icon: BookOpen, label: 'Class Records' },
       { to: '/faculty/scoreinput', icon: FileText, label: 'Score Input' },
+      { to: '/faculty/classattendance', icon: Calendar, label: 'Class Attendance' },
       { to: '/faculty/evalresultsmy', icon: FileText, label: 'Eval Results' },
     ],
     dean: [
@@ -96,8 +97,8 @@ export default function Sidebar({ isCollapsed }) {
         {/* Sign out section */}
         <div className="p-3 border-t border-sage-800">
             <button 
-              onClick={() => {
-                signOut();
+              onClick={async () => {
+                await signOut();
                 navigate('/login');
               }}
               title={isCollapsed ? "Sign Out" : undefined}

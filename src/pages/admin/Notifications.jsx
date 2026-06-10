@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   Bell, 
@@ -11,62 +11,131 @@ import {
   MailOpen
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
+
+const formatRelativeTime = (isoString) => {
+  if (!isoString) return '';
+  const diffMs = new Date() - new Date(isoString);
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return 'Yesterday';
+  return `${diffDays} days ago`;
+};
 
 export default function Notifications() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      type: 'security',
-      title: 'New Administrative Audit Log Entry',
-      message: 'A grade override action was executed by Admin for student Reyes, Mark T. (CS301) on the Grade Overrides panel.',
-      time: '10 minutes ago',
-      read: false,
-      icon: ShieldAlert,
-      iconColor: 'text-rose-600 bg-rose-50 border-rose-200'
-    },
-    {
-      id: 2,
-      type: 'database',
-      title: 'Database Registry Auto-Sync Success',
-      message: 'Registrar database sync completed successfully with zero conflicts. 12 class rosters updated.',
-      time: '2 hours ago',
-      read: false,
-      icon: Database,
-      iconColor: 'text-emerald-600 bg-emerald-50 border-emerald-200'
-    },
-    {
-      id: 3,
-      type: 'user',
-      title: 'New Student Registration Registered',
-      message: 'A new user (Sarah Jenkins, Student ID: 2023-10045) was registered and assigned to BSIT 3rd Year, Section BSIT-3A.',
-      time: '1 day ago',
-      read: true,
-      icon: UserPlus,
-      iconColor: 'text-blue-600 bg-blue-50 border-blue-200'
-    },
-    {
-      id: 4,
-      type: 'system',
-      title: 'SAGE Platform Registry Core Update',
-      message: 'System core components updated to version 2.4. Class registries auto-sync daily at 12:00 AM.',
-      time: '1 week ago',
-      read: true,
-      icon: Info,
-      iconColor: 'text-slate-650 bg-slate-50 border-slate-205'
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    async function loadNotifications() {
+      if (!user) return;
+      try {
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('recipient_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const mapped = (data || []).map(n => {
+          let type = 'system';
+          let title = 'System Notification';
+          let icon = Info;
+          let iconColor = 'text-slate-655 bg-slate-50 border-slate-205';
+
+          if (n.type === 'security') {
+            type = 'security';
+            title = 'New Administrative Audit Log Entry';
+            icon = ShieldAlert;
+            iconColor = 'text-rose-600 bg-rose-50 border-rose-200';
+          } else if (n.type === 'database_sync') {
+            type = 'database';
+            title = 'Database Registry Auto-Sync Success';
+            icon = Database;
+            iconColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
+          } else if (n.type === 'user_signup') {
+            type = 'user';
+            title = 'New User Registered';
+            icon = UserPlus;
+            iconColor = 'text-blue-600 bg-blue-50 border-blue-200';
+          }
+
+          return {
+            id: n.notification_id,
+            type,
+            title,
+            message: n.message,
+            time: formatRelativeTime(n.created_at),
+            read: n.is_read,
+            icon,
+            iconColor
+          };
+        });
+
+        setNotifications(mapped);
+
+      } catch (err) {
+        console.error('Error loading notifications:', err);
+      } finally {
+        setLoading(false);
+      }
     }
-  ]);
 
-  const markAllRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+    loadNotifications();
+  }, [user]);
+
+  const markAllRead = async () => {
+    if (!user || notifications.length === 0) return;
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('recipient_id', user.id);
+
+      if (error) throw error;
+      setNotifications(notifications.map(n => ({ ...n, read: true })));
+    } catch (err) {
+      console.error('Error marking all notifications as read:', err);
+    }
   };
 
-  const deleteNotification = (id) => {
-    setNotifications(notifications.filter(n => n.id !== id));
+  const deleteNotification = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('notification_id', id);
+
+      if (error) throw error;
+      setNotifications(notifications.filter(n => n.id !== id));
+    } catch (err) {
+      console.error('Error deleting notification:', err);
+    }
   };
 
-  const toggleRead = (id) => {
-    setNotifications(notifications.map(n => n.id === id ? { ...n, read: !n.read } : n));
+  const toggleRead = async (id) => {
+    const noti = notifications.find(n => n.id === id);
+    if (!noti) return;
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: !noti.read })
+        .eq('notification_id', id);
+
+      if (error) throw error;
+      setNotifications(notifications.map(n => n.id === id ? { ...n, read: !n.read } : n));
+    } catch (err) {
+      console.error('Error toggling notification read state:', err);
+    }
   };
 
   const filtered = notifications.filter(n => {
@@ -74,6 +143,17 @@ export default function Notifications() {
     if (activeFilter === 'System') return n.type === 'security' || n.type === 'database';
     return true;
   });
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
+          <p className="text-sm text-slate-500 font-medium font-sans">Loading notifications...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -140,8 +220,8 @@ export default function Notifications() {
                         <span className="w-2 h-2 bg-sage-600 rounded-full"></span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">{noti.message}</p>
-                    <span className="text-[10px] text-slate-400 font-medium block pt-1">{noti.time}</span>
+                    <p className="text-xs text-slate-655 leading-relaxed max-w-2xl text-left">{noti.message}</p>
+                    <span className="text-[10px] text-slate-400 font-medium block pt-1 text-left">{noti.time}</span>
                   </div>
                 </div>
 

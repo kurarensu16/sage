@@ -155,7 +155,7 @@ export default function Dashboard() {
             <div className="p-6 flex-1 divide-y divide-slate-100">
               {recentLogs.length > 0 ? (
                 recentLogs.map((log) => (
-                  <div key={log.id} className="py-3 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div key={log.log_id} className="py-3 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">

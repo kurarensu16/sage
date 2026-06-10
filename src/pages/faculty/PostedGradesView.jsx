@@ -20,12 +20,16 @@ import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { triggerExcelExport } from '../../lib/excelExport';
+import ExportPreviewModal from '../../components/ExportPreviewModal';
+import html2pdf from 'html2pdf.js';
 
 export default function PostedGradesView() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, profile } = useAuth();
   const classRecordId = new URLSearchParams(location.search).get('id');
+  const autoExport = new URLSearchParams(location.search).get('export') === '1';
 
   const [classInfo, setClassInfo] = useState(null);
   const [students, setStudents] = useState([]);
@@ -57,6 +61,250 @@ export default function PostedGradesView() {
     Final: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 }
   });
 
+  // Excel export metadata state
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportMetadata, setExportMetadata] = useState({
+    examiner: 'MYRA R. CRUZ',
+    registrar: 'VIRGINIA D. SALVADOR, MBA',
+    facultyName: '',
+    dean: '',
+    day: 'Mon',
+    time: '07:00 - 10:00'
+  });
+
+  // Initialize faculty name when profile loads
+  useEffect(() => {
+    if (profile) {
+      setExportMetadata(prev => ({
+        ...prev,
+        facultyName: `${profile.first_name} ${profile.last_name}`.toUpperCase()
+      }));
+    }
+  }, [profile]);
+
+  // Auto-lookup dean based on the class's college/department
+  useEffect(() => {
+    if (!classInfo) return;
+    const collegeName = classInfo.subjects?.departments?.name || '';
+    if (!collegeName) return;
+
+    async function fetchDean() {
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('first_name, last_name, departments ( name )')
+          .eq('role', 'dean')
+          .eq('status', 'active')
+          .limit(10);
+
+        if (error) throw error;
+
+        // Match dean whose department name matches the college
+        const matched = (data || []).find(u => {
+          const deptName = u.departments?.name || '';
+          return deptName.toLowerCase().includes(collegeName.toLowerCase()) ||
+                 collegeName.toLowerCase().includes(deptName.toLowerCase());
+        }) || data?.[0]; // fallback to first dean if no match
+
+        if (matched) {
+          const fullName = `${matched.last_name.toUpperCase()}, ${matched.first_name.toUpperCase()}`;
+          setExportMetadata(prev => ({ ...prev, dean: fullName }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch dean:', err);
+      }
+    }
+    fetchDean();
+  }, [classInfo]);
+
+  // Auto-open export modal when navigated with ?export=1
+  useEffect(() => {
+    if (autoExport && !loading && classInfo && students.length > 0) {
+      setShowExportModal(true);
+    }
+  }, [autoExport, loading, classInfo, students]);
+
+  const compileStudentsWithGrades = () => {
+    return students.map(student => {
+      const STORAGE_KEY = `sage_scores_${classRecordId}_${student.id}`;
+      const draftRaw = localStorage.getItem(STORAGE_KEY);
+      const draft = draftRaw ? JSON.parse(draftRaw) : {};
+      
+      const storedAbsences = localStorage.getItem(`sage_absences_${classRecordId}_${student.id}`);
+      const absences = storedAbsences !== null ? parseInt(storedAbsences) : 0;
+
+      return {
+        ...student,
+        absences,
+        periods: {
+          Prelim: draft.Prelim || {},
+          Midterm: draft.Midterm || {},
+          'Semi-Final': draft['Semi-Final'] || {},
+          Final: draft.Final || {}
+        },
+        customRemarks: draft.customRemarks || '',
+        remarksNote: draft.remarksNote || ''
+      };
+    });
+  };
+
+  const handleExportExcel = (selectedTab) => {
+    if (!classInfo || students.length === 0) return;
+
+    const studentsWithGrades = compileStudentsWithGrades();
+    const metadata = {
+      college: classInfo.subjects?.departments?.name || 'College of Computer Studies',
+      course: classInfo.course || 'BSIT',
+      subjectCode: classInfo.subjects?.code || '',
+      subjectName: classInfo.subjects?.name || '',
+      section: classInfo.sections?.name || '',
+      semester: classInfo.semester === '1st' ? '1st Sem' : classInfo.semester === '2nd' ? '2nd Sem' : 'Summer',
+      schoolYear: classInfo.school_year || '',
+      units: classInfo.subjects?.units || 3,
+      ...exportMetadata
+    };
+
+    triggerExcelExport(metadata, studentsWithGrades, selectedTab);
+  };
+
+  const handleExportPdf = (selectedTab) => {
+    // 1. Create a single canvas context reused for all color conversions
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    
+    const colorFuncRegex = /(oklch|oklab|lab|lch|hwb|color)\([^)]+\)/g;
+    const convertUnsupportedColorsToStringRgb = (str) => {
+      if (!str || typeof str !== 'string') return str;
+      colorFuncRegex.lastIndex = 0;
+      if (!colorFuncRegex.test(str)) return str;
+      return str.replace(colorFuncRegex, (match) => {
+        try {
+          if (!ctx) return match;
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = match;
+          ctx.fillRect(0, 0, 1, 1);
+          const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+          return a === 255 
+            ? `rgb(${r}, ${g}, ${b})` 
+            : `rgba(${r}, ${g}, ${b}, ${parseFloat((a / 255).toFixed(3))})`;
+        } catch (e) {
+          return match;
+        }
+      });
+    };
+
+    // Convert OKLCH/OKLAB/other advanced colors in all stylesheets at the document level
+    // html2canvas parses document stylesheets, so we must clean them to prevent parsing crashes.
+    try {
+      if (ctx) {
+        // Process all <style> tags
+        document.querySelectorAll('style').forEach(tag => {
+          if (tag.innerHTML && (tag.innerHTML.includes('oklch') || tag.innerHTML.includes('oklab') || tag.innerHTML.includes('lab') || tag.innerHTML.includes('lch'))) {
+            tag.innerHTML = convertUnsupportedColorsToStringRgb(tag.innerHTML);
+          }
+        });
+
+        // Process all accessible stylesheet rules
+        Array.from(document.styleSheets).forEach(sheet => {
+          try {
+            const rules = sheet.cssRules || sheet.rules;
+            if (!rules) return;
+            Array.from(rules).forEach(rule => {
+              if (rule.style) {
+                for (let i = 0; i < rule.style.length; i++) {
+                  const prop = rule.style[i];
+                  const val = rule.style.getPropertyValue(prop);
+                  if (val && (val.includes('oklch') || val.includes('oklab') || val.includes('lab') || val.includes('lch'))) {
+                    rule.style.setProperty(prop, convertUnsupportedColorsToStringRgb(val));
+                  }
+                }
+              }
+            });
+          } catch (e) {
+            // Ignore cross-origin stylesheet errors
+          }
+        });
+      }
+    } catch (e) {
+      console.error('Failed to convert stylesheet colors:', e);
+    }
+
+    const previewCard = document.querySelector('.bg-slate-100 .bg-white');
+    if (!previewCard) return;
+
+    const cloned = previewCard.cloneNode(true);
+    const originalElements = [previewCard, ...Array.from(previewCard.querySelectorAll('*'))];
+    const clonedElements = [cloned, ...Array.from(cloned.querySelectorAll('*'))];
+
+    for (let i = 0; i < originalElements.length; i++) {
+      const orig = originalElements[i];
+      const clone = clonedElements[i];
+      if (!orig || !clone) continue;
+
+      const computed = window.getComputedStyle(orig);
+      for (let j = 0; j < computed.length; j++) {
+        const prop = computed[j];
+        const val = computed.getPropertyValue(prop);
+        if (val && typeof val === 'string' && (val.includes('oklch') || val.includes('oklab') || val.includes('lab') || val.includes('lch'))) {
+          clone.style.setProperty(prop, convertUnsupportedColorsToStringRgb(val));
+        }
+      }
+    }
+
+    cloned.style.boxSizing = 'border-box';
+
+    let tabName = 'Gradesheet';
+    if (selectedTab === 'profile') tabName = 'Subject_Profile';
+    if (selectedTab === 'record') tabName = 'Record_Sheet';
+    if (selectedTab === 'report') tabName = 'Report_of_Grades';
+
+    if (selectedTab === 'profile') {
+      // Profile: constrain to A4 width with NO zoom — lets html2pdf paginate naturally
+      // so both the metadata (page 1) and roster (page 2) render at full readable size.
+      cloned.style.width = '740px';
+      cloned.style.minWidth = '740px';
+      cloned.style.maxWidth = '740px';
+      cloned.style.fontSize = '11px';
+
+      // Inject page break before the roster section
+      const rosterEl = cloned.querySelector('.pdf-roster-break');
+      if (rosterEl) {
+        rosterEl.style.pageBreakBefore = 'always';
+        rosterEl.style.breakBefore = 'page';
+        rosterEl.style.paddingTop = '32px';
+      }
+    } else {
+      // Record / Report: scale to fit exactly one page (both width + height)
+      const originalWidth = previewCard.offsetWidth || 1120;
+      const originalHeight = previewCard.offsetHeight || 1000;
+      const targetWidth = 740;
+      const targetHeight = 1060;
+
+      const widthScale = targetWidth / originalWidth;
+      const heightScale = targetHeight / originalHeight;
+      const scaleFactor = Math.min(widthScale, heightScale);
+
+      cloned.style.zoom = scaleFactor;
+      cloned.style.width = `${originalWidth}px`;
+      cloned.style.minWidth = `${originalWidth}px`;
+      cloned.style.maxWidth = `${originalWidth}px`;
+    }
+
+    const filename = `${classInfo?.subjects?.code || 'SAGE'}_${classInfo?.sections?.name || 'Class'}_${tabName}.pdf`;
+
+    const opt = {
+      margin:       [0.3, 0.3, 0.3, 0.3],
+      filename:     filename,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, logging: false },
+      jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+    };
+
+    html2pdf().from(cloned).set(opt).save();
+  };
+
 
 
   useEffect(() => {
@@ -74,7 +322,7 @@ export default function PostedGradesView() {
             semester,
             subject_id,
             section_id,
-            subjects ( code, name, units ),
+            subjects ( code, name, units, departments ( name ) ),
             sections ( name )
           `)
           .eq('class_record_id', classRecordId)
@@ -83,23 +331,34 @@ export default function PostedGradesView() {
         if (crErr) throw crErr;
         setClassInfo(cr);
 
-        // 2. Fetch all students in this section directly from the users table
-        const { data: sectionStudents, error: studentErr } = await supabase
-          .from('users')
-          .select('user_id, first_name, last_name, email, user_number')
+        // 2. Fetch all students enrolled in this subject and section from the enrollments table
+        const { data: enrolls, error: studentErr } = await supabase
+          .from('enrollments')
+          .select(`
+            student_id,
+            users:student_id (
+              user_id,
+              first_name,
+              last_name,
+              email,
+              user_number
+            )
+          `)
           .eq('section_id', cr.section_id)
-          .eq('role', 'student');
+          .eq('subject_id', cr.subject_id);
 
         if (studentErr) throw studentErr;
 
-        const studentList = (sectionStudents || []).map((u, idx) => ({
-          id: u.user_id,
-          studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
-          name: `${u.last_name}, ${u.first_name}`,
-          email: u.email
-        }));
+        const studentList = (enrolls || [])
+          .map(e => e.users)
+          .filter(Boolean)
+          .map((u, idx) => ({
+            id: u.user_id,
+            studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
+            name: `${u.last_name}, ${u.first_name}`,
+            email: u.email
+          }));
         studentList.sort((a, b) => a.name.localeCompare(b.name));
-        setStudents(studentList);
 
         // 3. Fetch column setup configurations
         const { data: cols } = await supabase
@@ -252,6 +511,19 @@ export default function PostedGradesView() {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
         });
 
+        const compiled = studentList.map(stud => {
+          const dbData = scoresByStudent[stud.id] || {};
+          const pgRow = (pgData || []).find(r => r.student_id === stud.id && r.grade_period === 'final');
+          return {
+            ...stud,
+            customRemarks: dbData.customRemarks || '',
+            remarksNote: dbData.remarksNote || '',
+            computedGrade: pgRow ? pgRow.computed_grade : null,
+            effectiveGrade: pgRow ? pgRow.effective_grade : null
+          };
+        });
+        setStudents(compiled);
+
       } catch (err) {
         console.error('Error loading PostedGradesView data:', err);
       } finally {
@@ -308,12 +580,14 @@ export default function PostedGradesView() {
     if (!remarkReqStudent || !remarkReqNote.trim() || !classRecordId) return;
 
     try {
+      const selectedStud = students.find(s => s.id === remarkReqStudentId);
+      const compGrade = selectedStud ? selectedStud.computedGrade : null;
+      const effGrade = selectedStud ? selectedStud.effectiveGrade : null;
+
       const subjCode = classInfo?.subjects?.code || '';
       const subjName = classInfo?.subjects?.name || '';
       const sectName = classInfo?.sections?.name || '';
       const actorName = resolveActorName(profile, user);
-      const effectiveGradeVal = remarkReqTo === 'Passed' ? 3.00 : 5.00;
-
       // 1. Database: Insert into remark_override_requests (primary store)
       const { data: rorRow, error: rorErr } = await supabase
         .from('remark_override_requests')
@@ -324,28 +598,17 @@ export default function PostedGradesView() {
           subject_name: `${subjCode} - ${subjName}`,
           section_name: sectName,
           faculty_name: actorName,
-          computed_grade: 5.00,
-          effective_grade: effectiveGradeVal,
+          computed_grade: compGrade,
+          effective_grade: effGrade,
           current_remark: remarkReqFrom,
-          requested_remark: remarkReqTo,
+          requested_remark: 'Pending Edit',
           note: remarkReqNote,
           status: 'pending'
         })
         .select('request_id')
         .single();
 
-      // 2. Database: Insert unlock_requests row for 'Semestral Grade' milestone
-      //    so Dean's Grade Posting Status page shows the pending indicator
-      await supabase
-        .from('unlock_requests')
-        .insert({
-          class_record_id: classRecordId,
-          milestone: 'Semestral Grade',
-          requested_by: user.id,
-          status: 'pending'
-        });
-
-      // 3. LocalStorage: Dual-write fallback for backward compatibility
+      // 2. LocalStorage: Dual-write fallback for backward compatibility
       const existing = JSON.parse(localStorage.getItem('remark_override_requests') || '[]');
       const newReq = {
         id: rorRow?.request_id || `ror-${Date.now()}`,
@@ -355,10 +618,10 @@ export default function PostedGradesView() {
         section: sectName,
         studentId: remarkReqStudentId,
         studentName: remarkReqStudent,
-        computedGrade: '5.00',
-        effectiveGrade: effectiveGradeVal.toFixed(2),
+        computedGrade: compGrade != null ? compGrade : '—',
+        effectiveGrade: effGrade != null ? effGrade : '—',
         currentRemark: remarkReqFrom,
-        requestedRemark: remarkReqTo,
+        requestedRemark: 'Pending Edit',
         note: remarkReqNote,
         requestedAt: new Date().toISOString(),
         status: 'pending',
@@ -433,6 +696,12 @@ export default function PostedGradesView() {
           className="px-4 py-2 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm flex items-center gap-1.5 font-sans"
         >
           📝 Input Scores
+        </button>
+        <button 
+          onClick={() => setShowExportModal(true)}
+          className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all shadow-sm flex items-center gap-1.5 font-sans"
+        >
+          <FileSpreadsheet className="h-4 w-4" /> Export Grades
         </button>
         <button className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:border-sage-300 rounded-lg transition-colors bg-white flex items-center gap-2 font-sans">
           <Download className="h-4 w-4" /> Export PDF
@@ -538,7 +807,7 @@ export default function PostedGradesView() {
 
         {/* Data Table Card */}
         {isFullScreen && <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsFullScreen(false)} />}
-        <div className={isFullScreen ? "fixed inset-4 z-50 rounded-xl border border-slate-200 shadow-2xl bg-white overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200" : "rounded-xl border border-slate-200 shadow-sm bg-white overflow-hidden flex flex-col"}>
+        <div className={isFullScreen ? "fixed inset-4 z-50 rounded-xl border border-slate-200 shadow-2xl bg-white overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200" : "rounded-xl border border-slate-200 shadow-sm bg-white overflow-hidden flex flex-col w-full max-w-full"}>
             {/* Fullscreen header bar */}
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/80">
               <div className="flex items-center gap-2">
@@ -552,7 +821,7 @@ export default function PostedGradesView() {
               </div>
               <button
                 onClick={() => setIsFullScreen(!isFullScreen)}
-                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-sage-50 hover:border-sage-300 text-slate-500 hover:text-slate-700 transition-all"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-sage-50 hover:border-sage-300 text-slate-505 hover:text-slate-700 transition-all cursor-pointer"
                 title={isFullScreen ? 'Exit fullscreen' : 'View fullscreen'}
               >
                 {isFullScreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
@@ -562,9 +831,9 @@ export default function PostedGradesView() {
                 <table className={`w-full min-w-max text-left border-collapse ${isFullScreen ? 'fullscreen-table' : ''}`}>
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 text-xs font-bold text-center">
-                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-10">No.</th>
-                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24">Student No.</th>
-                            <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-0 bg-slate-50 border-r border-slate-200 z-20 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
+                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-10 sticky left-0 bg-slate-50 z-30">No.</th>
+                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24 sticky left-[40px] bg-slate-50 z-30">Student No.</th>
+                            <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-[136px] bg-slate-50 border-r border-slate-200 z-30 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
                             <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
                             <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">MIDTERM GRADE</th>
                             <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-indigo-100 text-indigo-950 font-bold uppercase tracking-wider w-16">Midterm Rating (MR)</th>
@@ -695,7 +964,6 @@ export default function PostedGradesView() {
               </button>
             </div>
 
-            {/* Student selector */}
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Student</label>
               <select
@@ -703,7 +971,10 @@ export default function PostedGradesView() {
                 onChange={e => {
                   setRemarkReqStudent(e.target.value);
                   const selected = students.find(s => s.name === e.target.value);
-                  if (selected) setRemarkReqStudentId(selected.id);
+                  if (selected) {
+                    setRemarkReqStudentId(selected.id);
+                    setRemarkReqFrom(selected.customRemarks || 'Passed');
+                  }
                 }}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 bg-white cursor-pointer"
               >
@@ -714,31 +985,14 @@ export default function PostedGradesView() {
               </select>
             </div>
 
-            {/* Remark change */}
-            <div className="grid grid-cols-2 gap-3">
+            {remarkReqStudent && (
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Current Remark</label>
-                <select
-                  value={remarkReqFrom}
-                  onChange={e => setRemarkReqFrom(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 bg-white cursor-pointer"
-                >
-                  {['Passed','Failed','INC','FDA','Dropped'].map(r => <option key={r}>{r}</option>)}
-                </select>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700">
+                  {remarkReqFrom}
+                </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Change To</label>
-                <select
-                  value={remarkReqTo}
-                  onChange={e => setRemarkReqTo(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 bg-white cursor-pointer"
-                >
-                  {['Passed','Failed','INC','FDA','Dropped'].map(r => <option key={r}>{r}</option>)}
-                </select>
-              </div>
-            </div>
-
-            {/* Grace pass info */}
+            )}
             {remarkReqTo === 'Passed' && (
               <div className="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2.5 text-xs text-violet-700">
                 <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-violet-500" />
@@ -787,6 +1041,19 @@ export default function PostedGradesView() {
           </div>
         </div>
       )}
+
+      {/* Excel Export Metadata Input Modal */}
+      <ExportPreviewModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        classInfo={classInfo}
+        students={compileStudentsWithGrades()}
+        maxItems={maxItems}
+        metadata={exportMetadata}
+        onMetadataChange={(updated) => setExportMetadata(prev => ({ ...prev, ...updated }))}
+        onExportExcel={handleExportExcel}
+        onExportPdf={handleExportPdf}
+      />
 
       {/* Success Popup Modal */}
       {showPopup && (

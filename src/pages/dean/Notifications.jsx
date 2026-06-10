@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   Bell, 
@@ -11,62 +11,136 @@ import {
   MailOpen
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
+
+const formatRelativeTime = (isoString) => {
+  if (!isoString) return '';
+  const diffMs = new Date() - new Date(isoString);
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return 'Yesterday';
+  return `${diffDays} days ago`;
+};
 
 export default function Notifications() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      type: 'grades',
-      title: 'New Grade Sheet Pending Approval',
-      message: 'Prof. Amanda Rivera has submitted final grade sheets for IT401 (Capstone Project 1). Review and approve the grade distributions.',
-      time: '30 minutes ago',
-      read: false,
-      icon: FileCheck,
-      iconColor: 'text-amber-600 bg-amber-50 border-amber-200'
-    },
-    {
-      id: 2,
-      type: 'eval',
-      title: 'Faculty Evaluation Feedback Compiled',
-      message: 'Evaluation scores for First Semester AY 2025-2026 have been generated. Dr. Carlos Valdes feedback overview is ready for review.',
-      time: '1 hour ago',
-      read: false,
-      icon: Star,
-      iconColor: 'text-emerald-600 bg-emerald-50 border-emerald-200'
-    },
-    {
-      id: 3,
-      type: 'risk',
-      title: 'At-Risk Student Threshold Alerts',
-      message: '3 students in BSIT 3rd Year have breached grade risk indicators. Action is recommended.',
-      time: '2 days ago',
-      read: true,
-      icon: AlertTriangle,
-      iconColor: 'text-rose-600 bg-rose-50 border-rose-200'
-    },
-    {
-      id: 4,
-      type: 'system',
-      title: 'SAGE Platform Registry Core Update',
-      message: 'System core components updated to version 2.4. Class registries auto-sync daily at 12:00 AM.',
-      time: '1 week ago',
-      read: true,
-      icon: Info,
-      iconColor: 'text-slate-650 bg-slate-50 border-slate-205'
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    async function loadNotifications() {
+      if (!user) return;
+      try {
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('recipient_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const mapped = (data || []).map(n => {
+          let type = 'system';
+          let title = 'System Notification';
+          let icon = Info;
+          let iconColor = 'text-slate-650 bg-slate-50 border-slate-205';
+
+          if (n.type === 'grades_pending') {
+            type = 'grades';
+            title = 'New Grade Sheet Pending Approval';
+            icon = FileCheck;
+            iconColor = 'text-amber-600 bg-amber-50 border-amber-200';
+          } else if (n.type === 'eval_compiled') {
+            type = 'eval';
+            title = 'Faculty Evaluation Feedback Compiled';
+            icon = Star;
+            iconColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
+          } else if (n.type === 'override_request') {
+            type = 'risk';
+            title = 'Grade Override Request Pending';
+            icon = AlertTriangle;
+            iconColor = 'text-amber-600 bg-amber-50 border-amber-200';
+          } else if (n.type === 'risk_threshold') {
+            type = 'risk';
+            title = 'At-Risk Student Threshold Alerts';
+            icon = AlertTriangle;
+            iconColor = 'text-rose-600 bg-rose-50 border-rose-200';
+          }
+
+          return {
+            id: n.notification_id,
+            type,
+            title,
+            message: n.message,
+            time: formatRelativeTime(n.created_at),
+            read: n.is_read,
+            icon,
+            iconColor
+          };
+        });
+
+        setNotifications(mapped);
+
+      } catch (err) {
+        console.error('Error loading notifications:', err);
+      } finally {
+        setLoading(false);
+      }
     }
-  ]);
 
-  const markAllRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+    loadNotifications();
+  }, [user]);
+
+  const markAllRead = async () => {
+    if (!user || notifications.length === 0) return;
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('recipient_id', user.id);
+
+      if (error) throw error;
+      setNotifications(notifications.map(n => ({ ...n, read: true })));
+    } catch (err) {
+      console.error('Error marking all notifications as read:', err);
+    }
   };
 
-  const deleteNotification = (id) => {
-    setNotifications(notifications.filter(n => n.id !== id));
+  const deleteNotification = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('notification_id', id);
+
+      if (error) throw error;
+      setNotifications(notifications.filter(n => n.id !== id));
+    } catch (err) {
+      console.error('Error deleting notification:', err);
+    }
   };
 
-  const toggleRead = (id) => {
-    setNotifications(notifications.map(n => n.id === id ? { ...n, read: !n.read } : n));
+  const toggleRead = async (id) => {
+    const noti = notifications.find(n => n.id === id);
+    if (!noti) return;
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: !noti.read })
+        .eq('notification_id', id);
+
+      if (error) throw error;
+      setNotifications(notifications.map(n => n.id === id ? { ...n, read: !n.read } : n));
+    } catch (err) {
+      console.error('Error toggling notification read state:', err);
+    }
   };
 
   const filtered = notifications.filter(n => {
@@ -74,6 +148,17 @@ export default function Notifications() {
     if (activeFilter === 'Academic') return n.type === 'grades' || n.type === 'risk';
     return true;
   });
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
+          <p className="text-sm text-slate-500 font-medium font-sans">Loading notifications...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -140,8 +225,8 @@ export default function Notifications() {
                         <span className="w-2 h-2 bg-sage-600 rounded-full"></span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">{noti.message}</p>
-                    <span className="text-[10px] text-slate-400 font-medium block pt-1">{noti.time}</span>
+                    <p className="text-xs text-slate-650 leading-relaxed max-w-2xl text-left">{noti.message}</p>
+                    <span className="text-[10px] text-slate-400 font-medium block pt-1 text-left">{noti.time}</span>
                   </div>
                 </div>
 

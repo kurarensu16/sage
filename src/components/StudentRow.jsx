@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { cn } from "../lib/utils";
 import { Check, MessageSquare, CloudUpload } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export default function StudentRow({ 
   student, 
@@ -10,6 +11,7 @@ export default function StudentRow({
   lockedMilestones = [],
   viewMode = 'All',
   classCode = 'default',
+  studentLocked,
   maxItems = {
     Prelim: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
     Midterm: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
@@ -72,12 +74,12 @@ export default function StudentRow({
   const [remarksNote, setRemarksNote] = useState(saved?.remarksNote ?? '');
   const [showNoteInput, setShowNoteInput] = useState(!!(saved?.customRemarks));
 
-  // Auto-save indicator
+// Auto-save indicator
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
   const debounceRef = useRef(null);
   const isFirstRender = useRef(true);
 
-  // ── Auto-save: fires 800ms after any score/remark change ──────────────────
+  // ── Auto-save: fires 1200ms after any score/remark change ──────────────────
   useEffect(() => {
     // Skip the very first render so we don't flash "Saving" on mount
     if (isFirstRender.current) { isFirstRender.current = false; return; }
@@ -85,7 +87,7 @@ export default function StudentRow({
 
     setSaveStatus('saving');
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
+    debounceRef.current = setTimeout(async () => {
       const payload = {
         Prelim:       { act1: pAct1, act2: pAct2, act3: pAct3, act4: pAct4, act5: pAct5, act6: pAct6, char: pChar, exam: pExam },
         Midterm:      { act1: mAct1, act2: mAct2, act3: mAct3, act4: mAct4, act5: mAct5, act6: mAct6, char: mChar, exam: mExam },
@@ -95,11 +97,108 @@ export default function StudentRow({
         remarksNote,
         savedAt: new Date().toISOString(),
       };
+      
+      // 1. Save to LocalStorage
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-      setSaveStatus('saved');
+
+      // 2. Save to Supabase as draft
+      try {
+        const { data: authUser } = await supabase.auth.getUser();
+        const savedByUuid = authUser?.user?.id || null;
+        
+        const upsertRows = [];
+        const periods = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+        
+        periods.forEach(term => {
+          const termScores = payload[term];
+          upsertRows.push({
+            class_record_id: classCode,
+            student_id: student.id,
+            term: term,
+            act1: termScores.act1 === '' ? 0 : Number(termScores.act1),
+            act2: termScores.act2 === '' ? 0 : Number(termScores.act2),
+            act3: termScores.act3 === '' ? 0 : Number(termScores.act3),
+            act4: termScores.act4 === '' ? 0 : Number(termScores.act4),
+            act5: termScores.act5 === '' ? 0 : Number(termScores.act5),
+            act6: termScores.act6 === '' ? 0 : Number(termScores.act6),
+            char_rating: termScores.char === '' ? 0 : Number(termScores.char),
+            exam: termScores.exam === '' ? 0 : Number(termScores.exam),
+            saved_by: savedByUuid
+          });
+        });
+
+        const { error } = await supabase
+          .from('student_term_scores')
+          .upsert(upsertRows, { onConflict: 'class_record_id,student_id,term' });
+
+        if (error) throw error;
+
+        // Also save customRemarks / overrides if changed
+        if (customRemarks || remarksNote) {
+          const prelimRating = calcPeriodRating(pAct1, pAct2, pAct3, pAct4, pAct5, pAct6, pChar, pExam, 'Prelim').rating;
+          const midtermRating = calcPeriodRating(mAct1, mAct2, mAct3, mAct4, mAct5, mAct6, mChar, mExam, 'Midterm').rating;
+          const sfRating = calcPeriodRating(sfAct1, sfAct2, sfAct3, sfAct4, sfAct5, sfAct6, sfChar, sfExam, 'Semi-Final').rating;
+          const finalRating = calcPeriodRating(fAct1, fAct2, fAct3, fAct4, fAct5, fAct6, fChar, fExam, 'Final').rating;
+
+          const mr = Math.round((prelimRating + midtermRating) / 2);
+          const tfr = Math.round((sfRating + finalRating) / 2);
+          const sg = Math.round((mr + tfr) / 2);
+
+          const rawGrade = getTransmutedGrade(sg);
+          const autoRemarks = isFDA ? 'FDA' : (parseFloat(rawGrade) <= 3.00 ? 'Passed' : 'Failed');
+          const remarksVal = customRemarks || autoRemarks;
+
+          const grade = (() => {
+            if (remarksVal === 'FDA') return '5.00';
+            if (remarksVal === 'INC') return rawGrade;
+            if (remarksVal === 'Passed' && parseFloat(rawGrade) > 3.00) return '3.00';
+            return rawGrade;
+          })();
+
+          const mapRemarkToDb = (remarkStr) => {
+            if (!remarkStr) return 'passed';
+            const lower = remarkStr.toLowerCase();
+            if (lower === 'inc') return 'incomplete';
+            return lower; // 'passed', 'failed', 'fda', 'dropped'
+          };
+          const remarksLabel = mapRemarkToDb(remarksVal);
+          
+          const { data: existingPg } = await supabase
+            .from('posted_grades')
+            .select('posted_grade_id')
+            .eq('class_record_id', classCode)
+            .eq('student_id', student.id)
+            .eq('grade_period', 'final')
+            .maybeSingle();
+
+          const pgPayload = {
+            class_record_id: classCode,
+            student_id: student.id,
+            grade_period: 'final',
+            computed_grade: finalRating,
+            effective_grade: parseFloat(grade),
+            remarks: remarksLabel,
+            remarks_note: remarksNote || null,
+            remarks_set_by: savedByUuid,
+            remarks_set_at: new Date().toISOString()
+          };
+
+          if (existingPg) {
+            pgPayload.posted_grade_id = existingPg.posted_grade_id;
+          }
+
+          await supabase.from('posted_grades').upsert(pgPayload);
+        }
+
+        setSaveStatus('saved');
+      } catch (err) {
+        console.warn('Database draft auto-save failed, local draft stored:', err);
+        setSaveStatus('saved');
+      }
+
       // Reset back to idle after 2s
       setTimeout(() => setSaveStatus('idle'), 2000);
-    }, 800);
+    }, 1200);
 
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [
@@ -108,7 +207,7 @@ export default function StudentRow({
     sfAct1, sfAct2, sfAct3, sfAct4, sfAct5, sfAct6, sfChar, sfExam,
     fAct1, fAct2, fAct3, fAct4, fAct5, fAct6, fChar, fExam,
     customRemarks, remarksNote,
-    readOnly, STORAGE_KEY
+    readOnly, STORAGE_KEY, classCode, student?.id
   ]);
 
   // Helper change handler for ratings calculation per term using dynamic max items
@@ -162,12 +261,19 @@ export default function StudentRow({
     return '5.00';
   };
 
+  const storedAbsences = localStorage.getItem(`sage_absences_${classCode}_${student.id}`);
+  const absences = storedAbsences !== null ? parseInt(storedAbsences) : (
+    student.name?.toLowerCase().includes('mabini') ? 4 : (student.name?.toLowerCase().includes('celestino') ? 4 : 0)
+  );
+  const isFDA = absences >= 4;
+
   const rawGrade = getTransmutedGrade(sg);
-  const autoRemarks = parseFloat(rawGrade) <= 3.00 ? 'Passed' : 'Failed';
-  const remarks = customRemarks || autoRemarks;
+  const autoRemarks = isFDA ? 'FDA' : (parseFloat(rawGrade) <= 3.00 ? 'Passed' : 'Failed');
+  const remarks = isFDA ? 'FDA' : (customRemarks || autoRemarks);
 
   // Grade displayed is affected by remark override
   const grade = (() => {
+    if (remarks === 'FDA') return '5.00';
     if (remarks === 'INC') return rawGrade;
     if (remarks === 'Passed' && parseFloat(rawGrade) > 3.00) return '3.00';
     return rawGrade;
@@ -177,8 +283,9 @@ export default function StudentRow({
 
   // Determine status indicators
   const getStatus = (score) => {
+    if (remarks === 'FDA') return { label: 'Failing', color: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500 shadow-rose-500/40 animate-pulse' };
     if (score >= 80) return { label: 'Safe', color: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500 shadow-emerald-500/40' };
-    if (score >= 75) return { label: 'At-Risk', color: 'text-amber-700 bg-amber-50 border-amber-200', dot: 'bg-amber-500 shadow-amber-500/40' };
+    if (score >= 75) return { label: 'At-Risk', color: 'text-amber-700 bg-amber-50 border-amber-200', dot: 'bg-emerald-500 shadow-emerald-500/40' };
     return { label: 'Failing', color: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500 shadow-rose-500/40 animate-pulse' };
   };
 
@@ -189,7 +296,7 @@ export default function StudentRow({
 
   const statusInfo = getStatus(sg);
 
-  const isLocked = readOnly || lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final');
+  const isLocked = readOnly || (studentLocked !== undefined ? studentLocked : (lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final')));
   const isPrelimLocked = isLocked;
   const isMidtermLocked = isLocked;
   const isSemiFinalLocked = isLocked;
@@ -219,25 +326,31 @@ export default function StudentRow({
     );
   };
 
+  const stickyBgClass = cn(
+    statusInfo.label === 'Safe' && "bg-white group-hover:bg-slate-50",
+    statusInfo.label === 'At-Risk' && "bg-[#fffdf5] group-hover:bg-[#fff9e6]",
+    statusInfo.label === 'Failing' && "bg-[#fff8f8] group-hover:bg-[#ffebeb]"
+  );
+
   return (
     <tr className={cn(
-      "transition-colors text-center text-xs text-slate-700",
-      statusInfo.label === 'Safe' && "hover:bg-slate-50/60",
+      "group transition-colors text-center text-xs text-slate-700",
+      statusInfo.label === 'Safe' && "hover:bg-slate-50/60 bg-white",
       statusInfo.label === 'At-Risk' && "bg-amber-50/10 hover:bg-amber-50/30",
       statusInfo.label === 'Failing' && "bg-rose-50/10 hover:bg-rose-50/30 border-l-2 border-l-rose-400"
     )}>
       {/* Row Number */}
-      <td className="px-2 py-3 border-r border-slate-200 text-slate-500 font-mono text-[11px] w-10">
+      <td className={cn("px-2 py-3 border-r border-slate-200 text-slate-500 font-mono text-[11px] w-10 sticky left-0 z-10", stickyBgClass)}>
         {rowNo}
       </td>
       
       {/* Student Number */}
-      <td className="px-2 py-3 border-r border-slate-200 text-slate-500 font-mono text-[11px] w-24">
+      <td className={cn("px-2 py-3 border-r border-slate-200 text-slate-500 font-mono text-[11px] w-24 sticky left-[40px] z-10", stickyBgClass)}>
         {student.studentNo || student.id}
       </td>
       
       {/* Student Name (Sticky on Left) */}
-      <td className="px-4 py-3 text-left font-semibold text-slate-900 sticky left-0 bg-white border-r border-slate-200 z-10 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+      <td className={cn("px-4 py-3 text-left font-semibold text-slate-900 sticky left-[136px] border-r border-slate-200 z-10 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]", stickyBgClass)}>
         {student.name}
       </td>
       
@@ -356,6 +469,7 @@ export default function StudentRow({
               {/* Remark selector */}
               <select
                 value={remarks}
+                disabled={isFDA}
                 onChange={(e) => {
                   const val = e.target.value;
                   setCustomRemarks(val);
@@ -363,7 +477,12 @@ export default function StudentRow({
                   setShowNoteInput(val !== autoRemarks);
                   if (val === autoRemarks) setRemarksNote('');
                 }}
-                className="appearance-none bg-white border border-slate-200 hover:border-sage-300 px-2 py-1 rounded text-[10px] font-extrabold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer text-slate-700 w-full text-center"
+                className={cn(
+                  "appearance-none border px-2 py-1 rounded text-[10px] font-extrabold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all w-full text-center",
+                  isFDA
+                    ? "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed"
+                    : "bg-white border-slate-200 hover:border-sage-300 text-slate-700 cursor-pointer"
+                )}
               >
                 <option value="Passed">Passed</option>
                 <option value="Failed">Failed</option>

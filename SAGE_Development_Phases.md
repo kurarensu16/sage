@@ -16,10 +16,11 @@ This document provides a highly granular breakdown of the development phases for
 *   **State Propagation:** Refined the `mockDb` to support dynamic, real-time state propagation across all portals upon page refresh (e.g., changes in Admin immediately reflect in Faculty/Dean dashboards).
 *   **Computation Engine Architecture:** Established the core mathematical logic for the Early Warning System (EWS) and the base-50 running grade formula to be used globally across the app.
 
-### Phase 3: Backend & Production (Upcoming)
-*   **Supabase Migration:** Complete replacement of `mockDb.js` with a live Supabase PostgreSQL database utilizing the fully mapped 19-table schema.
-*   **Security & RLS:** Implementation of strict Row Level Security (RLS) policies and explicit Postgres role grants (`anon`, `authenticated`, `service_role`).
-*   **Production Authentication:** Transition to genuine JWT-based authentication via Supabase Auth. Removal of the "Quick Demo Accounts Selector" for production deployment.
+### Phase 3: Backend & Production (Completed)
+*   **Supabase Migration:** Replaced `mockDb.js` hooks with a live Supabase PostgreSQL database utilizing the fully mapped 26-table schema.
+*   **Security & RLS:** Implemented Row Level Security (RLS) policies and explicit Postgres role grants (`anon`, `authenticated`, `service_role`).
+*   **Production Authentication:** Integrated genuine JWT-based authentication via Supabase Auth.
+*   **In-App Alerts Modals**: Replaced native browser alerts with custom modals (`ConfirmModal`, `SuccessModal`, and `ErrorModal`) designed at z-index `z-[100]` to stack cleanly above overlay panels.
 
 ---
 
@@ -37,9 +38,10 @@ This document provides a highly granular breakdown of the development phases for
 *   **Class Archiving:** Added the ability to archive classes at the end of the semester, permanently locking grades and preventing new enrollments (FR31).
 *   **Evaluation Scheduler & Overrides:** Built the timer-driven Evaluation Windows Scheduler targeting sections/faculty, and the Grade Override Module requiring mandatory reason auditing.
 
-### Phase 3: Backend & Production (Upcoming)
-*   **Live Audit Ledger:** Wiring the Audit Ledger (S14) to real backend triggers to log all reassignments, overrides, AI triggers, and account operations securely.
-*   **Automated Scheduling:** Linking the Evaluation Windows Scheduler directly to Supabase Edge Functions or Cron jobs to automatically open and close evaluation windows at precise timestamps.
+### Phase 3: Term Transition & Enrollment (Completed)
+*   **Live Semester Transition Wizard**: Built the 3-step transition panel using layman-friendly terms. Connected it to the PostgreSQL stored transaction `perform_semester_transition`.
+*   **Automatic Archival & Year Promotions**: Programmed automatic logging of student histories in `student_term_details`, archiving of past classes, late submission flagging, and promotions of year levels (including 4th Year to "Graduating").
+*   **Irregular Student Management**: Added a regular/irregular toggle on user edit forms, sorting manual enrollments on top of class rosters, and candidate filtering to search unassigned students during enrollment.
 
 ---
 
@@ -55,9 +57,10 @@ This document provides a highly granular breakdown of the development phases for
 *   **At-Risk Warning List (S20):** Activated the Early Warning System UI for Deans, tracking students with low running GWAs, color-coded by severity (Safe, At-Risk, Failing).
 *   **Report Exporter:** Finished the Summary Reports Exporter with specialized printer stylesheets handling page breaks and print layouts.
 
-### Phase 3: Backend & Production (Upcoming)
-*   **Dean AI Predictions:** Integrating the Claude API to analyze faculty evaluation data and generate "AI Fitness Performance Verdicts."
-*   **Institutional AI Alerts:** Enabling active "AI Performance Prediction & Warning" notifications on the Dean Dashboard based on cross-sectional data analysis.
+### Phase 3: Late Badging & AI (Current & Upcoming)
+*   **Late Submission Flags**: Dynamic alert badges appear in the Dean's override dashboard for submissions posted after semester transition.
+*   **Dean AI Predictions**: Integrating the Claude API to analyze faculty evaluation data and generate "AI Fitness Performance Verdicts."
+*   **Institutional AI Alerts**: Enabling active "AI Performance Prediction & Warning" notifications on the Dean Dashboard based on cross-sectional data analysis.
 
 ---
 
@@ -74,11 +77,13 @@ This document provides a highly granular breakdown of the development phases for
 *   **GWA Transmutation:** Built the automated transmutation logic mapping Semestral Grades to the 1.00 - 5.00 scale and Pass/Fail remarks.
 *   **Live Early Warning System:** Added real-time visual standing indicators (Green/Yellow/Red dots) and precise percentage hover tooltips to the Score Input Table (S24).
 
-### Phase 3: Backend & Production (Upcoming)
-*   **SheetJS Excel Exports:** 
-    *   **Record Sheet:** Finalizing the export so that outputted grading sheets contain live Excel formulas mimicking the official DYCI spreadsheet (recalculating automatically in Excel).
+### Phase 3: Attendance, FDA, & Exports (Completed & Current)
+*   **Daily Attendance Tracker**: Completed the daily attendance sheet featuring debounced background saves, history quick-load session buttons, and double-confirmation checks on new date initializations.
+*   **FDA Grade Worksheet Locks**: Triggering FDA (&ge; 4 absences) forces the GWA to **5.00** and disables the worksheet remarks dropdown.
+*   **SheetJS Excel Exports (Upcoming)**: 
+    *   **Record Sheet:** Finalizing the export so that outputted grading sheets contain live Excel formulas mimicking the official DYCI spreadsheet.
     *   **Report of Grades:** Building the registrar print layout featuring a symmetrical 30-row split roster linked via cell formulas.
-*   **Real-time Notifications:** Wiring Supabase real-time subscriptions for instant alerts regarding new evaluation windows or administrative grade overrides.
+*   **Real-time Notifications**: Wiring Supabase real-time subscriptions for instant alerts regarding new evaluation windows or administrative grade overrides.
 
 ---
 
@@ -91,6 +96,7 @@ This document provides a highly granular breakdown of the development phases for
 *   **EWS Visibility:** Applied warning flag indicators on the student's subject list to mirror the Early Warning System from the Faculty portal.
 *   **Detailed Breakdowns:** Enhanced the grade viewing screens to show precise score breakdowns across the 50/10/40 components so students understand exactly how their grade was computed.
 
-### Phase 3: Backend & Production (Upcoming)
-*   **Student AI Advisor (S34):** Full integration of the Claude API to act as an automated performance counselor. The AI will ingest the student's component scores, diagnose specific weakness metrics (e.g., "High Exam, Low Class Standing"), and render personalized academic recommendations.
-*   **Anonymized Submissions:** Ensuring via backend RLS that evaluation survey submissions are completely stripped of student identifiers before being aggregated for the Faculty and Dean dashboards.
+### Phase 3: Dashboard Fixes & AI (Completed & Upcoming)
+*   **Irregular Student Routing**: Rewrote student dashboard, evaluation, and grades ledger queries to fetch classes and surveys via the `enrollments` table, resolving lockouts.
+*   **Student AI Advisor (S34)**: Full integration of the Claude API to act as an automated performance counselor. The AI will ingest the student's component scores, diagnose specific weakness metrics, and render personalized academic recommendations.
+*   **Anonymized Submissions**: Ensuring via backend RLS that evaluation survey submissions are completely stripped of student identifiers before being aggregated for the Faculty and Dean dashboards.

@@ -14,6 +14,85 @@ import {
   BrainCircuit
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
+
+// ── Risk classification ───────────────────────────────────────────────────────
+function classifyRisk(avgGwa, failingCount) {
+  if (failingCount > 0 || avgGwa > 3.00) {
+    return {
+      severity: 'high',
+      advisory: 'Immediate academic counselor intervention advised. Failing marks recorded.',
+    };
+  }
+  if (avgGwa >= 2.75 && avgGwa <= 3.00) {
+    return {
+      severity: 'medium',
+      advisory: 'Provide tutoring support. Running GWA is border-lining the passing scale.',
+    };
+  }
+  return {
+    severity: 'low',
+    advisory: 'Good academic standing. Maintain current study patterns.',
+  };
+}
+
+// Helper to transmute raw scores to GWA
+function getTransmutedGrade(score) {
+  if (score >= 98) return 1.00;
+  if (score >= 95) return 1.25;
+  if (score >= 92) return 1.50;
+  if (score >= 89) return 1.75;
+  if (score >= 86) return 2.00;
+  if (score >= 83) return 2.25;
+  if (score >= 80) return 2.50;
+  if (score >= 77) return 2.75;
+  if (score >= 75) return 3.00;
+  return 5.00;
+}
+
+// Compute tentative GWA for a class record from its scores
+function computeTentativeGrade(classRecordScores, classRecordCols) {
+  const terms = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+  const termRatings = {};
+  
+  terms.forEach(term => {
+    const tSc = classRecordScores?.[term];
+    if (!tSc || (tSc.act1 == null && tSc.act2 == null && tSc.act3 == null && tSc.act4 == null && tSc.act5 == null && tSc.act6 == null && tSc.char_rating == null && tSc.exam == null)) {
+      return;
+    }
+    
+    const tMx = classRecordCols?.[term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
+    
+    const csSum = (tSc.act1 || 0) + (tSc.act2 || 0) + (tSc.act3 || 0) + (tSc.act4 || 0) + (tSc.act5 || 0) + (tSc.act6 || 0);
+    const csMax = (tMx.act1 || 20) + (tMx.act2 || 20) + (tMx.act3 || 20) + (tMx.act4 || 20) + (tMx.act5 || 20) + (tMx.act6 || 10);
+    
+    const csPercent = csMax > 0 ? (csSum / csMax) * 50 : 0;
+    const charPercent = (tSc.char_rating || 0) * 0.1;
+    const examPercent = (tMx.exam || 40) > 0 ? ((tSc.exam || 0) / tMx.exam) * 40 : 0;
+    
+    termRatings[term] = Math.min(100, Math.max(0, Math.round(csPercent + charPercent + examPercent)));
+  });
+  
+  const hasPrelim = termRatings['Prelim'] !== undefined;
+  const hasMidterm = termRatings['Midterm'] !== undefined;
+  const hasSF = termRatings['Semi-Final'] !== undefined;
+  const hasFinal = termRatings['Final'] !== undefined;
+  
+  let finalSG = null;
+  if (hasPrelim && hasMidterm && hasSF && hasFinal) {
+    const mr = Math.round((termRatings['Prelim'] + termRatings['Midterm']) / 2);
+    const tfr = Math.round((termRatings['Semi-Final'] + termRatings['Final']) / 2);
+    finalSG = Math.round((mr + tfr) / 2);
+  } else {
+    const available = Object.values(termRatings);
+    if (available.length > 0) {
+      finalSG = Math.round(available.reduce((sum, val) => sum + val, 0) / available.length);
+    }
+  }
+  
+  if (finalSG === null) return null;
+  return getTransmutedGrade(finalSG);
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -29,7 +108,10 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const { profile } = useAuth();
+
   useEffect(() => {
+    if (!profile?.department_id) return;
     let active = true;
 
     async function loadDashboardData() {
@@ -37,19 +119,42 @@ export default function Dashboard() {
         setLoading(true);
         setError(null);
 
+        // ── Step 1: fetch all sections in the dean's college ─────────────────
+        const { data: deptSections, error: secErr } = await supabase
+          .from('sections')
+          .select('section_id, name')
+          .eq('department_id', profile.department_id);
+
+        if (secErr) throw secErr;
+
+        const sectionIds = (deptSections || []).map(s => s.section_id);
+        if (sectionIds.length === 0) {
+          if (active) {
+            setStats({ facultyCount: 0, sectionsCount: 0, atRiskCount: 0, pendingPosts: 0 });
+            setWarnings([]);
+            setLoading(false);
+          }
+          return;
+        }
         // Fetch all required data in parallel
         const [
+          { data: termData },
           { data: users, error: usersErr },
           { data: classrooms, error: classroomsErr },
           { data: postedGrades, error: postedGradesErr },
+          { data: scoreData, error: sErr },
+          { data: colData, error: colErr },
           { data: winData, error: winErr },
           { data: enrollments, error: enrolErr }
         ] = await Promise.all([
-          supabase.from('users').select('user_id, role, first_name, last_name'),
-          supabase.from('class_records').select('class_record_id, section_id, faculty_id').eq('status', 'active'),
+          supabase.from('academic_terms').select('term_id, school_year, semester').eq('is_active', true).maybeSingle(),
+          supabase.from('users').select('user_id, role, first_name, last_name, section_id, department_id'),
+          supabase.from('class_records').select('class_record_id, section_id, faculty_id, term_id, school_year, semester').eq('status', 'active').in('section_id', sectionIds),
           supabase.from('posted_grades').select('class_record_id, student_id, grade_period, computed_grade, effective_grade'),
-          supabase.from('evaluation_windows').select('window_id, is_closed, section_id, evaluation_responses(response_id)'),
-          supabase.from('enrollments').select('section_id, student_id')
+          supabase.from('student_term_scores').select('student_id, class_record_id, term, act1, act2, act3, act4, act5, act6, char_rating, exam'),
+          supabase.from('class_grading_columns').select('class_record_id, term, act1_max, act2_max, act3_max, act4_max, act5_max, act6_max, exam_max'),
+          supabase.from('evaluation_windows').select('window_id, is_closed, section_id, evaluation_responses(response_id)').in('section_id', sectionIds),
+          supabase.from('enrollments').select('section_id, student_id').in('section_id', sectionIds)
         ]);
 
         if (usersErr) throw usersErr;
@@ -60,41 +165,103 @@ export default function Dashboard() {
 
         if (!active) return;
 
+        const activeTerm = termData;
+
         // Perform dynamic data calculations & aggregations
-        // 1. Total Faculty count
-        const facultyCount = (users || []).filter(u => u.role === 'faculty').length;
+        let classroomsFiltered = classrooms || [];
+        if (activeTerm) {
+          classroomsFiltered = (classrooms || []).filter(c => 
+            c.term_id === activeTerm.term_id || 
+            (c.school_year === activeTerm.school_year && c.semester === activeTerm.semester)
+          );
+        }
+
+        // 1. Total Faculty count (scoped to Dean's department)
+        const facultyCount = (users || []).filter(u => u.role === 'faculty' && u.department_id === profile.department_id).length;
 
         // 2. Active Sections count
-        const sectionsCount = (classrooms || []).length;
+        const sectionsCount = classroomsFiltered.length;
 
-        // Group posted grades by student ID
-        const studentGrades = {};
-        (postedGrades || []).forEach(g => {
-          if (!studentGrades[g.student_id]) {
-            studentGrades[g.student_id] = [];
-          }
-          const gradeVal = g.effective_grade !== null ? Number(g.effective_grade) : Number(g.computed_grade);
-          studentGrades[g.student_id].push(gradeVal);
+        const deptStudents = (users || []).filter(u => u.role === 'student' && sectionIds.includes(u.section_id));
+        const studentIds = deptStudents.map(s => s.user_id);
+        const studentIdsSet = new Set(studentIds);
+
+        // Map columns
+        const colMap = {};
+        (colData || []).forEach(c => {
+          if (!colMap[c.class_record_id]) colMap[c.class_record_id] = {};
+          colMap[c.class_record_id][c.term] = {
+            act1: c.act1_max,
+            act2: c.act2_max,
+            act3: c.act3_max,
+            act4: c.act4_max,
+            act5: c.act5_max,
+            act6: c.act6_max,
+            exam: c.exam_max
+          };
         });
 
-        const students = (users || []).filter(u => u.role === 'student');
+        // Map draft scores
+        const scoresMap = {};
+        (scoreData || []).forEach(s => {
+          if (!studentIdsSet.has(s.student_id)) return;
+          if (!scoresMap[s.student_id]) scoresMap[s.student_id] = {};
+          if (!scoresMap[s.student_id][s.class_record_id]) scoresMap[s.student_id][s.class_record_id] = {};
+          scoresMap[s.student_id][s.class_record_id][s.term] = s;
+        });
 
-        // Academic Risk calculation
+        // Group posted grades by student ID
+        const gradesByStudent = {};
+        (postedGrades || []).forEach(g => {
+          if (!studentIdsSet.has(g.student_id)) return;
+          if (!gradesByStudent[g.student_id]) gradesByStudent[g.student_id] = [];
+          gradesByStudent[g.student_id].push(g);
+        });
+
         let highRiskCount = 0;
         let moderateRiskCount = 0;
         let lowRiskCount = 0;
 
-        students.forEach(student => {
-          const grades = studentGrades[student.user_id] || [];
-          if (grades.length > 0) {
-            const avg = grades.reduce((a, b) => a + b, 0) / grades.length;
-            const hasFailPeriod = grades.some(g => g > 3.00);
+        deptStudents.forEach(s => {
+          const myGrades = gradesByStudent[s.user_id] || [];
+          const postedClassRecordIds = new Set(myGrades.map(g => g.class_record_id));
+          
+          const gradeValues = [];
 
-            if (avg > 3.00 || hasFailPeriod) {
+          // 1. Add posted grades
+          myGrades.forEach(g => {
+            const val = g.effective_grade != null ? parseFloat(g.effective_grade) : parseFloat(g.computed_grade);
+            if (!isNaN(val)) {
+              gradeValues.push(val);
+            }
+          });
+
+          // 2. Add tentative grades from draft scores
+          const studentScores = scoresMap[s.user_id] || {};
+          Object.keys(studentScores).forEach(classRecId => {
+            if (!postedClassRecordIds.has(classRecId)) {
+              const classRecordScores = studentScores[classRecId];
+              const classRecordCols = colMap[classRecId];
+              const tentativeVal = computeTentativeGrade(classRecordScores, classRecordCols);
+              if (tentativeVal !== null) {
+                gradeValues.push(tentativeVal);
+              }
+            }
+          });
+
+          const avgGwa = gradeValues.length > 0
+            ? gradeValues.reduce((acc, v) => acc + v, 0) / gradeValues.length
+            : null;
+
+          const failingCount = gradeValues.filter(v => v > 3.00).length;
+
+          if (avgGwa !== null) {
+            const { severity } = classifyRisk(avgGwa, failingCount);
+            if (severity === 'high') {
               highRiskCount++;
-            } else if (avg >= 2.75 && avg <= 3.00) {
+            } else if (severity === 'medium') {
               moderateRiskCount++;
-            } else if (avg < 2.75) {
+            } else {
               lowRiskCount++;
             }
           }
@@ -104,7 +271,7 @@ export default function Dashboard() {
         // Calculated per classroom: outstanding periods of ['prelim', 'midterm', 'final']
         let pendingPosts = 0;
         const targetPeriods = ['prelim', 'midterm', 'final'];
-        (classrooms || []).forEach(c => {
+        classroomsFiltered.forEach(c => {
           const postedPeriodsForClass = (postedGrades || [])
             .filter(g => g.class_record_id === c.class_record_id)
             .map(g => g.grade_period);
@@ -132,10 +299,13 @@ export default function Dashboard() {
           studentsPerSection[e.section_id].add(e.student_id);
         });
 
+        const activeSectionIds = new Set(classroomsFiltered.map(c => c.section_id));
+        const winDataFiltered = (winData || []).filter(w => activeSectionIds.has(w.section_id));
+
         let lowEvalEngagementCount = 0;
         let highEvalEngagementCount = 0;
 
-        (winData || []).forEach(w => {
+        winDataFiltered.forEach(w => {
           const totalStudents = studentsPerSection[w.section_id] ? studentsPerSection[w.section_id].size : 0;
           const responsesCount = w.evaluation_responses ? w.evaluation_responses.length : 0;
 
@@ -243,7 +413,7 @@ export default function Dashboard() {
     return () => {
       active = false;
     };
-  }, [navigate]);
+  }, [navigate, profile]);
 
   return (
     <>

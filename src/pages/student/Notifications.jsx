@@ -72,6 +72,11 @@ export default function Notifications() {
             title = 'AI Counseling Verdict Ready';
             icon = BrainCircuit;
             iconColor = 'text-purple-600 bg-purple-50 border-purple-200';
+          } else if (n.type === 'class_enrolled') {
+            type = 'system';
+            title = 'Class Registration Success';
+            icon = Info;
+            iconColor = 'text-emerald-600 bg-emerald-50 border-emerald-250';
           }
 
           return {

@@ -8,18 +8,21 @@ const STORAGE_KEYS = {
   LOGS: 'sage_logs',
   POSTED_GRADES: 'sage_posted_grades',
   SUBJECTS: 'sage_subjects',
-  SECTIONS: 'sage_sections'
+  SECTIONS: 'sage_sections',
+  ACADEMIC_TERMS: 'sage_academic_terms'
 };
+
 
 // Seed Data
 const defaultUsers = [
-  { id: 'usr-001', lastName: 'System', firstName: 'Admin', middleName: 'Control', email: 'admin@sage.edu.ph', role: 'admin', userNumber: 'ADM-2026-00001', department: 'College of Computer Studies', program: '', status: 'active' },
-  { id: 'usr-002', lastName: 'Valdes', firstName: 'Carlos', middleName: 'Mendoza', email: 'c.valdes@sage.edu.ph', role: 'dean', userNumber: 'DN-2026-00002', department: 'College of Computer Studies', program: '', status: 'active' },
-  { id: 'usr-003', lastName: 'Rivera', firstName: 'Amanda', middleName: 'Santos', email: 'a.rivera@sage.edu.ph', role: 'faculty', userNumber: 'FAC-2026-00003', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', status: 'active' },
-  { id: 'usr-004', lastName: 'Doe', firstName: 'John', middleName: 'Smith', email: 'j.doe@sage.edu.ph', role: 'faculty', userNumber: 'FAC-2026-00004', department: 'College of Computer Studies', program: 'Bachelor of Science in Computer Science', status: 'active' },
-  { id: 'usr-005', lastName: 'Jenkins', firstName: 'Sarah', middleName: 'Lee', email: 's.jenkins@student.sage.edu', role: 'student', userNumber: '2026-00005', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', section: 'BSIT-1A', yearLevel: '1st Year', status: 'active' },
-  { id: 'usr-006', lastName: 'Smith', firstName: 'John', middleName: 'Davis', email: 'j.smith@student.sage.edu', role: 'student', userNumber: '2026-00006', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', section: 'BSIT-2B', yearLevel: '2nd Year', status: 'active' },
-  { id: 'usr-007', lastName: 'Johnson', firstName: 'Mary', middleName: 'Cruz', email: 'm.johnson@student.sage.edu', role: 'student', userNumber: '2026-00007', department: 'College of Computer Studies', program: 'Bachelor of Science in Computer Science', section: 'BSCS-3A', yearLevel: '3rd Year', status: 'active' }
+  { id: 'usr-001', lastName: 'System', firstName: 'Admin', middleName: 'Control', email: 'admin@sage.edu.ph', role: 'admin', department: 'College of Computer Studies', program: '', status: 'active' },
+  { id: 'usr-002', lastName: 'Valdes', firstName: 'Carlos', middleName: 'Mendoza', email: 'c.valdes@sage.edu.ph', role: 'dean', department: 'College of Computer Studies', program: '', status: 'active' },
+  { id: 'usr-003', lastName: 'Rivera', firstName: 'Amanda', middleName: 'Santos', email: 'a.rivera@sage.edu.ph', role: 'faculty', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', status: 'active' },
+  { id: 'usr-004', lastName: 'Doe', firstName: 'John', middleName: 'Smith', email: 'j.doe@sage.edu.ph', role: 'faculty', department: 'College of Computer Studies', program: 'Bachelor of Science in Computer Science', status: 'active' },
+  { id: 'usr-005', lastName: 'Jenkins', firstName: 'Sarah', middleName: 'Lee', email: 's.jenkins@student.sage.edu', role: 'student', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', section: 'BSIT-1A', yearLevel: '1st Year', status: 'active' },
+  { id: 'usr-006', lastName: 'Smith', firstName: 'John', middleName: 'Davis', email: 'j.smith@student.sage.edu', role: 'student', department: 'College of Computer Studies', program: 'Bachelor of Science in Information Technology', section: 'BSIT-2B', yearLevel: '2nd Year', status: 'active' },
+  { id: 'usr-007', lastName: 'Johnson', firstName: 'Mary', middleName: 'Cruz', email: 'm.johnson@student.sage.edu', role: 'student', department: 'College of Computer Studies', program: 'Bachelor of Science in Computer Science', section: 'BSCS-3A', yearLevel: '3rd Year', status: 'active' },
+  { id: 'usr-008', lastName: 'Doe', firstName: 'Jane', middleName: 'Reyes', email: 'j.doe@student.sage.edu', role: 'student', department: 'College of Computer Studies', program: 'Bachelor of Science in Computer Science', section: 'BSCS-3A', yearLevel: '2nd Year', status: 'active' }
 ];
 
 const defaultClassrooms = [
@@ -125,6 +128,19 @@ const defaultEvalWindows = [
     isClosed: false,
     responsesCount: 12,
     totalStudents: 38
+  },
+  {
+    id: 'ew-003',
+    templateId: 'tmpl-001',
+    templateTitle: 'AY 2025-2026 Semester 2 Faculty Evaluation',
+    facultyId: 'usr-004',
+    facultyName: 'John Doe',
+    section: 'BSCS-3A',
+    openAt: '2026-05-22T08:00',
+    closeAt: '2026-06-30T17:00',
+    isClosed: false,
+    responsesCount: 40,
+    totalStudents: 42
   }
 ];
 
@@ -177,8 +193,17 @@ function setToStorage(key, value) {
 export const mockDb = {
   // --- USERS ---
   getUsers: () => {
-    const stored = getFromStorage(STORAGE_KEYS.USERS, defaultUsers);
+    let stored = getFromStorage(STORAGE_KEYS.USERS, defaultUsers);
     let updated = false;
+
+    // Force append any new default seed users missing from local storage
+    defaultUsers.forEach(def => {
+      if (!stored.some(u => u.id === def.id)) {
+        stored.push(def);
+        updated = true;
+      }
+    });
+
     const migrated = stored.map(u => {
       const def = defaultUsers.find(d => d.id === u.id);
       if (def) {
@@ -191,6 +216,7 @@ export const mockDb = {
       }
       return u;
     });
+
     if (updated) {
       setToStorage(STORAGE_KEYS.USERS, migrated);
       return migrated;
@@ -208,14 +234,6 @@ export const mockDb = {
     } else {
       // Create
       user.id = `usr-${Math.random().toString(36).substr(2, 9)}`;
-      if (!user.userNumber) {
-        const year = new Date().getFullYear();
-        const role = user.role;
-        const prefix = role === 'student' ? '' : role === 'admin' ? 'ADM-' : role === 'faculty' ? 'FAC-' : 'DN-';
-        const sameRoleUsers = users.filter(u => u.role === role);
-        const nextSeq = String(sameRoleUsers.length + 1).padStart(5, '0');
-        user.userNumber = `${prefix}${year}-${nextSeq}`;
-      }
       users.push(user);
     }
     setToStorage(STORAGE_KEYS.USERS, users);
@@ -310,7 +328,20 @@ export const mockDb = {
   },
 
   // --- EVALUATION WINDOWS ---
-  getEvalWindows: () => getFromStorage(STORAGE_KEYS.EVAL_WINDOWS, defaultEvalWindows),
+  getEvalWindows: () => {
+    let stored = getFromStorage(STORAGE_KEYS.EVAL_WINDOWS, defaultEvalWindows);
+    let updated = false;
+    defaultEvalWindows.forEach(def => {
+      if (!stored.some(w => w.id === def.id)) {
+        stored.push(def);
+        updated = true;
+      }
+    });
+    if (updated) {
+      setToStorage(STORAGE_KEYS.EVAL_WINDOWS, stored);
+    }
+    return stored;
+  },
   saveEvalWindow: (window) => {
     const windows = mockDb.getEvalWindows();
     const users = mockDb.getUsers();
@@ -430,5 +461,28 @@ export const mockDb = {
     };
     logs.unshift(newLog); // Put new logs at the beginning
     setToStorage(STORAGE_KEYS.LOGS, logs);
+  },
+
+  // --- ACADEMIC TERMS ---
+  getAcademicTerms: () => {
+    const defaultTerms = [
+      { id: 'term-1', schoolYear: '2025-2026', semester: '2nd', isActive: true, created_at: new Date().toISOString() },
+      { id: 'term-2', schoolYear: '2025-2026', semester: '1st', isActive: false, created_at: new Date().toISOString() },
+      { id: 'term-3', schoolYear: '2024-2025', semester: '2nd', isActive: false, created_at: new Date().toISOString() }
+    ];
+    return getFromStorage(STORAGE_KEYS.ACADEMIC_TERMS, defaultTerms);
+  },
+  saveAcademicTerm: (term) => {
+    const terms = mockDb.getAcademicTerms();
+    if (term.id) {
+      const idx = terms.findIndex(t => t.id === term.id);
+      if (idx !== -1) terms[idx] = { ...terms[idx], ...term };
+    } else {
+      term.id = `term-${Math.random().toString(36).substr(2, 9)}`;
+      term.created_at = new Date().toISOString();
+      terms.push(term);
+    }
+    setToStorage(STORAGE_KEYS.ACADEMIC_TERMS, terms);
+    return term;
   }
 };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   Bell, 
@@ -11,62 +11,136 @@ import {
   MailOpen
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
+
+const formatRelativeTime = (isoString) => {
+  if (!isoString) return '';
+  const diffMs = new Date() - new Date(isoString);
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return 'Yesterday';
+  return `${diffDays} days ago`;
+};
 
 export default function Notifications() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      type: 'critical',
-      title: 'Grade Override Request Approved',
-      message: 'The administrative override request for student Reyes, Mark T. (CS301) has been approved by the Dean\'s Office. The records have been unlocked for score re-entry.',
-      time: '2 hours ago',
-      read: false,
-      icon: AlertTriangle,
-      iconColor: 'text-amber-600 bg-amber-50 border-amber-200'
-    },
-    {
-      id: 2,
-      type: 'system',
-      title: 'Student Evaluation Window Closing',
-      message: 'The student evaluation survey window for First Semester AY 2025-2026 is closing in 5 days. Remind your ongoing classes to submit their feedback.',
-      time: '1 day ago',
-      read: false,
-      icon: Clock,
-      iconColor: 'text-blue-600 bg-blue-50 border-blue-200'
-    },
-    {
-      id: 3,
-      type: 'success',
-      title: 'Final Grade Sheets Submitted',
-      message: 'Your midterm grade sheet for Capstone Project 1 (IT401 - BSIT-4A) has been successfully verified and posted to the University Registry.',
-      time: '3 days ago',
-      read: true,
-      icon: CheckCircle,
-      iconColor: 'text-emerald-600 bg-emerald-50 border-emerald-200'
-    },
-    {
-      id: 4,
-      type: 'info',
-      title: 'SAGE Platform Update',
-      message: 'System updated to version 2.4. Class registries are now auto-synced daily at 12:00 AM with registrar databases.',
-      time: '1 week ago',
-      read: true,
-      icon: Info,
-      iconColor: 'text-slate-600 bg-slate-50 border-slate-200'
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    async function loadNotifications() {
+      if (!user) return;
+      try {
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('recipient_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const mapped = (data || []).map(n => {
+          let type = 'system';
+          let title = 'System Notification';
+          let icon = Info;
+          let iconColor = 'text-slate-600 bg-slate-50 border-slate-200';
+
+          if (n.type === 'override_approved') {
+            type = 'critical';
+            title = 'Grade Override Request Approved';
+            icon = AlertTriangle;
+            iconColor = 'text-amber-605 bg-amber-50 border-amber-250';
+          } else if (n.type === 'override_rejected') {
+            type = 'critical';
+            title = 'Grade Override Request Rejected';
+            icon = AlertTriangle;
+            iconColor = 'text-rose-600 bg-rose-50 border-rose-200';
+          } else if (n.type === 'term_rollover_reminder') {
+            type = 'system';
+            title = 'Grade Posting Reminder';
+            icon = Clock;
+            iconColor = 'text-blue-600 bg-blue-50 border-blue-200';
+          } else if (n.type === 'class_assigned') {
+            type = 'success';
+            title = 'New Class Assigned';
+            icon = CheckCircle;
+            iconColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
+          }
+
+          return {
+            id: n.notification_id,
+            type,
+            title,
+            message: n.message,
+            time: formatRelativeTime(n.created_at),
+            read: n.is_read,
+            icon,
+            iconColor
+          };
+        });
+
+        setNotifications(mapped);
+
+      } catch (err) {
+        console.error('Error loading notifications:', err);
+      } finally {
+        setLoading(false);
+      }
     }
-  ]);
 
-  const markAllRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+    loadNotifications();
+  }, [user]);
+
+  const markAllRead = async () => {
+    if (!user || notifications.length === 0) return;
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('recipient_id', user.id);
+
+      if (error) throw error;
+      setNotifications(notifications.map(n => ({ ...n, read: true })));
+    } catch (err) {
+      console.error('Error marking all notifications as read:', err);
+    }
   };
 
-  const deleteNotification = (id) => {
-    setNotifications(notifications.filter(n => n.id !== id));
+  const deleteNotification = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('notification_id', id);
+
+      if (error) throw error;
+      setNotifications(notifications.filter(n => n.id !== id));
+    } catch (err) {
+      console.error('Error deleting notification:', err);
+    }
   };
 
-  const toggleRead = (id) => {
-    setNotifications(notifications.map(n => n.id === id ? { ...n, read: !n.read } : n));
+  const toggleRead = async (id) => {
+    const noti = notifications.find(n => n.id === id);
+    if (!noti) return;
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: !noti.read })
+        .eq('notification_id', id);
+
+      if (error) throw error;
+      setNotifications(notifications.map(n => n.id === id ? { ...n, read: !n.read } : n));
+    } catch (err) {
+      console.error('Error toggling notification read state:', err);
+    }
   };
 
   const filtered = notifications.filter(n => {
@@ -74,6 +148,17 @@ export default function Notifications() {
     if (activeFilter === 'Alerts') return n.type === 'critical' || n.type === 'system';
     return true;
   });
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
+          <p className="text-sm text-slate-500 font-medium font-sans">Loading notifications...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -140,8 +225,8 @@ export default function Notifications() {
                         <span className="w-2 h-2 bg-sage-600 rounded-full"></span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">{noti.message}</p>
-                    <span className="text-[10px] text-slate-400 font-medium block pt-1">{noti.time}</span>
+                    <p className="text-xs text-slate-650 leading-relaxed max-w-2xl text-left">{noti.message}</p>
+                    <span className="text-[10px] text-slate-400 font-medium block pt-1 text-left">{noti.time}</span>
                   </div>
                 </div>
 
@@ -178,4 +263,3 @@ export default function Notifications() {
     </>
   );
 }
-
