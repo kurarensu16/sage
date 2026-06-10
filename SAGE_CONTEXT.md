@@ -15,24 +15,24 @@ This document provides a permanent technical context and reference for AI agents
 ---
 
 ## 2. Directory Structure & Key Files
-* **[`src/App.jsx`](file:///c:/Users/sadia/SAGE/src/App.jsx):** Main React router configuration mapping all 41 pages across role portals.
+* **[`src/App.jsx`](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/App.jsx):** Main React router configuration mapping all 41 pages across role portals.
 * **`src/pages/`:** Contains role-specific directories:
-  * `admin/` — User accounts, class creation, evaluation builders/windows, grade overrides, and audit logs.
+  * `admin/` — User accounts, class creation, evaluation builders/windows, grade overrides, term transitions, and audit logs.
   * `dean/` — Department auditing dashboards, AI faculty predictions, at-risk rosters, and summary reports.
-  * `faculty/` — Class record setup, score inputs, computation previews, posted grades, evaluation feedback, and notifications.
+  * `faculty/` — Class record setup, score inputs, computation previews, posted grades, evaluation feedback, daily class attendance, and notifications.
   * `student/` — Personal grades list/breakdowns, survey submissions, and AI academic recommendations.
-* **[`src/lib/mockDb.js`](file:///c:/Users/sadia/SAGE/src/lib/mockDb.js):** LocalStorage-based persistent mock database. Serves as the source of truth before Supabase migration.
-* **[`src/lib/excelExport.js`](file:///c:/Users/sadia/SAGE/src/lib/excelExport.js):** Shared module generating formatted grade spreadsheets with SheetJS.
-* **[`src/lib/constants.js`](file:///c:/Users/sadia/SAGE/src/lib/constants.js):** DYCI college and program listing constants.
-* **[`docs/design/capstone-system-design-v2.md`](file:///c:/Users/sadia/SAGE/docs/design/capstone-system-design-v2.md):** Main Capstone System Design documentation (S01–S41 screens).
+* **[`src/lib/mockDb.js`](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/lib/mockDb.js):** LocalStorage-based persistent mock database. Serves as the source of truth before Supabase migration.
+* **[`src/lib/excelExport.js`](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/lib/excelExport.js):** Shared module generating formatted grade spreadsheets with SheetJS.
+* **[`src/lib/constants.js`](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/lib/constants.js):** DYCI college and program listing constants.
 
 ---
 
-## 3. Relational Database Design (19 Tables)
+## 3. Relational Database Design (26 Tables)
 SAGE runs on a Supabase Postgres schema with RLS enabled:
-* **User/Organization:** `departments`, `users`
+* **User/Organization:** `departments`, `programs`, `users`
 * **Class & Enrollment:** `subjects`, `sections`, `enrollments`, `class_records`, `class_faculty_log`
-* **Grading:** `grade_components`, `class_grading_columns`, `component_scores`, `posted_grades`
+* **Term State & History:** `academic_terms`, `student_term_details`
+* **Grading & Attendance:** `grade_components`, `class_grading_columns`, `component_scores`, `posted_grades`, `unlock_requests`, `attendance_records`
 * **Evaluations:** `evaluation_forms`, `evaluation_criteria`, `evaluation_windows`, `evaluation_responses`, `evaluation_ratings`, `evaluation_comments`
 * **AI & Messaging:** `ai_student_recommendations`, `ai_faculty_predictions`, `notifications`, `activity_logs`
 
@@ -68,14 +68,34 @@ $$\text{Semestral Grade (SG)} = \text{ROUND}(\text{AVERAGE}(\text{MR}, \text{TFR
 
 ---
 
-### 4.2 Evaluation Windows
+### 4.2 Semester Transitions (Rollover)
+* Changing academic terms requires auditing active records and running a database-safe transaction via `perform_semester_transition`.
+* Unsubmitted grades of the archived semester are automatically flagged as `"Late Submissions"`.
+* Students are promoted to the next year level (1st &rarr; 2nd &rarr; 3rd &rarr; 4th &rarr; Graduating) during School Year rollovers, archiving previous details in `student_term_details`.
+
+---
+
+### 4.3 Attendance & FDA Policy
+* **20% Absenteeism Limit**: For subjects scheduled for 3 hours per session, students trigger **FDA (Failure Due to Absences)** upon reaching their **4th absence**.
+* **Worksheet Grade Lock**: Triggering FDA automatically overrides computed ratings, locking the Equivalent GWA to **5.00** and Remarks to **FDA**. The grading remarks dropdown is disabled and can only be unlocked if the instructor reduces the absences count in the attendance ledger.
+* **Double-Confirmation Flow**: Initializing attendance sheets for new dates requires a confirmation check to protect against accidental auto-saves.
+
+---
+
+### 4.4 Irregular Students
+* Irregular students (`users.section_id` set to `NULL` or mapped to an irregular section) can be dynamically enrolled in custom class catalogs via the manual student enrollment bridge (`enrollments` table).
+* Dashboards query the `enrollments` table to correctly fetch classes, grades, and surveys for irregular students, preventing dashboard lockouts.
+
+---
+
+### 4.5 Evaluation Windows
 * Form scheduled per Section (College $\rightarrow$ Program $\rightarrow$ Section selector hierarchy).
 * **Batch Scheduling (Create Mode):** Automatically schedules windows for **all active instructors** teaching in the selected section, updating duplicates if they exist to protect student response counts.
 * **Edit Mode:** Targets and modifies the single targeted instructor's entry.
 
 ---
 
-### 4.3 Excel Export Choices
+### 4.6 Excel Export Choices
 Both `PostedGradesView` and `GradeComputationPreview` support grade exports using SheetJS:
 * **Record Sheet:** Outputs the full grading sheet detailing raw scores and live Excel formulas so that averages, rating transmutations, and remarks recalculate automatically.
 * **Report of Grades:** Registrar print layout sheet. Features the GWA transmutation table, registrar metadata, and a **symmetrical 30-row split student roster** (Left column for 1-30, Right column for 31-60) linked back to the `Record Sheet` tab via cell formulas.

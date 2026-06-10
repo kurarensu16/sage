@@ -20,6 +20,17 @@ Each entry follows this format:
 
 ## Log Entries
 
+### 2026-06-06 — Rollover, Irregular Student Management, and Attendance Integration
+**Scope:** Admin, Faculty, Dean, Student Portals, Relational Database schema  
+**Summary:** Implemented transactional semester transitions, enrolled irregular student support, daily class attendance sheets, and academic policy overrides (FDA locking). Connected the frontend pages directly to the Supabase PostgreSQL database.  
+**Files Modified:**
+- `src/pages/faculty/ClassAttendance.jsx` — Implemented daily attendance sheets, auto-saving, history quick links, and double-confirmation dialogs.
+- `src/pages/faculty/ScoreInput.jsx` — Linked grade worksheet to count student absences and sync with attendance records.
+- `src/components/StudentRow.jsx` — Enforced FDA rule locking GWA equivalent grades to 5.00 and disabling remarks selectors. Fixed Bad Request errors when upserting posted grades.
+- `src/pages/admin/TermManagement.jsx` — Created layman-friendly transition wizard executing database transaction.
+- `src/pages/admin/ClassManagementList.jsx` — Group-sorted manual enrollments and candidate filtering.
+- `SAGE_CONTEXT.md` / `SAGE_DATABASE_SCHEMA.md` / `SAGE_Development_Phases.md` — Updated master documentation.
+
 ### 2026-05-28 — Project Initialization Audit
 **Scope:** Full codebase  
 **Summary:** Initial development audit completed. Project baseline documented.  

@@ -1,6 +1,6 @@
 # SAGE Database Schema & ERD Documentation
 
-This document describes the complete relational database schema for SAGE (Smart Academic Grading and Evaluation System). The database is designed for **Supabase PostgreSQL** and consists of **19 tables** organized into six functional groups: User/Organizational Data, Class/Enrollment Management, Grading, Evaluations, AI Insights, and System Notifications.
+This document describes the complete relational database schema for SAGE (Smart Academic Grading and Evaluation System). The database is designed for **Supabase PostgreSQL** and consists of **26 tables** organized into six functional groups: User/Organizational Data, Class/Enrollment Management, Term State/History, Grading/Attendance, Evaluations, AI Insights, and System Notifications.
 
 ---
 
@@ -112,6 +112,7 @@ Stores sections offered per term.
 | `school_year` | VARCHAR(15) | NOT NULL | School Year (e.g. `AY 2025-2026`) |
 | `semester` | VARCHAR(15) | NOT NULL | Check constraint: 1st, 2nd, Summer |
 | `department_id` | UUID | REFERENCES `departments` | Program affiliation |
+| `term_id` | UUID | REFERENCES `academic_terms` | Associated academic term |
 
 #### Table: `enrollments`
 Bridges students to class sections and subjects (CSV batch imported).
@@ -136,6 +137,7 @@ Stores classrooms linking subjects, sections, and faculty.
 | `semester` | VARCHAR(15) | NOT NULL | Check constraint: 1st, 2nd, Summer |
 | `status` | VARCHAR(15) | DEFAULT 'active' | Check: active, archived |
 | `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Creation date |
+| `term_id` | UUID | REFERENCES `academic_terms` | Associated academic term |
 
 #### Table: `class_faculty_log`
 Tracks changes of faculty assignment in a class record for audit history.
@@ -147,6 +149,28 @@ Tracks changes of faculty assignment in a class record for audit history.
 | `assigned_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Date assigned |
 | `replaced_at` | TIMESTAMP | NULL | Date unassigned |
 | `replaced_by` | UUID | REFERENCES `users` | Admin authorizing re-assignment |
+
+#### Table: `academic_terms`
+Stores registered academic terms and their active/evaluation states.
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `term_id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique ID of the term |
+| `school_year` | VARCHAR(15) | NOT NULL | e.g. '2025-2026' |
+| `semester` | semester_period | NOT NULL | '1st', '2nd', 'Summer' |
+| `is_active` | BOOLEAN | DEFAULT FALSE, UNIQUE INDEX | Active term pointer (singleton constraint) |
+| `is_evaluation_open` | BOOLEAN | DEFAULT FALSE | Evaluation window controller |
+| `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Timestamp of creation |
+
+#### Table: `student_term_details`
+Archives student year level and section history prior to semester rollovers.
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `mapping_id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique ID of detail record |
+| `student_id` | UUID | REFERENCES `users` | Associated student |
+| `term_id` | UUID | REFERENCES `academic_terms` | Associated academic term |
+| `year_level` | VARCHAR(20) | NOT NULL | e.g. '3rd Year' during this term |
+| `section_id` | UUID | REFERENCES `sections` ON DELETE SET NULL | Section mapping in this term |
+| `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Log timestamp |
 
 ---
 
@@ -212,6 +236,7 @@ Stores finalized term grades with override records and faculty remark audit trai
 | `locked_milestones` | VARCHAR[] | DEFAULT '{}'::VARCHAR[] | Array of milestones currently locked for editing (e.g. `{'prelim', 'midterm'}`) |
 | `override_by` | UUID | REFERENCES `users` | Admin authorizing override |
 | `override_at` | TIMESTAMP | NULL | Date override applied |
+| `is_late_submission` | BOOLEAN | DEFAULT FALSE | Flag indicating if grade was posted after semester rollover |
 
 #### Table: `unlock_requests`
 Stores faculty requests to unlock specific grading milestones for Dean review and override.
@@ -226,6 +251,18 @@ Stores faculty requests to unlock specific grading milestones for Dean review an
 | `resolved_by` | UUID | REFERENCES `users` | Dean resolving request (approved/rejected) |
 | `resolved_at` | TIMESTAMP | NULL | Timestamp of Dean resolution |
 
+#### Table: `attendance_records`
+Stores daily attendance logs for students in class records.
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `attendance_id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique ID of attendance record |
+| `student_id` | UUID | REFERENCES `users` | Associated student |
+| `class_record_id` | UUID | REFERENCES `class_records` | Associated class record |
+| `date` | DATE | NOT NULL | Date of session |
+| `status` | attendance_status | NOT NULL DEFAULT 'Present' | Check: 'Present', 'Absent', 'Late', 'Excused' |
+| `remarks` | TEXT | NULL | Optional remarks note |
+| `term_id` | UUID | REFERENCES `academic_terms` | Associated academic term |
+| `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Record created timestamp |
 
 ---
 

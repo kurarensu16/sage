@@ -1,13 +1,7 @@
 # SAGE — Supabase Migration Workflow
 
 > Systematic plan to migrate from `localStorage` (mockDb.js) to Supabase PostgreSQL.  
-> Status: **Not Started**
-
----
-
-## Current State
-
-All data operations go through `src/lib/mockDb.js` which uses `localStorage`. There are **26 mockDb functions** called across **26 page files**. An additional 15 pages use hardcoded inline data with no database connection at all.
+> Status: **Completed**
 
 ---
 
@@ -27,11 +21,11 @@ All data operations go through `src/lib/mockDb.js` which uses `localStorage`. Th
 
 ## Step 1: Supabase Project Setup
 
-- [ ] Create Supabase project for SAGE
-- [ ] Generate SQL migrations for all 19 tables from the ERD in `capstone-system-design-v2.md`
-- [ ] Create `.env` file with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
-- [ ] Install `@supabase/supabase-js`
-- [ ] Create `src/lib/supabase.js` — shared Supabase client
+- [x] Create Supabase project for SAGE
+- [x] Generate SQL migrations for all tables from the ERD
+- [x] Create `.env` file with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
+- [x] Install `@supabase/supabase-js`
+- [x] Create `src/lib/supabase.js` — shared Supabase client
 
 ```js
 // src/lib/supabase.js
@@ -173,16 +167,16 @@ Convert all default arrays from `mockDb.js` into `supabase/seed.sql`:
 
 ## Progress Tracker
 
-- [ ] Step 1: Supabase project setup
-- [ ] Step 2: Create `supabaseDb.js` drop-in replacement
-- [ ] Step 3A: Migrate Admin pages (15 files)
-- [ ] Step 3B: Migrate Dean pages (7 files)
-- [ ] Step 3C: Wire Faculty pages (9 files)
-- [ ] Step 3D: Wire Student pages (7 files)
-- [ ] Step 3E: Wire Auth pages (3 files)
-- [ ] Step 4: Seed data
-- [ ] Step 5: RLS policies
-- [ ] Delete `mockDb.js` (final step)
+- [x] Step 1: Supabase project setup
+- [x] Step 2: Create `supabaseDb.js` drop-in replacement
+- [x] Step 3A: Migrate Admin pages (15 files)
+- [x] Step 3B: Migrate Dean pages (7 files)
+- [x] Step 3C: Wire Faculty pages (9 files)
+- [x] Step 3D: Wire Student pages (7 files)
+- [x] Step 3E: Wire Auth pages (3 files)
+- [x] Step 4: Seed data
+- [x] Step 5: RLS policies
+- [/] Delete `mockDb.js` (kept as offline fallback engine)
 
 ---
 

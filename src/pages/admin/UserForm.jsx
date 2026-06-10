@@ -2,11 +2,67 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { ChevronRight, Save, X, User } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
-import SuccessModal from '../../components/SuccessModal';
-import { useAuth } from '../../lib/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { useAuth } from '../../lib/AuthContext';
+
+const PROGRAM_ABBREVIATIONS = {
+  "Bachelor of Science in Accountancy": "BSA",
+  "Bachelor of Science in Accounting Information System": "BSAIS",
+  "Bachelor of Arts in Political Science": "BAPS",
+  "Bachelor of Science in Business Administration": "BSBA",
+  "Bachelor of Science in Business Administration Major in Human Resource Development Management": "BSBA-HRDM",
+  "Bachelor of Science in Business Administration Major in Financial Management": "BSBA-FM",
+  "Bachelor of Science in Business Administration Major in Operations Management": "BSBA-OM",
+  "Bachelor of Science in Business Administration Major in Marketing Management": "BSBA-MM",
+  "Bachelor of Science in Computer Science": "BSCS",
+  "Bachelor of Science in Computer Engineering": "BSCpE",
+  "Bachelor of Science in Information Technology": "BSIT",
+  "Associate in Computer Technology": "ACT",
+  "Bachelor of Elementary Education": "BEEd",
+  "Bachelor of Secondary Education Major in Mathematics": "BSEd-Math",
+  "Bachelor of Secondary Education Major in Filipino": "BSEd-Fil",
+  "Bachelor of Secondary Education Major in English": "BSEd-Eng",
+  "Bachelor of Secondary Education Major in Sciences": "BSEd-Sci",
+  "Continuing Professional Teacher Education": "CPTE",
+  "Bachelor of Science in Nursing": "BSN",
+  "Bachelor of Science in Midwifery": "BSM",
+  "Bachelor of Science in Hospitality Management": "BSHM",
+  "Bachelor of Science in Tourism Management": "BSTM",
+  "Bachelor of Science in Marine Transportation": "BSMT",
+  "Bachelor of Science in Marine Engineering": "BSMarE",
+  "Bachelor of Science in Mechanical Engineering": "BSME",
+  "Bachelor of Arts in Psychology": "BAPsych"
+};
+
+const getProgramFromSectionName = (sectionName) => {
+  if (!sectionName) return '';
+  const lastHyphenIndex = sectionName.lastIndexOf('-');
+  let programAbbr = '';
+  if (lastHyphenIndex !== -1) {
+    programAbbr = sectionName.slice(0, lastHyphenIndex).toUpperCase();
+  } else {
+    const match = sectionName.match(/^([A-Z-]+)(\d)([A-Z]*)$/i);
+    if (match) {
+      programAbbr = match[1].toUpperCase();
+    }
+  }
+  
+  if (!programAbbr) return '';
+  
+  const programName = Object.keys(PROGRAM_ABBREVIATIONS).find(
+    key => PROGRAM_ABBREVIATIONS[key].toUpperCase() === programAbbr
+  );
+  return programName || '';
+};
+
+const matchSectionToProgram = (sec, programName) => {
+  const programAbbr = PROGRAM_ABBREVIATIONS[programName] || '';
+  return programAbbr 
+    ? (sec.name.toUpperCase().startsWith(programAbbr.toUpperCase() + '-') || sec.name.toUpperCase().startsWith(programAbbr.toUpperCase())) 
+    : true;
+};
 
 const getYearDigit = (yl) => {
   if (yl === '1st Year') return '1';
@@ -29,7 +85,6 @@ export default function UserForm() {
     middleName: '',
     email: '',
     role: 'student',
-    userNumber: '',
     department: 'College of Computer Studies',
     program: 'Bachelor of Science in Information Technology',
     section: '',
@@ -39,238 +94,203 @@ export default function UserForm() {
   
   const [errorMsg, setErrorMsg] = useState('');
   const [isEditMode, setIsEditMode] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
-  const [successModalMessage, setSuccessModalMessage] = useState('');
-
   const [allSections, setAllSections] = useState([]);
-  const [allDepartments, setAllDepartments] = useState([]);
 
+  // Fetch sections from database
   useEffect(() => {
-    async function loadFormDependencies() {
-      const { data: depts } = await supabase.from('departments').select('*');
-      if (depts) setAllDepartments(depts);
-
-      const { data: secs } = await supabase.from('sections').select('*');
-      if (secs) setAllSections(secs);
+    async function loadSections() {
+      try {
+        const { data, error } = await supabase
+          .from('sections')
+          .select(`
+            section_id,
+            name,
+            departments ( name )
+          `);
+        if (error) throw error;
+        if (data) {
+          const mapped = data.map(s => {
+            let deptName = s.departments?.name || '';
+            if (deptName === 'College of IT' || deptName === 'College of CS') {
+              deptName = 'College of Computer Studies';
+            }
+            return {
+              id: s.section_id,
+              name: s.name,
+              program: s.program || getProgramFromSectionName(s.name) || 'Bachelor of Science in Information Technology',
+              department: deptName
+            };
+          });
+          setAllSections(mapped);
+        }
+      } catch (err) {
+        console.error('Error fetching sections:', err);
+      }
     }
-    loadFormDependencies();
+    loadSections();
   }, []);
 
   const availableSections = allSections.filter(sec => {
-    // Basic filter matching for legacy support, ideally we'd use department_id
-    const deptMatches = allDepartments.find(d => d.name === formData.department);
-    const matchesDept = sec.department_id === deptMatches?.department_id;
+    const matchesDept = sec.department === formData.department;
+    const matchesProg = matchSectionToProgram(sec, formData.program);
     const yearDigit = getYearDigit(formData.yearLevel);
     const matchesYear = yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true;
-    return matchesDept && matchesYear;
+    return matchesDept && matchesProg && matchesYear;
   });
 
+  // Fetch user data if in edit mode
   useEffect(() => {
-    if (userId) {
+    async function fetchUserData() {
+      if (!userId) return;
       setIsEditMode(true);
-      async function loadUser() {
-        const { data: existingUser } = await supabase
+      try {
+        const { data: existingUser, error } = await supabase
           .from('users')
-          .select('*, departments(name)')
+          .select(`
+            *,
+            departments ( name ),
+            sections ( name )
+          `)
           .eq('user_id', userId)
           .single();
-          
-        if (existingUser) {
-          let sectionName = '';
-          if (existingUser.section_id) {
-            const { data: secObj } = await supabase
-              .from('sections')
-              .select('name')
-              .eq('section_id', existingUser.section_id)
-              .single();
-            if (secObj) sectionName = secObj.name;
-          }
 
+        if (error) throw error;
+
+        if (existingUser) {
+          let dept = existingUser.departments?.name || 'College of Computer Studies';
+          if (dept === 'College of IT' || dept === 'College of CS') {
+            dept = 'College of Computer Studies';
+          }
+          
           setFormData({
-            lastName: existingUser.last_name,
-            firstName: existingUser.first_name,
+            lastName: existingUser.last_name || '',
+            firstName: existingUser.first_name || '',
             middleName: existingUser.middle_name || '',
-            email: existingUser.email,
-            role: existingUser.role,
-            userNumber: existingUser.user_number || '',
-            department: existingUser.departments?.name || 'College of Computer Studies',
-            program: '',
-            section: sectionName,
+            email: existingUser.email || '',
+            role: existingUser.role || 'student',
+            department: dept,
+            program: existingUser.program || getProgramFromSectionName(existingUser.sections?.name) || 'Bachelor of Science in Information Technology',
+            section: existingUser.sections?.name || (existingUser.role === 'student' ? 'Irregular' : ''),
             yearLevel: existingUser.year_level || '1st Year',
             status: existingUser.status || 'active'
           });
         } else {
           setErrorMsg('User not found in database.');
         }
+      } catch (err) {
+        console.error('Failed to load user:', err);
+        setErrorMsg('Failed to load user from database: ' + err.message);
       }
-      loadUser();
     }
+    fetchUserData();
   }, [userId]);
 
-  const executeSubmit = async () => {
-    setErrorMsg('');
-    setLoading(true);
-
-    const actorName = resolveActorName(profile, user);
-
-    try {
-      const deptMatch = allDepartments.find(d => d.name === formData.department);
-      if (!deptMatch) throw new Error('Department not found in database.');
-
-      const sectionMatch = allSections.find(s => s.name === formData.section);
-
-      if (isEditMode) {
-        const { error: updateErr } = await supabase.from('users').update({
-          first_name: formData.firstName.trim(),
-          last_name: formData.lastName.trim(),
-          middle_name: formData.middleName.trim(),
-          role: formData.role,
-          department_id: deptMatch.department_id,
-          year_level: formData.role === 'student' ? formData.yearLevel : null,
-          section_id: formData.role === 'student' ? (sectionMatch?.section_id || null) : null,
-          status: formData.status,
-          user_number: formData.userNumber.trim()
-        }).eq('user_id', userId);
-        
-        if (updateErr) throw updateErr;
-
-        await logActivity(
-          'User Update',
-          `Updated ${formData.role} account for ${formData.lastName}, ${formData.firstName} (${formData.email}) — Role: ${formData.role}, Department: ${formData.department}, Status: ${formData.status}.`,
-          actorName
-        );
-      } else {
-        // Create new user via Edge Function
-        const { data, error: invokeErr } = await supabase.functions.invoke('create-admin-user', {
-          body: {
-            email: formData.email.trim().toLowerCase(),
-            password: 'DemoPassword123!',
-            firstName: formData.firstName.trim(),
-            lastName: formData.lastName.trim(),
-            middleName: formData.middleName.trim(),
-            role: formData.role,
-            departmentId: deptMatch.department_id,
-            yearLevel: formData.role === 'student' ? formData.yearLevel : null,
-            sectionId: formData.role === 'student' ? (sectionMatch?.section_id || null) : null,
-            userNumber: formData.userNumber.trim()
-          }
-        });
-
-        if (invokeErr) {
-          throw new Error('Failed to create user. Ensure Edge Functions are running.');
-        }
-        if (data?.error) {
-          throw new Error(data.error);
-        }
-
-        // Client-side fallback update to ensure user_number is persisted in public.users
-        if (data?.user?.id) {
-          const { error: updateErr } = await supabase
-            .from('users')
-            .update({ user_number: formData.userNumber.trim() })
-            .eq('user_id', data.user.id);
-          if (updateErr) {
-            console.error('Failed to set user number on new user profile client-side:', updateErr);
-          }
-        }
-
-        await logActivity(
-          'User Creation',
-          `Registered new ${formData.role} account: ${formData.lastName}, ${formData.firstName} (${formData.email.trim().toLowerCase()}) — College: ${formData.department}${formData.role === 'student' ? `, Section: ${formData.section}, Year: ${formData.yearLevel}` : ''}.`,
-          actorName
-        );
-      }
-
-      setSuccessModalMessage(isEditMode ? "User account updated successfully!" : "User registered successfully!");
-      setIsSuccessModalOpen(true);
-    } catch (err) {
-      setErrorMsg(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const suggestUserNumber = async (role) => {
-    try {
-      const year = new Date().getFullYear();
-      const prefix = role === 'student' ? '' : role === 'admin' ? 'ADM-' : role === 'faculty' ? 'FAC-' : 'DN-';
-      
-      const { data, error } = await supabase
-        .from('users')
-        .select('user_number')
-        .eq('role', role)
-        .not('user_number', 'is', null);
-        
-      if (error) throw error;
-      
-      const existingNumbers = new Set(data.map(u => u.user_number));
-      
-      let seq = 1;
-      let suggested = '';
-      while (true) {
-        const seqStr = String(seq).padStart(5, '0');
-        suggested = `${prefix}${year}-${seqStr}`;
-        if (!existingNumbers.has(suggested)) {
-          break;
-        }
-        seq++;
-      }
-      return suggested;
-    } catch (e) {
-      console.error('Failed to suggest user number:', e);
-      const randomSeq = String(Math.floor(Math.random() * 90000) + 10000);
-      const prefix = role === 'student' ? '' : role === 'admin' ? 'ADM-' : role === 'faculty' ? 'FAC-' : 'DN-';
-      return `${prefix}${new Date().getFullYear()}-${randomSeq}`;
-    }
-  };
-
-  useEffect(() => {
-    if (!isEditMode && formData.role) {
-      suggestUserNumber(formData.role).then(num => {
-        setFormData(prev => ({ ...prev, userNumber: num }));
-      });
-    }
-  }, [formData.role, isEditMode]);
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
+    // Form Validations
+    if (!formData.lastName.trim() || !formData.firstName.trim() || !formData.email.trim()) {
+      setErrorMsg('Please fill in all required fields.');
+      return;
+    }
+
+    if (formData.role === 'student' && !formData.section) {
+      setErrorMsg('Please assign a section to the student.');
+      return;
+    }
+
+    // Verify email structure
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email.trim())) {
+      setErrorMsg('Please enter a valid email address.');
+      return;
+    }
+
     try {
-      if (!formData.lastName.trim() || !formData.firstName.trim() || !formData.email.trim()) {
-        throw new Error('Please fill in all required fields.');
+      // 1. Resolve department_id
+      const { data: deptData, error: deptErr } = await supabase
+        .from('departments')
+        .select('department_id')
+        .eq('name', formData.department)
+        .maybeSingle();
+
+      if (deptErr) throw deptErr;
+      const departmentId = deptData?.department_id || null;
+
+      // 2. Resolve section_id
+      let sectionId = null;
+      if (formData.role === 'student' && formData.section && formData.section !== 'Irregular') {
+        const { data: secData, error: secErr } = await supabase
+          .from('sections')
+          .select('section_id')
+          .eq('name', formData.section)
+          .maybeSingle();
+        if (secErr) throw secErr;
+        sectionId = secData?.section_id || null;
       }
 
-      if (!formData.userNumber.trim()) {
-        throw new Error('Please enter the ID Number.');
-      }
+      const userPayload = {
+        first_name: formData.firstName.trim(),
+        last_name: formData.lastName.trim(),
+        middle_name: formData.middleName.trim(),
+        email: formData.email.toLowerCase().trim(),
+        role: formData.role,
+        password_hash: 'managed_by_supabase_auth',
+        department_id: departmentId,
+        section_id: sectionId,
+        year_level: formData.role === 'student' ? formData.yearLevel : null,
+        status: formData.status
+      };
 
-      if (formData.role === 'student') {
-        const studentIdRegex = /^\d{4}-\d{5}$/;
-        if (!studentIdRegex.test(formData.userNumber.trim())) {
-          throw new Error('Student Number must follow the format YYYY-XXXXX (e.g. 2025-00001).');
-        }
+      if (isEditMode) {
+        const { error } = await supabase
+          .from('users')
+          .update(userPayload)
+          .eq('user_id', userId);
+        
+        if (error) throw error;
+
+        const actorName = resolveActorName(profile, user);
+        await logActivity(
+          'User Update',
+          `Updated account details for ${formData.lastName}, ${formData.firstName} (${formData.email})`,
+          actorName
+        );
       } else {
-        const employeeIdRegex = /^(ADM|FAC|DN)-\d{4}-\d{5}$/;
-        if (!employeeIdRegex.test(formData.userNumber.trim())) {
-          throw new Error('Employee ID must follow the format ADM-YYYY-XXXXX, FAC-YYYY-XXXXX, or DN-YYYY-XXXXX depending on their role.');
-        }
+        // Generate user number
+        const prefix = formData.role === 'student' ? '' : formData.role === 'admin' ? 'ADM-' : formData.role === 'faculty' ? 'FAC-' : 'DN-';
+        const year = new Date().getFullYear();
+        
+        // Fetch count to get sequence number
+        const { count } = await supabase
+          .from('users')
+          .select('user_id', { count: 'exact', head: true })
+          .eq('role', formData.role);
+
+        const nextSeq = String((count || 0) + 1).padStart(5, '0');
+        const userNumber = `${prefix}${year}-${nextSeq}`;
+        
+        userPayload.user_number = userNumber;
+
+        const { error } = await supabase
+          .from('users')
+          .insert(userPayload);
+        
+        if (error) throw error;
+
+        const actorName = resolveActorName(profile, user);
+        await logActivity(
+          'User Creation',
+          `Created new ${formData.role} account: ${formData.lastName}, ${formData.firstName} (${formData.email})`,
+          actorName
+        );
       }
 
-      if (formData.role === 'student' && !formData.section) {
-        throw new Error('Please assign a section to the student.');
-      }
-
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(formData.email.trim())) {
-        throw new Error('Please enter a valid email address.');
-      }
-
-      setShowConfirmModal(true);
+      navigate('/admin/userlist');
     } catch (err) {
-      setErrorMsg(err.message);
+      console.error('Error saving user:', err);
+      setErrorMsg('Failed to save user: ' + err.message);
     }
   };
 
@@ -283,7 +303,7 @@ export default function UserForm() {
 
       <div className="p-8 overflow-y-auto flex-1 max-w-2xl mx-auto w-full space-y-6">
         
-        {/* Navigation Breadcrumb detail */}
+        {/* Navigation Breadcrumb */}
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/admin/userlist')}>
             User Management
@@ -351,31 +371,31 @@ export default function UserForm() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Email */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-750 uppercase tracking-wide">Email Address <span className="text-rose-500">*</span></label>
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Email Address <span className="text-rose-500">*</span></label>
               <input 
                 type="email" 
                 required
                 value={formData.email}
                 onChange={(e) => setFormData({...formData, email: e.target.value})}
-                className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-350 focus:border-sage-500 rounded-lg text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500"
+                className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500"
                 placeholder="e.g. user@sage.edu.ph"
               />
             </div>
 
             {/* Role */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-750 uppercase tracking-wide">Portal Role</label>
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Portal Role</label>
               <select
                 value={formData.role}
                 onChange={(e) => {
                   const nextRole = e.target.value;
                   const yearDigit = getYearDigit(formData.yearLevel || '1st Year');
-                  const deptObj = allDepartments.find(d => d.name === formData.department);
                   const filteredSecs = allSections.filter(
-                    sec => sec.department_id === deptObj?.department_id && 
+                    sec => sec.department === formData.department && 
+                           matchSectionToProgram(sec, formData.program) &&
                            (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
                   );
                   setFormData({
@@ -384,7 +404,7 @@ export default function UserForm() {
                     section: nextRole === 'student' && filteredSecs.length > 0 ? filteredSecs[0].name : ''
                   });
                 }}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-350 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
               >
                 <option value="student">Student</option>
                 <option value="faculty">Faculty</option>
@@ -392,55 +412,59 @@ export default function UserForm() {
                 <option value="admin">Administrator</option>
               </select>
             </div>
+          </div>
 
-            {/* ID Number / Student Number */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Department */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-750 uppercase tracking-wide">
-                {formData.role === 'student' ? 'Student Number' : 'Employee ID'} <span className="text-rose-500">*</span>
-              </label>
-              <input 
-                type="text" 
-                required
-                value={formData.userNumber}
-                onChange={(e) => setFormData({...formData, userNumber: e.target.value})}
-                className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-350 focus:border-sage-500 rounded-lg text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500"
-                placeholder={formData.role === 'student' ? 'e.g. 2026-00001' : 'e.g. FAC-2026-00001'}
-              />
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">College / School <span className="text-rose-500">*</span></label>
+              <select
+                value={formData.department}
+                onChange={(e) => {
+                  const selectedCollege = e.target.value;
+                  const defaultProgram = DYCI_ACADEMIC_PROGRAMS[selectedCollege]?.[0] || '';
+                  const yearDigit = getYearDigit(formData.yearLevel || '1st Year');
+                  const filteredSecs = allSections.filter(
+                    sec => sec.department === selectedCollege && 
+                           matchSectionToProgram(sec, defaultProgram) &&
+                           (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
+                  );
+                  setFormData({
+                    ...formData,
+                    department: selectedCollege,
+                    program: defaultProgram,
+                    section: filteredSecs.length > 0 ? filteredSecs[0].name : ''
+                  });
+                }}
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+              >
+                {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
+                  <option key={college} value={college}>{college}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Status Checkbox */}
+            <div className="flex flex-col gap-1.5 justify-center">
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">Account Active Status</label>
+              <div className="flex items-center gap-3">
+                <input 
+                  type="checkbox"
+                  id="status-toggle"
+                  checked={formData.status === 'active'}
+                  onChange={(e) => setFormData({...formData, status: e.target.checked ? 'active' : 'inactive'})}
+                  className="w-4 h-4 text-sage-600 border-slate-200 rounded focus:ring-sage-500 outline-none cursor-pointer"
+                />
+                <label htmlFor="status-toggle" className="text-sm font-medium text-slate-700 cursor-pointer select-none">
+                  Enable account logins and portals access
+                </label>
+              </div>
             </div>
           </div>
 
-          {/* Department / College */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">College / School <span className="text-rose-500">*</span></label>
-            <select
-              value={formData.department}
-              onChange={(e) => {
-                const selectedCollege = e.target.value;
-                const defaultProgram = DYCI_ACADEMIC_PROGRAMS[selectedCollege]?.[0] || '';
-                const yearDigit = getYearDigit(formData.yearLevel || '1st Year');
-                const deptObj = allDepartments.find(d => d.name === selectedCollege);
-                const filteredSecs = allSections.filter(
-                  sec => sec.department_id === deptObj?.department_id && 
-                         (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
-                );
-                setFormData({
-                  ...formData,
-                  department: selectedCollege,
-                  program: defaultProgram,
-                  section: filteredSecs.length > 0 ? filteredSecs[0].name : ''
-                });
-              }}
-              className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
-            >
-              {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
-                <option key={college} value={college}>{college}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Dynamic Degree Program & Section Selection for Students */}
-          {formData.role === 'student' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Dynamic Degree Program & Section Selection for Student/Faculty */}
+          {(formData.role === 'student' || formData.role === 'faculty') && (
+            <div className={`grid grid-cols-1 ${formData.role === 'student' ? 'md:grid-cols-3' : ''} gap-4`}>
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Degree Program <span className="text-rose-500">*</span></label>
                 <select
@@ -448,9 +472,9 @@ export default function UserForm() {
                   onChange={(e) => {
                     const nextProgram = e.target.value;
                     const yearDigit = getYearDigit(formData.yearLevel);
-                    const deptObj = allDepartments.find(d => d.name === formData.department);
                     const filteredSecs = allSections.filter(
-                      sec => sec.department_id === deptObj?.department_id && 
+                      sec => sec.department === formData.department && 
+                             matchSectionToProgram(sec, nextProgram) &&
                              (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
                     );
                     setFormData({
@@ -467,64 +491,55 @@ export default function UserForm() {
                 </select>
               </div>
 
-              {/* Year Level Select */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Year Level <span className="text-rose-500">*</span></label>
-                <select
-                  value={formData.yearLevel}
-                  onChange={(e) => {
-                    const nextYear = e.target.value;
-                    const yearDigit = getYearDigit(nextYear);
-                    const deptObj = allDepartments.find(d => d.name === formData.department);
-                    const filteredSecs = allSections.filter(
-                      sec => sec.department_id === deptObj?.department_id && 
-                             (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
-                    );
-                    setFormData({
-                      ...formData,
-                      yearLevel: nextYear,
-                      section: filteredSecs.length > 0 ? filteredSecs[0].name : ''
-                    });
-                  }}
-                  className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-350 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
-                >
-                  <option value="1st Year">1st Year</option>
-                  <option value="2nd Year">2nd Year</option>
-                  <option value="3rd Year">3rd Year</option>
-                  <option value="4th Year">4th Year</option>
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Assigned Section <span className="text-rose-500">*</span></label>
-                {availableSections.length > 0 ? (
-                  <select
-                    value={formData.section}
-                    onChange={(e) => setFormData({...formData, section: e.target.value})}
-                    className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
-                  >
-                    <option value="">-- Select Section --</option>
-                    {availableSections.map(sec => (
-                      <option key={sec.id} value={sec.name}>{sec.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg flex flex-col gap-1">
-                    <span>No active sections preloaded for this year/program.</span>
-                    <span className="text-[10px] text-slate-500">
-                      Please create a section in the{' '}
-                      <button
-                        type="button"
-                        onClick={() => navigate('/admin/sections')}
-                        className="text-sage-600 font-semibold underline hover:text-sage-700"
-                      >
-                        Sections Database
-                      </button>{' '}
-                      first.
-                    </span>
+              {formData.role === 'student' && (
+                <>
+                  {/* Year Level Select */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Year Level <span className="text-rose-500">*</span></label>
+                    <select
+                      value={formData.yearLevel}
+                      onChange={(e) => {
+                        const nextYear = e.target.value;
+                        const yearDigit = getYearDigit(nextYear);
+                        const filteredSecs = allSections.filter(
+                          sec => sec.department === formData.department && 
+                                 matchSectionToProgram(sec, formData.program) &&
+                                 (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
+                        );
+                        setFormData({
+                          ...formData,
+                          yearLevel: nextYear,
+                          section: filteredSecs.length > 0 ? filteredSecs[0].name : ''
+                        });
+                      }}
+                      className="block w-full bg-white border border-slate-250 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+                    >
+                      <option value="1st Year">1st Year</option>
+                      <option value="2nd Year">2nd Year</option>
+                      <option value="3rd Year">3rd Year</option>
+                      <option value="4th Year">4th Year</option>
+                    </select>
                   </div>
-                )}
-              </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Assigned Section <span className="text-rose-500">*</span></label>
+                    <select
+                      value={formData.section}
+                      onChange={(e) => setFormData({...formData, section: e.target.value})}
+                      className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+                    >
+                      <option value="">-- Select Section --</option>
+                      <option value="Irregular">Irregular Student</option>
+                      {formData.section && formData.section !== 'Irregular' && !availableSections.some(sec => sec.name === formData.section) && (
+                        <option value={formData.section}>{formData.section}</option>
+                      )}
+                      {availableSections.map(sec => (
+                        <option key={sec.id} value={sec.name}>{sec.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -539,67 +554,14 @@ export default function UserForm() {
             </button>
             <button 
               type="submit" 
-              disabled={loading}
-              className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50"
+              className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
             >
-              <Save className="h-4 w-4" /> {loading ? "Saving..." : (isEditMode ? "Save Changes" : "Register User")}
+              <Save className="h-4 w-4" /> {isEditMode ? "Save Changes" : "Register User"}
             </button>
           </div>
         </form>
 
       </div>
-
-      {/* Custom Confirmation Modal */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-xl border border-slate-200 max-w-sm w-full shadow-lg p-6 space-y-4 text-center animate-in zoom-in-95 duration-200">
-            <div className="mx-auto w-12 h-12 rounded-full bg-sage-50 text-sage-600 flex items-center justify-center">
-              <User className="h-6 w-6" />
-            </div>
-            <div className="space-y-1.5">
-              <h3 className="text-base font-bold text-slate-900 font-display">
-                {isEditMode ? "Confirm Save Changes" : "Confirm Registration"}
-              </h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                {isEditMode ? (
-                  <>
-                    Are you sure you want to save changes for user <span className="font-bold text-slate-800">{formData.firstName} {formData.lastName}</span>?
-                  </>
-                ) : (
-                  <>
-                    Are you sure you want to register a new <span className="font-bold text-slate-850 uppercase font-mono">{formData.role}</span> account for <span className="font-bold text-slate-800">{formData.firstName} {formData.lastName}</span> ({formData.email})?
-                  </>
-                )}
-              </p>
-            </div>
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowConfirmModal(false)}
-                className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowConfirmModal(false);
-                  executeSubmit();
-                }}
-                className="flex-1 px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm"
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <SuccessModal
-        isOpen={isSuccessModalOpen}
-        message={successModalMessage}
-        onClose={() => navigate('/admin/userlist')}
-      />
     </>
   );
 }

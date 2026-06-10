@@ -376,7 +376,7 @@ export default function Dashboard() {
               <p className="text-xs text-slate-500">
                 {pendingEvals > 0 
                   ? `You have ${pendingEvals} pending instructor evaluation surveys.` 
-                  : 'All scheduled faculty appraisals are fully completed. Thank you for your feedback!'}
+                  : 'All scheduled faculty evaluations are fully completed. Thank you for your feedback!'}
               </p>
               <Link to="/student/evallist" className="inline-flex items-center gap-1 text-xs font-bold text-sage-600 hover:underline">
                 Open Evaluations List <ChevronRight className="h-3.5 w-3.5" />

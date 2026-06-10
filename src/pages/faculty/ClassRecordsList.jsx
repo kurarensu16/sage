@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, Filter, Users, Calendar, BookOpen, Settings, Edit3, Lock } from 'lucide-react';
+import { Search, Filter, Users, Calendar, BookOpen, Settings, Edit3, Lock, FileSpreadsheet } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
@@ -242,16 +242,33 @@ export default function ClassRecordsList() {
                       
                       <div className="p-4 bg-slate-50 border-t border-slate-100 rounded-b-xl grid grid-cols-2 gap-3">
                           {cls.status === 'Pending Setup' ? (
-                              <Link to={`/faculty/gradecomponentssetup?id=${cls.id}`} className="col-span-2 flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm">
-                                  <Settings className="h-4 w-4" /> Setup Grade Weights
-                              </Link>
+                              <>
+                                  <Link to={`/faculty/gradecomponentssetup?id=${cls.id}`} className="col-span-2 flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm">
+                                      <Settings className="h-4 w-4" /> Setup Grade Weights
+                                  </Link>
+                                  <Link to={`/faculty/classattendance?classId=${cls.id}`} className="col-span-2 flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:border-sage-300 rounded-lg transition-colors">
+                                      <Calendar className="h-4 w-4 text-sage-600" /> Track Attendance
+                                  </Link>
+                              </>
                           ) : (
                               <>
                                   <Link to={`/faculty/scoreinput?id=${cls.id}`} className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm">
                                       <Edit3 className="h-4 w-4" /> Input Scores
                                   </Link>
+                                  <Link to={`/faculty/classattendance?classId=${cls.id}`} className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 hover:border-sage-300 rounded-lg transition-colors">
+                                      <Calendar className="h-4 w-4 text-sage-600" /> Track Attendance
+                                  </Link>
+                                  <Link
+                                      to={`/faculty/postedgradesview?id=${cls.id}&export=1`}
+                                      className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:border-emerald-400 rounded-lg transition-colors"
+                                  >
+                                      <FileSpreadsheet className="h-4 w-4" /> Export Grades
+                                  </Link>
                                   <Link to={`/faculty/postedgradesview?id=${cls.id}`} className="flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-lg transition-colors">
                                       <Lock className="h-4 w-4 text-slate-450" /> View Posted
+                                  </Link>
+                                  <Link to={`/faculty/gradecomputationpreview?id=${cls.id}`} className="col-span-2 flex items-center justify-center gap-2 w-full px-4 py-2 text-sm font-medium border border-slate-200 bg-white text-slate-750 hover:border-sage-300 rounded-lg transition-colors">
+                                      <FileSpreadsheet className="h-4 w-4 text-slate-450" /> Computation Preview
                                   </Link>
                               </>
                           )}

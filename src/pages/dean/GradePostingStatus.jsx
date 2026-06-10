@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, Filter } from 'lucide-react';
 import { mockDb } from '../../lib/mockDb';
@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
 export default function GradePostingStatus() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   
   // Filters
   const [deptFilter, setDeptFilter] = useState('');
@@ -17,10 +17,70 @@ export default function GradePostingStatus() {
   const [triggerRefresh, setTriggerRefresh] = useState(0);
   const [selectedOverrideClass, setSelectedOverrideClass] = useState('BSITCPR323');
 
-  const classrooms = useMemo(() => {
-    return mockDb.getClassrooms().filter(c => c.status === 'active');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [triggerRefresh]);
+  const [classrooms, setClassrooms] = useState([]);
+  const [dbLoading, setDbLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    async function fetchClassrooms() {
+      if (!profile?.department_id) {
+        // Fallback to mockDb classrooms if profile/department_id not loaded yet
+        setClassrooms(mockDb.getClassrooms().filter(c => c.status === 'active'));
+        setDbLoading(false);
+        return;
+      }
+      
+      try {
+        setDbLoading(true);
+        // Query class_records belonging to sections in the Dean's department
+        const { data, error } = await supabase
+          .from('class_records')
+          .select(`
+            class_record_id,
+            status,
+            school_year,
+            semester,
+            subjects ( code, name ),
+            sections!inner ( name, department_id, school_year, semester ),
+            faculty:users!faculty_id ( first_name, last_name )
+          `)
+          .eq('status', 'active')
+          .eq('sections.department_id', profile.department_id);
+          
+        if (error) throw error;
+        
+        if (active && data) {
+          const mapped = data.map(c => ({
+            id: c.class_record_id,
+            subjectCode: c.subjects?.code || 'N/A',
+            subjectName: c.subjects?.name || 'N/A',
+            section: c.sections?.name || 'N/A',
+            facultyName: c.faculty ? `${c.faculty.first_name} ${c.faculty.last_name}` : 'Unassigned',
+            schoolYear: c.sections?.school_year || c.school_year || '2025-2026',
+            semester: c.sections?.semester || c.semester || '2nd',
+            status: c.status
+          }));
+          setClassrooms(mapped);
+          if (mapped.length > 0) {
+            setSelectedOverrideClass(mapped[0].id || mapped[0].subjectCode);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load classrooms from database, falling back to mock:', err);
+        if (active) {
+          const mockClasses = mockDb.getClassrooms().filter(c => c.status === 'active');
+          setClassrooms(mockClasses);
+          if (mockClasses.length > 0) {
+            setSelectedOverrideClass(mockClasses[0].subjectCode);
+          }
+        }
+      } finally {
+        if (active) setDbLoading(false);
+      }
+    }
+    fetchClassrooms();
+    return () => { active = false; };
+  }, [profile?.department_id, triggerRefresh]);
 
   const lockedMilestones = useMemo(() => {
     return JSON.parse(localStorage.getItem(`locked_milestones_${selectedOverrideClass}`) || '[]');
@@ -171,10 +231,11 @@ export default function GradePostingStatus() {
                 onChange={(e) => setSelectedOverrideClass(e.target.value)}
                 className="bg-white border border-slate-200 hover:border-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all cursor-pointer text-slate-700 shadow-sm"
               >
-                <option value="BSITCPR323">BSITCPR323 - Capstone 1</option>
-                <option value="IT101">IT101 - Intro to Computing</option>
-                <option value="IT201">IT201 - Data Structures</option>
-                <option value="CS301">CS301 - Artificial Intelligence</option>
+                {classrooms.map(c => (
+                  <option key={c.id || c.subjectCode} value={c.id || c.subjectCode}>
+                    {c.subjectCode} - {c.section} ({c.subjectName})
+                  </option>
+                ))}
               </select>
             </div>
           </div>

@@ -131,11 +131,11 @@ The system uses the **Philippine GWA scale (1.00–5.00)** where:
 - Passing threshold = `3.00`
 
 ### Grade Tier Mapping
-| Grade Range | Tier | Color |
+| Grade Range / Status | Tier | Color |
 |---|---|---|
 | 1.00 – 2.50 | Passed / Good | `emerald` |
 | 2.51 – 3.00 | Borderline | `amber` |
-| 3.01 – 5.00 | Failed / Critical | `rose` |
+| 3.01 – 5.00 / FDA / Dropped | Failed / Critical | `rose` |
 | Not yet posted | Pending | `blue` |
 | Missing score | Critical | `rose` |
 
@@ -275,6 +275,11 @@ AI-generated content (student recommendations, faculty fitness predictions) must
 // Locked (posted grade)
 <Badge className="bg-slate-100 text-slate-600 border border-slate-200 rounded-full">
   Locked
+</Badge>
+
+// Failure Due to Absences (FDA)
+<Badge className="bg-rose-50 text-rose-700 border border-rose-200 rounded-full animate-pulse">
+  FDA (4 Absences)
 </Badge>
 ```
 
@@ -549,6 +554,7 @@ All icons use `lucide-react`. Standard sizes:
 ### Faculty
 - BookOpen `BookOpen` — Dashboard
 - TableProperties `TableProperties` — Class Records
+- Calendar `Calendar` — Class Attendance
 - ClipboardList `ClipboardList` — Score Input
 - Send `Send` — Post Grades
 - FileText `FileText` — Evaluation Results
