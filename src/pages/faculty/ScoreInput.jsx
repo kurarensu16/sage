@@ -25,6 +25,7 @@ export default function ScoreInput() {
   const [studentLocks, setStudentLocks] = useState({});
   const [savingDrafts, setSavingDrafts] = useState(false);
   const [classesList, setClassesList] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Success and posting modals
   const [showPopup, setShowPopup] = useState(false);
@@ -994,6 +995,22 @@ export default function ScoreInput() {
 
           <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
 
+          {/* Search Student */}
+          <div className="flex flex-col gap-1 min-w-[200px]">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-sans">Search Student</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by name..."
+                className="w-full bg-white border border-slate-200 hover:border-sage-350 px-3 py-2 rounded-lg text-xs outline-none focus:ring-1 focus:ring-sage-500 focus:border-sage-500 transition-all text-slate-705 font-semibold font-sans placeholder-slate-400"
+              />
+            </div>
+          </div>
+
+          <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
+
           {/* Stats Overview */}
           <div className="flex items-center gap-6">
             <div>
@@ -1523,24 +1540,29 @@ export default function ScoreInput() {
                           )}
                         </tr>
 
-                        {students.map((student, idx) => (
-                          <StudentRow 
-                            key={student.id} 
-                            student={student} 
-                            rowNo={idx + 1}
-                            initialPeriods={{
-                              Prelim: {},
-                              Midterm: {},
-                              'Semi-Final': {},
-                              Final: {}
-                            }}
-                            viewMode={viewMode}
-                            classCode={classRecordId}
-                            maxItems={maxItems}
-                            lockedMilestones={lockedMilestones}
-                            studentLocked={studentLocks[student.id]}
-                          />
-                        ))}
+                        {students
+                          .filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                          .map((student) => {
+                            const originalIdx = students.findIndex(s => s.id === student.id);
+                            return (
+                              <StudentRow 
+                                key={student.id} 
+                                student={student} 
+                                rowNo={originalIdx + 1}
+                                initialPeriods={{
+                                  Prelim: {},
+                                  Midterm: {},
+                                  'Semi-Final': {},
+                                  Final: {}
+                                }}
+                                viewMode={viewMode}
+                                classCode={classRecordId}
+                                maxItems={maxItems}
+                                lockedMilestones={lockedMilestones}
+                                studentLocked={studentLocks[student.id]}
+                              />
+                            );
+                          })}
                     </tbody>
                 </table>
             </div>
