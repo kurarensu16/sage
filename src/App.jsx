@@ -12,19 +12,23 @@ import RoleGuard from './components/layout/RoleGuard';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminUserList from './pages/admin/UserList';
 import AdminUserForm from './pages/admin/UserForm';
-import AdminEvalFormBuilder from './pages/admin/EvalFormBuilder';
-import AdminEvalFormsList from './pages/admin/EvalFormsList';
-import AdminEvalWindowList from './pages/admin/EvalWindowList';
-import AdminEvalWindowForm from './pages/admin/EvalWindowForm';
 import AdminGradeOverride from './pages/admin/GradeOverride';
 import AdminAuditLog from './pages/admin/AuditLog';
-import AdminClassManagementList from './pages/admin/ClassManagementList';
-import AdminClassManagementForm from './pages/admin/ClassManagementForm';
 import AdminSubjectList from './pages/admin/SubjectList';
 import AdminSubjectForm from './pages/admin/SubjectForm';
 import AdminSectionList from './pages/admin/SectionList';
 import AdminSectionForm from './pages/admin/SectionForm';
 import AdminNotifications from './pages/admin/Notifications';
+import OfficeDashboard from './pages/office/Dashboard';
+import OfficeRosterImport from './pages/office/RosterImport';
+import OfficeComplianceAudit from './pages/office/ComplianceAudit';
+import OfficeSubjectAssignmentList from './pages/office/SubjectAssignmentList';
+import OfficeSubjectAssignmentForm from './pages/office/SubjectAssignmentForm';
+import OfficeEvalBuilder from './pages/office/EvalBuilder';
+import OfficeEvalFormsList from './pages/office/EvalFormsList';
+import OfficeEvalWindowList from './pages/office/EvalWindowList';
+import OfficeEvalWindowForm from './pages/office/EvalWindowForm';
+import OfficeStudentSections from './pages/office/StudentSections';
 import DeanDashboard from './pages/dean/Dashboard';
 import DeanGradePostingStatus from './pages/dean/GradePostingStatus';
 import DeanGradeDistribution from './pages/dean/GradeDistribution';
@@ -71,20 +75,29 @@ function App() {
               <Route path="/admin/dashboard" element={<AdminDashboard />} />
               <Route path="/admin/userlist" element={<AdminUserList />} />
               <Route path="/admin/userform" element={<AdminUserForm />} />
-              <Route path="/admin/evalformbuilder" element={<AdminEvalFormBuilder />} />
-              <Route path="/admin/evalformslist" element={<AdminEvalFormsList />} />
-              <Route path="/admin/evalwindowlist" element={<AdminEvalWindowList />} />
-              <Route path="/admin/evalwindowform" element={<AdminEvalWindowForm />} />
               <Route path="/admin/gradeoverride" element={<AdminGradeOverride />} />
               <Route path="/admin/auditlog" element={<AdminAuditLog />} />
-              <Route path="/admin/classmanagementlist" element={<AdminClassManagementList />} />
-              <Route path="/admin/classmanagementform" element={<AdminClassManagementForm />} />
               <Route path="/admin/subjectlist" element={<AdminSubjectList />} />
               <Route path="/admin/subjectform" element={<AdminSubjectForm />} />
               <Route path="/admin/sectionlist" element={<AdminSectionList />} />
               <Route path="/admin/sectionform" element={<AdminSectionForm />} />
               <Route path="/admin/notifications" element={<AdminNotifications />} />
               <Route path="/admin/settings" element={<Settings />} />
+            </Route>
+
+            {/* Office Routes */}
+            <Route element={<RoleGuard allowedRoles={['office']} />}>
+              <Route path="/office/dashboard" element={<OfficeDashboard />} />
+              <Route path="/office/rosterimport" element={<OfficeRosterImport />} />
+              <Route path="/office/complianceaudit" element={<OfficeComplianceAudit />} />
+              <Route path="/office/subjectassignmentlist" element={<OfficeSubjectAssignmentList />} />
+              <Route path="/office/subjectassignmentform" element={<OfficeSubjectAssignmentForm />} />
+              <Route path="/office/evalbuilder" element={<OfficeEvalBuilder />} />
+              <Route path="/office/evalformslist" element={<OfficeEvalFormsList />} />
+              <Route path="/office/evalwindowlist" element={<OfficeEvalWindowList />} />
+              <Route path="/office/evalwindowform" element={<OfficeEvalWindowForm />} />
+              <Route path="/office/studentsections" element={<OfficeStudentSections />} />
+              <Route path="/office/settings" element={<Settings />} />
             </Route>
 
             {/* Dean Routes */}

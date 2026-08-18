@@ -28,7 +28,7 @@ All data operations go through `src/lib/mockDb.js` which uses `localStorage`. Th
 ## Step 1: Supabase Project Setup
 
 - [ ] Create Supabase project for SAGE
-- [ ] Generate SQL migrations for all 19 tables from the ERD in `capstone-system-design-v2.md`
+- [ ] Generate SQL migrations for all 21 tables from the ERD in `SAGE_DATABASE_SCHEMA.md`
 - [ ] Create `.env` file with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
 - [ ] Install `@supabase/supabase-js`
 - [ ] Create `src/lib/supabase.js` — shared Supabase client
@@ -48,20 +48,20 @@ export const supabase = createClient(
 
 | mockDb Function | Supabase Equivalent | Table(s) |
 |---|---|---|
-| `getUsers()` | `supabase.from('users').select('*')` | `users` |
-| `saveUser(user)` | `supabase.from('users').upsert(user)` | `users` |
-| `deleteUser(id)` | `supabase.from('users').delete().eq('user_id', id)` | `users` |
-| `getClassrooms()` | `supabase.from('class_records').select('*, users!faculty_id(*), subjects(*), sections(*)')` | `class_records` + joins |
+| `getUsers()` | `supabase.from('profiles').select('*')` | `profiles` |
+| `saveUser(user)` | `supabase.from('profiles').upsert(user)` | `profiles` |
+| `deleteUser(id)` | `supabase.from('profiles').delete().eq('user_id', id)` | `profiles` |
+| `getClassrooms()` | `supabase.from('class_records').select('*, profiles!faculty_id(*), subjects(*), sections(*)')` | `class_records` + joins |
 | `saveClassroom(cr)` | `supabase.from('class_records').upsert(cr)` | `class_records` |
 | `reassignFaculty()` | Transaction: update `class_records` + insert `class_faculty_log` | `class_records`, `class_faculty_log` |
 | `archiveClassroom()` | `supabase.from('class_records').update({ status: 'archived' })` | `class_records` |
 | `getEvalTemplates()` | `supabase.from('evaluation_forms').select('*, evaluation_criteria(*)')` | `evaluation_forms`, `evaluation_criteria` |
 | `saveEvalTemplate()` | Transaction: upsert form + upsert criteria | `evaluation_forms`, `evaluation_criteria` |
 | `deleteEvalTemplate()` | Cascade delete form + criteria | `evaluation_forms` |
-| `getEvalWindows()` | `supabase.from('evaluation_windows').select('*, users(*), evaluation_forms(*)')` | `evaluation_windows` + joins |
+| `getEvalWindows()` | `supabase.from('evaluation_windows').select('*, profiles(*)')` | `evaluation_windows` + joins |
 | `saveEvalWindow()` | `supabase.from('evaluation_windows').upsert()` | `evaluation_windows` |
 | `deleteEvalWindow()` | `supabase.from('evaluation_windows').delete()` | `evaluation_windows` |
-| `getPostedGrades()` | `supabase.from('posted_grades').select('*, users(*), class_records(*)')` | `posted_grades` + joins |
+| `getPostedGrades()` | `supabase.from('posted_grades').select('*, profiles(*), class_records(*)')` | `posted_grades` + joins |
 | `overrideGrade()` | `supabase.from('posted_grades').update({ ... })` | `posted_grades` |
 | `getSubjects()` | `supabase.from('subjects').select('*')` | `subjects` |
 | `saveSubject()` | `supabase.from('subjects').upsert()` | `subjects` |
@@ -147,14 +147,14 @@ export const supabase = createClient(
 ## Step 4: Seed Data
 
 Convert all default arrays from `mockDb.js` into `supabase/seed.sql`:
-- `defaultUsers` → `INSERT INTO users`
+- `defaultUsers` → `INSERT INTO profiles`
 - `defaultClassrooms` → `INSERT INTO class_records`
 - `defaultSubjects` → `INSERT INTO subjects`
 - `defaultSections` → `INSERT INTO sections`
-- `defaultEvalTemplates` → `INSERT INTO evaluation_forms` + `evaluation_criteria`
+- `defaultEvalTemplates` → `INSERT INTO evaluation_criteria`
 - `defaultEvalWindows` → `INSERT INTO evaluation_windows`
 - `defaultPostedGrades` → `INSERT INTO posted_grades`
-- `defaultLogs` → `INSERT INTO activity_logs`
+- `defaultLogs` → `INSERT INTO audit_logs`
 
 ---
 
@@ -162,28 +162,27 @@ Convert all default arrays from `mockDb.js` into `supabase/seed.sql`:
 
 | Table | Policy | Rule |
 |---|---|---|
-| `users` | Admin full access | `role = 'admin'` |
+| `profiles` | Admin full access | `role = 'admin'` |
 | `posted_grades` | Students see own only | `student_id = auth.uid()` (FR22) |
 | `evaluation_responses` | Anonymous write-only | No read access to link student identity (NFR01) |
-| `component_scores` | Faculty write own classes | `faculty_id = auth.uid()` via `class_records` join |
-| `ai_student_recommendations` | Students see own only | `student_id = auth.uid()` |
-| `ai_faculty_predictions` | Faculty see own, Dean sees all | `faculty_id = auth.uid() OR role = 'dean'` |
+| `draft_scores` | Faculty write own classes | `faculty_id = auth.uid()` via `class_records` join |
+| `ai_counseling_logs` | Students see own only | `student_id = auth.uid()` |
 
 ---
 
 ## Progress Tracker
 
-- [ ] Step 1: Supabase project setup
-- [ ] Step 2: Create `supabaseDb.js` drop-in replacement
-- [ ] Step 3A: Migrate Admin pages (15 files)
-- [ ] Step 3B: Migrate Dean pages (7 files)
-- [ ] Step 3C: Wire Faculty pages (9 files)
-- [ ] Step 3D: Wire Student pages (7 files)
-- [ ] Step 3E: Wire Auth pages (3 files)
-- [ ] Step 4: Seed data
-- [ ] Step 5: RLS policies
-- [ ] Delete `mockDb.js` (final step)
+- [X] Step 1: Supabase project setup (`ettnwknyhdhehoclrwwh.supabase.co`)
+- [X] Step 2: Database schemas & migrations for all 21 core tables
+- [X] Step 3A: Migrate Admin pages (all files connected via direct Supabase queries)
+- [X] Step 3B: Migrate Dean pages (all files connected via direct Supabase queries)
+- [X] Step 3C: Wire Faculty pages (drafts, score input, grade posting, unlock requests wired to Supabase)
+- [X] Step 3D: Wire Student pages (posted grades, evaluations, insights wired to Supabase)
+- [X] Step 3E: Wire Auth & College Office pages (real session & profiles from Supabase)
+- [X] Step 4: Seed data (all departments, programs, sections, subjects, users, and class records populated)
+- [X] Step 5: Deprecate `mockDb.js` (zero runtime imports across application)
 
 ---
 
 *End of Supabase Migration Workflow — SAGE, DYCI Capstone Project*
+

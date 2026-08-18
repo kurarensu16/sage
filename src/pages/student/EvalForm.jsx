@@ -66,6 +66,7 @@ export default function EvalForm() {
             window_id,
             form_id,
             faculty_id,
+            close_at,
             faculty:users!evaluation_windows_faculty_id_fkey ( first_name, last_name )
           `)
           .eq('window_id', windowId)
@@ -155,6 +156,7 @@ export default function EvalForm() {
     try {
       // 1. Generate anonymous token to ensure response privacy (FR25)
       const token = await sha256(user.id + "_" + windowId);
+      const isOnTime = windowInfo?.close_at ? new Date() <= new Date(windowInfo.close_at) : true;
 
       // 2. Insert evaluation response row
       const { data: resp, error: respErr } = await supabase
@@ -162,7 +164,8 @@ export default function EvalForm() {
         .insert({
           window_id: windowId,
           anonymous_token: token,
-          student_id: user.id
+          student_id: user.id,
+          is_on_time: isOnTime
         })
         .select('response_id')
         .single();

@@ -12,8 +12,6 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
-
-
 // Helper to check pending evaluations
 const checkPendingEvals = async (studentId, sectionId) => {
   const now = new Date().toISOString();
@@ -100,7 +98,7 @@ export default function Dashboard() {
           .select('*')
           .eq('student_id', user.id);
 
-        const postedMap = {}; // class_record_id -> { grade_period, effective_grade, remarks }
+        const postedMap = {};
         posted?.forEach(p => {
           const periods = { prelim: 1, midterm: 2, semi_final: 3, final: 4 };
           const current = postedMap[p.class_record_id];
@@ -195,17 +193,16 @@ export default function Dashboard() {
     return (
       <div className="flex-1 flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-sm text-slate-500 font-medium font-sans">Loading dashboard...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-sage-600"></div>
+          <p className="text-xs text-slate-500 font-medium font-sans">Loading dashboard...</p>
         </div>
       </div>
     );
   }
 
-  // Academic Term Label
   const termLabel = section 
-    ? `AY ${section.school_year} • ${section.semester === '1st' ? 'First' : section.semester === '2nd' ? 'Second' : section.semester} Semester`
-    : 'AY — • — Semester';
+    ? `AY ${section.school_year} • ${section.semester === '1st' ? 'First' : section.semester === '2nd' ? 'Second' : section.semester} Sem`
+    : 'AY — • — Sem';
 
   const totalCredits = enrolledSubjects.reduce((sum, sub) => sum + sub.credits, 0);
 
@@ -213,125 +210,150 @@ export default function Dashboard() {
     <>
       <PageHeader title="Student Overview" breadcrumb="Student Portal" />
       
-      <div className="p-8 overflow-y-auto flex-1 space-y-8">
+      <div className="p-4 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
         
         {/* Welcome Banner Hero */}
-        <div className="bg-gradient-to-r from-sage-900 via-sage-800 to-sage-900 rounded-2xl p-6 md:p-8 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-sage-700/50 text-sage-100 border border-sage-600/30">
+        <div className="bg-gradient-to-r from-sage-900 via-sage-800 to-sage-900 rounded-2xl p-5 sm:p-6 md:p-8 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6">
+          <div className="space-y-1.5 sm:space-y-2">
+            <span className="inline-flex items-center px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[10px] sm:text-xs font-semibold bg-sage-700/50 text-sage-100 border border-sage-600/30">
               Academic Term: {termLabel}
             </span>
-            <h1 className="text-3xl font-extrabold tracking-tight font-display">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight font-display">
               Welcome Back, {profile?.first_name || 'Student'}!
             </h1>
-            <p className="text-sm text-sage-200/90 max-w-xl">
+            <p className="text-xs sm:text-sm text-sage-200/90 max-w-xl">
               Track your real-time grades, evaluate faculty performance, and review AI counseling insights.
             </p>
           </div>
           
-          <div className="flex gap-4">
+          <div className="flex w-full md:w-auto">
             <Link 
               to="/student/mygradeslist" 
-              className="px-5 py-3 text-sm font-semibold bg-white text-sage-900 hover:bg-sage-50 rounded-xl transition-all shadow-md flex items-center gap-2 whitespace-nowrap"
+              className="w-full md:w-auto justify-center px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-semibold bg-white text-sage-900 hover:bg-sage-50 rounded-xl transition-all shadow-md flex items-center gap-2 whitespace-nowrap"
             >
               <Award className="h-4 w-4" /> View My Grades
             </Link>
           </div>
         </div>
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          
-          <div className="bg-white p-6 rounded-xl border border-slate-200 hover:border-sage-300 transition-all flex justify-between items-start">
-            <div>
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Current GWA</span>
-              <h3 className="text-3xl font-extrabold text-slate-900 font-mono mt-2">{currentGwa}</h3>
-              <p className="text-xs text-slate-500 mt-1">{gwaStanding}</p>
+        {/* Term Clearance & Evaluation Alert Banner */}
+        {pendingEvals > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 shadow-sm">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="p-2 bg-amber-100 rounded-lg text-amber-700 flex-shrink-0 mt-0.5 sm:mt-0">
+                <MessageSquare className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-xs sm:text-sm font-display text-amber-950">Term Clearance Pending</h4>
+                <p className="text-[11px] sm:text-xs text-amber-800 mt-0.5">
+                  You have <strong>{pendingEvals}</strong> pending faculty evaluation(s). Completing your evaluations signs your term clearance and unlocks official grade summary visibility.
+                </p>
+              </div>
             </div>
-            <div className="p-3 bg-sage-50 text-sage-600 rounded-lg">
-              <Award className="h-5 w-5" />
+            <Link
+              to="/student/evallist"
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap shadow-sm self-end sm:self-auto cursor-pointer"
+            >
+              Evaluate Now <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        )}
+
+        {/* Stats Row */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
+          
+          <div className="bg-white p-3.5 sm:p-5 md:p-6 rounded-xl border border-slate-200 hover:border-sage-300 transition-all flex justify-between items-start">
+            <div>
+              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider block">Current GWA</span>
+              <h3 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900 font-mono mt-1 sm:mt-2">{currentGwa}</h3>
+              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 truncate max-w-[110px] sm:max-w-none">{gwaStanding}</p>
+            </div>
+            <div className="p-2 sm:p-3 bg-sage-50 text-sage-600 rounded-lg flex-shrink-0">
+              <Award className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-xl border border-slate-200 hover:border-sage-300 transition-all flex justify-between items-start">
+          <div className="bg-white p-3.5 sm:p-5 md:p-6 rounded-xl border border-slate-200 hover:border-sage-300 transition-all flex justify-between items-start">
             <div>
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Enrolled Subjects</span>
-              <h3 className="text-3xl font-extrabold text-slate-900 font-mono mt-2">
+              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider block">Subjects</span>
+              <h3 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900 font-mono mt-1 sm:mt-2">
                 {enrolledSubjects.length < 10 ? `0${enrolledSubjects.length}` : enrolledSubjects.length}
               </h3>
-              <p className="text-xs text-slate-500 mt-1">{totalCredits} total credit units</p>
+              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 truncate max-w-[110px] sm:max-w-none">{totalCredits} units total</p>
             </div>
-            <div className="p-3 bg-sage-50 text-sage-600 rounded-lg">
-              <BookOpen className="h-5 w-5" />
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl border border-slate-200 hover:border-sage-300 transition-all flex justify-between items-start">
-            <div>
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Pending Evaluations</span>
-              <h3 className={`text-3xl font-extrabold font-mono mt-2 ${pendingEvals > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
-                {pendingEvals < 10 ? `0${pendingEvals}` : pendingEvals}
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">Due before end of term</p>
-            </div>
-            <div className={`p-3 rounded-lg ${pendingEvals > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
-              <MessageSquare className="h-5 w-5" />
+            <div className="p-2 sm:p-3 bg-sage-50 text-sage-600 rounded-lg flex-shrink-0">
+              <BookOpen className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-xl border border-slate-200 hover:border-sage-300 transition-all flex justify-between items-start">
+          <div className="bg-white p-3.5 sm:p-5 md:p-6 rounded-xl border border-slate-200 hover:border-sage-300 transition-all flex justify-between items-start">
             <div>
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Academic Insight</span>
-              <h3 className={`text-3xl font-extrabold font-mono mt-2 ${insightVerdict === 'Safe' ? 'text-emerald-600' : insightVerdict === 'At Risk' ? 'text-rose-600' : 'text-amber-600'}`}>
-                {insightVerdict}
+              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider block">Term Clearance</span>
+              <h3 className={`text-base sm:text-lg md:text-xl font-extrabold font-display mt-1 sm:mt-2 ${pendingEvals === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                {pendingEvals === 0 ? 'SIGNED' : 'UNSIGNED'}
               </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                {insightVerdict === 'Safe' ? 'Low risk index status' : insightVerdict === 'At Risk' ? 'High risk index status' : 'Academic standing alert'}
+              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 truncate max-w-[110px] sm:max-w-none">
+                {pendingEvals === 0 ? 'All evals completed' : `${pendingEvals} eval(s) pending`}
               </p>
             </div>
-            <div className={`p-3 rounded-lg ${insightVerdict === 'Safe' ? 'bg-emerald-50 text-emerald-600' : insightVerdict === 'At Risk' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
-              <BrainCircuit className="h-5 w-5" />
+            <div className={`p-2 sm:p-3 rounded-lg flex-shrink-0 ${pendingEvals === 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+              <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5" />
+            </div>
+          </div>
+
+          <div className="bg-white p-3.5 sm:p-5 md:p-6 rounded-xl border border-slate-200 hover:border-sage-300 transition-all flex justify-between items-start">
+            <div>
+              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider block">Academic Insight</span>
+              <h3 className={`text-xl sm:text-2xl md:text-3xl font-extrabold font-mono mt-1 sm:mt-2 ${insightVerdict === 'Safe' ? 'text-emerald-600' : insightVerdict === 'At Risk' ? 'text-rose-600' : 'text-amber-600'}`}>
+                {insightVerdict}
+              </h3>
+              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 truncate max-w-[110px] sm:max-w-none">
+                {insightVerdict === 'Safe' ? 'Low risk status' : insightVerdict === 'At Risk' ? 'High risk status' : 'Standing alert'}
+              </p>
+            </div>
+            <div className={`p-2 sm:p-3 rounded-lg flex-shrink-0 ${insightVerdict === 'Safe' ? 'bg-emerald-50 text-emerald-600' : insightVerdict === 'At Risk' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
+              <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
 
         </div>
 
         {/* Main Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
           
           {/* Active Enrolled Classes */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 lg:col-span-2 space-y-6">
-            <div className="flex items-center justify-between">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-6 lg:col-span-2 space-y-4 sm:space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <h3 className="text-lg font-bold font-display text-slate-900">Enrolled Subjects</h3>
+                <h3 className="text-base sm:text-lg font-bold font-display text-slate-900">Enrolled Subjects</h3>
                 <p className="text-xs text-slate-500">Overview of courses and instructors for the current term.</p>
               </div>
-              <Link to="/student/mygradeslist" className="text-xs font-bold text-sage-600 hover:text-sage-700 flex items-center gap-1">
+              <Link to="/student/mygradeslist" className="text-xs font-bold text-sage-600 hover:text-sage-700 flex items-center gap-1 self-start sm:self-auto">
                 View Detailed Grades <ArrowRight className="h-3 w-3" />
               </Link>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               {enrolledSubjects.map((sub) => (
-                <div key={sub.class_record_id} className="p-4 rounded-xl border border-slate-200 hover:border-sage-300 transition-all bg-slate-50/50 flex flex-col justify-between h-36">
+                <div key={sub.class_record_id} className="p-3.5 sm:p-4 rounded-xl border border-slate-200 hover:border-sage-300 transition-all bg-slate-50/50 flex flex-col justify-between min-h-[9rem]">
                   <div>
-                    <div className="flex justify-between items-start">
-                      <span className="text-xs font-bold font-mono text-slate-400">{sub.code}</span>
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="text-xs font-bold font-mono text-slate-400 truncate">{sub.code}</span>
                       {sub.status === 'Grades Posted' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 flex-shrink-0">
                           {sub.grade} Posted
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 flex-shrink-0">
                           Active
                         </span>
                       )}
                     </div>
-                    <h4 className="font-bold text-sm text-slate-900 mt-2 line-clamp-1">{sub.name}</h4>
-                    <p className="text-xs text-slate-500 mt-1">{sub.professor}</p>
+                    <h4 className="font-bold text-xs sm:text-sm text-slate-900 mt-1.5 line-clamp-2">{sub.name}</h4>
+                    <p className="text-xs text-slate-500 mt-0.5 truncate">{sub.professor}</p>
                   </div>
                   
-                  <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold border-t border-slate-200/60 pt-2">
+                  <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold border-t border-slate-200/60 pt-2 mt-2">
                     <span>{sub.credits} Credit Units</span>
                     <Link to={`/student/mygradesdetail?id=${sub.class_record_id}`} className="text-sage-600 hover:text-sage-700 flex items-center gap-0.5">
                       Card Details <ChevronRight className="h-3 w-3" />
@@ -340,7 +362,7 @@ export default function Dashboard() {
                 </div>
               ))}
               {enrolledSubjects.length === 0 && (
-                <div className="col-span-2 text-center py-8 text-slate-400 text-sm">
+                <div className="col-span-1 sm:col-span-2 text-center py-8 text-slate-400 text-sm">
                   No enrolled subjects found in active status for this section.
                 </div>
               )}
@@ -348,13 +370,13 @@ export default function Dashboard() {
           </div>
 
           {/* Quick-look Widgets */}
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             
             {/* Academic Insights alert */}
-            <div className={`${insightVerdict === 'Safe' ? 'bg-emerald-50/40 border-emerald-100' : insightVerdict === 'At Risk' ? 'bg-rose-50/40 border-rose-100' : 'bg-amber-50/40 border-amber-100'} border rounded-xl p-5 shadow-sm space-y-4`}>
+            <div className={`${insightVerdict === 'Safe' ? 'bg-emerald-50/40 border-emerald-100' : insightVerdict === 'At Risk' ? 'bg-rose-50/40 border-rose-100' : 'bg-amber-50/40 border-amber-100'} border rounded-xl p-4 sm:p-5 shadow-sm space-y-3 sm:space-y-4`}>
               <div className="flex items-center gap-2">
-                <BrainCircuit className={`h-5 w-5 ${insightVerdict === 'Safe' ? 'text-emerald-600' : insightVerdict === 'At Risk' ? 'text-rose-600' : 'text-amber-600'}`} />
-                <h3 className="text-sm font-bold text-slate-900">Academic Insights</h3>
+                <BrainCircuit className={`h-4 w-4 sm:h-5 sm:w-5 ${insightVerdict === 'Safe' ? 'text-emerald-600' : insightVerdict === 'At Risk' ? 'text-rose-600' : 'text-amber-600'}`} />
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900">Academic Insights</h3>
               </div>
               <p className="text-xs text-slate-650 leading-relaxed font-medium">
                 {insightSummary}
@@ -368,10 +390,10 @@ export default function Dashboard() {
             </div>
 
             {/* Pending evaluations card */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+            <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-3 sm:space-y-4">
               <div className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-sage-600" />
-                <h3 className="text-sm font-bold text-slate-900">Faculty Evaluations</h3>
+                <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5 text-sage-600" />
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900">Faculty Evaluations</h3>
               </div>
               <p className="text-xs text-slate-500">
                 {pendingEvals > 0 

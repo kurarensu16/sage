@@ -17,7 +17,8 @@ import {
   ChevronUp,
   AlertTriangle,
   Info,
-  Loader2
+  Loader2,
+  Paperclip
 } from 'lucide-react';
 
 const REMARK_COLORS = {
@@ -426,6 +427,24 @@ export default function RemarkOverrideRequests() {
                           <p className="text-xs text-amber-900">{req.note || '— No reason provided —'}</p>
                         </div>
                       </div>
+
+                      {/* Attached Proof Document (Capstone Resubmission Policy) */}
+                      {(req.evidence_url || req.evidenceUrl) && (
+                        <div className="flex items-center justify-between bg-white border border-slate-200 rounded-lg px-4 py-2.5 shadow-sm">
+                          <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <Paperclip className="h-4 w-4 text-sage-600 flex-shrink-0" />
+                            <span>Attached Proof: {(req.evidence_url || req.evidenceUrl).split('/').pop()}</span>
+                          </div>
+                          <a
+                            href={req.evidence_url || req.evidenceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs font-bold text-sage-600 hover:text-sage-700 underline flex items-center gap-1"
+                          >
+                            Inspect Document
+                          </a>
+                        </div>
+                      )}
 
                       {/* Grade breakdown */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">

@@ -14,7 +14,8 @@ import {
   MessageSquare,
   Send,
   X,
-  Check
+  Check,
+  Paperclip
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
@@ -47,6 +48,7 @@ export default function PostedGradesView() {
   const [remarkReqFrom, setRemarkReqFrom] = useState('Failed');
   const [remarkReqTo, setRemarkReqTo] = useState('INC');
   const [remarkReqNote, setRemarkReqNote] = useState('');
+  const [evidenceFileName, setEvidenceFileName] = useState('');
   const [remarkReqSent, setRemarkReqSent] = useState(false);
 
   // Maximum items configuration for activities and exams per period
@@ -315,6 +317,7 @@ export default function PostedGradesView() {
       const effectiveGradeVal = remarkReqTo === 'Passed' ? 3.00 : 5.00;
 
       // 1. Database: Insert into remark_override_requests (primary store)
+      const evidenceUrl = evidenceFileName ? `https://storage.sage.edu.ph/proofs/${evidenceFileName}` : null;
       const { data: rorRow, error: rorErr } = await supabase
         .from('remark_override_requests')
         .insert({
@@ -329,6 +332,7 @@ export default function PostedGradesView() {
           current_remark: remarkReqFrom,
           requested_remark: remarkReqTo,
           note: remarkReqNote,
+          evidence_url: evidenceUrl,
           status: 'pending'
         })
         .select('request_id')
@@ -348,21 +352,21 @@ export default function PostedGradesView() {
       // 3. LocalStorage: Dual-write fallback for backward compatibility
       const existing = JSON.parse(localStorage.getItem('remark_override_requests') || '[]');
       const newReq = {
-        id: rorRow?.request_id || `ror-${Date.now()}`,
-        classCode: classRecordId,
-        subjectName: `${subjCode} - ${subjName}`,
-        facultyName: actorName,
-        section: sectName,
-        studentId: remarkReqStudentId,
-        studentName: remarkReqStudent,
-        computedGrade: '5.00',
-        effectiveGrade: effectiveGradeVal.toFixed(2),
-        currentRemark: remarkReqFrom,
-        requestedRemark: remarkReqTo,
+        request_id: rorRow?.request_id || `ror-${Date.now()}`,
+        class_record_id: classRecordId,
+        student_id: remarkReqStudentId,
+        student_name: remarkReqStudent,
+        subject_name: `${subjCode} - ${subjName}`,
+        section_name: sectName,
+        faculty_name: actorName,
+        computed_grade: 5.00,
+        effective_grade: effectiveGradeVal,
+        current_remark: remarkReqFrom,
+        requested_remark: remarkReqTo,
         note: remarkReqNote,
-        requestedAt: new Date().toISOString(),
+        evidence_url: evidenceUrl,
         status: 'pending',
-        resolvedAt: null,
+        requested_at: new Date().toISOString()
       };
       if (rorErr) {
         console.warn('DB insert failed, storing to localStorage only:', rorErr.message);
@@ -756,6 +760,25 @@ export default function PostedGradesView() {
                 placeholder="Explain why this remark change is needed…"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 resize-none bg-white transition-colors"
               />
+            </div>
+
+            {/* Evidence attachment (Capstone Resubmission Policy) */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans flex items-center justify-between">
+                <span>Proof / Evidence Attachment</span>
+                <span className="text-[9px] text-slate-400 font-normal">Optional / Medical & Official docs</span>
+              </label>
+              <div className="flex items-center gap-2 border border-slate-200 rounded-lg p-2 bg-slate-50/50">
+                <Paperclip className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                <input
+                  type="text"
+                  value={evidenceFileName}
+                  onChange={e => setEvidenceFileName(e.target.value)}
+                  placeholder="e.g. medical_certificate_jan2026.pdf"
+                  className="w-full text-xs bg-transparent outline-none text-slate-700"
+                />
+              </div>
+              <p className="text-[9px] text-slate-400">Attached evidence will be hosted in Cloudflare R2 bucket for Dean review.</p>
             </div>
 
             {/* Action buttons */}

@@ -1,103 +1,148 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, Filter } from 'lucide-react';
-import { mockDb } from '../../lib/mockDb';
+import { Search, Filter, Loader2, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
 export default function GradePostingStatus() {
   const { user } = useAuth();
   
+  // Data state
+  const [classrooms, setClassrooms] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [postedGradesMap, setPostedGradesMap] = useState({});
+  const [unlockRequestsMap, setUnlockRequestsMap] = useState({});
+  const [loading, setLoading] = useState(true);
+
   // Filters
   const [deptFilter, setDeptFilter] = useState('');
-  const [semFilter, setSemFilter] = useState('2nd');
-  const [syFilter, setSyFilter] = useState('2025-2026');
+  const [semFilter, setSemFilter] = useState('');
+  const [syFilter, setSyFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedOverrideClass, setSelectedOverrideClass] = useState('');
 
-  const [triggerRefresh, setTriggerRefresh] = useState(0);
-  const [selectedOverrideClass, setSelectedOverrideClass] = useState('BSITCPR323');
-
-  const classrooms = useMemo(() => {
-    return mockDb.getClassrooms().filter(c => c.status === 'active');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [triggerRefresh]);
-
-  const lockedMilestones = useMemo(() => {
-    return JSON.parse(localStorage.getItem(`locked_milestones_${selectedOverrideClass}`) || '[]');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [triggerRefresh, selectedOverrideClass]);
-
-  const getSupabaseClassRecordId = async (subjectCode, sectionName) => {
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (uuidRegex.test(subjectCode)) return subjectCode;
-
+  // Fetch data from Supabase
+  const loadPostingData = async () => {
+    setLoading(true);
     try {
-      const { data, error } = await supabase
+      // 1. Fetch Classrooms with relations
+      const { data: classData, error: classErr } = await supabase
         .from('class_records')
-        .select('class_record_id, subjects!inner(code), sections!inner(name)');
-      if (error) throw error;
-      
-      const match = data?.find(cr => 
-        cr.subjects?.code === subjectCode && 
-        cr.sections?.name === sectionName
-      );
-      return match ? match.class_record_id : null;
+        .select(`
+          class_record_id,
+          status,
+          semester,
+          academic_year,
+          schedule,
+          room,
+          faculty:users!faculty_id(user_id, first_name, last_name, email),
+          subject:subjects(subject_id, code, title, units, department_id, departments(name)),
+          section:sections(section_id, name)
+        `)
+        .eq('status', 'active');
+
+      if (classErr) throw classErr;
+
+      // 2. Fetch Departments
+      const { data: deptData } = await supabase
+        .from('departments')
+        .select('department_id, name')
+        .order('name');
+
+      if (deptData) setDepartments(deptData);
+
+      // 3. Fetch posted grades to know which classes have posted grades
+      const { data: postedData } = await supabase
+        .from('posted_grades')
+        .select('class_record_id, grade_period, is_locked');
+
+      const postedMap = {};
+      (postedData || []).forEach(pg => {
+        if (!postedMap[pg.class_record_id]) postedMap[pg.class_record_id] = [];
+        postedMap[pg.class_record_id].push(pg);
+      });
+      setPostedGradesMap(postedMap);
+
+      // 4. Fetch pending unlock requests
+      const { data: unlockData } = await supabase
+        .from('unlock_requests')
+        .select('*')
+        .eq('status', 'pending');
+
+      const unlockMap = {};
+      (unlockData || []).forEach(ur => {
+        if (!unlockMap[ur.class_record_id]) unlockMap[ur.class_record_id] = [];
+        unlockMap[ur.class_record_id].push(ur);
+      });
+      setUnlockRequestsMap(unlockMap);
+
+      // Normalize classroom items
+      const formatted = (classData || []).map(c => {
+        const facFirst = c.faculty?.first_name || '';
+        const facLast = c.faculty?.last_name || '';
+        const facultyName = (facFirst || facLast) ? `${facFirst} ${facLast}`.trim() : 'Unassigned';
+        return {
+          id: c.class_record_id,
+          classRecordId: c.class_record_id,
+          subjectCode: c.subject?.code || 'N/A',
+          subjectName: c.subject?.title || 'Untitled Subject',
+          departmentName: c.subject?.departments?.name || '',
+          section: c.section?.name || 'N/A',
+          facultyId: c.faculty?.user_id,
+          facultyName,
+          semester: c.semester || '2nd',
+          schoolYear: c.academic_year || '2025-2026',
+          status: c.status
+        };
+      });
+
+      setClassrooms(formatted);
+      if (formatted.length > 0 && !selectedOverrideClass) {
+        setSelectedOverrideClass(formatted[0].id);
+      }
     } catch (err) {
-      console.error('Error finding Supabase class record:', err);
-      return null;
+      console.error('Error loading grade posting status:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleApproveUnlock = async (classCode, milestone) => {
-    const classroom = classrooms.find(c => c.subjectCode === classCode);
-    const sectionName = classroom ? classroom.section : '';
-    const realClassRecordId = await getSupabaseClassRecordId(classCode, sectionName);
+  useEffect(() => {
+    loadPostingData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    // 1. Remove from locked milestones
-    const locked = JSON.parse(localStorage.getItem(`locked_milestones_${classCode}`) || '[]');
-    const updatedLocks = locked.filter(m => m !== milestone && m !== 'Final');
-    localStorage.setItem(`locked_milestones_${classCode}`, JSON.stringify(updatedLocks));
-    
-    // 2. Remove from pending unlock requests
-    const reqs = JSON.parse(localStorage.getItem(`unlock_requests_${classCode}`) || '[]');
-    const updatedReqs = reqs.filter(m => m !== milestone && m !== 'Final');
-    localStorage.setItem(`unlock_requests_${classCode}`, JSON.stringify(updatedReqs));
-    
-    if (realClassRecordId) {
-      try {
-        const resolvedAt = new Date().toISOString();
-        const resolvedBy = user?.id;
+  const handleApproveUnlock = async (classRecordId) => {
+    try {
+      const resolvedAt = new Date().toISOString();
+      const resolvedBy = user?.id;
 
-        await supabase
-          .from('unlock_requests')
-          .update({ status: 'approved', resolved_by: resolvedBy, resolved_at: resolvedAt })
-          .eq('class_record_id', realClassRecordId)
-          .eq('milestone', milestone)
-          .eq('status', 'pending');
+      // 1. Resolve pending unlock requests in Supabase
+      await supabase
+        .from('unlock_requests')
+        .update({ status: 'approved', resolved_by: resolvedBy, resolved_at: resolvedAt })
+        .eq('class_record_id', classRecordId)
+        .eq('status', 'pending');
 
-        await supabase
-          .from('posted_grades')
-          .update({ is_locked: false })
-          .eq('class_record_id', realClassRecordId)
-          .eq('grade_period', 'final');
-      } catch (dbErr) {
-        console.error('Error updating unlock request in Supabase:', dbErr);
-      }
+      // 2. Unlock posted grades if locked
+      await supabase
+        .from('posted_grades')
+        .update({ is_locked: false })
+        .eq('class_record_id', classRecordId);
+
+      // Refresh data
+      await loadPostingData();
+    } catch (dbErr) {
+      console.error('Error approving unlock request:', dbErr);
     }
-
-    // Refresh UI
-    setTriggerRefresh(prev => prev + 1);
   };
 
   const getStatusBadge = (classId) => {
-    const classroom = classrooms.find(cl => cl.id === classId);
-    const classCode = classroom ? classroom.subjectCode : '';
+    const postedList = postedGradesMap[classId] || [];
+    const unlockList = unlockRequestsMap[classId] || [];
     
-    const lockedMilestonesList = JSON.parse(localStorage.getItem(`locked_milestones_${classCode}`) || '[]');
-    const unlockRequestsList = JSON.parse(localStorage.getItem(`unlock_requests_${classCode}`) || '[]');
-    
-    const isPosted = lockedMilestonesList.includes('Semestral Grade') || lockedMilestonesList.includes('Final');
-    const isRequested = unlockRequestsList.includes('Semestral Grade') || unlockRequestsList.includes('Final');
+    const isPosted = postedList.length > 0;
+    const isRequested = unlockList.length > 0;
     
     if (isPosted) {
       return (
@@ -107,8 +152,8 @@ export default function GradePostingStatus() {
           </span>
           {isRequested && (
             <button
-              onClick={() => handleApproveUnlock(classCode, 'Semestral Grade')}
-              className="px-2 py-0.5 text-[9px] font-extrabold bg-amber-500 hover:bg-amber-600 text-white rounded shadow-sm transition-colors flex items-center gap-1 animate-pulse outline-none"
+              onClick={() => handleApproveUnlock(classId)}
+              className="px-2 py-0.5 text-[9px] font-extrabold bg-amber-500 hover:bg-amber-600 text-white rounded shadow-sm transition-colors flex items-center gap-1 animate-pulse outline-none cursor-pointer"
               title="Click to approve faculty request and unlock registry"
             >
               🔓 Approve Request
@@ -126,34 +171,47 @@ export default function GradePostingStatus() {
   };
 
   // Filter classrooms
-  const filteredClasses = classrooms.filter(c => {
-    const matchesSearch = 
-      c.facultyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.subjectCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.subjectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.section.toLowerCase().includes(searchTerm.toLowerCase());
-      
-    const matchesSem = !semFilter || c.semester === semFilter;
-    const matchesSy = !syFilter || c.schoolYear === syFilter;
-    
-    // Simulate department mapping: IT prefix goes to IT department
-    const isItDept = c.subjectCode.startsWith('IT') || c.subjectCode.startsWith('CS');
-    const matchesDept = !deptFilter || 
-      (deptFilter === 'IT' && isItDept) || 
-      (deptFilter === 'CS' && c.subjectCode.startsWith('CS')) ||
-      (deptFilter === 'Non-IT' && !isItDept);
+  const filteredClasses = useMemo(() => {
+    return classrooms.filter(c => {
+      const matchesSearch = 
+        c.facultyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.subjectCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.subjectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.section.toLowerCase().includes(searchTerm.toLowerCase());
+        
+      const matchesSem = !semFilter || c.semester === semFilter;
+      const matchesSy = !syFilter || c.schoolYear === syFilter;
+      const matchesDept = !deptFilter || c.departmentName.toLowerCase().includes(deptFilter.toLowerCase()) || (deptFilter === 'IT' && (c.subjectCode.startsWith('IT') || c.subjectCode.startsWith('CS')));
 
-    return matchesSearch && matchesSem && matchesSy && matchesDept;
-  });
+      return matchesSearch && matchesSem && matchesSy && matchesDept;
+    });
+  }, [classrooms, searchTerm, semFilter, syFilter, deptFilter]);
+
+  const selectedClassObj = classrooms.find(c => c.id === selectedOverrideClass);
+  const selectedPostedList = postedGradesMap[selectedOverrideClass] || [];
+  const isSelectedLocked = selectedPostedList.length > 0 && selectedPostedList.some(p => p.is_locked);
 
   return (
     <>
-      <PageHeader title="Grade Posting Status" breadcrumb="Dean Portal" />
+      <PageHeader 
+        title="Grade Posting Status" 
+        breadcrumb="Dean Portal" 
+        actions={
+          <button
+            onClick={loadPostingData}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin text-sage-600' : 'text-slate-500'}`} />
+            Refresh
+          </button>
+        }
+      />
       
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
         
         {/* 🔑 Dean's Administrative Registry Override Dashboard */}
-        <div className="bg-amber-50/45 border border-amber-205 rounded-xl p-5 space-y-4 shadow-sm">
+        <div className="bg-amber-50/45 border border-amber-200 rounded-xl p-5 space-y-4 shadow-sm">
           <div className="flex flex-wrap justify-between items-start gap-4">
             <div>
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
@@ -169,12 +227,17 @@ export default function GradePostingStatus() {
               <select
                 value={selectedOverrideClass}
                 onChange={(e) => setSelectedOverrideClass(e.target.value)}
-                className="bg-white border border-slate-200 hover:border-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all cursor-pointer text-slate-700 shadow-sm"
+                className="bg-white border border-slate-200 hover:border-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all cursor-pointer text-slate-700 shadow-sm max-w-xs truncate"
               >
-                <option value="BSITCPR323">BSITCPR323 - Capstone 1</option>
-                <option value="IT101">IT101 - Intro to Computing</option>
-                <option value="IT201">IT201 - Data Structures</option>
-                <option value="CS301">CS301 - Artificial Intelligence</option>
+                {classrooms.length === 0 ? (
+                  <option value="">No active classes</option>
+                ) : (
+                  classrooms.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.subjectCode} - {c.section} ({c.facultyName})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           </div>
@@ -183,8 +246,8 @@ export default function GradePostingStatus() {
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Registry Locks</span>
               <div className="flex flex-wrap gap-1">
-                {!(lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final')) ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-250">
+                {!isSelectedLocked ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                     No active locks
                   </span>
                 ) : (
@@ -195,18 +258,20 @@ export default function GradePostingStatus() {
               </div>
             </div>
 
-            {!(lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final')) ? (
-              <p className="text-xs font-semibold text-slate-455 italic text-center py-2">This class currently has no locked milestones.</p>
+            {!isSelectedLocked ? (
+              <p className="text-xs font-semibold text-slate-400 italic text-center py-2">
+                {selectedClassObj ? `This class (${selectedClassObj.subjectCode} - ${selectedClassObj.section}) currently has no locked milestones.` : 'No class selected.'}
+              </p>
             ) : (
               <div className="grid grid-cols-1 gap-2.5 pt-1">
                 <div className="flex justify-between items-center bg-slate-50/50 p-2.5 rounded-lg border border-slate-200 shadow-sm">
                   <div className="flex flex-col">
-                    <span className="text-xs font-bold text-slate-800">Semestral Grade</span>
+                    <span className="text-xs font-bold text-slate-800">Semestral Grade Registry</span>
                     <span className="text-[9px] text-rose-600 font-mono mt-0.5 font-bold">Status: LOCKED</span>
                   </div>
                   <button
-                    onClick={() => handleApproveUnlock(selectedOverrideClass, 'Semestral Grade')}
-                    className="px-2.5 py-1 text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors shadow-sm outline-none"
+                    onClick={() => handleApproveUnlock(selectedOverrideClass)}
+                    className="px-2.5 py-1 text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors shadow-sm outline-none cursor-pointer"
                   >
                     🔓 Unlock Override
                   </button>
@@ -233,7 +298,7 @@ export default function GradePostingStatus() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search faculty or subject..."
+                placeholder="Search faculty, subject, or section..."
                 className="block w-full pl-9 pr-3 py-2 border border-slate-200 focus:border-sage-500 rounded-lg text-xs outline-none bg-slate-50/20 focus:bg-white transition-colors"
               />
             </div>
@@ -246,9 +311,9 @@ export default function GradePostingStatus() {
                 className="block w-full border border-slate-200 px-3 py-2 rounded-lg text-xs bg-white outline-none cursor-pointer"
               >
                 <option value="">All Departments</option>
-                <option value="IT">Information Technology</option>
-                <option value="CS">Computer Science</option>
-                <option value="Non-IT">General Education / Other</option>
+                {departments.map(d => (
+                  <option key={d.department_id} value={d.name}>{d.name}</option>
+                ))}
               </select>
             </div>
 
@@ -295,7 +360,16 @@ export default function GradePostingStatus() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-100">
-                {filteredClasses.length > 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan="4" className="px-6 py-12 text-center text-slate-400 text-sm">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <Loader2 className="h-6 w-6 text-sage-600 animate-spin" />
+                        <span>Loading class grade posting status from Supabase...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredClasses.length > 0 ? (
                   filteredClasses.map((c) => (
                     <tr key={c.id} className="hover:bg-slate-50/40 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-900 flex items-center gap-2">
@@ -323,7 +397,7 @@ export default function GradePostingStatus() {
                 ) : (
                   <tr>
                     <td colSpan="4" className="px-6 py-10 text-center text-slate-400 text-sm">
-                      No matching class posting status reports found.
+                      No matching class posting status reports found in the database.
                     </td>
                   </tr>
                 )}

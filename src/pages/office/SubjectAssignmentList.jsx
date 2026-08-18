@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 
-export default function ClassManagementList() {
+export default function SubjectAssignmentList() {
   const [classrooms, setClassrooms] = useState([]);
   const [facultyUsers, setFacultyUsers] = useState([]);
   const [subjects, setSubjects] = useState([]);
@@ -317,9 +317,9 @@ export default function ClassManagementList() {
 
   return (
     <>
-      <PageHeader title="Classroom Management" breadcrumb="Admin Portal">
+      <PageHeader title="Subject Assignments" breadcrumb="College Office Portal">
         <Link 
-          to="/admin/classmanagementform" 
+          to="/office/subjectassignmentform" 
           className="px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm flex items-center gap-2"
         >
           <Plus className="h-4 w-4" /> Create Classroom

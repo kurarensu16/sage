@@ -43,7 +43,7 @@ const isSubjectMatchingSection = (sub, sectionObj) => {
   return yearMatches && semMatches;
 };
 
-export default function ClassManagementForm() {
+export default function SubjectAssignmentForm() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
   const [facultyUsers, setFacultyUsers] = useState([]);
@@ -389,13 +389,13 @@ export default function ClassManagementForm() {
 
   return (
     <>
-      <PageHeader title="Create Classroom" breadcrumb="Admin Portal" />
+      <PageHeader title="Assign Subject" breadcrumb="College Office Portal" />
 
       <div className="p-8 overflow-y-auto flex-1 max-w-4xl mx-auto w-full space-y-6">
         
         {/* Navigation Breadcrumbs */}
         <div className="flex items-center gap-2 text-sm text-slate-500">
-          <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/admin/classmanagementlist')}>
+          <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/office/subjectassignmentlist')}>
             Classrooms
           </span>
           <ChevronRight className="h-3 w-3" />
@@ -629,7 +629,7 @@ export default function ClassManagementForm() {
           <div className="flex items-center justify-end gap-3">
             <button 
               type="button" 
-              onClick={() => navigate('/admin/classmanagementlist')}
+              onClick={() => navigate('/office/subjectassignmentlist')}
               className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-medium transition-colors"
             >
               Cancel
@@ -650,7 +650,7 @@ export default function ClassManagementForm() {
       <SuccessModal
         isOpen={isSuccessModalOpen}
         message={successModalMessage}
-        onClose={() => navigate('/admin/classmanagementlist')}
+        onClose={() => navigate('/office/subjectassignmentlist')}
       />
     </>
   );

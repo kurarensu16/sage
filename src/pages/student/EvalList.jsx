@@ -35,7 +35,7 @@ export default function EvalList() {
           setTermLabel(`Academic Year ${currentSec.school_year} — ${semName} Semester`);
         }
 
-        // 2. Fetch open evaluation windows
+        // 2. Fetch evaluation windows for section
         const { data: windows, error: winErr } = await supabase
           .from('evaluation_windows')
           .select(`
@@ -48,7 +48,6 @@ export default function EvalList() {
           `)
           .eq('section_id', profile.section_id)
           .lte('open_at', now)
-          .gte('close_at', now)
           .eq('is_closed', false);
 
         if (winErr) throw winErr;
@@ -90,7 +89,9 @@ export default function EvalList() {
           const hasSubmitted = submittedWindowIds.has(win.window_id);
           const subj = facultySubjectMap[win.faculty_id] || { code: 'N/A', name: 'Unknown Subject' };
           const closeDate = new Date(win.close_at);
-          const daysLeft = Math.max(0, Math.ceil((closeDate - new Date()) / (1000 * 60 * 60 * 24)));
+          const nowObj = new Date();
+          const isOnTime = nowObj <= closeDate;
+          const daysLeft = Math.max(0, Math.ceil((closeDate - nowObj) / (1000 * 60 * 60 * 24)));
           
           const instructorName = win.faculty 
             ? `${win.faculty.first_name} ${win.faculty.last_name}` 
@@ -113,6 +114,7 @@ export default function EvalList() {
             status: hasSubmitted ? 'Submitted' : 'Pending',
             deadline: closeDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
             daysLeft,
+            isOnTime,
             avatarBg: colorClass
           };
         }));

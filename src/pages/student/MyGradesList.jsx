@@ -1,10 +1,39 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronDown, Eye, CheckCircle, Award, TrendingUp } from 'lucide-react';
+import { ChevronDown, Eye, CheckCircle, Award, ChevronRight, Lock, ShieldCheck, MessageSquare } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+
+// Helper to check pending evaluations for clearance sign-off
+const checkPendingEvals = async (studentId, sectionId) => {
+  if (!sectionId) return 0;
+  const now = new Date().toISOString();
+  const { data: windows } = await supabase
+    .from('evaluation_windows')
+    .select('window_id')
+    .eq('section_id', sectionId)
+    .lte('open_at', now)
+    .gte('close_at', now)
+    .eq('is_closed', false);
+
+  if (!windows || windows.length === 0) return 0;
+
+  const { data: responses } = await supabase
+    .from('evaluation_responses')
+    .select('window_id')
+    .eq('student_id', studentId);
+
+  const submittedWindowIds = new Set(responses?.map(r => r.window_id) || []);
+  let pendingCount = 0;
+  for (let i = 0; i < windows.length; i++) {
+    if (!submittedWindowIds.has(windows[i].window_id)) {
+      pendingCount++;
+    }
+  }
+  return pendingCount;
+};
 
 // Helper to transmute raw scores to DYCI standard grades
 const getTransmutedGrade = (score) => {
@@ -55,11 +84,10 @@ export default function MyGradesList() {
   const [semestersList, setSemestersList] = useState([]);
   const [selectedSemLabel, setSelectedSemLabel] = useState('');
   const [grades, setGrades] = useState([]);
+  const [pendingEvals, setPendingEvals] = useState(0);
 
   const [officialGwa, setOfficialGwa] = useState(null);
   const [officialStanding, setOfficialStanding] = useState('No grades posted yet');
-  const [runningGwa, setRunningGwa] = useState(null);
-  const [runningStanding, setRunningStanding] = useState('No grades yet');
 
   useEffect(() => {
     async function loadSemesters() {
@@ -139,6 +167,10 @@ export default function MyGradesList() {
       try {
         const activeOpt = semestersList.find(o => o.label === selectedSemLabel);
         if (!activeOpt) return;
+
+        // Fetch pending evaluation count for clearance gating
+        const pCount = await checkPendingEvals(user.id, activeOpt.section_id);
+        setPendingEvals(pCount);
 
         // 1. Fetch enrollments for the selected semester
         const { data: enrolls } = await supabase
@@ -225,8 +257,6 @@ export default function MyGradesList() {
 
         let totalOfficialUnits = 0;
         let weightedOfficialSum = 0;
-        let totalRunningUnits = 0;
-        let weightedRunningSum = 0;
 
         const mappedGrades = (classRecords || [])
           .filter(cr => subMap[cr.subject_id])
@@ -312,14 +342,6 @@ export default function MyGradesList() {
               }
             }
 
-            if (runningGrade !== '—') {
-              const numGrade = parseFloat(runningGrade);
-              if (!isNaN(numGrade)) {
-                totalRunningUnits += subj.units;
-                weightedRunningSum += numGrade * subj.units;
-              }
-            }
-
             return {
               class_record_id: cr.class_record_id,
               code: subj.code,
@@ -336,10 +358,8 @@ export default function MyGradesList() {
         setGrades(mappedGrades);
 
         const offGwa = totalOfficialUnits > 0 ? (weightedOfficialSum / totalOfficialUnits) : null;
-        const runGwa = totalRunningUnits > 0 ? (weightedRunningSum / totalRunningUnits) : null;
 
         setOfficialGwa(offGwa);
-        setRunningGwa(runGwa);
 
         const getStanding = (gwaNum) => {
           if (gwaNum === null) return 'No grades posted yet';
@@ -350,7 +370,6 @@ export default function MyGradesList() {
         };
 
         setOfficialStanding(getStanding(offGwa));
-        setRunningStanding(getStanding(runGwa));
 
       } catch (err) {
         console.error('Error loading grades details:', err);
@@ -366,8 +385,8 @@ export default function MyGradesList() {
     return (
       <div className="flex-1 flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-sm text-slate-500 font-medium font-sans">Loading grades...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-sage-600"></div>
+          <p className="text-xs text-slate-500 font-medium font-sans">Loading academic grades...</p>
         </div>
       </div>
     );
@@ -376,11 +395,11 @@ export default function MyGradesList() {
   return (
     <>
       <PageHeader title="My Grades" breadcrumb="Student Portal">
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <select 
             value={selectedSemLabel}
             onChange={(e) => setSelectedSemLabel(e.target.value)}
-            className="appearance-none bg-white border border-slate-200 hover:border-sage-300 text-slate-700 px-4 py-2 pr-10 rounded-lg text-sm font-medium focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer"
+            className="w-full sm:w-auto appearance-none bg-white border border-slate-200 hover:border-sage-300 text-slate-700 px-3.5 py-2 pr-9 rounded-xl text-xs font-medium focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer shadow-sm"
           >
             {semestersList.map((sem, idx) => (
               <option key={idx} value={sem.label}>{sem.label}</option>
@@ -390,99 +409,200 @@ export default function MyGradesList() {
         </div>
       </PageHeader>
 
-      <div className="p-8 overflow-y-auto flex-1 space-y-8">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
         
-        {/* Double GWA Metrics Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Card 1: Official Academic GWA */}
-          <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-5 shadow-sm flex items-center justify-between">
-            <div className="space-y-1 text-left">
-              <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Official GWA</span>
-              <div className="text-3xl font-extrabold font-mono text-emerald-950">
-                {officialGwa !== null ? officialGwa.toFixed(2) : '—'}
-              </div>
-              <p className="text-xs text-emerald-700">Standing: <strong className="font-bold">{officialStanding}</strong></p>
+        {/* Term Clearance & Evaluation Lock Status Banner */}
+        <div className={cn(
+          "rounded-2xl p-4 sm:p-5 border shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4",
+          pendingEvals === 0
+            ? "bg-emerald-50 border-emerald-200 text-emerald-950"
+            : "bg-amber-50 border-amber-200 text-amber-950"
+        )}>
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className={cn(
+              "p-2.5 rounded-xl flex-shrink-0 mt-0.5 sm:mt-0",
+              pendingEvals === 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+            )}>
+              {pendingEvals === 0 ? <ShieldCheck className="h-6 w-6" /> : <Lock className="h-6 w-6" />}
             </div>
-            <div className="p-3 bg-emerald-100 text-emerald-700 rounded-xl shadow-sm">
-              <Award className="h-6 w-6" />
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="font-extrabold text-sm sm:text-base font-display">
+                  Term Clearance: {pendingEvals === 0 ? 'SIGNED & CLEARED' : 'UNSIGNED (PENDING EVALUATION)'}
+                </h4>
+                <span className={cn(
+                  "px-2 py-0.5 rounded-full text-[10px] font-extrabold border",
+                  pendingEvals === 0 ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "bg-amber-100 text-amber-800 border-amber-200"
+                )}>
+                  {pendingEvals === 0 ? 'Clearance Signed' : `${pendingEvals} Pending Eval(s)`}
+                </span>
+              </div>
+              <p className="text-xs mt-1 text-slate-600">
+                {pendingEvals === 0
+                  ? "All faculty evaluation surveys have been completed on-time. Your clearance is signed for the semester."
+                  : `You have ${pendingEvals} pending faculty evaluation survey(s). Complete all evaluations to unlock grade summaries and sign your clearance.`
+                }
+              </p>
             </div>
           </div>
 
-          {/* Card 2: Running/Unofficial GWA */}
-          <div className="bg-blue-50/40 border border-blue-100 rounded-xl p-5 shadow-sm flex items-center justify-between">
-            <div className="space-y-1 text-left">
-              <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider block">Live Running GWA</span>
-              <div className="text-3xl font-extrabold font-mono text-blue-950">
-                {runningGwa !== null ? runningGwa.toFixed(2) : '—'}
-              </div>
-              <p className="text-xs text-blue-700">Standing: <strong className="font-bold">{runningStanding}</strong></p>
+          {pendingEvals > 0 && (
+            <Link
+              to="/student/evallist"
+              className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm whitespace-nowrap self-end sm:self-auto cursor-pointer"
+            >
+              <MessageSquare className="h-4 w-4" /> Evaluate Faculty Now
+            </Link>
+          )}
+        </div>
+            {/* Single Official GWA Summary Metric Card */}
+        <div className="bg-emerald-50/40 border border-emerald-100/90 rounded-2xl p-5 sm:p-6 shadow-sm flex items-center justify-between">
+          <div className="space-y-1 text-left">
+            <span className="text-[10px] sm:text-xs font-bold text-emerald-800 uppercase tracking-wider block">Official Cumulative GWA</span>
+            <div className="text-3xl sm:text-4xl font-extrabold font-mono text-emerald-950">
+              {pendingEvals > 0 ? '🔒.🔒🔒' : (officialGwa !== null ? officialGwa.toFixed(2) : '—')}
             </div>
-            <div className="p-3 bg-blue-100 text-blue-700 rounded-xl shadow-sm">
-              <TrendingUp className="h-6 w-6" />
-            </div>
+            <p className="text-xs sm:text-sm text-emerald-700 font-medium">Official Academic Standing: <strong className="font-bold">{pendingEvals > 0 ? 'Locked (Complete Evaluations)' : officialStanding}</strong></p>
+          </div>
+          <div className="p-3.5 sm:p-4 bg-emerald-100 text-emerald-700 rounded-2xl shadow-sm flex-shrink-0">
+            <Award className="h-6 w-6 sm:h-8 sm:w-8" />
           </div>
         </div>
 
-        {/* Double Table View Layout */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-          
-          {/* LEFT TABLE: Official Grades Ledger */}
+        {/* MOBILE VIEW ($\le 768px$): Single Official Course Cards List */}
+        <div className="block md:hidden space-y-3">
+          {grades.map((item) => {
+            const hasGrade = item.officialGrade !== '—';
+
+            return (
+              <div 
+                key={`mob-${item.class_record_id}`}
+                className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-sm space-y-3 hover:border-sage-300 transition-all"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold font-mono text-slate-400">{item.code}</span>
+                      <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                        {item.credits.toFixed(1)} Units
+                      </span>
+                    </div>
+                    <h4 className="font-bold text-sm text-slate-900 mt-1">{item.name}</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">{item.instructor}</p>
+                  </div>
+
+                  {/* Grade Badge */}
+                  <div className={cn(
+                    "flex flex-col items-end justify-center px-3 py-1.5 rounded-xl border flex-shrink-0 min-w-[64px] text-right",
+                    hasGrade ? "bg-emerald-50 border-emerald-200 text-emerald-900" : "bg-slate-50 border-slate-200 text-slate-400"
+                  )}>
+                    <span className="text-[9px] font-bold uppercase tracking-wider block opacity-70">
+                      GWA
+                    </span>
+                    <span className="font-mono text-base font-extrabold block">
+                      {pendingEvals > 0 ? '🔒' : item.officialGrade}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                  <div>
+                    {item.officialLatestPeriod !== '—' ? (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border bg-emerald-50 text-emerald-700 border-emerald-100">
+                        {item.officialLatestPeriod} Posted
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-50 text-slate-400 border border-slate-100">
+                        No Grades Posted
+                      </span>
+                    )}
+                  </div>
+
+                  <Link 
+                    to={`/student/mygradesdetail?id=${item.class_record_id}`}
+                    className="text-xs font-bold text-sage-600 hover:text-sage-700 flex items-center gap-1"
+                  >
+                    View Breakdown <ChevronRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
+
+          {grades.length === 0 && (
+            <div className="text-center py-12 bg-white rounded-2xl border border-slate-200 p-6 text-slate-400 text-xs">
+              No course grades found for this semester.
+            </div>
+          )}
+        </div>
+
+        {/* DESKTOP VIEW ($\ge 768px$): Single Full-Width Official Grades Ledger */}
+        <div className="hidden md:block">
           <div className="bg-white rounded-xl border border-emerald-100 shadow-sm overflow-hidden flex flex-col">
-            <div className="bg-emerald-50/50 px-6 py-4 border-b border-emerald-100 flex items-center gap-2">
-              <CheckCircle className="h-4.5 w-4.5 text-emerald-600" />
-              <h3 className="text-sm font-bold text-emerald-900 uppercase tracking-wider font-display text-left">📊 Official Grades Ledger</h3>
+            <div className="bg-emerald-50/50 px-6 py-4 border-b border-emerald-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-emerald-600" />
+                <h3 className="text-sm font-bold text-emerald-900 uppercase tracking-wider font-display text-left">
+                  Official Academic Grades Ledger
+                </h3>
+              </div>
+              <span className="text-xs text-emerald-700 font-semibold">
+                Official Registrar Grades
+              </span>
             </div>
             <div className="table-container overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-450 text-[10px] font-bold uppercase tracking-wider">
-                    <th className="px-5 py-3 font-medium">Subject Code & Name</th>
-                    <th className="px-3 py-3 text-center font-medium">Units</th>
-                    <th className="px-4 py-3 font-medium">Verification Status</th>
-                    <th className="px-4 py-3 text-center font-medium">Grade</th>
-                    <th className="px-5 py-3 text-right font-medium">Breakdown</th>
+                    <th className="px-6 py-3.5 font-medium">Subject Code & Course Title</th>
+                    <th className="px-4 py-3.5 font-medium">Faculty Instructor</th>
+                    <th className="px-3 py-3.5 text-center font-medium">Units</th>
+                    <th className="px-4 py-3.5 text-center font-medium">Latest Milestone Posted</th>
+                    <th className="px-4 py-3.5 text-center font-medium">Official Grade</th>
+                    <th className="px-6 py-3.5 text-right font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
                   {grades.map((item) => (
-                    <tr key={`off-${item.class_record_id}`} className="hover:bg-slate-50/30 transition-colors">
-                      <td className="px-5 py-3.5">
-                        <div className="font-bold text-slate-900 text-xs sm:text-sm">{item.code}</div>
-                        <div className="text-slate-400 font-normal mt-0.5 max-w-[200px] truncate">{item.name}</div>
+                    <tr key={`off-${item.class_record_id}`} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-slate-900 text-sm">{item.code}</div>
+                        <div className="text-slate-500 font-normal mt-0.5">{item.name}</div>
                       </td>
-                      <td className="px-3 py-3.5 text-center font-mono text-slate-650">{item.credits.toFixed(1)}</td>
-                      <td className="px-4 py-3.5">
+                      <td className="px-4 py-4 text-slate-600 font-medium">{item.instructor}</td>
+                      <td className="px-3 py-4 text-center font-mono text-slate-650">{item.credits.toFixed(1)}</td>
+                      <td className="px-4 py-4 text-center">
                         {item.officialLatestPeriod !== '—' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
                             {item.officialLatestPeriod} Posted
                           </span>
                         ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-50 text-slate-400 border border-slate-100">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-50 text-slate-400 border border-slate-100">
                             No Grades Posted
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3.5 text-center">
+                      <td className="px-4 py-4 text-center">
                         <span className={cn(
-                          "font-mono text-sm font-bold",
-                          item.officialGrade === '—' ? 'text-slate-350' : 'text-emerald-700'
+                          "font-mono text-base font-extrabold",
+                          pendingEvals > 0 ? 'text-amber-600' : (item.officialGrade === '—' ? 'text-slate-350' : 'text-emerald-700')
                         )}>
-                          {item.officialGrade}
+                          {pendingEvals > 0 ? '🔒' : item.officialGrade}
                         </span>
                       </td>
-                      <td className="px-5 py-3.5 text-right">
+                      <td className="px-6 py-4 text-right">
                         <Link 
                           to={`/student/mygradesdetail?id=${item.class_record_id}`}
-                          className="px-2 py-1.5 border border-slate-200 hover:border-emerald-300 text-slate-600 hover:text-emerald-700 bg-white rounded-lg transition-colors inline-flex items-center justify-center gap-1 text-[11px]"
+                          className="px-3 py-1.5 border border-slate-200 hover:border-emerald-300 text-slate-600 hover:text-emerald-700 bg-white rounded-lg transition-colors inline-flex items-center justify-center gap-1 text-xs font-bold"
                         >
-                          <Eye className="h-3 w-3" /> View
+                          <Eye className="h-3.5 w-3.5" /> View Breakdown
                         </Link>
                       </td>
                     </tr>
                   ))}
                   {grades.length === 0 && (
                     <tr>
-                      <td colSpan="5" className="px-6 py-12 text-center text-slate-400 text-sm">
+                      <td colSpan="6" className="px-6 py-12 text-center text-slate-400 text-sm">
                         No official grades found for this semester.
                       </td>
                     </tr>
@@ -491,75 +611,7 @@ export default function MyGradesList() {
               </table>
             </div>
           </div>
-
-          {/* RIGHT TABLE: Live Running Dashboard */}
-          <div className="bg-white rounded-xl border border-blue-100 shadow-sm overflow-hidden flex flex-col">
-            <div className="bg-blue-50/50 px-6 py-4 border-b border-blue-100 flex items-center gap-2">
-              <TrendingUp className="h-4.5 w-4.5 text-blue-600" />
-              <h3 className="text-sm font-bold text-blue-900 uppercase tracking-wider font-display text-left">📈 Unofficial Running Grade Dashboard</h3>
-            </div>
-            <div className="table-container overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-450 text-[10px] font-bold uppercase tracking-wider">
-                    <th className="px-5 py-3 font-medium">Subject Code & Name</th>
-                    <th className="px-3 py-3 text-center font-medium">Units</th>
-                    <th className="px-4 py-3 font-medium">Live Activity Period</th>
-                    <th className="px-4 py-3 text-center font-medium">Est. Grade</th>
-                    <th className="px-5 py-3 text-right font-medium">Breakdown</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
-                  {grades.map((item) => (
-                    <tr key={`run-${item.class_record_id}`} className="hover:bg-slate-50/30 transition-colors">
-                      <td className="px-5 py-3.5">
-                        <div className="font-bold text-slate-900 text-xs sm:text-sm">{item.code}</div>
-                        <div className="text-slate-400 font-normal mt-0.5 max-w-[200px] truncate">{item.name}</div>
-                      </td>
-                      <td className="px-3 py-3.5 text-center font-mono text-slate-650">{item.credits.toFixed(1)}</td>
-                      <td className="px-4 py-3.5">
-                        {item.runningLatestPeriod !== '—' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
-                            {item.runningLatestPeriod} Running
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-50 text-slate-400 border border-slate-100">
-                            No Scores Entered
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5 text-center">
-                        <span className={cn(
-                          "font-mono text-sm font-bold",
-                          item.runningGrade === '—' ? 'text-slate-350' : 'text-blue-700'
-                        )}>
-                          {item.runningGrade}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-right">
-                        <Link 
-                          to={`/student/mygradesdetail?id=${item.class_record_id}`}
-                          className="px-2 py-1.5 border border-slate-200 hover:border-blue-300 text-slate-600 hover:text-blue-700 bg-white rounded-lg transition-colors inline-flex items-center justify-center gap-1 text-[11px]"
-                        >
-                          <Eye className="h-3 w-3" /> View
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                  {grades.length === 0 && (
-                    <tr>
-                      <td colSpan="5" className="px-6 py-12 text-center text-slate-400 text-sm">
-                        No running grades found for this semester.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
         </div>
-
       </div>
     </>
   );

@@ -18,7 +18,7 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 |---|---|
 | **Frontend** | React 19 + Vite + Tailwind CSS + SheetJS (xlsx) |
 | **Backend / Database** | Supabase (PostgreSQL + Auth + Storage) |
-| **AI Integration** | Claude API (Anthropic) |
+| **AI Integration** | Google Gemini 2.5 Flash API |
 | **Deployment** | Vercel |
 | **Design System** | Sora + DM Sans + JetBrains Mono, Sage green (#356d62) primary |
 
@@ -44,6 +44,9 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 * Monitor grade posting status per faculty per grading period
 * Use the **Registry Unlock Override Dashboard** to selectively unlock specific grading milestones for faculty edits
 * Approve or reject real-time **Unlock Requests** sent by faculty members for specific class records and milestones
+* Review and approve formal **Grade Resubmission Requests** submitted with student evidence attachments (`evidence_url`) for locked grade adjustments
+* Control **Evaluation Release Controls** (`is_released_to_faculty` toggle) to release survey scores and feedback to faculty members individually or in bulk
+* Access **Dual-Channel Evaluation Analytics** (On-Time Official vs Late Informational) and **Retaliation-Drift** rating cards
 * View grade distribution summaries per subject and section
 * View AI-generated faculty fitness predictions for all faculty under their department
 * View the list of AI-flagged at-risk students
@@ -51,21 +54,30 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 
 ### 2.3 Faculty
 * Create class records per subject and section
-* Define grade components (activity, quiz, exam, project) with percentage weights
-* Input student scores per component (inputs locked individually per milestone term when posted)
+* Define grade components (activity, quiz, exam, project) with percentage weights or apply department COG templates
+* Input student scores per component (enforcing full activity names; shortened codes prohibited)
 * View real-time running grade and Early Warning System indicators per student
 * Post grades dynamically per milestone grading period (Prelim, Midterm, Semi-Final, Final) via a selective choices modal
-* Request the Dean to unlock locked milestones directly from the Posted Grades view (sets status to "Unlock Requested" and notifies the Dean)
-* View faculty evaluation results per section (anonymized)
-* Receive notifications when an evaluation window closes or when a milestone unlock request is approved by the Dean
-
+* Request the Dean to unlock locked milestones directly from the Posted Grades view
+* Submit formal **Grade Change Requests** for locked grades with required reason notes and uploaded student proof files for Dean review and approval
+* Treat 4 student absences as an **FDA Advisory Recommendation** for faculty review, preserving faculty discretion based on overall student circumstances
+* View faculty evaluation results per section (anonymized) **only after Dean release approval**
+* Receive notifications when an evaluation window closes, when an evaluation is released by the Dean, or when a milestone unlock/resubmission request is resolved
 
 ### 2.4 Student
-* View own grades per subject per grading period
-* Receive notifications when grades are posted
-* View personal lapses and missing score components
-* Submit faculty evaluations within the active window
-* View AI-generated academic recommendation
+* View finalized **Midterm** and **Final** grade summaries (real-time daily recalculations removed for official summaries)
+* Access activity, quiz, and assignment breakdown details with full descriptive titles
+* Submit faculty evaluations per subject section within active designated timelines
+* On-time survey completion signs term clearance; missing evaluations lock grade summary visibility and leave clearance unsigned
+* Submit late evaluations to unlock grade visibility and clearance, flagged as `submitted_timely = false` and excluded from faculty teaching effectiveness ratings (Fairness Clause)
+* Receive notifications when grades are posted or evaluation windows open/close
+* View AI-generated academic recommendations
+
+### 2.5 College Office (Department Admin)
+* Manage department-level student rosters and section assignments
+* Process CSV bulk user imports and verify student Certificate of Registration (COR) records
+* Audit student evaluation completion progress across sections for end-of-term physical and digital clearance sign-off
+* View clearance compliance summary metrics and export clearance audit logs for registrar operations
 
 ---
 
@@ -86,6 +98,7 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 | **FR04a** | Admin shall be able to batch import class sections via CSV or Excel (.xlsx) file uploads. |
 | **FR05** | Admin shall be able to create a classroom by linking a pre-loaded subject, section, and faculty member, enforcing Department/College alignment checks to ensure faculty are teaching within their department unless explicitly overridden. |
 | **FR06** | Admin shall be able to import enrolled students per classroom via CSV or Excel (.xlsx) file uploads. |
+| **FR06b** | Faculty shall be able to generate 6-character alphanumeric Join Codes (Professor-Led Enrollment) for students to self-enroll, supporting Irregular students. |
 | **FR06a** | Admin shall be able to batch import users (students, faculty, deans) via CSV or Excel (.xlsx) file uploads. |
 | **FR07** | Admin shall be able to reassign a faculty member to an existing classroom, logging the action for auditing. |
 | **FR08** | Admin shall be able to archive a classroom, warning Admins if unposted grades exist before locking it from edits. |
@@ -164,272 +177,10 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 
 ## 5. Entity Relationship Diagram
 
-The SAGE database consists of 19 tables hosted on Supabase (PostgreSQL). Tables are organized into six functional groups: user and organizational data, class and enrollment management, grading, evaluation, AI outputs, and notifications.
+The SAGE database consists of 21 tables hosted on Supabase (PostgreSQL). Tables are organized into functional groups including User/Organizational Data, Class/Enrollment Management, Grading, Evaluations, and AI Insights/Logs.
 
-### 5.1 Table Definitions
-
-#### Table: `users`
-| Column | Type | Notes |
-|---|---|---|
-| `user_id` | UUID | PK |
-| `last_name` | VARCHAR | |
-| `first_name` | VARCHAR | |
-| `middle_name` | VARCHAR | |
-| `email` | VARCHAR | UNIQUE |
-| `password_hash` | VARCHAR | |
-| `role` | ENUM | admin \| dean \| faculty \| student |
-| `department_id` | UUID | FK → `departments` |
-| `created_at` | TIMESTAMP | |
-
-#### Table: `departments`
-| Column | Type | Notes |
-|---|---|---|
-| `department_id` | UUID | PK |
-| `name` | VARCHAR | e.g., College of IT |
-| `created_at` | TIMESTAMP | |
-
-#### Table: `subjects`
-| Column | Type | Notes |
-|---|---|---|
-| `subject_id` | UUID | PK |
-| `code` | VARCHAR | e.g., IT101 |
-| `name` | VARCHAR | |
-| `units` | INT | |
-| `department_id` | UUID | FK → `departments` |
-
-#### Table: `sections`
-| Column | Type | Notes |
-|---|---|---|
-| `section_id` | UUID | PK |
-| `name` | VARCHAR | e.g., BSIT-3A |
-| `school_year` | VARCHAR | |
-| `semester` | ENUM | 1st \| 2nd \| Summer |
-| `department_id` | UUID | FK → `departments` |
-
-#### Table: `enrollments`
-| Column | Type | Notes |
-|---|---|---|
-| `enrollment_id` | UUID | PK |
-| `student_id` | UUID | FK → `users` |
-| `section_id` | UUID | FK → `sections` |
-| `subject_id` | UUID | FK → `subjects` |
-| `enrolled_at` | TIMESTAMP | |
-| `imported_by` | UUID | FK → `users` (admin) |
-
-#### Table: `class_records`
-| Column | Type | Notes |
-|---|---|---|
-| `class_record_id` | UUID | PK |
-| `faculty_id` | UUID | FK → `users` (updatable by Admin) |
-| `subject_id` | UUID | FK → `subjects` |
-| `section_id` | UUID | FK → `sections` |
-| `school_year` | VARCHAR | |
-| `semester` | ENUM | 1st \| 2nd \| Summer |
-| `status` | ENUM | active \| archived |
-| `created_at` | TIMESTAMP | |
-
-#### Table: `class_faculty_log`
-| Column | Type | Notes |
-|---|---|---|
-| `log_id` | UUID | PK |
-| `class_record_id` | UUID | FK → `class_records` |
-| `faculty_id` | UUID | FK → `users` |
-| `assigned_at` | TIMESTAMP | |
-| `replaced_at` | TIMESTAMP | Nullable — null means currently active |
-| `replaced_by` | UUID | FK → `users` (admin), nullable |
-
-#### Table: `grade_components`
-| Column | Type | Notes |
-|---|---|---|
-| `component_id` | UUID | PK |
-| `class_record_id` | UUID | FK → `class_records` |
-| `grade_period` | ENUM | prelim \| midterm \| semi_final \| final |
-| `type` | ENUM | activity \| quiz \| exam \| project |
-| `name` | VARCHAR | e.g., Quiz 1 |
-| `weight` | DECIMAL | Must sum to 100 per period |
-| `max_score` | DECIMAL | |
-| `created_at` | TIMESTAMP | |
-
-#### Table: `class_grading_columns`
-| Column | Type | Notes |
-|---|---|---|
-| `id` | UUID | PK |
-| `class_record_id` | UUID | FK → `class_records` |
-| `term` | VARCHAR | e.g., Prelim, Midterm, Semi-Final, Final |
-| `act1_max` | INT | Default 20 |
-| `act2_max` | INT | Default 20 |
-| `act3_max` | INT | Default 20 |
-| `act4_max` | INT | Default 20 |
-| `act5_max` | INT | Default 20 |
-| `act6_max` | INT | Default 10 |
-| `exam_max` | INT | Default 40 |
-
-#### Table: `component_scores`
-| Column | Type | Notes |
-|---|---|---|
-| `score_id` | UUID | PK |
-| `component_id` | UUID | FK → `grade_components` |
-| `student_id` | UUID | FK → `users` |
-| `score` | DECIMAL | |
-| `encoded_at` | TIMESTAMP | |
-| `encoded_by` | UUID | FK → `users` (faculty) |
-
-#### Table: `posted_grades`
-| Column | Type | Notes |
-|---|---|---|
-| `posted_grade_id` | UUID | PK |
-| `class_record_id` | UUID | FK → `class_records` |
-| `student_id` | UUID | FK → `users` |
-| `grade_period` | ENUM | prelim \| midterm \| semi_final \| final |
-| `computed_grade` | DECIMAL | Raw system-computed rating, always preserved |
-| `effective_grade` | DECIMAL | Grade displayed after remark override (NULL = use computed_grade). Grace Passed caps at 3.00; INC/FDA/Dropped retain computed_grade |
-| `remarks` | VARCHAR | passed \| failed \| incomplete \| fda \| dropped |
-| `remarks_note` | TEXT | Optional faculty note explaining manual remark override, nullable |
-| `remarks_set_by` | UUID | FK → `users` (faculty), nullable — who manually changed the remark |
-| `remarks_set_at` | TIMESTAMP | When the remark was manually changed, nullable |
-| `posted_by` | UUID | FK → `users` (faculty) |
-| `posted_at` | TIMESTAMP | |
-| `is_locked` | BOOLEAN | DEFAULT true |
-| `locked_milestones` | VARCHAR[] | Array of milestones currently locked |
-| `override_by` | UUID | FK → `users` (admin), nullable |
-| `override_at` | TIMESTAMP | Nullable |
-
-
-#### Table: `unlock_requests`
-| Column | Type | Notes |
-|---|---|---|
-| `request_id` | UUID | PK |
-| `class_record_id` | UUID | FK → `class_records` |
-| `milestone` | VARCHAR | e.g. Prelim, Midterm, Semi-Final, Final |
-| `requested_by` | UUID | FK → `users` (faculty) |
-| `requested_at` | TIMESTAMP | |
-| `status` | VARCHAR | pending \| approved \| rejected |
-| `resolved_by` | UUID | FK → `users` (dean), nullable |
-| `resolved_at` | TIMESTAMP | Nullable |
-
-
-#### Table: `notifications`
-| Column | Type | Notes |
-|---|---|---|
-| `notification_id` | UUID | PK |
-| `recipient_id` | UUID | FK → `users` |
-| `type` | ENUM | grade_posted \| eval_closed \| eval_window_open \| ai_recommendation |
-| `message` | TEXT | |
-| `is_read` | BOOLEAN | DEFAULT false |
-| `created_at` | TIMESTAMP | |
-
-#### Table: `evaluation_forms`
-| Column | Type | Notes |
-|---|---|---|
-| `form_id` | UUID | PK |
-| `title` | VARCHAR | |
-| `created_by` | UUID | FK → `users` (admin) |
-| `created_at` | TIMESTAMP | |
-
-#### Table: `evaluation_criteria`
-| Column | Type | Notes |
-|---|---|---|
-| `criteria_id` | UUID | PK |
-| `form_id` | UUID | FK → `evaluation_forms` |
-| `label` | VARCHAR | e.g., Teaching Effectiveness |
-| `description` | TEXT | |
-| `max_rating` | INT | DEFAULT 4 |
-| `order_index` | INT | |
-
-#### Table: `evaluation_windows`
-| Column | Type | Notes |
-|---|---|---|
-| `window_id` | UUID | PK |
-| `form_id` | UUID | FK → `evaluation_forms` |
-| `faculty_id` | UUID | FK → `users` |
-| `section_id` | UUID | FK → `sections` |
-| `open_at` | TIMESTAMP | |
-| `close_at` | TIMESTAMP | |
-| `is_closed` | BOOLEAN | DEFAULT false |
-| `created_by` | UUID | FK → `users` (admin) |
-
-#### Table: `evaluation_responses`
-| Column | Type | Notes |
-|---|---|---|
-| `response_id` | UUID | PK |
-| `window_id` | UUID | FK → `evaluation_windows` |
-| `anonymous_token` | VARCHAR | Hashed — not linkable to student identity |
-| `submitted_at` | TIMESTAMP | |
-
-#### Table: `evaluation_ratings`
-| Column | Type | Notes |
-|---|---|---|
-| `rating_id` | UUID | PK |
-| `response_id` | UUID | FK → `evaluation_responses` |
-| `criteria_id` | UUID | FK → `evaluation_criteria` |
-| `rating` | INT | |
-
-#### Table: `evaluation_comments`
-| Column | Type | Notes |
-|---|---|---|
-| `comment_id` | UUID | PK |
-| `response_id` | UUID | FK → `evaluation_responses` |
-| `comment` | TEXT | |
-
-#### Table: `ai_student_recommendations`
-| Column | Type | Notes |
-|---|---|---|
-| `recommendation_id` | UUID | PK |
-| `student_id` | UUID | FK → `users` |
-| `generated_at` | TIMESTAMP | |
-| `summary` | TEXT | AI output |
-| `recommendation` | ENUM | continue \| at_risk \| recommend_shift |
-| `basis_snapshot` | JSONB | Grade data at time of generation |
-
-#### Table: `ai_faculty_predictions`
-| Column | Type | Notes |
-|---|---|---|
-| `prediction_id` | UUID | PK |
-| `faculty_id` | UUID | FK → `users` |
-| `school_year` | VARCHAR | |
-| `generated_at` | TIMESTAMP | |
-| `summary` | TEXT | AI output |
-| `verdict` | ENUM | recommended \| needs_improvement \| not_recommended |
-| `strong_points` | TEXT | |
-| `weak_points` | TEXT | |
-| `basis_snapshot` | JSONB | Evaluation data at time of generation |
-
----
-
-### 5.2 Relationships Summary
-
-| From Table | To Table | Cardinality |
-|---|---|---|
-| `users` | `departments` | Many-to-One |
-| `departments` | `subjects` | One-to-Many |
-| `departments` | `sections` | One-to-Many |
-| `enrollments` | `users` (student) | Many-to-One |
-| `enrollments` | `sections` | Many-to-One |
-| `enrollments` | `subjects` | Many-to-One |
-| `class_records` | `users` (faculty) | Many-to-One |
-| `class_records` | `subjects` | Many-to-One |
-| `class_records` | `sections` | Many-to-One |
-| `class_faculty_log` | `class_records` | Many-to-One |
-| `class_faculty_log` | `users` (faculty) | Many-to-One |
-| `grade_components` | `class_records` | Many-to-One |
-| `class_grading_columns` | `class_records` | Many-to-One |
-| `component_scores` | `grade_components` | Many-to-One |
-| `component_scores` | `users` (student) | Many-to-One |
-| `posted_grades` | `class_records` | Many-to-One |
-| `posted_grades` | `users` (student) | Many-to-One |
-| `unlock_requests` | `class_records` | Many-to-One |
-| `unlock_requests` | `users` (faculty/dean) | Many-to-One |
-| `notifications` | `users` | Many-to-One |
-| `evaluation_criteria` | `evaluation_forms` | Many-to-One |
-| `evaluation_windows` | `evaluation_forms` | Many-to-One |
-| `evaluation_windows` | `users` (faculty) | Many-to-One |
-| `evaluation_windows` | `sections` | Many-to-One |
-| `evaluation_responses` | `evaluation_windows` | Many-to-One |
-| `evaluation_ratings` | `evaluation_responses` | Many-to-One |
-| `evaluation_ratings` | `evaluation_criteria` | Many-to-One |
-| `evaluation_comments` | `evaluation_responses` | Many-to-One |
-| `ai_student_recommendations` | `users` (student) | Many-to-One |
-| `ai_faculty_predictions` | `users` (faculty) | Many-to-One |
+> [!NOTE]
+> For the complete and up-to-date Entity Relationship Diagram (ERD), Table Schemas, and SQL DDL scripts, please refer directly to the master database documentation: `docs/SAGE_DATABASE_SCHEMA.md`.
 
 ---
 
@@ -521,7 +272,7 @@ The Level 0 DFD treats the entire system as a single process and identifies all 
 
 ## 8. UI Screen List
 
-SAGE consists of 37 screens distributed across 4 role portals plus shared public screens.
+SAGE consists of multiple screens distributed across 5 role portals plus shared public screens.
 
 ### 8.1 Shared / Public Screens
 | Screen # | Screen Name | Key Elements |

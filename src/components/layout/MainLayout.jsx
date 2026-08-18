@@ -2,16 +2,18 @@ import { useState } from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
+import OfflineBadge from '../pwa/OfflineBadge';
 import { useAuth } from '../../lib/AuthContext';
 
 export default function MainLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const { session, profile, loading } = useAuth();
 
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-slate-50 text-slate-500 font-semibold text-sm">
-        Loading SAGE Portal...
+        Loading SAGE...
       </div>
     );
   }
@@ -25,16 +27,24 @@ export default function MainLayout() {
   }
 
   return (
-    <div className="h-screen flex overflow-hidden bg-slate-50">
-      <Sidebar isCollapsed={sidebarCollapsed} />
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
-        <Topbar toggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} isCollapsed={sidebarCollapsed} />
+    <div className="h-screen flex overflow-hidden bg-slate-50 relative">
+      <Sidebar 
+        isCollapsed={sidebarCollapsed} 
+        mobileOpen={mobileOpen} 
+        setMobileOpen={setMobileOpen} 
+      />
+      <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
+        <Topbar 
+          toggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} 
+          toggleMobileSidebar={() => setMobileOpen(!mobileOpen)}
+          isCollapsed={sidebarCollapsed} 
+        />
         <main className="flex-1 flex flex-col h-full overflow-y-auto">
           <Outlet />
         </main>
       </div>
+
+      <OfflineBadge />
     </div>
   );
 }
-
-

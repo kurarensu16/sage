@@ -15,7 +15,7 @@ When editing a page, check whether it imports from `mockDb` (Admin/Dean) or uses
 
 ## Supabase
 - Remote project: `ettnwknyhdhehoclrwwh.supabase.co` (configured in `.env.local`)
-- **All 22 tables have RLS disabled** (`supabase/migrations/20260531081149_disable_rls_for_now.sql`)
+- **All 21 tables have RLS disabled** (`supabase/migrations/20260531081149_disable_rls_for_now.sql`)
 - 2 edge functions: `create-admin-user`, `delete-admin-user` (Deno, `supabase/functions/`)
 - 5 migration files in `supabase/migrations/`
 - Seed scripts:
@@ -28,7 +28,7 @@ When editing a page, check whether it imports from `mockDb` (Admin/Dean) or uses
   - student: `s.jenkins@student.sage.edu`
 
 ## Architecture
-- **4 portals** under `src/pages/`: `admin/` (15 pages), `dean/` (8 pages), `faculty/` (9 pages), `student/` (7 pages), plus `public/` (3) and `shared/` (1 Settings)
+- **5 portals** under `src/pages/`: `admin/` (15 pages), `dean/` (8 pages), `faculty/` (9 pages), `student/` (7 pages), `office/` (7 pages), plus `public/` (3) and `shared/` (1 Settings)
 - Routing in `src/App.jsx`: public routes outside `MainLayout`, all portal routes wrapped inside it
 - `AuthContext.jsx` provides `session`, `user`, `profile`, `role` — role is the primary gate
 
@@ -48,9 +48,11 @@ When editing a page, check whether it imports from `mockDb` (Admin/Dean) or uses
 - All rounding must match DYCI Excel standards (see `SAGE_CONTEXT.md`)
 
 ## Important Docs
-- `SAGE_CONTEXT.md` — full agent context, grading formulas, DB tables
-- `SAGE_DATABASE_SCHEMA.md` — ERD, 19-table DDL, SQL types
+- `docs/SAGE_CONTEXT.md` — full agent context, grading formulas, DB tables, institutional policies
+- `docs/SAGE_DATABASE_SCHEMA.md` — ERD, 21-table DDL, SQL types
+- `docs/reports/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md` — Capstone 1 defense panel rulings & policy specifications
 - `docs/workflows/Supabase-Migration.md` — migration plan with page-by-page mapping
 - `docs/agents/AI-Agent-Architecture.md` — AI features plan (Student Advisor, Faculty Predictor etc.)
 - `docs/design/DESIGN_SYSTEM.md` — full visual spec and prohibited patterns
 - `docs/design/capstone-system-design-v2.md` — master capstone design doc
+- `docs/TASKS.md` — master SDLC task tracker & checklist

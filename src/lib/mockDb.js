@@ -1,15 +1,11 @@
-// persistent mock database helper for SAGE using localStorage
+/**
+ * @deprecated SAGE has fully migrated to live Supabase PostgreSQL (ettnwknyhdhehoclrwwh.supabase.co).
+ * All portals (Admin, Dean, Faculty, Student, College Office) now query supabase directly via `src/lib/supabase.js`.
+ * This file is retained only as an archival reference for legacy seed formats.
+ */
 
-const STORAGE_KEYS = {
-  USERS: 'sage_users',
-  CLASSROOMS: 'sage_classrooms',
-  EVAL_TEMPLATES: 'sage_eval_templates',
-  EVAL_WINDOWS: 'sage_eval_windows',
-  LOGS: 'sage_logs',
-  POSTED_GRADES: 'sage_posted_grades',
-  SUBJECTS: 'sage_subjects',
-  SECTIONS: 'sage_sections'
-};
+// persistent mock database helper for SAGE using localStorage (DEPRECATED)
+
 
 // Seed Data
 const defaultUsers = [
