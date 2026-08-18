@@ -15,6 +15,9 @@ export default defineConfig({
       stream: path.resolve(__dirname, 'src/lib/empty.js')
     }
   },
+  optimizeDeps: {
+    include: ['html2pdf.js', 'xlsx-js-style']
+  },
   server: {
     port: 5175,
     strictPort: true,

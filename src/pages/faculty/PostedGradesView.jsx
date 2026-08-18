@@ -301,10 +301,9 @@ export default function PostedGradesView() {
       filename:     filename,
       image:        { type: 'jpeg', quality: 0.98 },
       html2canvas:  { scale: 2, useCORS: true, logging: false },
-      jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
     };
-
-    html2pdf().from(cloned).set(opt).save();
+    const exporter = typeof html2pdf === 'function' ? html2pdf : (html2pdf && html2pdf.default ? html2pdf.default : html2pdf);
+    exporter().from(cloned).set(opt).save();
   };
 
 
