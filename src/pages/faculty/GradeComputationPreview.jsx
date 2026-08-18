@@ -1,22 +1,37 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import StudentRow from '../../components/StudentRow';
 import { ChevronRight, AlertTriangle, Send, Download, ChevronDown, Maximize2, Minimize2, FileSpreadsheet } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
+import { logActivity, resolveActorName } from '../../lib/auditLog';
 
 export default function GradeComputationPreview() {
   const navigate = useNavigate();
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [selectedClass, setSelectedClass] = useState('BSITCPR323');
-  const [isFullScreen, setIsFullScreen] = useState(false);
-  const [selectedMilestone, setSelectedMilestone] = useState('Prelim');
-  const [lockedMilestones, setLockedMilestones] = useState([]);
+  const { user, profile } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const classRecordId = searchParams.get('id') || '';
 
-  useEffect(() => {
-    const locked = JSON.parse(localStorage.getItem(`locked_milestones_${selectedClass}`) || '[]');
-    setLockedMilestones(locked);
-  }, [selectedClass]);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  const [lockedMilestones, setLockedMilestones] = useState([]);
+  const [postingGrades, setPostingGrades] = useState(false);
+
+  const [classInfo, setClassInfo] = useState(null);
+  const [classesList, setClassesList] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [maxItems, setMaxItems] = useState({
+    Prelim: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+    Midterm: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+    'Semi-Final': { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+    Final: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 }
+  });
+
+  const periodsList = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
 
   // Escape key closes fullscreen
   useEffect(() => {
@@ -25,151 +40,413 @@ export default function GradeComputationPreview() {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [isFullScreen]);
 
-  const classesList = [
-    { code: 'BSITCPR323', label: 'BSITCPR323 - IT3A (Capstone and Research 1)' },
-    { code: 'IT101', label: 'IT101 - BSIT-1A (Intro to Computing)' },
-    { code: 'IT201', label: 'IT201 - BSIT-2B (Data Structures)' },
-    { code: 'CS301', label: 'CS301 - BSCS-3A (Artificial Intelligence)' }
-  ];
-
-  const periodsList = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
-
-  // Helper to generate mock period scores for standard students
-  const generateMockStudentPeriods = (id, baseActTotal, baseChar, baseExam) => {
-    const distributeCS = (total) => {
-      let remaining = total;
-      const act6 = Math.min(10, Math.round(total * (10 / 110)));
-      remaining -= act6;
-      const baseAct = Math.floor(remaining / 5);
-      const acts = [baseAct, baseAct, baseAct, baseAct, baseAct];
-      let diff = remaining - (baseAct * 5);
-      for (let i = 0; i < diff; i++) {
-        acts[i] += 1;
+  // Load faculty classes for dropdown selector
+  useEffect(() => {
+    async function fetchMyClasses() {
+      if (!user) return;
+      try {
+        const { data, error } = await supabase
+          .from('class_records')
+          .select(`
+            class_record_id,
+            status,
+            school_year,
+            semester,
+            subjects ( code, name ),
+            sections ( name )
+          `)
+          .eq('faculty_id', user.id)
+          .eq('status', 'active');
+        if (error) throw error;
+        setClassesList(data || []);
+      } catch (err) {
+        console.error('Error fetching classes:', err);
       }
-      return {
-        act1: acts[0],
-        act2: acts[1],
-        act3: acts[2],
-        act4: acts[3],
-        act5: acts[4],
-        act6: act6
-      };
-    };
-
-    const periods = {};
-    periodsList.forEach((period, idx) => {
-      const actTotal = Math.max(50, Math.min(110, baseActTotal - (idx % 2) * 5));
-      const cs = distributeCS(actTotal);
-      periods[period] = {
-        ...cs,
-        char: Math.max(50, Math.min(100, baseChar - (idx % 2) * 5)),
-        exam: Math.max(0, Math.min(40, baseExam - (idx % 2) * 2))
-      };
-    });
-    return periods;
-  };
-
-  // Student score mock datasets depending on active class
-  const classStudents = {
-    BSITCPR323: [
-      {
-        id: 11,
-        name: 'Gabriel, John Christian C.',
-        periods: {
-          Prelim: { act1: 18, act2: 19, act3: 17, act4: 20, act5: 18, act6: 9, char: 100, exam: 35 },
-          Midterm: { act1: 15, act2: 14, act3: 17, act4: 20, act5: 18, act6: 9, char: 100, exam: 35 },
-          'Semi-Final': { act1: 18, act2: 19, act3: 17, act4: 20, act5: 18, act6: 9, char: 100, exam: 35 },
-          Final: { act1: 18, act2: 19, act3: 17, act4: 20, act5: 18, act6: 9, char: 100, exam: 35 }
-        }
-      },
-      {
-        id: 12,
-        name: 'Santiago, Mark Angelo',
-        periods: {
-          Prelim: { act1: 20, act2: 18, act3: 20, act4: 17, act5: 15, act6: 5, char: 80, exam: 40 },
-          Midterm: { act1: 19, act2: 17, act3: 18, act4: 19, act5: 17, act6: 10, char: 90, exam: 37 },
-          'Semi-Final': { act1: 20, act2: 18, act3: 20, act4: 17, act5: 15, act6: 5, char: 85, exam: 30 },
-          Final: { act1: 15, act2: 14, act3: 17, act4: 20, act5: 18, act6: 9, char: 100, exam: 25 }
-        }
-      },
-      {
-        id: 13,
-        name: 'Celestino, Carlo',
-        periods: {
-          Prelim: { act1: 19, act2: 17, act3: 18, act4: 19, act5: 17, act6: 10, char: 95, exam: 30 },
-          Midterm: { act1: 20, act2: 18, act3: 20, act4: 17, act5: 15, act6: 5, char: 85, exam: 40 },
-          'Semi-Final': { act1: 15, act2: 14, act3: 17, act4: 20, act5: 18, act6: 9, char: 95, exam: 33 },
-          Final: { act1: 18, act2: 19, act3: 17, act4: 20, act5: 18, act6: 9, char: 100, exam: 29 }
-        }
-      },
-      {
-        id: 14,
-        name: 'Reyes, Mark T.',
-        periods: {
-          Prelim: { act1: 12, act2: 12, act3: 12, act4: 12, act5: 12, act6: 10, char: 60, exam: 30 },
-          Midterm: { act1: 11, act2: 11, act3: 11, act4: 11, act5: 11, act6: 10, char: 70, exam: 29 },
-          'Semi-Final': { act1: 10, act2: 10, act3: 10, act4: 10, act5: 10, act6: 10, char: 60, exam: 27 },
-          Final: { act1: 9, act2: 9, act3: 9, act4: 9, act5: 10, act6: 9, char: 60, exam: 25 }
-        }
-      },
-      {
-        id: 15,
-        name: 'Villanueva, Anna C.',
-        periods: {
-          Prelim: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 38 },
-          Midterm: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 38 },
-          'Semi-Final': { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 38 },
-          Final: { act1: 19, act2: 19, act3: 19, act4: 19, act5: 20, act6: 9, char: 100, exam: 38 }
-        }
-      }
-    ],
-    IT101: [
-      { id: 1, name: 'Dela Cruz, Juan M.', periods: generateMockStudentPeriods(1, 95, 88, 36) },
-      { id: 2, name: 'Santos, Maria A.', periods: generateMockStudentPeriods(2, 75, 68, 28) },
-      { id: 3, name: 'Reyes, Mark T.', periods: generateMockStudentPeriods(3, 82, 55, 26) },
-      { id: 4, name: 'Villanueva, Anna C.', periods: generateMockStudentPeriods(4, 98, 92, 38) },
-    ],
-    IT201: [
-      { id: 5, name: 'Bautista, Kevin L.', periods: generateMockStudentPeriods(5, 88, 84, 32) },
-      { id: 6, name: 'Gomez, Elena R.', periods: generateMockStudentPeriods(6, 70, 65, 25) },
-      { id: 7, name: 'Pascual, Jaime F.', periods: generateMockStudentPeriods(7, 92, 90, 36) },
-    ],
-    CS301: [
-      { id: 8, name: 'Aquino, Teresa S.', periods: generateMockStudentPeriods(8, 95, 92, 38) },
-      { id: 9, name: 'Lim, Dexter J.', periods: generateMockStudentPeriods(9, 60, 58, 22) },
-      { id: 10, name: 'Cruz, Patricia N.', periods: generateMockStudentPeriods(10, 85, 80, 33) },
-    ]
-  };
-
-  const activeStudents = classStudents[selectedClass] || classStudents.IT101;
-
-  const handlePostGrades = () => {
-    const currentLocked = JSON.parse(localStorage.getItem(`locked_milestones_${selectedClass}`) || '[]');
-    if (!currentLocked.includes('Semestral Grade')) {
-      currentLocked.push('Semestral Grade');
     }
-    localStorage.setItem(`locked_milestones_${selectedClass}`, JSON.stringify(currentLocked));
-    setShowConfirmModal(false);
-    navigate('/faculty/postedgradesview');
+    fetchMyClasses();
+  }, [user]);
+
+  // Load class record information, enrolled students, max points, and saved scores
+  useEffect(() => {
+    async function loadSpreadsheetData() {
+      if (!user || !classRecordId) {
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      try {
+        // 1. Fetch class info
+        const { data: cr, error: crErr } = await supabase
+          .from('class_records')
+          .select(`
+            class_record_id,
+            status,
+            school_year,
+            semester,
+            subject_id,
+            section_id,
+            subjects ( code, name, units, departments ( name ) ),
+            sections ( name )
+          `)
+          .eq('class_record_id', classRecordId)
+          .single();
+
+        if (crErr) throw crErr;
+        setClassInfo(cr);
+
+        // 2. Fetch enrolled students
+        const { data: enrolls, error: studentErr } = await supabase
+          .from('enrollments')
+          .select(`
+            student_id,
+            users:student_id (
+              user_id,
+              first_name,
+              last_name,
+              email,
+              user_number
+            )
+          `)
+          .eq('section_id', cr.section_id)
+          .eq('subject_id', cr.subject_id);
+
+        if (studentErr) throw studentErr;
+
+        const studentList = (enrolls || [])
+          .map(e => e.users)
+          .filter(Boolean)
+          .map((u, idx) => ({
+            id: u.user_id,
+            studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
+            name: `${u.last_name}, ${u.first_name}`,
+            email: u.email
+          }));
+        studentList.sort((a, b) => a.name.localeCompare(b.name));
+
+        // 3. Fetch column max items
+        const { data: cols } = await supabase
+          .from('class_grading_columns')
+          .select('*')
+          .eq('class_record_id', classRecordId);
+
+        const newMax = {
+          Prelim: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+          Midterm: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+          'Semi-Final': { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
+          Final: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 }
+        };
+
+        if (cols && cols.length > 0) {
+          cols.forEach(row => {
+            if (newMax[row.term]) {
+              newMax[row.term] = {
+                act1: row.act1_max,
+                act2: row.act2_max,
+                act3: row.act3_max,
+                act4: row.act4_max,
+                act5: row.act5_max,
+                act6: row.act6_max,
+                char: 100,
+                exam: row.exam_max
+              };
+            }
+          });
+        }
+        setMaxItems(newMax);
+
+        // 4. Fetch saved term scores from Supabase
+        const { data: savedScores } = await supabase
+          .from('student_term_scores')
+          .select('*')
+          .eq('class_record_id', classRecordId);
+
+        const scoresByStudent = {};
+        (savedScores || []).forEach(row => {
+          if (!scoresByStudent[row.student_id]) {
+            scoresByStudent[row.student_id] = {
+              Prelim: {},
+              Midterm: {},
+              'Semi-Final': {},
+              Final: {}
+            };
+          }
+          scoresByStudent[row.student_id][row.term] = {
+            act1: row.act1,
+            act2: row.act2,
+            act3: row.act3,
+            act4: row.act4,
+            act5: row.act5,
+            act6: row.act6,
+            char: row.char_rating,
+            exam: row.exam
+          };
+        });
+
+        // 5. Fetch actual absences count from Supabase to sync
+        const { data: absenceData } = await supabase
+          .from('attendance_records')
+          .select('student_id')
+          .eq('class_record_id', classRecordId)
+          .eq('status', 'Absent');
+
+        const absenceCounts = {};
+        if (absenceData) {
+          absenceData.forEach(rec => {
+            absenceCounts[rec.student_id] = (absenceCounts[rec.student_id] || 0) + 1;
+          });
+        }
+
+        // 6. Fetch locked milestones / posted grades
+        const { data: pgData } = await supabase
+          .from('posted_grades')
+          .select('*')
+          .eq('class_record_id', classRecordId)
+          .eq('grade_period', 'final');
+
+        const lockedList = [];
+        const customRemarksMap = {};
+        const remarksNoteMap = {};
+        if (pgData && pgData.length > 0) {
+          if (pgData[0].is_locked) {
+            lockedList.push('Semestral Grade');
+          }
+          pgData.forEach(row => {
+            customRemarksMap[row.student_id] = row.remarks;
+            remarksNoteMap[row.student_id] = row.remarks_note;
+          });
+        }
+        setLockedMilestones(lockedList);
+
+        // Compile complete student datasets
+        const compiled = studentList.map(student => {
+          const studentScores = scoresByStudent[student.id] || {
+            Prelim: {},
+            Midterm: {},
+            'Semi-Final': {},
+            Final: {}
+          };
+          const absences = absenceCounts[student.id] || 0;
+
+          return {
+            ...student,
+            absences,
+            periods: {
+              Prelim: studentScores.Prelim || {},
+              Midterm: studentScores.Midterm || {},
+              'Semi-Final': studentScores['Semi-Final'] || {},
+              Final: studentScores.Final || {}
+            },
+            customRemarks: customRemarksMap[student.id] || '',
+            remarksNote: remarksNoteMap[student.id] || ''
+          };
+        });
+
+        setStudents(compiled);
+      } catch (err) {
+        console.error('Error loading computation preview:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadSpreadsheetData();
+  }, [user, classRecordId]);
+
+  const getTransmutedGrade = (score) => {
+    if (score >= 98) return 1.00;
+    if (score >= 95) return 1.25;
+    if (score >= 92) return 1.50;
+    if (score >= 89) return 1.75;
+    if (score >= 86) return 2.00;
+    if (score >= 83) return 2.25;
+    if (score >= 80) return 2.50;
+    if (score >= 77) return 2.75;
+    if (score >= 75) return 3.00;
+    return 5.00;
   };
+
+  const handlePostGrades = async () => {
+    if (!classRecordId || students.length === 0) return;
+    setPostingGrades(true);
+    try {
+      // 1. Fetch existing posted grades for this class record and period to match primary keys
+      const { data: existingPg, error: fetchErr } = await supabase
+        .from('posted_grades')
+        .select('posted_grade_id, student_id')
+        .eq('class_record_id', classRecordId)
+        .eq('grade_period', 'final');
+
+      if (fetchErr) throw fetchErr;
+
+      const existingMap = {};
+      if (existingPg) {
+        existingPg.forEach(row => {
+          existingMap[row.student_id] = row.posted_grade_id;
+        });
+      }
+
+      const postRows = [];
+      const mapRemarkToDb = (remarkStr) => {
+        if (!remarkStr) return 'passed';
+        const lower = remarkStr.toLowerCase();
+        if (lower === 'inc') return 'incomplete';
+        return lower; // 'passed', 'failed', 'fda', 'dropped'
+      };
+
+      students.forEach(stud => {
+        // Recalculate Final Rating based on ScoreInput.jsx formula
+        const getTermRating = (termName) => {
+          const tSc = stud.periods[termName] || {};
+          const tMx = maxItems[termName] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
+          const tCs = (tSc.act1 || 0) + (tSc.act2 || 0) + (tSc.act3 || 0) + (tSc.act4 || 0) + (tSc.act5 || 0) + (tSc.act6 || 0);
+          const tCsMx = tMx.act1 + tMx.act2 + tMx.act3 + tMx.act4 + tMx.act5 + tMx.act6;
+          const tCsP = tCsMx > 0 ? (tCs / tCsMx) * 50 : 0;
+          const tChP = (tSc.char || 0) * 0.1;
+          const tExP = tMx.exam > 0 ? ((tSc.exam || 0) / tMx.exam) * 40 : 0;
+          return Math.min(100, Math.max(0, Math.round(tCsP + tChP + tExP)));
+        };
+
+        const prelimRating = getTermRating('Prelim');
+        const midtermRating = getTermRating('Midterm');
+        const sfRating = getTermRating('Semi-Final');
+        const finalRating = getTermRating('Final');
+
+        const mr = Math.round((prelimRating + midtermRating) / 2);
+        const tfr = Math.round((sfRating + finalRating) / 2);
+        const finalSG = Math.round((mr + tfr) / 2);
+
+        const rawGWA = getTransmutedGrade(finalSG);
+        const autoRemarks = rawGWA <= 3.00 ? 'Passed' : 'Failed';
+        const draftRemarks = stud.customRemarks || autoRemarks;
+        const remarksLabel = mapRemarkToDb(draftRemarks);
+
+        let computedGWA = rawGWA;
+        if (remarksLabel === 'passed' && rawGWA > 3.00) {
+          computedGWA = 3.00;
+        }
+
+        const payloadRow = {
+          class_record_id: classRecordId,
+          student_id: stud.id,
+          grade_period: 'final',
+          computed_grade: finalRating,
+          effective_grade: computedGWA,
+          remarks: remarksLabel,
+          remarks_note: stud.remarksNote || null,
+          remarks_set_by: user.id,
+          remarks_set_at: new Date().toISOString(),
+          posted_by: user.id,
+          posted_at: new Date().toISOString(),
+          is_locked: true,
+          locked_milestones: ['Semestral Grade']
+        };
+
+        const existingId = existingMap[stud.id];
+        payloadRow.posted_grade_id = existingId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = Math.random() * 16 | 0;
+          return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        }));
+
+        postRows.push(payloadRow);
+      });
+
+      // Post to Supabase
+      const { error: postErr } = await supabase
+        .from('posted_grades')
+        .upsert(postRows);
+
+      if (postErr) throw postErr;
+
+      setLockedMilestones(['Semestral Grade']);
+
+      // Log activity
+      const actorName = resolveActorName(profile, user);
+      await logActivity(
+        'Grade Posting',
+        `Posted and locked Semestral grades for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
+        actorName
+      );
+
+      setShowConfirmModal(false);
+      alert('Grades posted and locked successfully!');
+      navigate('/faculty/postedgradesview');
+    } catch (err) {
+      console.error('Error posting grades to database:', err);
+      alert('Failed to post grades: ' + err.message);
+    } finally {
+      setPostingGrades(false);
+    }
+  };
+
+  const handleClassChange = (newClassId) => {
+    setSearchParams({ id: newClassId });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
+          <p className="text-sm text-slate-500 font-medium font-sans">Loading computation preview...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!classRecordId) {
+    return (
+      <>
+        <PageHeader title="Select Class Record" breadcrumb="Faculty Portal" />
+        <div className="p-8 overflow-y-auto flex-1 space-y-6">
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-900 font-display">Select a Class to Preview Grades</h2>
+              <p className="text-sm text-slate-500 mt-1">Please select one of your active classes to load its grading preview spreadsheet.</p>
+            </div>
+            {classesList.length === 0 ? (
+              <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+                <FileSpreadsheet className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+                <h3 className="text-base font-bold text-slate-900">No Active Class Records Found</h3>
+                <p className="text-sm text-slate-505 mt-2">You do not have any active class records.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {classesList.map(c => (
+                  <button
+                    key={c.class_record_id}
+                    onClick={() => handleClassChange(c.class_record_id)}
+                    className="p-5 bg-white border border-slate-250 hover:border-sage-400 rounded-xl shadow-xs hover:shadow-sm transition-all text-left flex items-center justify-between"
+                  >
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">{c.subjects?.code} - {c.sections?.name}</h4>
+                      <p className="text-xs text-slate-500 mt-1">{c.subjects?.name}</p>
+                      <p className="text-[10px] text-slate-400 font-mono mt-0.5">{c.school_year} · {c.semester} Sem</p>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-slate-400" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
       <PageHeader title="Computation Preview" breadcrumb="Faculty Portal">
         <button 
-          onClick={() => navigate('/faculty/scoreinput')}
-          className="px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-lg transition-all flex items-center gap-1.5"
+          onClick={() => navigate(`/faculty/scoreinput?id=${classRecordId}`)}
+          className="px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
         >
           📝 Input Scores
         </button>
-        <button className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:border-sage-300 rounded-lg transition-colors bg-white flex items-center gap-2">
-            <Download className="h-4 w-4" /> Export Report
-        </button>
         <button 
           onClick={() => setShowConfirmModal(true)}
-          className="px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-sm"
+          disabled={lockedMilestones.includes('Semestral Grade') || postingGrades}
+          className="px-4 py-2 text-sm font-semibold text-white bg-sage-600 hover:bg-sage-700 disabled:opacity-50 rounded-lg transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
         >
-            <Send className="h-4 w-4" /> Post Grades
+          <Send className="h-4 w-4" /> {lockedMilestones.includes('Semestral Grade') ? 'Grades Posted' : 'Post Grades'}
         </button>
       </PageHeader>
       
@@ -182,12 +459,14 @@ export default function GradeComputationPreview() {
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
               <div className="relative">
                 <select
-                  value={selectedClass}
-                  onChange={(e) => setSelectedClass(e.target.value)}
+                  value={classRecordId}
+                  onChange={(e) => handleClassChange(e.target.value)}
                   className="appearance-none w-full bg-white border border-slate-200 hover:border-sage-300 px-3 py-2 pr-8 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer text-slate-700"
                 >
                   {classesList.map(c => (
-                    <option key={c.code} value={c.code}>{c.label}</option>
+                    <option key={c.class_record_id} value={c.class_record_id}>
+                      {c.subjects?.code} - {c.sections?.name} ({c.subjects?.name})
+                    </option>
                   ))}
                 </select>
                 <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
@@ -200,7 +479,7 @@ export default function GradeComputationPreview() {
             <div className="flex items-center gap-6">
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</p>
-                <p className="text-xs font-mono font-bold text-slate-800 mt-0.5">{activeStudents.length} Students</p>
+                <p className="text-xs font-mono font-bold text-slate-800 mt-0.5">{students.length} Students</p>
               </div>
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Preview Mode</p>
@@ -211,41 +490,42 @@ export default function GradeComputationPreview() {
         
         {/* Info Banner */}
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-4">
-            <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
-            <div>
+            <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5 animate-pulse" />
+            <div className="text-left">
                 <h4 className="text-sm font-bold text-amber-800">Review Before Posting</h4>
-                <p className="text-sm text-amber-700 mt-1">
-                    Please review the computed grades carefully. Once you click <strong>Post Grades</strong>, they will be locked and visible to students. Any changes will require a formal Admin Grade Override.
+                <p className="text-sm text-amber-700 mt-1 leading-relaxed">
+                    Please review the computed grades carefully. Once you click <strong>Post Grades</strong>, they will be locked and visible to students. Any changes will require a formal Dean administrative override approval.
                 </p>
             </div>
         </div>
 
         {/* Header Info */}
-        <div className="flex items-center gap-2 text-sm text-slate-500">
+        <div className="flex items-center gap-2 text-sm text-slate-505">
             <Link to="/faculty/classrecordslist" className="hover:text-sage-600 transition-colors">Class Records</Link>
             <ChevronRight className="h-3 w-3" />
-            <span className="font-medium text-slate-900">{classesList.find(c => c.code === selectedClass)?.label} (Semestral Summary)</span>
+            <span className="font-semibold text-slate-900">
+              {classInfo?.subjects?.code} - {classInfo?.sections?.name} (Semestral Summary)
+            </span>
         </div>
 
-        {/* Data Table Card */}
         {isFullScreen && <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsFullScreen(false)} />}
-        <div className={isFullScreen ? "fixed inset-4 z-50 rounded-xl border border-slate-200 shadow-2xl bg-white overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200" : "rounded-xl border border-slate-200 shadow-sm bg-white overflow-hidden flex flex-col"}>
+        <div className={isFullScreen ? "fixed inset-4 z-50 rounded-xl border border-slate-200 shadow-2xl bg-white overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200" : "rounded-xl border border-slate-200 shadow-sm bg-white overflow-hidden flex flex-col w-full max-w-full"}>
             {/* Fullscreen header bar */}
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/80">
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="h-4 w-4 text-sage-600" />
                 <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  {isFullScreen ? classesList.find(c => c.code === selectedClass)?.label : 'Computation Preview'}
+                  {classInfo?.subjects?.code} - {classInfo?.sections?.name}
                 </span>
                 {isFullScreen && (
                   <span className="text-[10px] font-medium text-slate-400 ml-2">
-                    Semestral Summary · {activeStudents.length} students
+                    Semestral Summary · {students.length} students
                   </span>
                 )}
               </div>
               <button
                 onClick={() => setIsFullScreen(!isFullScreen)}
-                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-sage-50 hover:border-sage-300 text-slate-500 hover:text-sage-700 transition-all"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-sage-50 hover:border-sage-300 text-slate-550 hover:text-slate-700 transition-all cursor-pointer"
                 title={isFullScreen ? 'Exit fullscreen' : 'View fullscreen'}
               >
                 {isFullScreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
@@ -255,64 +535,37 @@ export default function GradeComputationPreview() {
                 <table className={`w-full min-w-max text-left border-collapse ${isFullScreen ? 'fullscreen-table' : ''}`}>
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 text-xs font-bold text-center">
-                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-10">
-                              No.
-                            </th>
-                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24">
-                              Student No.
-                            </th>
-                            <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-0 bg-slate-50 border-r border-slate-200 z-20 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">
-                              Student Name
-                            </th>
-                            
+                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-10 sticky left-0 bg-slate-50 z-30">No.</th>
+                            <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24 sticky left-[40px] bg-slate-50 z-30">Student No.</th>
+                            <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-[136px] bg-slate-50 border-r border-slate-200 z-30 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
                             {/* Prelim Period */}
-                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">
-                              PRELIMINARY GRADE
-                            </th>
+                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
                             
                             {/* Midterm Period */}
-                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">
-                              MIDTERM GRADE
-                            </th>
+                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">MIDTERM GRADE</th>
                             
                             {/* Midterm Rating */}
-                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-indigo-100 text-indigo-950 font-bold uppercase tracking-wider w-16">
-                              Midterm Rating (MR)
-                            </th>
+                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-indigo-100 text-indigo-950 font-bold uppercase tracking-wider w-16">Midterm Rating (MR)</th>
                             
                             {/* Semi-Final Period */}
-                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-amber-50 text-amber-850">
-                              SEMI-FINAL GRADE
-                            </th>
+                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-amber-50 text-amber-850">SEMI-FINAL GRADE</th>
                             
                             {/* Final Period */}
-                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-orange-50 text-orange-850">
-                              FINAL GRADE
-                            </th>
+                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-orange-50 text-orange-850">FINAL GRADE</th>
                             
                             {/* Tentative Final Rating */}
-                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-orange-100 text-orange-950 font-bold uppercase tracking-wider w-16">
-                              Tentative Final Rating (TFR)
-                            </th>
+                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-orange-100 text-orange-950 font-bold uppercase tracking-wider w-16">Tentative Final Rating (TFR)</th>
                             
                             {/* Semestral Grade */}
-                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-50 text-emerald-800 font-extrabold uppercase tracking-wider w-16">
-                              Semestral Grade (SG)
-                            </th>
+                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-50 text-emerald-800 font-extrabold uppercase tracking-wider w-16">Semestral Grade (SG)</th>
                             
                             {/* Equivalent (GWA) */}
-                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-16">
-                              Equivalent GWA
-                            </th>
+                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-16">Equivalent GWA</th>
                             
                             {/* Remarks */}
-                            <th rowSpan={2} className="px-4 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-20">
-                              Remarks
-                            </th>
-                            
+                            <th rowSpan={2} className="px-4 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-20">Remarks</th>
                         </tr>
-                        
-                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
                           {/* Prelim sub-headers */}
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
@@ -370,8 +623,8 @@ export default function GradeComputationPreview() {
                           <th className="px-2 py-1.5 border-r border-slate-200 bg-orange-100/30 font-bold w-14 text-slate-800">Rating</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {activeStudents.map((student, idx) => (
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                        {students.map((student, idx) => (
                           <StudentRow 
                             key={student.id} 
                             student={student} 
@@ -390,34 +643,34 @@ export default function GradeComputationPreview() {
         {showConfirmModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
                 <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                    <div className="p-6">
+                    <div className="p-6 text-left">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="w-10 h-10 rounded-full bg-sage-50 text-sage-600 flex items-center justify-center">
                                 <Send className="h-5 w-5" />
                             </div>
                             <div>
                                 <h3 className="text-lg font-bold text-slate-900">Post Semestral Grades</h3>
-                                <p className="text-xs text-slate-455">Finalize scores and lock editing for all term milestones.</p>
+                                <p className="text-xs text-slate-455 font-semibold">Finalize scores and lock editing for all term milestones.</p>
                             </div>
                         </div>
 
                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 leading-relaxed space-y-2">
-                            <p><strong>⚠️ Action is irreversible:</strong> Finalizing and posting will lock this class record (<strong>{classesList.find(c => c.code === selectedClass)?.label}</strong>) across all periods (Prelim, Midterm, Semi-Final, and Final).</p>
+                            <p><strong>⚠️ Action is irreversible:</strong> Finalizing and posting will lock this class record (<strong>{classInfo?.subjects?.code} - {classInfo?.sections?.name}</strong>) across all periods.</p>
                             <p>Once posted, these grades will be visible to students. Any subsequent changes will require formal Dean administrative override approval.</p>
                         </div>
                     </div>
                     <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
                         <button 
-                            onClick={() => setShowConfirmModal(false)}
-                            className="px-4 py-2 text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                          onClick={() => setShowConfirmModal(false)}
+                          className="px-4 py-2 text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                         >
-                            Cancel
+                          Cancel
                         </button>
                         <button 
-                            onClick={handlePostGrades}
-                            className="px-4 py-2 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
+                          onClick={handlePostGrades}
+                          className="px-4 py-2 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
                         >
-                            <Send className="h-3.5 w-3.5" /> Confirm & Post Grades
+                          <Send className="h-3.5 w-3.5" /> Confirm & Post Grades
                         </button>
                     </div>
                 </div>

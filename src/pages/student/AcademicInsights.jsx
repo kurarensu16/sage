@@ -12,6 +12,7 @@ import {
   BookOpen
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { getAiAcademicInsight } from '../../lib/openrouter';
 
 // Helper to transmute raw scores to DYCI standard grades
 const getTransmutedGrade = (score) => {
@@ -56,7 +57,44 @@ const calculateTermRating = (draftScores, maxSetup) => {
   return Math.min(100, Math.max(0, Math.round(csPct + charPct + examPct)));
 };
 
-// Fallback Mock Data
+// Helper to generate dynamic academic insights text based on period grade info
+const generateDynamicInsight = (termName, rating, gwa, status) => {
+  if (status === 'Pending' || gwa === '—') {
+    return `Awaiting evaluation components for ${termName}.`;
+  }
+  const isPosted = status === 'Posted';
+  const statusStr = isPosted ? "officially posted" : "calculated as draft";
+  
+  let baseText;
+  if (termName === 'Midterm Rating (MR)' || termName === 'Midterm Rating') {
+    baseText = `Your Midterm Rating combines your Prelim and Midterm efforts, ${statusStr} at ${gwa} GWA (${rating}%).`;
+  } else if (termName === 'Tentative Final Rating (TFR)' || termName === 'Tentative Final Rating') {
+    baseText = `Your Tentative Final Rating represents the average of your Semi-Final and Final marks, ${statusStr} at ${gwa} GWA (${rating}%).`;
+  } else if (termName === 'Semestral Grade (SG)' || termName === 'Semestral Grade') {
+    baseText = `Your projected Semestral Grade stands at a ${gwa} GWA (${rating}%), reflecting your cumulative performance for the term.`;
+  } else {
+    baseText = `Your ${termName} grade is ${statusStr} at ${gwa} GWA (${rating}%).`;
+  }
+
+  const numericGwa = parseFloat(gwa);
+  if (isNaN(numericGwa)) {
+    return `${baseText} Maintain your class participation and complete all upcoming tasks.`;
+  }
+
+  if (numericGwa <= 1.45) {
+    return `${baseText} Outstanding result! You are demonstrating exceptional mastery of the course materials and are on track for honors.`;
+  } else if (numericGwa <= 1.75) {
+    return `${baseText} Strong academic standing. You are maintaining a highly competitive position in this class.`;
+  } else if (numericGwa <= 2.50) {
+    return `${baseText} Good, stable performance. Consistent efforts will keep you securely on track.`;
+  } else if (numericGwa <= 3.00) {
+    return `${baseText} Passing grade. Focus on reviewing core topics to build a safer margin.`;
+  } else {
+    return `${baseText} Warning: This rating is currently below passing. We recommend reaching out to your instructor or coordinator for guidance.`;
+  }
+};
+
+// Fallback Mock Data matching Part 1.5 of the Redesign Spec
 const mockInsightsData = {
   summary: "All subjects are passing safely. Keep it up! You are in prime standing to qualify for Honors this semester.",
   verdict: "continue",
@@ -186,6 +224,10 @@ export default function AcademicInsights() {
   const [selectedSubjectCode, setSelectedSubjectCode] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState('semestralGrade');
 
+  // AI Guidance states
+  const [aiCache, setAiCache] = useState({});
+  const [aiLoading, setAiLoading] = useState(false);
+
   useEffect(() => {
     async function loadInsights() {
       if (!user) return;
@@ -208,12 +250,21 @@ export default function AcademicInsights() {
             setSelectedSubjectCode(data.basis_snapshot.subjects[0].code);
           }
         } else {
-          if (profile?.section_id) {
+          // DATABASE FALLBACK ROUTE: Fetch the student's real data
+          const { data: enrollsCheck } = await supabase
+            .from('enrollments')
+            .select('section_id')
+            .eq('student_id', user.id);
+
+          const activeSectionId = profile?.section_id || (enrollsCheck && enrollsCheck.length > 0 ? enrollsCheck[0].section_id : null);
+
+          if (activeSectionId) {
+            // 1. Fetch enrollments
             const { data: enrolls } = await supabase
               .from('enrollments')
               .select('subject_id, subjects(*)')
               .eq('student_id', user.id)
-              .eq('section_id', profile.section_id);
+              .eq('section_id', activeSectionId);
 
             const subjectIds = enrolls?.map(e => e.subject_id) || [];
 
@@ -221,7 +272,7 @@ export default function AcademicInsights() {
               const { data: classRecords } = await supabase
                 .from('class_records')
                 .select('class_record_id, subject_id, faculty:users!faculty_id(first_name, last_name)')
-                .eq('section_id', profile.section_id)
+                .eq('section_id', activeSectionId)
                 .in('subject_id', subjectIds)
                 .eq('status', 'active');
 
@@ -293,13 +344,15 @@ export default function AcademicInsights() {
                     const dbTermKey = termName.toLowerCase().replace('-', '_');
                     const postedRow = crPosted.find(p => p.grade_period === dbTermKey);
                     if (postedRow) {
+                      const rating = parseFloat(postedRow.computed_grade);
+                      const gwa = postedRow.effective_grade !== null 
+                        ? postedRow.effective_grade.toFixed(2) 
+                        : getTransmutedGrade(parseFloat(postedRow.computed_grade)).toFixed(2);
                       return {
-                        rating: parseFloat(postedRow.computed_grade),
-                        gwa: postedRow.effective_grade !== null 
-                          ? postedRow.effective_grade.toFixed(2) 
-                          : getTransmutedGrade(parseFloat(postedRow.computed_grade)).toFixed(2),
+                        rating,
+                        gwa,
                         status: 'Posted',
-                        insight: `Term grade was officially posted by your instructor.`
+                        insight: generateDynamicInsight(termName, rating, gwa, 'Posted')
                       };
                     }
                     const draftRow = crDrafts[termName];
@@ -322,7 +375,7 @@ export default function AcademicInsights() {
                         rating: computedRating,
                         gwa: computedGwa,
                         status: 'Draft',
-                        insight: `Draft grade calculated from current class standing activities.`
+                        insight: generateDynamicInsight(termName, computedRating, computedGwa, 'Draft')
                       };
                     }
                     return { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting term evaluation components.` };
@@ -334,11 +387,13 @@ export default function AcademicInsights() {
                   let mr = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Prelim and Midterm components.` };
                   if (prelim.gwa !== '—' && midterm.gwa !== '—') {
                     const avgRating = Math.round((prelim.rating + midterm.rating) / 2);
+                    const avgGwa = getTransmutedGrade(avgRating).toFixed(2);
+                    const status = prelim.status === 'Posted' && midterm.status === 'Posted' ? 'Posted' : 'Draft';
                     mr = {
                       rating: avgRating,
-                      gwa: getTransmutedGrade(avgRating).toFixed(2),
-                      status: prelim.status === 'Posted' && midterm.status === 'Posted' ? 'Posted' : 'Draft',
-                      insight: `Calculated average of Prelim and Midterm grades.`
+                      gwa: avgGwa,
+                      status,
+                      insight: generateDynamicInsight('Midterm Rating', avgRating, avgGwa, status)
                     };
                   }
 
@@ -348,22 +403,26 @@ export default function AcademicInsights() {
                   let tentativeFinalRating = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Semi-Final and Final components.` };
                   if (semiFinal.gwa !== '—' && final.gwa !== '—') {
                     const avgRating = Math.round((semiFinal.rating + final.rating) / 2);
+                    const avgGwa = getTransmutedGrade(avgRating).toFixed(2);
+                    const status = semiFinal.status === 'Posted' && final.status === 'Posted' ? 'Posted' : 'Draft';
                     tentativeFinalRating = {
                       rating: avgRating,
-                      gwa: getTransmutedGrade(avgRating).toFixed(2),
-                      status: semiFinal.status === 'Posted' && final.status === 'Posted' ? 'Posted' : 'Draft',
-                      insight: `Calculated average of Semi-Final and Final grades.`
+                      gwa: avgGwa,
+                      status,
+                      insight: generateDynamicInsight('Tentative Final Rating', avgRating, avgGwa, status)
                     };
                   }
 
                   let semestralGrade = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting complete term components.` };
                   if (mr.gwa !== '—' && tentativeFinalRating.gwa !== '—') {
                     const avgRating = Math.round((mr.rating + tentativeFinalRating.rating) / 2);
+                    const avgGwa = getTransmutedGrade(avgRating).toFixed(2);
+                    const status = mr.status === 'Posted' && tentativeFinalRating.status === 'Posted' ? 'Posted' : 'Draft';
                     semestralGrade = {
                       rating: avgRating,
-                      gwa: getTransmutedGrade(avgRating).toFixed(2),
-                      status: mr.status === 'Posted' && tentativeFinalRating.status === 'Posted' ? 'Posted' : 'Draft',
-                      insight: `Your final projected semestral rating equivalent.`
+                      gwa: avgGwa,
+                      status,
+                      insight: generateDynamicInsight('Semestral Grade', avgRating, avgGwa, status)
                     };
                   }
 
@@ -403,17 +462,38 @@ export default function AcademicInsights() {
                 else if (computedGwa <= 1.75) gwaStanding = 'Very Good';
                 else if (computedGwa > 3.00) gwaStanding = 'Academic Warning';
 
+                // Latin Honors / DL eligibility rule: lowest individual course grade must be <= 2.00
+                const hasDisqualifyingGrade = computedSubjectsList.some(sub => {
+                  let runningGwaVal = null;
+                  const semGrade = sub.periods?.semestralGrade;
+                  const tentativeFinal = sub.periods?.tentativeFinalRating;
+                  const mr = sub.periods?.midtermRating;
+                  const prelim = sub.periods?.prelim;
+
+                  if (semGrade && semGrade.gwa !== '—') runningGwaVal = parseFloat(semGrade.gwa);
+                  else if (tentativeFinal && tentativeFinal.gwa !== '—') runningGwaVal = parseFloat(tentativeFinal.gwa);
+                  else if (mr && mr.gwa !== '—') runningGwaVal = parseFloat(mr.gwa);
+                  else if (prelim && prelim.gwa !== '—') runningGwaVal = parseFloat(prelim.gwa);
+
+                  return runningGwaVal !== null && !isNaN(runningGwaVal) && runningGwaVal > 2.00;
+                });
+
                 let dlCategory = 'Not Eligible';
                 let dlProbability = 0;
                 let dlMessage = 'Your current average does not qualify for Dean\'s Lister honors. Focus on upcoming milestones to improve your score.';
-                if (computedGwa <= 1.45) {
+                
+                if (hasDisqualifyingGrade) {
+                  dlCategory = 'Not Eligible';
+                  dlProbability = 0;
+                  dlMessage = 'You are currently disqualified from Dean\'s Lister or Latin Honors because you have one or more courses with a grade lower than 2.00 (e.g. 2.25 or worse). Maintain a grade of 2.00 or better in all individual courses to qualify.';
+                } else if (computedGwa <= 1.45) {
                   dlCategory = '1st Class Dean\'s Lister';
                   dlProbability = 94;
-                  dlMessage = `Your current average of ${computedGwa.toFixed(2)} qualifies you for 1st Class Dean's Lister honors! Keep your final semestral grades below 1.50 to secure the award.`;
+                  dlMessage = `Your current average of ${computedGwa.toFixed(2)} qualifies you for 1st Class Dean's Lister honors! Keep your final semestral grades below 1.50 and all individual grades at 2.00 or better to secure the award.`;
                 } else if (computedGwa <= 1.75) {
                   dlCategory = '2nd Class Dean\'s Lister';
                   dlProbability = 85;
-                  dlMessage = `Your current average of ${computedGwa.toFixed(2)} qualifies you for 2nd Class Dean's Lister honors! Try to increase your average to 1.45 to qualify for 1st Class honors.`;
+                  dlMessage = `Your current average of ${computedGwa.toFixed(2)} qualifies you for 2nd Class Dean's Lister honors! Try to increase your average to 1.45 to qualify for 1st Class honors, and ensure no individual grade drops below 2.00.`;
                 }
 
                 let summary = `Your running average across all subjects is ${computedGwa.toFixed(2)} (${gwaStanding} standing). `;
@@ -482,11 +562,71 @@ export default function AcademicInsights() {
   };
 
   const calculateRunningGwaForPeriod = (periodKey) => {
-    const postedGrades = subjectsList.filter(sub => sub.periods?.[periodKey]?.status === 'Posted');
-    if (postedGrades.length === 0) return '—';
-    const sum = postedGrades.reduce((acc, sub) => acc + parseFloat(sub.periods[periodKey].gwa), 0);
-    return (sum / postedGrades.length).toFixed(2);
+    const validGrades = subjectsList.filter(sub => {
+      const g = sub.periods?.[periodKey];
+      return g && g.gwa !== '—' && (g.status === 'Posted' || g.status === 'Draft');
+    });
+    if (validGrades.length === 0) return '—';
+    const sum = validGrades.reduce((acc, sub) => acc + parseFloat(sub.periods[periodKey].gwa), 0);
+    return (sum / validGrades.length).toFixed(2);
   };
+
+  // Fetch LLM-generated guidance from OpenRouter on selection change
+  useEffect(() => {
+    if (loading || !user || !subjectsList || subjectsList.length === 0) return;
+
+    let cacheKey = '';
+    let payload = {};
+
+    if (scope === 'overall') {
+      cacheKey = 'overall';
+      payload = {
+        type: 'overall',
+        studentName: studentStats.name || `${profile?.first_name || 'Student'} ${profile?.last_name || ''}`,
+        gwa: studentStats.gwa,
+        standing: studentStats.standing,
+        dlCategory: studentStats.dlEligibility?.awardCategory || 'Not Eligible',
+        dlProbability: studentStats.dlEligibility?.probabilityPct || 0,
+        dlMessage: studentStats.dlEligibility?.message || '',
+        subjects: subjectsList
+      };
+    } else {
+      if (!currentSubject) return;
+      cacheKey = `${currentSubject.code}_${selectedPeriod}`;
+      const periodObj = currentSubject.periods?.[selectedPeriod] || {};
+      payload = {
+        type: 'subject',
+        studentName: studentStats.name || `${profile?.first_name || 'Student'} ${profile?.last_name || ''}`,
+        subjectCode: currentSubject.code,
+        subjectName: currentSubject.name,
+        credits: currentSubject.credits,
+        instructor: currentSubject.instructor,
+        periodLabel: periodsMapping[selectedPeriod],
+        rating: periodObj.rating || 0,
+        gwa: periodObj.gwa || '—',
+        status: periodObj.status || 'Pending',
+        allPeriods: currentSubject.periods || {}
+      };
+    }
+
+    if (aiCache[cacheKey]) return; // Already fetched
+
+    async function fetchAiGuidance() {
+      setAiLoading(true);
+      try {
+        const result = await getAiAcademicInsight(payload);
+        if (result) {
+          setAiCache(prev => ({ ...prev, [cacheKey]: result }));
+        }
+      } catch (err) {
+        console.warn("AI generation failed, relying on fallback.", err);
+      } finally {
+        setAiLoading(false);
+      }
+    }
+
+    fetchAiGuidance();
+  }, [scope, selectedSubjectCode, selectedPeriod, loading, subjectsList]);
 
   if (loading) {
     return (
@@ -609,9 +749,16 @@ export default function AcademicInsights() {
                     <CheckCircle2 className="h-4 w-4 text-sage-600 flex-shrink-0" />
                     <h4 className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Academic Advisor Summary</h4>
                   </div>
-                  <p className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed bg-slate-50 border border-slate-200/70 rounded-xl p-3.5 sm:p-4">
-                    "{activeData.summary}"
-                  </p>
+                  <div className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed bg-slate-50 border border-slate-200/70 rounded-xl p-3.5 sm:p-4">
+                    {aiLoading && !aiCache['overall'] ? (
+                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                        <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-sage-600"></div>
+                        Generating AI Counselor advice...
+                      </div>
+                    ) : (
+                      <p>"{aiCache['overall'] || activeData.summary}"</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -802,9 +949,16 @@ export default function AcademicInsights() {
                         <BrainCircuit className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                         <h4 className="text-xs font-bold uppercase tracking-wider">Period Summary & Insight</h4>
                       </div>
-                      <p className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed italic">
-                        "{currentSubject.periods[selectedPeriod].insight || 'No qualitative data compiled for this milestone.'}"
-                      </p>
+                      <div className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed italic">
+                        {aiLoading && !aiCache[`${currentSubject.code}_${selectedPeriod}`] ? (
+                          <div className="flex items-center gap-2 text-xs text-slate-400 not-italic">
+                            <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-sage-600"></div>
+                            Analyzing subject performance via AI...
+                          </div>
+                        ) : (
+                          <p>"{aiCache[`${currentSubject.code}_${selectedPeriod}`] || currentSubject.periods[selectedPeriod].insight || 'No qualitative data compiled for this milestone.'}"</p>
+                        )}
+                      </div>
                     </div>
 
                     {/* Running period comparison block */}

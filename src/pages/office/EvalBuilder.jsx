@@ -190,7 +190,7 @@ export default function EvalBuilder() {
   }, [templateId]);
 
   const handlePreFillPPST = () => {
-    setTitle("PPST Faculty Appraisal Form");
+    setTitle("PPST Faculty Evaluation Form");
     const prefilled = PPST_STANDARD_QUESTIONS.map((q, idx) => ({
       id: `c-ppst-${idx}`,
       label: q.label,

@@ -57,31 +57,40 @@ export default function Dashboard() {
       if (!user || !profile) return;
       setLoading(true);
       try {
-        // 1. Get Section info
-        if (profile.section_id) {
+        // 1. Fetch enrollments for the student
+        const { data: enrolls } = await supabase
+          .from('enrollments')
+          .select('subject_id, section_id, subjects(*)')
+          .eq('student_id', user.id);
+
+        // Determine activeSectionId (fallback to enrolls if profile.section_id is missing/null)
+        const activeSectionId = profile.section_id || (enrolls && enrolls.length > 0 ? enrolls[0].section_id : null);
+
+        // 2. Fetch section details
+        if (activeSectionId) {
           const { data: secData } = await supabase
             .from('sections')
             .select('*')
-            .eq('section_id', profile.section_id)
+            .eq('section_id', activeSectionId)
             .single();
           setSection(secData);
         }
 
-        // 2. Fetch Enrollments
-        const { data: enrolls } = await supabase
-          .from('enrollments')
-          .select('subject_id, subjects(*)')
-          .eq('student_id', user.id);
-
-        // 3. Fetch Class Records for Section
+        // 3. Fetch active class records
+        const subjectIds = enrolls?.map(e => e.subject_id) || [];
         let classRecs = [];
-        if (profile.section_id) {
-          const { data: crs } = await supabase
+        if (activeSectionId && subjectIds.length > 0) {
+          const { data: records } = await supabase
             .from('class_records')
-            .select('class_record_id, subject_id, status, faculty:users!faculty_id(first_name, last_name)')
-            .eq('section_id', profile.section_id)
+            .select(`
+              class_record_id,
+              subject_id,
+              faculty:users!faculty_id ( first_name, last_name )
+            `)
+            .eq('section_id', activeSectionId)
+            .in('subject_id', subjectIds)
             .eq('status', 'active');
-          classRecs = crs || [];
+          classRecs = records || [];
         }
 
         // Map enrollments to active class records
@@ -156,8 +165,8 @@ export default function Dashboard() {
         }
 
         // 5. Pending Evaluations
-        if (profile.section_id) {
-          const count = await checkPendingEvals(user.id, profile.section_id);
+        if (activeSectionId) {
+          const count = await checkPendingEvals(user.id, activeSectionId);
           setPendingEvals(count);
         }
 
@@ -398,7 +407,7 @@ export default function Dashboard() {
               <p className="text-xs text-slate-500">
                 {pendingEvals > 0 
                   ? `You have ${pendingEvals} pending instructor evaluation surveys.` 
-                  : 'All scheduled faculty appraisals are fully completed. Thank you for your feedback!'}
+                  : 'All scheduled faculty evaluations are fully completed. Thank you for your feedback!'}
               </p>
               <Link to="/student/evallist" className="inline-flex items-center gap-1 text-xs font-bold text-sage-600 hover:underline">
                 Open Evaluations List <ChevronRight className="h-3.5 w-3.5" />

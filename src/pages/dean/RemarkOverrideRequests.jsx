@@ -79,6 +79,13 @@ export default function RemarkOverrideRequests() {
             student:users!remark_override_requests_student_id_fkey (
               first_name,
               last_name
+            ),
+            class_records (
+              status,
+              term_id,
+              academic_terms (
+                is_active
+              )
             )
           `)
           .order('requested_at', { ascending: false });
@@ -104,6 +111,7 @@ export default function RemarkOverrideRequests() {
           status: r.status,
           resolvedAt: r.resolved_at,
           deanNote: r.dean_note || '',
+          isLate: r.class_records?.status === 'archived' || (r.class_records?.academic_terms && !r.class_records.academic_terms.is_active),
         }));
 
         if (!cancelled) setRequests(mapped);
@@ -149,11 +157,12 @@ export default function RemarkOverrideRequests() {
         .eq('milestone', 'Semestral Grade')
         .eq('status', 'pending');
 
-      // 3. Unlock posted_grades for the Final period in this class
+      // 3. Unlock posted_grades for the Final period in this class (ONLY for the specific student)
       await supabase
         .from('posted_grades')
         .update({ is_locked: false })
         .eq('class_record_id', req.classCode)
+        .eq('student_id', req.studentId)
         .eq('grade_period', 'final');
 
       // 4. Audit log
@@ -379,7 +388,14 @@ export default function RemarkOverrideRequests() {
                     </span>
 
                     <div className="flex-1 min-w-[180px]">
-                      <p className="text-sm font-bold text-slate-800">{req.studentName}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-bold text-slate-800">{req.studentName}</p>
+                        {req.isLate && (
+                          <span className="px-1.5 py-0.5 rounded text-[8px] bg-rose-50 text-rose-700 border border-rose-200 font-bold uppercase tracking-wider">
+                            Late
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[10px] text-slate-500 font-mono">{req.section} · {req.subjectName}</p>
                     </div>
 

@@ -1,13 +1,7 @@
 # SAGE — Supabase Migration Workflow
 
 > Systematic plan to migrate from `localStorage` (mockDb.js) to Supabase PostgreSQL.  
-> Status: **Not Started**
-
----
-
-## Current State
-
-All data operations go through `src/lib/mockDb.js` which uses `localStorage`. There are **26 mockDb functions** called across **26 page files**. An additional 15 pages use hardcoded inline data with no database connection at all.
+> Status: **Completed**
 
 ---
 
@@ -27,11 +21,11 @@ All data operations go through `src/lib/mockDb.js` which uses `localStorage`. Th
 
 ## Step 1: Supabase Project Setup
 
-- [ ] Create Supabase project for SAGE
-- [ ] Generate SQL migrations for all 21 tables from the ERD in `SAGE_DATABASE_SCHEMA.md`
-- [ ] Create `.env` file with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
-- [ ] Install `@supabase/supabase-js`
-- [ ] Create `src/lib/supabase.js` — shared Supabase client
+- [x] Create Supabase project for SAGE
+- [x] Generate SQL migrations for all tables from the ERD
+- [x] Create `.env` file with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
+- [x] Install `@supabase/supabase-js`
+- [x] Create `src/lib/supabase.js` — shared Supabase client
 
 ```js
 // src/lib/supabase.js
@@ -172,15 +166,15 @@ Convert all default arrays from `mockDb.js` into `supabase/seed.sql`:
 
 ## Progress Tracker
 
-- [X] Step 1: Supabase project setup (`ettnwknyhdhehoclrwwh.supabase.co`)
-- [X] Step 2: Database schemas & migrations for all 21 core tables
-- [X] Step 3A: Migrate Admin pages (all files connected via direct Supabase queries)
-- [X] Step 3B: Migrate Dean pages (all files connected via direct Supabase queries)
-- [X] Step 3C: Wire Faculty pages (drafts, score input, grade posting, unlock requests wired to Supabase)
-- [X] Step 3D: Wire Student pages (posted grades, evaluations, insights wired to Supabase)
-- [X] Step 3E: Wire Auth & College Office pages (real session & profiles from Supabase)
-- [X] Step 4: Seed data (all departments, programs, sections, subjects, users, and class records populated)
-- [X] Step 5: Deprecate `mockDb.js` (zero runtime imports across application)
+- [x] Step 1: Supabase project setup (`ettnwknyhdhehoclrwwh.supabase.co`)
+- [x] Step 2: Database schemas & migrations for all core tables
+- [x] Step 3A: Migrate Admin pages (all files connected via direct Supabase queries)
+- [x] Step 3B: Migrate Dean pages (all files connected via direct Supabase queries)
+- [x] Step 3C: Wire Faculty pages (drafts, score input, grade posting, unlock requests wired to Supabase)
+- [x] Step 3D: Wire Student pages (posted grades, evaluations, insights wired to Supabase)
+- [x] Step 3E: Wire Auth & College Office pages (real session & profiles from Supabase)
+- [x] Step 4: Seed data (all departments, programs, sections, subjects, users, and class records populated)
+- [x] Step 5: Deprecate `mockDb.js` (zero runtime imports across application)
 
 ---
 

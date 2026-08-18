@@ -132,7 +132,7 @@ export default function EvalForm() {
         }
 
       } catch (err) {
-        console.error('Error loading appraisal form:', err);
+        console.error('Error loading evaluation form:', err);
       } finally {
         setLoading(false);
       }
@@ -206,7 +206,7 @@ export default function EvalForm() {
       setSubmitting(false);
       setShowSuccessModal(true);
     } catch (err) {
-      console.error('Error submitting evaluation appraisal:', err);
+      console.error('Error submitting evaluation:', err);
       setSubmitting(false);
       alert('Failed to submit evaluation. Please try again.');
     }
@@ -226,7 +226,7 @@ export default function EvalForm() {
       <div className="flex-1 flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-sm text-slate-500 font-medium font-sans">Loading appraisal form...</p>
+          <p className="text-sm text-slate-500 font-medium font-sans">Loading evaluation form...</p>
         </div>
       </div>
     );
@@ -249,7 +249,7 @@ export default function EvalForm() {
 
   return (
     <>
-      <PageHeader title="PPST Faculty Appraisal Form" breadcrumb="Student Portal" />
+      <PageHeader title="PPST Faculty Evaluation Form" breadcrumb="Student Portal" />
 
       <div className="p-8 overflow-y-auto flex-1 max-w-4xl mx-auto w-full space-y-6 relative">
         
@@ -263,7 +263,7 @@ export default function EvalForm() {
           
           <div className="w-full sm:w-auto flex flex-col sm:items-end gap-1.5">
             <div className="flex justify-between items-center text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-              <span>Appraisal Progress</span>
+              <span>Evaluation Progress</span>
               <span className="font-mono font-bold text-slate-700">{answeredCount} of {totalQuestions} Rated</span>
             </div>
             <div className="flex items-center gap-3 w-full sm:w-56">
@@ -284,7 +284,7 @@ export default function EvalForm() {
             Evaluations
           </span>
           <ChevronRight className="h-3 w-3" />
-          <span className="font-medium text-slate-900 font-sans">Appraisal Form</span>
+          <span className="font-medium text-slate-900 font-sans">Evaluation Form</span>
         </div>
 
         {/* Privacy Alert Box */}
@@ -300,7 +300,7 @@ export default function EvalForm() {
 
         {/* Scoring Guide */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-3">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 text-left">PPST Performance Appraisal Rating Scale</h4>
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 text-left">PPST Performance Evaluation Rating Scale</h4>
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-left">
             {[1, 2, 3, 4].map(val => (
               <div key={val} className="border border-slate-100 rounded-lg p-2.5 bg-slate-50/50">
@@ -406,7 +406,7 @@ export default function EvalForm() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
             <div className="pb-3 border-b border-slate-100">
               <h3 className="text-base font-bold font-display text-slate-900 text-left">Qualitative Student Feedback</h3>
-              <p className="text-xs text-slate-450 text-left mt-0.5">Please provide construct feedback for appraisal purposes.</p>
+              <p className="text-xs text-slate-450 text-left mt-0.5">Please provide constructive feedback for evaluation purposes.</p>
             </div>
 
             {/* Strengths */}
@@ -452,7 +452,7 @@ export default function EvalForm() {
               disabled={!isFormComplete || submitting}
               className="px-6 py-2.5 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-40 disabled:hover:bg-sage-600 disabled:cursor-not-allowed"
             >
-              {submitting ? 'Submitting...' : 'Submit Appraisal'} <Send className="h-4 w-4" />
+              {submitting ? 'Submitting...' : 'Submit Evaluation'} <Send className="h-4 w-4" />
             </button>
           </div>
 
@@ -466,9 +466,9 @@ export default function EvalForm() {
                 <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-4">
                   <Check className="h-6 w-6" />
                 </div>
-                <h3 className="text-xl font-bold font-display text-slate-900 text-left">Submit Appraisal?</h3>
+                <h3 className="text-xl font-bold font-display text-slate-900 text-left">Submit Evaluation?</h3>
                 <p className="text-sm text-slate-550 mt-2 text-left">
-                  Are you sure you want to submit this PPST Faculty Appraisal for <strong>Prof. {facultyName}</strong>? Once submitted, it cannot be modified or re-entered.
+                  Are you sure you want to submit this PPST Faculty Evaluation for <strong>Prof. {facultyName}</strong>? Once submitted, it cannot be modified or re-entered.
                 </p>
               </div>
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
@@ -482,7 +482,7 @@ export default function EvalForm() {
                   onClick={confirmSubmit}
                   className="px-4 py-2 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm font-sans"
                 >
-                  Yes, Submit Appraisal
+                  Yes, Submit Evaluation
                 </button>
               </div>
             </div>
@@ -497,7 +497,7 @@ export default function EvalForm() {
                 <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4 border border-emerald-100">
                   <Check className="h-8 w-8" />
                 </div>
-                <h3 className="text-xl font-extrabold font-display text-slate-900">Appraisal Submitted!</h3>
+                <h3 className="text-xl font-extrabold font-display text-slate-900">Evaluation Submitted!</h3>
                 <p className="text-xs text-slate-500 mt-2 leading-relaxed px-4">
                   Thank you! Your feedback has been securely recorded.
                 </p>

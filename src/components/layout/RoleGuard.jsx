@@ -2,7 +2,7 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext';
 
 export default function RoleGuard({ allowedRoles }) {
-  const { session, role, loading } = useAuth();
+  const { session, user, role, loading } = useAuth();
 
   if (loading) {
     return (
@@ -15,7 +15,7 @@ export default function RoleGuard({ allowedRoles }) {
     );
   }
 
-  if (!session) {
+  if (!session && !user) {
     return <Navigate to="/login" replace />;
   }
 

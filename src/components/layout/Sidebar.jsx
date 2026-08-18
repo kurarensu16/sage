@@ -21,6 +21,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
       { to: '/admin/subjectlist', icon: BookMarked, label: 'Subjects Database' },
       { to: '/admin/sectionlist', icon: Layers, label: 'Sections Database' },
       { to: '/admin/gradeoverride', icon: AlertCircle, label: 'Grade Override' },
+      { to: '/admin/termmanagement', icon: Calendar, label: 'Term Management' },
       { to: '/admin/auditlog', icon: Shield, label: 'Audit Logs' },
     ],
     office: [
@@ -36,6 +37,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
       { to: '/faculty/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/faculty/classrecordslist', icon: BookOpen, label: 'Class Records' },
       { to: '/faculty/scoreinput', icon: FileText, label: 'Score Input' },
+      { to: '/faculty/classattendance', icon: Calendar, label: 'Class Attendance' },
       { to: '/faculty/evalresultsmy', icon: FileText, label: 'Eval Results' },
     ],
     dean: [

@@ -59,3 +59,34 @@ input[type="number"] {
 .fullscreen-table thead th {
   background-color: inherit;
 }
+
+/* Print Styling for Grade Sheet Exports */
+@media print {
+  /* Hide everything by default */
+  body * {
+    visibility: hidden;
+  }
+  /* Show only the print section */
+  #print-container, #print-container * {
+    visibility: visible;
+  }
+  #print-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: white !important;
+    color: black !important;
+  }
+  @page {
+    size: landscape;
+    margin: 0.4in;
+  }
+  /* Force table background colors in browser print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

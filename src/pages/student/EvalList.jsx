@@ -237,7 +237,7 @@ export default function EvalList() {
             {evaluations.length === 0 && (
               <div className="text-center py-16 bg-white border border-slate-200 rounded-xl">
                 <CheckCircle2 className="h-10 w-10 text-slate-350 mx-auto mb-3" />
-                <h3 className="text-sm font-bold text-slate-900">All appraisal forms completed</h3>
+                <h3 className="text-sm font-bold text-slate-900">All evaluation forms completed</h3>
                 <p className="text-xs text-slate-400 mt-1">There are no pending scheduled evaluations for your section at this time.</p>
               </div>
             )}

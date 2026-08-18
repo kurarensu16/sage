@@ -45,6 +45,65 @@ function SeverityBadge({ severity }) {
   );
 }
 
+// Helper to transmute raw scores to GWA
+function getTransmutedGrade(score) {
+  if (score >= 98) return 1.00;
+  if (score >= 95) return 1.25;
+  if (score >= 92) return 1.50;
+  if (score >= 89) return 1.75;
+  if (score >= 86) return 2.00;
+  if (score >= 83) return 2.25;
+  if (score >= 80) return 2.50;
+  if (score >= 77) return 2.75;
+  if (score >= 75) return 3.00;
+  return 5.00;
+}
+
+// Compute tentative GWA for a class record from its scores
+function computeTentativeGrade(classRecordScores, classRecordCols) {
+  const terms = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+  const termRatings = {};
+  
+  terms.forEach(term => {
+    const tSc = classRecordScores?.[term];
+    if (!tSc || (tSc.act1 == null && tSc.act2 == null && tSc.act3 == null && tSc.act4 == null && tSc.act5 == null && tSc.act6 == null && tSc.char_rating == null && tSc.exam == null)) {
+      return;
+    }
+    
+    const tMx = classRecordCols?.[term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
+    
+    const csSum = (tSc.act1 || 0) + (tSc.act2 || 0) + (tSc.act3 || 0) + (tSc.act4 || 0) + (tSc.act5 || 0) + (tSc.act6 || 0);
+    const csMax = (tMx.act1 || 20) + (tMx.act2 || 20) + (tMx.act3 || 20) + (tMx.act4 || 20) + (tMx.act5 || 20) + (tMx.act6 || 10);
+    
+    const csPercent = csMax > 0 ? (csSum / csMax) * 50 : 0;
+    const charPercent = (tSc.char_rating || 0) * 0.1;
+    const examPercent = (tMx.exam || 40) > 0 ? ((tSc.exam || 0) / tMx.exam) * 40 : 0;
+    
+    termRatings[term] = Math.min(100, Math.max(0, Math.round(csPercent + charPercent + examPercent)));
+  });
+  
+  const hasPrelim = termRatings['Prelim'] !== undefined;
+  const hasMidterm = termRatings['Midterm'] !== undefined;
+  const hasSF = termRatings['Semi-Final'] !== undefined;
+  const hasFinal = termRatings['Final'] !== undefined;
+  
+  let finalSG = null;
+  if (hasPrelim && hasMidterm && hasSF && hasFinal) {
+    const mr = Math.round((termRatings['Prelim'] + termRatings['Midterm']) / 2);
+    const tfr = Math.round((termRatings['Semi-Final'] + termRatings['Final']) / 2);
+    finalSG = Math.round((mr + tfr) / 2);
+  } else {
+    const available = Object.values(termRatings);
+    if (available.length > 0) {
+      finalSG = Math.round(available.reduce((sum, val) => sum + val, 0) / available.length);
+    }
+  }
+  
+  if (finalSG === null) return null;
+  return getTransmutedGrade(finalSG);
+}
+
+
 export default function AtRiskStudents() {
   const { profile } = useAuth();
 
@@ -119,14 +178,54 @@ export default function AtRiskStudents() {
 
         if (gErr) throw gErr;
 
+        // ── Step 3.5: fetch student_term_scores and class_grading_columns for draft/tentative GWA calculation ──
+        const { data: scoreData, error: sErr } = await supabase
+          .from('student_term_scores')
+          .select('student_id, class_record_id, term, act1, act2, act3, act4, act5, act6, char_rating, exam')
+          .in('student_id', studentIds.length > 0 ? studentIds : ['00000000-0000-0000-0000-000000000000']);
+
+        const { data: colData, error: colErr } = await supabase
+          .from('class_grading_columns')
+          .select('class_record_id, term, act1_max, act2_max, act3_max, act4_max, act5_max, act6_max, exam_max');
+
+        if (sErr) console.warn('Could not fetch student_term_scores:', sErr);
+        if (colErr) console.warn('Could not fetch class_grading_columns:', colErr);
+
+        const colMap = {};
+        (colData || []).forEach(c => {
+          if (!colMap[c.class_record_id]) colMap[c.class_record_id] = {};
+          colMap[c.class_record_id][c.term] = {
+            act1: c.act1_max,
+            act2: c.act2_max,
+            act3: c.act3_max,
+            act4: c.act4_max,
+            act5: c.act5_max,
+            act6: c.act6_max,
+            exam: c.exam_max
+          };
+        });
+
+        const scoresMap = {};
+        (scoreData || []).forEach(s => {
+          if (!scoresMap[s.student_id]) scoresMap[s.student_id] = {};
+          if (!scoresMap[s.student_id][s.class_record_id]) scoresMap[s.student_id][s.class_record_id] = {};
+          scoresMap[s.student_id][s.class_record_id][s.term] = s;
+        });
+
         // ── Step 4: fetch AI recommendations (use if available) ───────────────
         const { data: aiData } = await supabase
-          .from('ai_student_recommendations')
-          .select('student_id, recommendation, summary')
+          .from('student_academic_insights')
+          .select('student_id, verdict, summary')
           .in('student_id', studentIds.length > 0 ? studentIds : ['00000000-0000-0000-0000-000000000000']);
 
         const aiMap = {};
-        (aiData || []).forEach(r => { aiMap[r.student_id] = r; });
+        (aiData || []).forEach(r => { 
+          aiMap[r.student_id] = {
+            student_id: r.student_id,
+            recommendation: r.verdict,
+            summary: r.summary
+          }; 
+        });
 
         // ── Step 5: aggregate per student ──────────────────────────────────────
         const gradesByStudent = {};
@@ -137,17 +236,38 @@ export default function AtRiskStudents() {
 
         const enriched = (studentData || []).map(s => {
           const myGrades = gradesByStudent[s.user_id] || [];
+          const postedClassRecordIds = new Set(myGrades.map(g => g.class_record_id));
+          
+          const gradeValues = [];
+          let containsTentative = false;
 
-          // Use effective_grade if present, else computed_grade
-          const gradeValues = myGrades.map(g =>
-            g.effective_grade != null ? parseFloat(g.effective_grade) : parseFloat(g.computed_grade)
-          ).filter(v => !isNaN(v));
+          // 1. Add posted grades
+          myGrades.forEach(g => {
+            const val = g.effective_grade != null ? parseFloat(g.effective_grade) : parseFloat(g.computed_grade);
+            if (!isNaN(val)) {
+              gradeValues.push({ val, isTentative: false });
+            }
+          });
+
+          // 2. Add tentative grades from draft scores
+          const studentScores = scoresMap[s.user_id] || {};
+          Object.keys(studentScores).forEach(classRecId => {
+            if (!postedClassRecordIds.has(classRecId)) {
+              const classRecordScores = studentScores[classRecId];
+              const classRecordCols = colMap[classRecId];
+              const tentativeVal = computeTentativeGrade(classRecordScores, classRecordCols);
+              if (tentativeVal !== null) {
+                gradeValues.push({ val: tentativeVal, isTentative: true });
+                containsTentative = true;
+              }
+            }
+          });
 
           const avgGwa = gradeValues.length > 0
-            ? gradeValues.reduce((acc, v) => acc + v, 0) / gradeValues.length
+            ? gradeValues.reduce((acc, item) => acc + item.val, 0) / gradeValues.length
             : null;
 
-          const failingCount = gradeValues.filter(v => v > 3.00).length;
+          const failingCount = gradeValues.filter(item => item.val > 3.00).length;
 
           // Risk classification
           const { severity, advisory } = avgGwa !== null
@@ -172,6 +292,7 @@ export default function AtRiskStudents() {
             section: sectionName,
             programCode,
             runningGwa: avgGwa,
+            isTentative: containsTentative,
             failingCount,
             severity,
             advisory: aiAdvisory,
@@ -196,16 +317,27 @@ export default function AtRiskStudents() {
     return () => { cancelled = true; };
   }, [profile?.department_id]);
 
-  // ── Client-side filtering ─────────────────────────────────────────────────
-  const filtered = students.filter(s => {
-    const name = `${s.firstName} ${s.lastName}`;
-    const matchesSearch =
-      name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesSeverity = !severityFilter || s.severity === severityFilter;
-    const matchesSection = !sectionFilter || s.section === sectionFilter;
-    return matchesSearch && matchesSeverity && matchesSection;
-  });
+  // ── Client-side filtering & sorting ───────────────────────────────────────
+  const severityWeight = { high: 1, medium: 2, low: 3 };
+
+  const filtered = students
+    .filter(s => {
+      const name = `${s.firstName} ${s.lastName}`;
+      const matchesSearch =
+        name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.email.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSeverity = !severityFilter || s.severity === severityFilter;
+      const matchesSection = !sectionFilter || s.section === sectionFilter;
+      return matchesSearch && matchesSeverity && matchesSection;
+    })
+    .sort((a, b) => {
+      // Primary: sort by severity hierarchy (high -> medium -> low)
+      if (severityWeight[a.severity] !== severityWeight[b.severity]) {
+        return severityWeight[a.severity] - severityWeight[b.severity];
+      }
+      // Secondary: alphabetical by last name
+      return `${a.lastName}, ${a.firstName}`.localeCompare(`${b.lastName}, ${b.firstName}`);
+    });
 
   // ── Summary counts ────────────────────────────────────────────────────────
   const highCount   = students.filter(s => s.severity === 'high').length;
@@ -363,20 +495,32 @@ export default function AtRiskStudents() {
                         {/* Running GWA */}
                         <td className="px-6 py-4 whitespace-nowrap text-center">
                           {s.runningGwa !== null ? (
-                            <span className={`text-sm font-mono font-bold ${
-                              s.runningGwa > 3.00 ? 'text-rose-700' :
-                              s.runningGwa >= 2.75 ? 'text-amber-700' :
-                              'text-slate-900'
-                            }`}>
-                              {s.runningGwa.toFixed(2)}
+                            <span className="inline-flex items-center justify-center gap-1.5">
+                              <span className={`text-sm font-mono font-bold ${
+                                s.runningGwa > 3.00 ? 'text-rose-700' :
+                                s.runningGwa >= 2.75 ? 'text-amber-700' :
+                                'text-slate-900'
+                              }`}>
+                                {s.runningGwa.toFixed(2)}
+                              </span>
+                              {s.isTentative && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="Computed from unposted/draft term scores">
+                                  Tentative
+                                </span>
+                              )}
                               {s.failingCount > 0 && (
-                                <span className="ml-1.5 text-[10px] text-rose-500 font-medium">
+                                <span className="text-[10px] text-rose-500 font-medium">
                                   ({s.failingCount} failing)
                                 </span>
                               )}
                             </span>
                           ) : (
-                            <span className="text-xs text-slate-400 font-medium italic">No grades yet</span>
+                            <span className="inline-flex items-center justify-center gap-1.5">
+                              <span className="text-xs text-slate-400 font-medium italic">No grades yet</span>
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="No grades posted yet (Drafts pending)">
+                                Tentative
+                              </span>
+                            </span>
                           )}
                         </td>
 

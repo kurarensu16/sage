@@ -12,10 +12,11 @@ dist-ssr
 *.local
 .env
 .env.*
+.env.local
 
-# Supabase Local Environments
-supabase/.env
-supabase/.env.local
+# Temporary scratch folder
+scratch/
+
 
 # Temp Scratch Scripts & Extracted Dumps
 scratch_*.js
