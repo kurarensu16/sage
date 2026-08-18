@@ -83,11 +83,9 @@ export default function StudentRow({
   useEffect(() => {
     // Skip the very first render so we don't flash "Saving" on mount
     if (isFirstRender.current) { isFirstRender.current = false; return; }
-    if (readOnly) return;
-
-    setSaveStatus('saving');
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
+      setSaveStatus('saving');
       const payload = {
         Prelim:       { act1: pAct1, act2: pAct2, act3: pAct3, act4: pAct4, act5: pAct5, act6: pAct6, char: pChar, exam: pExam },
         Midterm:      { act1: mAct1, act2: mAct2, act3: mAct3, act4: mAct4, act5: mAct5, act6: mAct6, char: mChar, exam: mExam },
@@ -487,9 +485,16 @@ export default function StudentRow({
                 <option value="Passed">Passed</option>
                 <option value="Failed">Failed</option>
                 <option value="INC">INC</option>
-                <option value="FDA">FDA</option>
+                <option value="FDA">FDA (Advisory)</option>
                 <option value="Dropped">Dropped</option>
               </select>
+
+              {/* FDA Advisory Policy Notice */}
+              {remarks === 'FDA' && (
+                <span className="block text-[8px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 mt-0.5 text-center" title="Capstone Policy: 4 absences trigger an FDA recommendation for faculty review, not an automatic fail.">
+                  FDA Advisory (4 Absences)
+                </span>
+              )}
 
               {/* Optional note — appears only when remark is manually overridden */}
               {showNoteInput && (

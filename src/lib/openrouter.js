@@ -23,7 +23,7 @@ Guidelines:
 - Do not use generic placeholders. Refer to specific subjects, grades, and targets.
 - Output ONLY the raw insight text without any markdown wrappers or quotes.`;
 
-  let userPrompt = "";
+  let userPrompt;
   if (promptPayload.type === 'overall') {
     userPrompt = `Student Name: ${promptPayload.studentName}
 Overall GWA: ${promptPayload.gwa}

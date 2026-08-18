@@ -1,5 +1,5 @@
-# DESIGN SYSTEM
-# Automated Grading & Faculty Evaluation System — DYCI
+# SAGE — Design System Specifications
+# Smart Academic Grading and Evaluation System — DYCI
 # Visual direction inherited from ASPIRE
 
 > **Aesthetic Direction:** Sleek, institutional, and clinical. This is an academic data platform — not a consumer app. Prioritize information density, scanability, and trust over decorative flourish. Think: refined government portal meets modern SaaS dashboard.

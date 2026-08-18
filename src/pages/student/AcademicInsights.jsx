@@ -8,7 +8,8 @@ import {
   AlertCircle, 
   CheckCircle2, 
   HelpCircle,
-  GraduationCap
+  GraduationCap,
+  BookOpen
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getAiAcademicInsight } from '../../lib/openrouter';
@@ -64,7 +65,7 @@ const generateDynamicInsight = (termName, rating, gwa, status) => {
   const isPosted = status === 'Posted';
   const statusStr = isPosted ? "officially posted" : "calculated as draft";
   
-  let baseText = "";
+  let baseText;
   if (termName === 'Midterm Rating (MR)' || termName === 'Midterm Rating') {
     baseText = `Your Midterm Rating combines your Prelim and Midterm efforts, ${statusStr} at ${gwa} GWA (${rating}%).`;
   } else if (termName === 'Tentative Final Rating (TFR)' || termName === 'Tentative Final Rating') {
@@ -241,7 +242,7 @@ export default function AcademicInsights() {
           .maybeSingle();
 
         if (error) {
-          console.warn("Could not load pre-generated student insights, trying dynamic database calculation:", error);
+          console.warn("Could not load pre-generated student insights, trying dynamic calculation:", error);
         }
         if (data) {
           setInsight(data);
@@ -268,7 +269,6 @@ export default function AcademicInsights() {
             const subjectIds = enrolls?.map(e => e.subject_id) || [];
 
             if (subjectIds.length > 0) {
-              // 2. Fetch class records
               const { data: classRecords } = await supabase
                 .from('class_records')
                 .select('class_record_id, subject_id, faculty:users!faculty_id(first_name, last_name)')
@@ -278,27 +278,23 @@ export default function AcademicInsights() {
 
               const classRecordIds = classRecords?.map(cr => cr.class_record_id) || [];
 
-              // 3. Fetch posted grades
               const { data: posted } = await supabase
                 .from('posted_grades')
                 .select('*')
                 .eq('student_id', user.id)
                 .in('class_record_id', classRecordIds);
 
-              // 4. Fetch draft scores
               const { data: drafts } = await supabase
                 .from('student_term_scores')
                 .select('*')
                 .eq('student_id', user.id)
                 .in('class_record_id', classRecordIds);
 
-              // 5. Fetch class grading columns (max scores)
               const { data: gradingCols } = await supabase
                 .from('class_grading_columns')
                 .select('*')
                 .in('class_record_id', classRecordIds);
 
-              // Map data structures
               const subMap = {};
               enrolls?.forEach(e => {
                 if (e.subjects) {
@@ -388,7 +384,6 @@ export default function AcademicInsights() {
                   const prelim = getTermRating('Prelim');
                   const midterm = getTermRating('Midterm');
                   
-                  // Compute Midterm Rating (MR)
                   let mr = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Prelim and Midterm components.` };
                   if (prelim.gwa !== '—' && midterm.gwa !== '—') {
                     const avgRating = Math.round((prelim.rating + midterm.rating) / 2);
@@ -405,7 +400,6 @@ export default function AcademicInsights() {
                   const semiFinal = getTermRating('Semi-Final');
                   const final = getTermRating('Final');
 
-                  // Compute Tentative Final Rating (TFR)
                   let tentativeFinalRating = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Semi-Final and Final components.` };
                   if (semiFinal.gwa !== '—' && final.gwa !== '—') {
                     const avgRating = Math.round((semiFinal.rating + final.rating) / 2);
@@ -419,7 +413,6 @@ export default function AcademicInsights() {
                     };
                   }
 
-                  // Compute Semestral Grade (SG)
                   let semestralGrade = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting complete term components.` };
                   if (mr.gwa !== '—' && tentativeFinalRating.gwa !== '—') {
                     const avgRating = Math.round((mr.rating + tentativeFinalRating.rating) / 2);
@@ -433,7 +426,6 @@ export default function AcademicInsights() {
                     };
                   }
 
-                  // Find running grade for this subject
                   let runningGwaVal = null;
                   if (semestralGrade.gwa !== '—') runningGwaVal = parseFloat(semestralGrade.gwa);
                   else if (tentativeFinalRating.gwa !== '—') runningGwaVal = parseFloat(tentativeFinalRating.gwa);
@@ -540,7 +532,6 @@ export default function AcademicInsights() {
               }
             }
           }
-          // If no data, use mock fallback but initialize controls
           setSelectedSubjectCode(mockInsightsData.basis_snapshot.subjects[0].code);
         }
       } catch (err) {
@@ -570,7 +561,6 @@ export default function AcademicInsights() {
     semestralGrade: 'Semestral Grade (SG)'
   };
 
-  // Safe rating calculation excluding draft/pending periods for cumulative GWA
   const calculateRunningGwaForPeriod = (periodKey) => {
     const validGrades = subjectsList.filter(sub => {
       const g = sub.periods?.[periodKey];
@@ -642,8 +632,8 @@ export default function AcademicInsights() {
     return (
       <div className="flex-1 flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-sm text-slate-500 font-medium font-sans">Compiling Academic Insights...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-sage-600"></div>
+          <p className="text-xs text-slate-500 font-medium font-sans">Compiling Academic Insights...</p>
         </div>
       </div>
     );
@@ -653,84 +643,100 @@ export default function AcademicInsights() {
     <>
       <PageHeader title="Academic Insights" breadcrumb="Student Portal" />
 
-      <div className="p-8 overflow-y-auto flex-1 max-w-5xl mx-auto w-full space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 max-w-5xl mx-auto w-full space-y-4 sm:space-y-6">
         
-        {/* Scope Selector controls at the very top */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-sage-50 text-sage-700 rounded-lg">
-              <BrainCircuit className="h-5 w-5" />
-            </div>
-            <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Insight Scope Selection</span>
-              <h3 className="text-sm font-bold text-slate-800">Choose Academic Perspective</h3>
-            </div>
-          </div>
+        {/* Native Mobile App Style Segmented Scope Bar */}
+        <div className="bg-slate-200/70 p-1 rounded-2xl shadow-inner grid grid-cols-2 gap-1">
+          <button
+            onClick={() => setScope('overall')}
+            className={cn(
+              "flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold rounded-xl transition-all cursor-pointer text-center select-none",
+              scope === 'overall'
+                ? "bg-white text-sage-900 shadow-sm font-bold"
+                : "text-slate-600 hover:text-slate-900"
+            )}
+          >
+            <BrainCircuit className="h-3.5 w-3.5 text-sage-600" />
+            <span>Overall Standing</span>
+          </button>
 
-          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-            <select
-              value={scope}
-              onChange={(e) => setScope(e.target.value)}
-              className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer w-full sm:w-auto min-w-[220px]"
-            >
-              <option value="overall">Overall Academic Standing</option>
-              <option value="subject">Subject-Specific Details</option>
-            </select>
-          </div>
+          <button
+            onClick={() => setScope('subject')}
+            className={cn(
+              "flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold rounded-xl transition-all cursor-pointer text-center select-none",
+              scope === 'subject'
+                ? "bg-white text-slate-900 shadow-sm font-bold"
+                : "text-slate-600 hover:text-slate-900"
+            )}
+          >
+            <BookOpen className="h-3.5 w-3.5 text-indigo-600" />
+            <span>Subject Breakdown</span>
+          </button>
         </div>
 
         {/* Dynamic Panel rendering */}
         {scope === 'overall' ? (
           /* OVERALL INSIGHTS PANEL */
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 animate-fade-in">
             
-            {/* Left/Main Column: Cumulative DL & GWA breakdown */}
-            <div className="lg:col-span-2 space-y-6">
+            {/* Left/Main Column */}
+            <div className="lg:col-span-2 space-y-4 sm:space-y-6">
               
               {/* Standings Hero banner */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="bg-gradient-to-r from-sage-900 to-slate-900 p-6 text-white flex items-center justify-between">
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                <div className="bg-gradient-to-r from-sage-900 to-slate-900 p-4 sm:p-6 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="space-y-1">
                     <span className="text-[10px] font-bold text-sage-200 uppercase tracking-wider">Academic Honors Status</span>
-                    <h2 className="text-xl font-extrabold font-display uppercase tracking-tight flex items-center gap-2">
-                      <GraduationCap className="h-5 w-5 text-sage-300" />
+                    <h2 className="text-lg sm:text-xl font-extrabold font-display uppercase tracking-tight flex items-center gap-2">
+                      <GraduationCap className="h-5 w-5 text-sage-300 flex-shrink-0" />
                       {studentStats.standing} Standing
                     </h2>
                   </div>
-                  <div className="text-right">
+                  <div className="text-left sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 border-sage-800/80">
                     <span className="text-[10px] font-bold text-sage-200 uppercase tracking-wider block">Cumulative GWA</span>
-                    <span className="text-3xl font-extrabold font-mono text-sage-300">{studentStats.gwa.toFixed(2)}</span>
+                    <span className="text-2xl sm:text-3xl font-extrabold font-mono text-sage-300">{studentStats.gwa.toFixed(2)}</span>
                   </div>
                 </div>
 
                 {/* Dean's Lister projection card */}
                 {studentStats.dlEligibility && (
-                  <div className="p-6 bg-sage-50/40 border-b border-slate-200 flex flex-col md:flex-row items-center gap-6">
+                  <div className="p-4 sm:p-6 bg-sage-50/40 border-b border-slate-200 flex flex-col sm:flex-row items-center gap-4 sm:gap-6 text-center sm:text-left">
                     {/* Ring progress bar representation */}
                     <div className="relative flex items-center justify-center flex-shrink-0">
-                      <svg className="w-20 h-20 transform -rotate-90">
-                        <circle cx="40" cy="40" r="34" className="stroke-slate-200" strokeWidth="6" fill="transparent" />
+                      <svg className="w-16 h-16 sm:w-20 sm:h-20 transform -rotate-90">
+                        <circle cx="32" cy="32" r="27" className="stroke-slate-200 sm:hidden" strokeWidth="5" fill="transparent" />
+                        <circle 
+                          cx="32" 
+                          cy="32" 
+                          r="27" 
+                          className="stroke-sage-600 transition-all duration-500 sm:hidden" 
+                          strokeWidth="5" 
+                          fill="transparent" 
+                          strokeDasharray={2 * Math.PI * 27}
+                          strokeDashoffset={2 * Math.PI * 27 * (1 - studentStats.dlEligibility.probabilityPct / 100)}
+                        />
+                        <circle cx="40" cy="40" r="34" className="stroke-slate-200 hidden sm:block" strokeWidth="6" fill="transparent" />
                         <circle 
                           cx="40" 
                           cy="40" 
                           r="34" 
-                          className="stroke-sage-600 transition-all duration-500" 
+                          className="stroke-sage-600 transition-all duration-500 hidden sm:block" 
                           strokeWidth="6" 
                           fill="transparent" 
                           strokeDasharray={2 * Math.PI * 34}
                           strokeDashoffset={2 * Math.PI * 34 * (1 - studentStats.dlEligibility.probabilityPct / 100)}
                         />
                       </svg>
-                      <span className="absolute text-sm font-extrabold font-mono text-slate-800">
+                      <span className="absolute text-xs sm:text-sm font-extrabold font-mono text-slate-800">
                         {studentStats.dlEligibility.probabilityPct}%
                       </span>
                     </div>
 
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-extrabold text-slate-900">
+                    <div className="space-y-1.5">
+                      <h4 className="text-xs sm:text-sm font-extrabold text-slate-900">
                         🏆 Dean's Lister Projections ({studentStats.dlEligibility.awardCategory})
                       </h4>
-                      <p className="text-xs text-slate-650 leading-relaxed font-medium">
+                      <p className="text-xs text-slate-600 leading-relaxed font-medium">
                         {studentStats.dlEligibility.message}
                       </p>
                     </div>
@@ -738,12 +744,12 @@ export default function AcademicInsights() {
                 )}
 
                 {/* Overall Summary Card */}
-                <div className="p-6 space-y-4">
-                  <div className="flex items-center gap-2.5">
-                    <CheckCircle2 className="h-4.5 w-4.5 text-sage-600" />
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Academic Advisor Trajectory Summary</h4>
+                <div className="p-4 sm:p-6 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-sage-600 flex-shrink-0" />
+                    <h4 className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Academic Advisor Summary</h4>
                   </div>
-                  <div className="text-sm font-medium text-slate-700 leading-relaxed bg-slate-50 border border-slate-100 rounded-xl p-4">
+                  <div className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed bg-slate-50 border border-slate-200/70 rounded-xl p-3.5 sm:p-4">
                     {aiLoading && !aiCache['overall'] ? (
                       <div className="flex items-center gap-2 text-xs text-slate-400">
                         <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-sage-600"></div>
@@ -757,15 +763,14 @@ export default function AcademicInsights() {
               </div>
 
               {/* Running Subject GWA Table/List */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 sm:p-6 space-y-4">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Running Subject standing</h3>
+                  <h3 className="text-xs sm:text-sm font-bold text-slate-900">Running Course Standing</h3>
                   <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wide mt-0.5">Current GWA per active course</p>
                 </div>
 
-                <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+                <div className="divide-y divide-slate-100 border border-slate-200/70 rounded-xl overflow-hidden">
                   {subjectsList.map((sub) => {
-                    // Extract semestral grade or fallback to active posted rating
                     const semGrade = sub.periods?.semestralGrade;
                     const latestPosted = Object.values(sub.periods || {})
                       .reverse()
@@ -780,17 +785,20 @@ export default function AcademicInsights() {
                       : (latestPosted ? `Ongoing (${latestPosted.gwa !== '—' ? 'Posted' : 'Draft'})` : 'No scores posted');
 
                     return (
-                      <div key={sub.code} className="p-4 flex items-center justify-between hover:bg-slate-50/40 transition-colors">
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-bold font-mono text-slate-400">{sub.code}</span>
-                          <h4 className="text-xs font-bold text-slate-800 line-clamp-1">{sub.name}</h4>
-                          <span className="text-[10px] text-slate-500 font-semibold block">{sub.instructor}</span>
+                      <div key={sub.code} className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50/40 transition-colors">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold font-mono text-slate-400">{sub.code}</span>
+                            <span className="text-[10px] text-slate-400 font-medium sm:hidden">&bull; {sub.instructor}</span>
+                          </div>
+                          <h4 className="text-xs sm:text-sm font-bold text-slate-800 line-clamp-1">{sub.name}</h4>
+                          <span className="text-[10px] text-slate-500 font-semibold hidden sm:block">{sub.instructor}</span>
                         </div>
-                        <div className="text-right space-y-1.5">
-                          <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-sage-50 text-sage-800 border border-sage-200">
+                        <div className="flex items-center justify-between sm:justify-end gap-3 pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                          <span className="text-[10px] text-slate-400 font-bold block">{displayStatus}</span>
+                          <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold bg-sage-50 text-sage-800 border border-sage-200">
                             {displayGwa} GWA
                           </span>
-                          <span className="text-[10px] text-slate-400 font-bold block">{displayStatus}</span>
                         </div>
                       </div>
                     );
@@ -801,26 +809,26 @@ export default function AcademicInsights() {
             </div>
 
             {/* Right Column: Mini Info Cards */}
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
               {/* Verdict Indicator */}
               <div className={cn(
-                "border rounded-xl p-5 shadow-sm space-y-3",
+                "border rounded-2xl p-4 sm:p-5 shadow-sm space-y-3",
                 activeData.verdict === 'continue' ? 'bg-sage-50/40 border-sage-200' : 
-                activeData.verdict === 'at_risk' ? 'bg-rose-50/40 border-rose-200' : 'bg-amber-50/40 border-amber-250'
+                activeData.verdict === 'at_risk' ? 'bg-rose-50/40 border-rose-200' : 'bg-amber-50/40 border-amber-200'
               )}>
                 <div className="flex items-center gap-2">
                   <TrendingUp className={cn(
-                    "h-5 w-5",
+                    "h-4 w-4 sm:h-5 sm:w-5",
                     activeData.verdict === 'continue' ? 'text-sage-700' : 
                     activeData.verdict === 'at_risk' ? 'text-rose-700' : 'text-amber-700'
                   )} />
                   <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Standing Verdict</h3>
                 </div>
                 <div className="space-y-1">
-                  <h4 className="text-base font-extrabold text-slate-900 capitalize">
+                  <h4 className="text-sm sm:text-base font-extrabold text-slate-900 capitalize">
                     {activeData.verdict === 'continue' ? 'Pass & Continue' : activeData.verdict === 'at_risk' ? 'At Risk Warning' : 'Shift Advice'}
                   </h4>
-                  <p className="text-[11px] text-slate-500 font-medium">
+                  <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
                     {activeData.verdict === 'continue' ? 'No academic risk metrics detected. Keep up the high standard.' : 
                      activeData.verdict === 'at_risk' ? 'Alert: Academic performance thresholds are falling. Action recommended.' : 
                      'Recommended counseling session for academic trajectory realignment.'}
@@ -829,13 +837,13 @@ export default function AcademicInsights() {
               </div>
 
               {/* Guidelines summary widget */}
-              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-3">
+              <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-sm space-y-3">
                 <div className="flex items-center gap-2">
-                  <HelpCircle className="h-4.5 w-4.5 text-slate-400" />
+                  <HelpCircle className="h-4 w-4 text-slate-400" />
                   <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">How to Read GWA</h3>
                 </div>
                 <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
-                  SAGE calculates ratings dynamically per term according to Registrar guidelines. Cumulative and running GPAs ignore all draft values to maintain absolute transcript integrity.
+                  SAGE calculates ratings dynamically per term according to DYCI guidelines. Cumulative and running GPAs ignore all draft values to maintain absolute transcript integrity.
                 </p>
               </div>
             </div>
@@ -843,16 +851,16 @@ export default function AcademicInsights() {
           </div>
         ) : (
           /* SUBJECT-SPECIFIC DRILLDOWN PANEL */
-          <div className="space-y-6 animate-fade-in">
+          <div className="space-y-4 sm:space-y-6 animate-fade-in">
             
-            {/* Top row filter selectors for subject specific scope */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col gap-2">
+            {/* Top row filter selectors */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:p-4 shadow-sm flex flex-col gap-1.5">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Course</label>
                 <select
                   value={selectedSubjectCode}
                   onChange={(e) => setSelectedSubjectCode(e.target.value)}
-                  className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 hover:border-slate-300 outline-none cursor-pointer"
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 hover:border-slate-300 outline-none cursor-pointer"
                 >
                   {subjectsList.map(sub => (
                     <option key={sub.code} value={sub.code}>{sub.code}: {sub.name}</option>
@@ -860,12 +868,12 @@ export default function AcademicInsights() {
                 </select>
               </div>
 
-              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col gap-2">
+              <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:p-4 shadow-sm flex flex-col gap-1.5">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Grading Period</label>
                 <select
                   value={selectedPeriod}
                   onChange={(e) => setSelectedPeriod(e.target.value)}
-                  className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 hover:border-slate-300 outline-none cursor-pointer"
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 hover:border-slate-300 outline-none cursor-pointer"
                 >
                   {Object.entries(periodsMapping).map(([key, label]) => (
                     <option key={key} value={key}>{label}</option>
@@ -876,20 +884,20 @@ export default function AcademicInsights() {
 
             {/* Drilldown details card */}
             {currentSubject && (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="bg-slate-50 p-6 border-b border-slate-200">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden space-y-4">
+                <div className="bg-slate-50 p-4 sm:p-6 border-b border-slate-200/80">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                       <span className="text-[10px] font-extrabold font-mono text-sage-800 uppercase tracking-wider bg-sage-50 border border-sage-200 px-2.5 py-0.5 rounded-full">
                         {currentSubject.code}
                       </span>
-                      <h2 className="text-lg font-bold text-slate-900 mt-2">{currentSubject.name}</h2>
-                      <span className="text-xs text-slate-500 font-semibold block mt-1">Instructor: {currentSubject.instructor}</span>
+                      <h2 className="text-base sm:text-lg font-bold text-slate-900 mt-2">{currentSubject.name}</h2>
+                      <span className="text-xs text-slate-500 font-semibold block mt-0.5">Instructor: {currentSubject.instructor}</span>
                     </div>
 
-                    <div className="text-left md:text-right bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-xs self-start md:self-center">
+                    <div className="bg-white border border-slate-200 px-3.5 py-2 rounded-xl shadow-xs self-start sm:self-center">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Running Period</span>
-                      <span className="text-xs font-extrabold text-slate-800 uppercase font-mono mt-0.5">
+                      <span className="text-xs font-extrabold text-slate-800 uppercase font-mono mt-0.5 block">
                         {periodsMapping[selectedPeriod]}
                       </span>
                     </div>
@@ -898,18 +906,18 @@ export default function AcademicInsights() {
 
                 {/* Period details grid */}
                 {currentSubject.periods?.[selectedPeriod] ? (
-                  <div className="p-6 space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
                       
                       {/* Metric 1: Rating */}
-                      <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-4 flex flex-col justify-between h-20">
+                      <div className="bg-slate-50/50 border border-slate-200/70 rounded-xl p-3 sm:p-4 flex flex-col justify-between min-h-[72px]">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Milestone Rating</span>
-                        <h4 className="text-base font-extrabold text-slate-900 mt-1">
+                        <h4 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
                           {currentSubject.periods[selectedPeriod].rating > 0 
                             ? `${currentSubject.periods[selectedPeriod].rating}%` 
                             : '—'}
                           <span className={cn(
-                            "inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ml-2",
+                            "inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ml-1.5",
                             currentSubject.periods[selectedPeriod].status === 'Posted' ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' : 'bg-amber-50 text-amber-800 border border-amber-200'
                           )}>
                             {currentSubject.periods[selectedPeriod].status}
@@ -918,17 +926,17 @@ export default function AcademicInsights() {
                       </div>
 
                       {/* Metric 2: GWA */}
-                      <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-4 flex flex-col justify-between h-20">
+                      <div className="bg-slate-50/50 border border-slate-200/70 rounded-xl p-3 sm:p-4 flex flex-col justify-between min-h-[72px]">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Equivalent GWA</span>
-                        <h4 className="text-base font-extrabold text-slate-900 font-mono mt-1">
+                        <h4 className="text-sm sm:text-base font-extrabold text-slate-900 font-mono mt-1">
                           {currentSubject.periods[selectedPeriod].gwa}
                         </h4>
                       </div>
 
                       {/* Metric 3: Credits */}
-                      <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-4 flex flex-col justify-between h-20">
+                      <div className="col-span-2 sm:col-span-1 bg-slate-50/50 border border-slate-200/70 rounded-xl p-3 sm:p-4 flex flex-col justify-between min-h-[72px]">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Academic Weight</span>
-                        <h4 className="text-base font-extrabold text-slate-900 mt-1">
+                        <h4 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
                           {currentSubject.credits.toFixed(1)} Units
                         </h4>
                       </div>
@@ -936,12 +944,12 @@ export default function AcademicInsights() {
                     </div>
 
                     {/* Milestone specific insight text */}
-                    <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3 shadow-xs">
+                    <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 space-y-2.5 shadow-xs">
                       <div className="flex items-center gap-2 text-sage-700">
-                        <BrainCircuit className="h-4.5 w-4.5" />
+                        <BrainCircuit className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                         <h4 className="text-xs font-bold uppercase tracking-wider">Period Summary & Insight</h4>
                       </div>
-                      <div className="text-sm font-medium text-slate-700 leading-relaxed italic">
+                      <div className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed italic">
                         {aiLoading && !aiCache[`${currentSubject.code}_${selectedPeriod}`] ? (
                           <div className="flex items-center gap-2 text-xs text-slate-400 not-italic">
                             <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-sage-600"></div>
@@ -954,17 +962,17 @@ export default function AcademicInsights() {
                     </div>
 
                     {/* Running period comparison block */}
-                    <div className="bg-amber-50/10 border border-amber-250/40 rounded-xl p-4 flex items-center gap-3">
-                      <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0" />
-                      <div className="text-xs text-slate-650 font-medium">
-                        <strong>Period Note:</strong> The running GPA for all subjects under {periodsMapping[selectedPeriod]} is <strong>{calculateRunningGwaForPeriod(selectedPeriod)}</strong>. Complete final grades are draft predictions until officially locked.
+                    <div className="bg-amber-50/20 border border-amber-200 rounded-xl p-3.5 sm:p-4 flex items-center gap-3">
+                      <AlertCircle className="h-4.5 w-4.5 text-amber-600 flex-shrink-0" />
+                      <div className="text-xs text-slate-650 font-medium leading-relaxed">
+                        <strong>Period Note:</strong> The running GPA for all subjects under {periodsMapping[selectedPeriod]} is <strong>{calculateRunningGwaForPeriod(selectedPeriod)}</strong>.
                       </div>
                     </div>
 
                   </div>
                 ) : (
-                  <div className="p-12 text-center text-slate-400 text-sm space-y-2">
-                    <AlertCircle className="h-8 w-8 text-slate-300 mx-auto" />
+                  <div className="p-8 sm:p-12 text-center text-slate-400 text-xs sm:text-sm space-y-2">
+                    <AlertCircle className="h-7 w-7 text-slate-300 mx-auto" />
                     <p>No evaluation data encoded for this period.</p>
                   </div>
                 )}

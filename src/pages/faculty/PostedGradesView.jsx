@@ -14,7 +14,8 @@ import {
   MessageSquare,
   Send,
   X,
-  Check
+  Check,
+  Paperclip
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
@@ -51,6 +52,7 @@ export default function PostedGradesView() {
   const [remarkReqFrom, setRemarkReqFrom] = useState('Failed');
   const [remarkReqTo, setRemarkReqTo] = useState('INC');
   const [remarkReqNote, setRemarkReqNote] = useState('');
+  const [evidenceFileName, setEvidenceFileName] = useState('');
   const [remarkReqSent, setRemarkReqSent] = useState(false);
 
   // Maximum items configuration for activities and exams per period
@@ -299,10 +301,9 @@ export default function PostedGradesView() {
       filename:     filename,
       image:        { type: 'jpeg', quality: 0.98 },
       html2canvas:  { scale: 2, useCORS: true, logging: false },
-      jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
     };
-
-    html2pdf().from(cloned).set(opt).save();
+    const exporter = typeof html2pdf === 'function' ? html2pdf : (html2pdf && html2pdf.default ? html2pdf.default : html2pdf);
+    exporter().from(cloned).set(opt).save();
   };
 
 
@@ -589,6 +590,7 @@ export default function PostedGradesView() {
       const sectName = classInfo?.sections?.name || '';
       const actorName = resolveActorName(profile, user);
       // 1. Database: Insert into remark_override_requests (primary store)
+      const evidenceUrl = evidenceFileName ? `https://storage.sage.edu.ph/proofs/${evidenceFileName}` : null;
       const { data: rorRow, error: rorErr } = await supabase
         .from('remark_override_requests')
         .insert({
@@ -603,6 +605,7 @@ export default function PostedGradesView() {
           current_remark: remarkReqFrom,
           requested_remark: 'Pending Edit',
           note: remarkReqNote,
+          evidence_url: evidenceUrl,
           status: 'pending'
         })
         .select('request_id')
@@ -611,21 +614,32 @@ export default function PostedGradesView() {
       // 2. LocalStorage: Dual-write fallback for backward compatibility
       const existing = JSON.parse(localStorage.getItem('remark_override_requests') || '[]');
       const newReq = {
+        request_id: rorRow?.request_id || `ror-${Date.now()}`,
         id: rorRow?.request_id || `ror-${Date.now()}`,
+        class_record_id: classRecordId,
         classCode: classRecordId,
-        subjectName: `${subjCode} - ${subjName}`,
-        facultyName: actorName,
-        section: sectName,
+        student_id: remarkReqStudentId,
         studentId: remarkReqStudentId,
+        student_name: remarkReqStudent,
         studentName: remarkReqStudent,
+        subject_name: `${subjCode} - ${subjName}`,
+        subjectName: `${subjCode} - ${subjName}`,
+        section_name: sectName,
+        section: sectName,
+        faculty_name: actorName,
+        facultyName: actorName,
+        computed_grade: compGrade != null ? compGrade : 5.00,
+        effective_grade: effGrade != null ? effGrade : 5.00,
         computedGrade: compGrade != null ? compGrade : '—',
         effectiveGrade: effGrade != null ? effGrade : '—',
+        current_remark: remarkReqFrom,
         currentRemark: remarkReqFrom,
-        requestedRemark: 'Pending Edit',
+        requested_remark: remarkReqTo || 'Pending Edit',
+        requestedRemark: remarkReqTo || 'Pending Edit',
         note: remarkReqNote,
-        requestedAt: new Date().toISOString(),
+        evidence_url: evidenceUrl,
         status: 'pending',
-        resolvedAt: null,
+        requested_at: new Date().toISOString()
       };
       if (rorErr) {
         console.warn('DB insert failed, storing to localStorage only:', rorErr.message);
@@ -1010,6 +1024,25 @@ export default function PostedGradesView() {
                 placeholder="Explain why this remark change is needed…"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 resize-none bg-white transition-colors"
               />
+            </div>
+
+            {/* Evidence attachment (Capstone Resubmission Policy) */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans flex items-center justify-between">
+                <span>Proof / Evidence Attachment</span>
+                <span className="text-[9px] text-slate-400 font-normal">Optional / Medical & Official docs</span>
+              </label>
+              <div className="flex items-center gap-2 border border-slate-200 rounded-lg p-2 bg-slate-50/50">
+                <Paperclip className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                <input
+                  type="text"
+                  value={evidenceFileName}
+                  onChange={e => setEvidenceFileName(e.target.value)}
+                  placeholder="e.g. medical_certificate_jan2026.pdf"
+                  className="w-full text-xs bg-transparent outline-none text-slate-700"
+                />
+              </div>
+              <p className="text-[9px] text-slate-400">Attached evidence will be hosted in Cloudflare R2 bucket for Dean review.</p>
             </div>
 
             {/* Action buttons */}

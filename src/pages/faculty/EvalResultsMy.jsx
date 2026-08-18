@@ -15,7 +15,8 @@ import {
   Zap,
   CheckCircle2,
   X,
-  ChevronRight
+  ChevronRight,
+  Lock
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -81,6 +82,7 @@ export default function EvalResultsMy() {
   const [selectedClass, setSelectedClass] = useState('All');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [dbInsight, setDbInsight] = useState(null);
+  const [isReleasedToFaculty, setIsReleasedToFaculty] = useState(true);
 
   const [stats, setStats] = useState({
     overall: 0,
@@ -110,11 +112,17 @@ export default function EvalResultsMy() {
           .select(`
             window_id,
             section_id,
+            is_released_to_faculty,
             sections ( name, school_year, semester )
           `)
           .eq('faculty_id', user.id);
 
         if (winErr) throw winErr;
+
+        if (winData && winData.length > 0) {
+          const released = winData.some(w => w.is_released_to_faculty === true);
+          setIsReleasedToFaculty(released);
+        }
 
         if (!winData || winData.length === 0) {
           setLoading(false);
@@ -510,16 +518,33 @@ export default function EvalResultsMy() {
 
       <div className="p-8 overflow-y-auto flex-1 space-y-8">
         
-        {/* Anonymity Banner */}
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-start gap-3">
-          <ShieldCheck className="h-5 w-5 text-sage-600 mt-0.5 flex-shrink-0" />
-          <div>
-            <h4 className="font-semibold text-slate-900 text-sm text-left">Faculty Evaluation Privacy Protection</h4>
-            <p className="text-xs text-slate-505 mt-0.5 text-left leading-relaxed">
-              In compliance with academic evaluation policy FR25, student identities are completely anonymized. Data is aggregated to protect student confidentiality.
-            </p>
+        {!isReleasedToFaculty ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center space-y-4 shadow-sm max-w-2xl mx-auto my-8">
+            <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-700 mx-auto flex items-center justify-center">
+              <Lock className="h-7 w-7" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-extrabold text-amber-950 font-display">Evaluation Results Pending Dean Release</h3>
+              <p className="text-xs text-amber-800 leading-relaxed max-w-lg mx-auto">
+                Per institutional governance policy, student evaluation ratings and qualitative feedback for this academic term are under Dean review and have not yet been released to your faculty portal.
+              </p>
+            </div>
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100/80 text-amber-900 border border-amber-200 rounded-xl text-xs font-bold font-mono">
+              <span>Status: Under Dean Audit</span>
+            </div>
           </div>
-        </div>
+        ) : (
+          <>
+            {/* Anonymity Banner */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-start gap-3">
+              <ShieldCheck className="h-5 w-5 text-sage-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <h4 className="font-semibold text-slate-900 text-sm text-left">Faculty Evaluation Privacy Protection</h4>
+                <p className="text-xs text-slate-505 mt-0.5 text-left leading-relaxed">
+                  In compliance with academic evaluation policy FR25, student identities are completely anonymized. Data is aggregated to protect student confidentiality.
+                </p>
+              </div>
+            </div>
 
         {/* Filters and Sub-navigation */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
@@ -713,10 +738,10 @@ export default function EvalResultsMy() {
               </div>
             </div>
           </div>
-
         </div>
-
-      </div>
+      </>
+    )}
+  </div>
 
       {/* Drawer Overlay & Side Panel */}
       {isDrawerOpen && (
@@ -899,7 +924,7 @@ export default function EvalResultsMy() {
         {/* Drawer Footer */}
         <div className="p-6 border-t border-slate-150 bg-slate-50 flex items-center justify-between text-[11px] text-slate-400 font-medium">
           <span>Aggregated Evaluations Summary</span>
-          <span className="font-mono">SAGE System</span>
+          <span className="font-mono">SAGE</span>
         </div>
       </div>
     </>

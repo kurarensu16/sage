@@ -279,7 +279,8 @@ export default function ScoreInput() {
       jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
     };
 
-    html2pdf().from(cloned).set(opt).save();
+    const exporter = typeof html2pdf === 'function' ? html2pdf : (html2pdf && html2pdf.default ? html2pdf.default : html2pdf);
+    exporter().from(cloned).set(opt).save();
   };
 
   useEffect(() => {

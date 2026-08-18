@@ -79,7 +79,7 @@ export default function TermManagement() {
       return { schoolYear: '2025-2026', semester: '2nd' };
     }
     const { schoolYear, semester } = currentTerm;
-    let nextSem = '';
+    let nextSem;
     let nextSy = schoolYear;
 
     if (semester === '1st') {

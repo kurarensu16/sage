@@ -126,9 +126,9 @@ export default function EvalWindowList() {
 
   return (
     <>
-      <PageHeader title="Evaluation Windows" breadcrumb="Admin Portal">
+      <PageHeader title="Evaluation Windows" breadcrumb="College Office Portal">
         <Link 
-          to="/admin/evalwindowform" 
+          to="/office/evalwindowform" 
           className="px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm flex items-center gap-2"
         >
           <Plus className="h-4 w-4" /> Create Evaluation Window
@@ -205,7 +205,7 @@ export default function EvalWindowList() {
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex justify-end gap-2">
                           <button 
-                            onClick={() => navigate(`/admin/evalwindowform?id=${win.id}`)}
+                            onClick={() => navigate(`/office/evalwindowform?id=${win.id}`)}
                             title="Edit Evaluation Dates"
                             className="p-1.5 text-slate-600 hover:text-sage-600 hover:bg-slate-50 rounded-md border border-slate-100 transition-colors"
                           >
