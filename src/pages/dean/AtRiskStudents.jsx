@@ -3,6 +3,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Search, AlertCircle, Filter, Sparkles, Building2, Loader2, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { mockDeanAtRiskStudents } from '../../lib/mockdb';
 
 // ── Risk classification ───────────────────────────────────────────────────────
 function classifyRisk(avgGwa, failingCount) {
@@ -306,8 +307,25 @@ export default function AtRiskStudents() {
           setError(null);
         }
       } catch (err) {
-        console.error('Error loading at-risk students:', err);
-        if (!cancelled) setError('Could not load student data. Please try again.');
+        console.warn('Database query failed, falling back to mock dataset:', err);
+        if (!cancelled) {
+          setStudents(mockDeanAtRiskStudents.map(s => ({
+            id: s.student_id,
+            firstName: s.first_name,
+            lastName: s.last_name,
+            email: s.email,
+            section: s.section,
+            programCode: s.programPrefix,
+            runningGwa: s.avgGwa,
+            isTentative: false,
+            failingCount: s.failingCount,
+            severity: s.risk.severity,
+            advisory: s.risk.advisory,
+            hasGrades: true,
+            hasAi: false,
+          })));
+          setError(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

@@ -1,3 +1,4 @@
+import { getTransmutedGrade } from './gradingMath';
 import * as XLSX from 'xlsx-js-style';
 
 // ---------------------------------------------------------------------------
@@ -100,20 +101,9 @@ const computeStudentRatings = (student) => {
   const tfr = Math.round((semiFinal + finalTerm) / 2);
   const sgRating = Math.round((mr + tfr) / 2);
 
-  const transmute = (s) => {
-    if (s >= 98) return 1.00;
-    if (s >= 95) return 1.25;
-    if (s >= 92) return 1.50;
-    if (s >= 89) return 1.75;
-    if (s >= 86) return 2.00;
-    if (s >= 83) return 2.25;
-    if (s >= 80) return 2.50;
-    if (s >= 77) return 2.75;
-    if (s >= 75) return 3.00;
-    return 5.00;
-  };
+  
 
-  const rawGwa = transmute(sgRating);
+  const rawGwa = getTransmutedGrade(sgRating);
   const remarkLower = student.customRemarks?.toLowerCase() || '';
 
   let gwa = rawGwa;

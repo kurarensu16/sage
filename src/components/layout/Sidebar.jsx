@@ -20,6 +20,8 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
       { to: '/admin/userlist', icon: Users, label: 'User Management' },
       { to: '/admin/subjectlist', icon: BookMarked, label: 'Subjects Database' },
       { to: '/admin/sectionlist', icon: Layers, label: 'Sections Database' },
+      { to: '/admin/gradecomputationslist', icon: Settings, label: 'Grading Templates' },
+      { to: '/admin/departmentslist', icon: Layers, label: 'Colleges Directory' },
       { to: '/admin/gradeoverride', icon: AlertCircle, label: 'Grade Override' },
       { to: '/admin/termmanagement', icon: Calendar, label: 'Term Management' },
       { to: '/admin/auditlog', icon: Shield, label: 'Audit Logs' },
@@ -38,6 +40,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
       { to: '/faculty/classrecordslist', icon: BookOpen, label: 'Class Records' },
       { to: '/faculty/scoreinput', icon: FileText, label: 'Score Input' },
       { to: '/faculty/classattendance', icon: Calendar, label: 'Class Attendance' },
+      { to: '/faculty/verificationqueue', icon: ClipboardList, label: 'Verification Queue' },
       { to: '/faculty/evalresultsmy', icon: FileText, label: 'Eval Results' },
     ],
     dean: [
@@ -53,6 +56,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
       { to: '/student/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/student/mygradeslist', icon: FileText, label: 'My Grades' },
       { to: '/student/academic-insights', icon: BrainCircuit, label: 'Academic Insights' },
+      { to: '/student/attendance', icon: Calendar, label: 'Attendance Log' },
       { to: '/student/evallist', icon: BookOpen, label: 'Evaluations' },
     ]
   };

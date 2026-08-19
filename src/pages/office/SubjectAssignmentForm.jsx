@@ -268,7 +268,7 @@ export default function SubjectAssignmentForm() {
       const subDeptName = selectedSubject?.departments?.name || '';
       const facDeptName = selectedFaculty?.department || '';
       
-      if (selectedSubject && selectedFaculty && subDeptName !== facDeptName && subDeptName !== 'Department of General Education') {
+      if (selectedSubject && selectedFaculty && subDeptName && facDeptName && subDeptName !== facDeptName && subDeptName !== 'Department of General Education') {
         setWarningText(`The subject ${selectedSubject.code} belongs to "${subDeptName}", but Prof. ${selectedFaculty.firstName} ${selectedFaculty.lastName} belongs to "${facDeptName}".`);
         setShowWarning(true);
       } else {

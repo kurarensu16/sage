@@ -492,3 +492,226 @@ export const mockDb = {
     return term;
   }
 };
+
+/**
+ * Named exports: Fallback mock data for ScoreInput.jsx and VerificationQueue.jsx.
+ * Used only when Supabase queries fail (e.g. offline dev, missing RLS).
+ */
+export const mockClassInfo = {
+  class_record_id: 'mock-class-rec-001',
+  subject_id: 'mock-subj-001',
+  section_id: 'mock-sec-001',
+  faculty_id: 'mock-fac-001',
+  status: 'active',
+  subjects: {
+    code: 'IT101',
+    name: 'Introduction to Computing',
+    departments: { name: 'College of Computer Studies' }
+  },
+  sections: {
+    name: 'BSIT-1A',
+    semester: '2nd',
+    school_year: '2025-2026'
+  }
+};
+
+export const mockStudents = [
+  { id: 'mock-stu-001', first_name: 'Juan', last_name: 'Dela Cruz', user_number: '2025-0001', email: 'j.delacruz@student.sage.edu' },
+  { id: 'mock-stu-002', first_name: 'Maria', last_name: 'Santos', user_number: '2025-0002', email: 'm.santos@student.sage.edu' },
+  { id: 'mock-stu-003', first_name: 'Jose', last_name: 'Rizal', user_number: '2025-0003', email: 'j.rizal@student.sage.edu' }
+];
+
+export const mockActivities = {
+  Prelim: [
+    { id: 'act1', name: 'Formative Assessment 1', max: 50 },
+    { id: 'act2', name: 'Formative Assessment 2', max: 50 }
+  ],
+  Midterm: [
+    { id: 'act1', name: 'Formative Assessment 1', max: 50 },
+    { id: 'act2', name: 'Formative Assessment 2', max: 50 }
+  ],
+  'Semi-Final': [
+    { id: 'act1', name: 'Formative Assessment 1', max: 50 },
+    { id: 'act2', name: 'Formative Assessment 2', max: 50 }
+  ],
+  Final: [
+    { id: 'act1', name: 'Formative Assessment 1', max: 50 },
+    { id: 'act2', name: 'Formative Assessment 2', max: 50 }
+  ]
+};
+
+export const mockDraftScores = {};
+
+export const mockVerificationQueue = [
+  {
+    id: 'vq-001',
+    studentName: 'Dela Cruz, Juan',
+    userNumber: '2025-0001',
+    subjectCode: 'IT101',
+    subjectName: 'Introduction to Computing',
+    section: 'BSIT-1A',
+    term: 'Midterm',
+    requestedRemark: 'PASSED',
+    currentGrade: 85,
+    status: 'pending',
+    submittedAt: new Date().toISOString()
+  }
+];
+
+// --- DEAN PORTAL MOCK FALLBACKS ---
+export const mockDeanFacultyData = [
+  {
+    id: 'fac-001',
+    firstName: 'Amanda',
+    lastName: 'Rivera',
+    email: 'a.rivera@sage.edu.ph',
+    department: 'College of Computer Studies',
+    sectionsCount: 3,
+    subjectCodes: ['IT101', 'IT102', 'CS103'],
+    rating: 4.85,
+    responseCount: 112,
+    onTimeCount: 108,
+    lateCount: 4,
+    hasResponses: true,
+    isReleased: false,
+    windows: []
+  },
+  {
+    id: 'fac-002',
+    firstName: 'John',
+    lastName: 'Doe',
+    email: 'j.doe@sage.edu.ph',
+    department: 'College of Computer Studies',
+    sectionsCount: 2,
+    subjectCodes: ['IT201', 'IT205'],
+    rating: 3.2,
+    responseCount: 45,
+    onTimeCount: 40,
+    lateCount: 5,
+    hasResponses: true,
+    isReleased: true,
+    windows: []
+  },
+  {
+    id: 'fac-003',
+    firstName: 'Mark',
+    lastName: 'Bautista',
+    email: 'm.bautista@sage.edu.ph',
+    department: 'College of Computer Studies',
+    sectionsCount: 1,
+    subjectCodes: ['CS202'],
+    rating: null,
+    responseCount: 0,
+    onTimeCount: 0,
+    lateCount: 0,
+    hasResponses: false,
+    isReleased: false,
+    windows: []
+  }
+];
+
+export const mockDeanAtRiskStudents = [
+  {
+    student_id: 'stu-001',
+    user_number: '2023-0101',
+    first_name: 'Joel',
+    last_name: 'Villanueva',
+    email: 'j.villanueva@student.sage.edu.ph',
+    section: 'BSIT-1A',
+    programPrefix: 'BSIT',
+    yearLevel: '1st Year',
+    avgGwa: 3.25,
+    failingCount: 2,
+    risk: { severity: 'high', advisory: 'Immediate academic counselor intervention advised. Failing marks recorded.' }
+  },
+  {
+    student_id: 'stu-002',
+    user_number: '2023-0102',
+    first_name: 'Anna',
+    last_name: 'Reyes',
+    email: 'a.reyes@student.sage.edu.ph',
+    section: 'BSIT-2A',
+    programPrefix: 'BSIT',
+    yearLevel: '2nd Year',
+    avgGwa: 2.75,
+    failingCount: 0,
+    risk: { severity: 'medium', advisory: 'Provide tutoring support. Running GWA is border-lining the passing scale.' }
+  }
+];
+
+export const mockDeanGradeDistribution = [
+  { range: '1.00', count: 45, color: '#059669' },
+  { range: '1.25', count: 82, color: '#10b981' },
+  { range: '1.50', count: 120, color: '#34d399' },
+  { range: '1.75', count: 95, color: '#6ee7b7' },
+  { range: '2.00', count: 150, color: '#a7f3d0' },
+  { range: '2.25', count: 110, color: '#fcd34d' },
+  { range: '2.50', count: 85, color: '#fbbf24' },
+  { range: '2.75', count: 40, color: '#f59e0b' },
+  { range: '3.00', count: 35, color: '#d97706' },
+  { range: '5.00', count: 18, color: '#ef4444' },
+  { range: 'INC', count: 8, color: '#64748b' },
+  { range: 'DRP', count: 5, color: '#475569' }
+];
+
+export const mockDeanGradePostingStatus = [
+  {
+    class_record_id: 'cr-001',
+    subjectCode: 'IT101',
+    subjectName: 'Introduction to Computing',
+    sectionName: 'BSIT-1A',
+    facultyName: 'Rivera, Amanda',
+    facultyEmail: 'a.rivera@sage.edu.ph',
+    department: 'College of Computer Studies',
+    postedCount: 35,
+    totalCount: 35,
+    progress: 100,
+    isComplete: true,
+    lastUpdated: new Date().toISOString()
+  },
+  {
+    class_record_id: 'cr-002',
+    subjectCode: 'IT102',
+    subjectName: 'Computer Programming 1',
+    sectionName: 'BSIT-1B',
+    facultyName: 'Doe, John',
+    facultyEmail: 'j.doe@sage.edu.ph',
+    department: 'College of Computer Studies',
+    postedCount: 15,
+    totalCount: 40,
+    progress: Math.round((15/40)*100),
+    isComplete: false,
+    lastUpdated: new Date().toISOString()
+  },
+  {
+    class_record_id: 'cr-003',
+    subjectCode: 'CS103',
+    subjectName: 'Data Structures',
+    sectionName: 'BSCS-2A',
+    facultyName: 'Bautista, Mark',
+    facultyEmail: 'm.bautista@sage.edu.ph',
+    department: 'College of Computer Studies',
+    postedCount: 0,
+    totalCount: 25,
+    progress: 0,
+    isComplete: false,
+    lastUpdated: null
+  }
+];
+
+export const mockDeanRemarkRequests = [
+  {
+    id: 'req-001',
+    studentName: 'Villanueva, Joel',
+    userNumber: '2023-0101',
+    subjectCode: 'IT101',
+    subjectName: 'Introduction to Computing',
+    section: 'BSIT-1A',
+    term: 'Final',
+    facultyName: 'Rivera, Amanda',
+    requestedRemark: 'INC',
+    currentGrade: 74,
+    status: 'pending',
+    submittedAt: new Date().toISOString()
+  }
+];

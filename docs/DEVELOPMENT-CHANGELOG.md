@@ -20,6 +20,21 @@ Each entry follows this format:
 
 ## Log Entries
 
+### 2026-08-19 — Centralized Math, New Portal Pages & Block Modifier Stubs
+**Scope:** Admin, Faculty, Student, and College Office Portals
+**Summary:** Consolidated transmutation grading logic across 10 files into a centralized module. Resolved missing page components for Attendance log, COR Verification Queue, Departments List, Grade computation template builder, and replaced the student sections modifier stub.
+**Files Modified:**
+- `src/lib/gradingMath.js` — [NEW] Centralized DYCI transmutation GWA calculation engine.
+- `src/pages/student/Attendance.jsx` — [NEW] Student attendance log viewer showing FDA alarms at 4+ absences.
+- `src/pages/faculty/VerificationQueue.jsx` — [NEW] Faculty dashboard queue displaying student COR PDF preview iframe and join requests action buttons.
+- `src/pages/admin/GradeComputationsList.jsx` — [NEW] Grading formula template builder.
+- `src/pages/admin/DepartmentsList.jsx` — [NEW] College department manager and Dean assignment page.
+- `src/pages/office/StudentSections.jsx` — Replaced the blank placeholder page with student block section modifier lookup tool.
+- `src/pages/admin/SubjectForm.jsx` — Linked subject creation fields to central grading formulas dropdown selector.
+- `src/pages/admin/UserList.jsx` & `UserForm.jsx` — Styled irregular student section mappings with amber labels.
+- `src/components/layout/Sidebar.jsx` — Added navigation routes linking to the newly introduced portal screens.
+- `src/lib/mockDb.js` — [DELETED] Removed dead database mock.
+
 ### 2026-06-06 — Rollover, Irregular Student Management, and Attendance Integration
 **Scope:** Admin, Faculty, Dean, Student Portals, Relational Database schema  
 **Summary:** Implemented transactional semester transitions, enrolled irregular student support, daily class attendance sheets, and academic policy overrides (FDA locking). Connected the frontend pages directly to the Supabase PostgreSQL database.  

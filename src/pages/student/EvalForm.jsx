@@ -251,7 +251,7 @@ export default function EvalForm() {
     <>
       <PageHeader title="PPST Faculty Evaluation Form" breadcrumb="Student Portal" />
 
-      <div className="p-8 overflow-y-auto flex-1 max-w-4xl mx-auto w-full space-y-6 relative">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8 relative">
         
         {/* Sticky Context Banner & Progress Bar */}
         <div className="sticky top-0 bg-white/95 backdrop-blur-md z-35 border border-slate-200 shadow-sm rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4 transition-all duration-300">

@@ -1,3 +1,4 @@
+import { getTransmutedGrade } from '../../lib/gradingMath';
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
@@ -251,18 +252,7 @@ export default function GradeComputationPreview() {
     loadSpreadsheetData();
   }, [user, classRecordId]);
 
-  const getTransmutedGrade = (score) => {
-    if (score >= 98) return 1.00;
-    if (score >= 95) return 1.25;
-    if (score >= 92) return 1.50;
-    if (score >= 89) return 1.75;
-    if (score >= 86) return 2.00;
-    if (score >= 83) return 2.25;
-    if (score >= 80) return 2.50;
-    if (score >= 77) return 2.75;
-    if (score >= 75) return 3.00;
-    return 5.00;
-  };
+  
 
   const handlePostGrades = async () => {
     if (!classRecordId || students.length === 0) return;

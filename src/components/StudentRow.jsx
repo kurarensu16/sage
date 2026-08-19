@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { cn } from "../lib/utils";
 import { Check, MessageSquare, CloudUpload } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { getTransmutedGrade } from '../lib/gradingMath';
 
 export default function StudentRow({ 
   student, 
@@ -12,115 +13,77 @@ export default function StudentRow({
   viewMode = 'All',
   classCode = 'default',
   studentLocked,
+  periodsList,
   maxItems = {
-    Prelim: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
-    Midterm: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
-    'Semi-Final': { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
-    Final: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 }
+    Prelim: { exam: 40 },
+    Midterm: { exam: 40 },
+    'Semi-Final': { exam: 40 },
+    Final: { exam: 40 }
+  },
+  activities = {
+    Prelim: [],
+    Midterm: [],
+    'Semi-Final': [],
+    Final: []
   }
 }) {
-  // localStorage key is unique per student per class
   const STORAGE_KEY = `sage_scores_${classCode}_${student?.id ?? rowNo}`;
 
   // Restore from localStorage if available, else fall back to initialPeriods
-  const savedRaw = localStorage.getItem(STORAGE_KEY);
-  const saved = savedRaw ? JSON.parse(savedRaw) : null;
-  const p = saved?.Prelim       || initialPeriods?.Prelim       || {};
-  const m = saved?.Midterm      || initialPeriods?.Midterm      || {};
-  const sf = saved?.['Semi-Final'] || initialPeriods?.['Semi-Final'] || {};
-  const f = saved?.Final        || initialPeriods?.Final        || {};
+  const [scores, setScores] = useState(() => {
+    const savedRaw = localStorage.getItem(STORAGE_KEY);
+    if (savedRaw) {
+      try {
+        return JSON.parse(savedRaw);
+      } catch (e) {
+        console.error("Failed to parse cached scores:", e);
+      }
+    }
+    return {
+      Prelim: initialPeriods?.Prelim || {},
+      Midterm: initialPeriods?.Midterm || {},
+      'Semi-Final': initialPeriods?.['Semi-Final'] || {},
+      Final: initialPeriods?.Final || {},
+      customRemarks: '',
+      remarksNote: ''
+    };
+  });
 
-  // Prelim scores state (initialize 0 or undefined to empty string)
-  const [pAct1, setPAct1] = useState(p.act1 || '');
-  const [pAct2, setPAct2] = useState(p.act2 || '');
-  const [pAct3, setPAct3] = useState(p.act3 || '');
-  const [pAct4, setPAct4] = useState(p.act4 || '');
-  const [pAct5, setPAct5] = useState(p.act5 || '');
-  const [pAct6, setPAct6] = useState(p.act6 || '');
-  const [pChar, setPChar] = useState(p.char || '');
-  const [pExam, setPExam] = useState(p.exam || '');
-
-  // Midterm scores state
-  const [mAct1, setMAct1] = useState(m.act1 || '');
-  const [mAct2, setMAct2] = useState(m.act2 || '');
-  const [mAct3, setMAct3] = useState(m.act3 || '');
-  const [mAct4, setMAct4] = useState(m.act4 || '');
-  const [mAct5, setMAct5] = useState(m.act5 || '');
-  const [mAct6, setMAct6] = useState(m.act6 || '');
-  const [mChar, setMChar] = useState(m.char || '');
-  const [mExam, setMExam] = useState(m.exam || '');
-
-  // Semi-Final scores state
-  const [sfAct1, setSfAct1] = useState(sf.act1 || '');
-  const [sfAct2, setSfAct2] = useState(sf.act2 || '');
-  const [sfAct3, setSfAct3] = useState(sf.act3 || '');
-  const [sfAct4, setSfAct4] = useState(sf.act4 || '');
-  const [sfAct5, setSfAct5] = useState(sf.act5 || '');
-  const [sfAct6, setSfAct6] = useState(sf.act6 || '');
-  const [sfChar, setSfChar] = useState(sf.char || '');
-  const [sfExam, setSfExam] = useState(sf.exam || '');
-
-  // Final scores state
-  const [fAct1, setFAct1] = useState(f.act1 || '');
-  const [fAct2, setFAct2] = useState(f.act2 || '');
-  const [fAct3, setFAct3] = useState(f.act3 || '');
-  const [fAct4, setFAct4] = useState(f.act4 || '');
-  const [fAct5, setFAct5] = useState(f.act5 || '');
-  const [fAct6, setFAct6] = useState(f.act6 || '');
-  const [fChar, setFChar] = useState(f.char || '');
-  const [fExam, setFExam] = useState(f.exam || '');
-
-  const [customRemarks, setCustomRemarks] = useState(saved?.customRemarks ?? '');
-  const [remarksNote, setRemarksNote] = useState(saved?.remarksNote ?? '');
-  const [showNoteInput, setShowNoteInput] = useState(!!(saved?.customRemarks));
-
-// Auto-save indicator
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
   const debounceRef = useRef(null);
   const isFirstRender = useRef(true);
 
-  // ── Auto-save: fires 1200ms after any score/remark change ──────────────────
+  // Auto-save effect
   useEffect(() => {
-    // Skip the very first render so we don't flash "Saving" on mount
     if (isFirstRender.current) { isFirstRender.current = false; return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    
     debounceRef.current = setTimeout(async () => {
       setSaveStatus('saving');
-      const payload = {
-        Prelim:       { act1: pAct1, act2: pAct2, act3: pAct3, act4: pAct4, act5: pAct5, act6: pAct6, char: pChar, exam: pExam },
-        Midterm:      { act1: mAct1, act2: mAct2, act3: mAct3, act4: mAct4, act5: mAct5, act6: mAct6, char: mChar, exam: mExam },
-        'Semi-Final': { act1: sfAct1, act2: sfAct2, act3: sfAct3, act4: sfAct4, act5: sfAct5, act6: sfAct6, char: sfChar, exam: sfExam },
-        Final:        { act1: fAct1, act2: fAct2, act3: fAct3, act4: fAct4, act5: fAct5, act6: fAct6, char: fChar, exam: fExam },
-        customRemarks,
-        remarksNote,
-        savedAt: new Date().toISOString(),
-      };
-      
-      // 1. Save to LocalStorage
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
 
-      // 2. Save to Supabase as draft
       try {
         const { data: authUser } = await supabase.auth.getUser();
         const savedByUuid = authUser?.user?.id || null;
         
         const upsertRows = [];
-        const periods = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+        const periods = periodsList || ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
         
         periods.forEach(term => {
-          const termScores = payload[term];
+          const tScores = scores[term] || {};
+          // Maintain compatibility with core Supabase schema act1-act6 columns
           upsertRows.push({
             class_record_id: classCode,
             student_id: student.id,
             term: term,
-            act1: termScores.act1 === '' ? 0 : Number(termScores.act1),
-            act2: termScores.act2 === '' ? 0 : Number(termScores.act2),
-            act3: termScores.act3 === '' ? 0 : Number(termScores.act3),
-            act4: termScores.act4 === '' ? 0 : Number(termScores.act4),
-            act5: termScores.act5 === '' ? 0 : Number(termScores.act5),
-            act6: termScores.act6 === '' ? 0 : Number(termScores.act6),
-            char_rating: termScores.char === '' ? 0 : Number(termScores.char),
-            exam: termScores.exam === '' ? 0 : Number(termScores.exam),
+            act1: Number(tScores.act1) || 0,
+            act2: Number(tScores.act2) || 0,
+            act3: Number(tScores.act3) || 0,
+            act4: Number(tScores.act4) || 0,
+            act5: Number(tScores.act5) || 0,
+            act6: Number(tScores.act6) || 0,
+            char_rating: Number(tScores.char) || 0,
+            exam: Number(tScores.exam) || 0,
             saved_by: savedByUuid
           });
         });
@@ -130,146 +93,74 @@ export default function StudentRow({
           .upsert(upsertRows, { onConflict: 'class_record_id,student_id,term' });
 
         if (error) throw error;
-
-        // Also save customRemarks / overrides if changed
-        if (customRemarks || remarksNote) {
-          const prelimRating = calcPeriodRating(pAct1, pAct2, pAct3, pAct4, pAct5, pAct6, pChar, pExam, 'Prelim').rating;
-          const midtermRating = calcPeriodRating(mAct1, mAct2, mAct3, mAct4, mAct5, mAct6, mChar, mExam, 'Midterm').rating;
-          const sfRating = calcPeriodRating(sfAct1, sfAct2, sfAct3, sfAct4, sfAct5, sfAct6, sfChar, sfExam, 'Semi-Final').rating;
-          const finalRating = calcPeriodRating(fAct1, fAct2, fAct3, fAct4, fAct5, fAct6, fChar, fExam, 'Final').rating;
-
-          const mr = Math.round((prelimRating + midtermRating) / 2);
-          const tfr = Math.round((sfRating + finalRating) / 2);
-          const sg = Math.round((mr + tfr) / 2);
-
-          const rawGrade = getTransmutedGrade(sg);
-          const autoRemarks = isFDA ? 'FDA' : (parseFloat(rawGrade) <= 3.00 ? 'Passed' : 'Failed');
-          const remarksVal = customRemarks || autoRemarks;
-
-          const grade = (() => {
-            if (remarksVal === 'FDA') return '5.00';
-            if (remarksVal === 'INC') return rawGrade;
-            if (remarksVal === 'Passed' && parseFloat(rawGrade) > 3.00) return '3.00';
-            return rawGrade;
-          })();
-
-          const mapRemarkToDb = (remarkStr) => {
-            if (!remarkStr) return 'passed';
-            const lower = remarkStr.toLowerCase();
-            if (lower === 'inc') return 'incomplete';
-            return lower; // 'passed', 'failed', 'fda', 'dropped'
-          };
-          const remarksLabel = mapRemarkToDb(remarksVal);
-          
-          const { data: existingPg } = await supabase
-            .from('posted_grades')
-            .select('posted_grade_id')
-            .eq('class_record_id', classCode)
-            .eq('student_id', student.id)
-            .eq('grade_period', 'final')
-            .maybeSingle();
-
-          const pgPayload = {
-            class_record_id: classCode,
-            student_id: student.id,
-            grade_period: 'final',
-            computed_grade: finalRating,
-            effective_grade: parseFloat(grade),
-            remarks: remarksLabel,
-            remarks_note: remarksNote || null,
-            remarks_set_by: savedByUuid,
-            remarks_set_at: new Date().toISOString()
-          };
-
-          if (existingPg) {
-            pgPayload.posted_grade_id = existingPg.posted_grade_id;
-          }
-
-          await supabase.from('posted_grades').upsert(pgPayload);
-        }
-
         setSaveStatus('saved');
       } catch (err) {
-        console.warn('Database draft auto-save failed, local draft stored:', err);
-        setSaveStatus('saved');
+        console.error('Failed to sync scores draft:', err);
+        setSaveStatus('idle');
       }
-
-      // Reset back to idle after 2s
-      setTimeout(() => setSaveStatus('idle'), 2000);
     }, 1200);
+  }, [scores]);
 
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [
-    pAct1, pAct2, pAct3, pAct4, pAct5, pAct6, pChar, pExam,
-    mAct1, mAct2, mAct3, mAct4, mAct5, mAct6, mChar, mExam,
-    sfAct1, sfAct2, sfAct3, sfAct4, sfAct5, sfAct6, sfChar, sfExam,
-    fAct1, fAct2, fAct3, fAct4, fAct5, fAct6, fChar, fExam,
-    customRemarks, remarksNote,
-    readOnly, STORAGE_KEY, classCode, student?.id
-  ]);
-
-  // Helper change handler for ratings calculation per term using dynamic max items
-  const calcPeriodRating = (act1, act2, act3, act4, act5, act6, char, exam, term) => {
-    const termMax = maxItems[term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
-    const totalActMax = termMax.act1 + termMax.act2 + termMax.act3 + termMax.act4 + termMax.act5 + termMax.act6;
-    
-    const val1 = Number(act1) || 0;
-    const val2 = Number(act2) || 0;
-    const val3 = Number(act3) || 0;
-    const val4 = Number(act4) || 0;
-    const val5 = Number(act5) || 0;
-    const val6 = Number(act6) || 0;
-    const charVal = Number(char) || 0;
-    const examVal = Number(exam) || 0;
-
-    const csTotal = val1 + val2 + val3 + val4 + val5 + val6;
-    
-    // Percentage based on dynamic total points
-    const csPercent = totalActMax > 0 ? (csTotal / totalActMax) * 50 : 0;
-    const charPercent = termMax.char > 0 ? (charVal / termMax.char) * 10 : 0; // Weighted at 10%
-    const examPercent = termMax.exam > 0 ? (examVal / termMax.exam) * 40 : 0; // Weighted at 40%
-    
-    const totalScore = csPercent + charPercent + examPercent;
-    const rating = Math.min(100, Math.max(0, Math.round(totalScore)));
-    return { csTotal, csPercent, examPercent, rating };
+  const handleCellChange = (term, key, val) => {
+    setScores(prev => ({
+      ...prev,
+      [term]: {
+        ...(prev[term] || {}),
+        [key]: val
+      }
+    }));
   };
 
-  // Computations for all 4 periods
-  const prelimResult = calcPeriodRating(pAct1, pAct2, pAct3, pAct4, pAct5, pAct6, pChar, pExam, 'Prelim');
-  const midtermResult = calcPeriodRating(mAct1, mAct2, mAct3, mAct4, mAct5, mAct6, mChar, mExam, 'Midterm');
-  const semiFinalResult = calcPeriodRating(sfAct1, sfAct2, sfAct3, sfAct4, sfAct5, sfAct6, sfChar, sfExam, 'Semi-Final');
-  const finalResult = calcPeriodRating(fAct1, fAct2, fAct3, fAct4, fAct5, fAct6, fChar, fExam, 'Final');
+  // Computes ratings dynamically based on dynamic activities list
+  const calcPeriodRating = (term) => {
+    const termScores = scores[term] || {};
+    const termActivities = activities[term] || [];
+    
+    let csTotal = 0;
+    let totalActMax = 0;
+    termActivities.forEach(act => {
+      const score = Number(termScores[act.id]) || 0;
+      csTotal += score;
+      totalActMax += (act.max || 0);
+    });
 
-  // Semestral rating chain computations (Excel standard)
+    const csPercent = totalActMax > 0 ? (csTotal / totalActMax) * 50 : 0;
+    
+    const charVal = Number(termScores.char) || 0;
+    const charPercent = (charVal / 100) * 10;
+
+    const examVal = Number(termScores.exam) || 0;
+    const examMax = Number(maxItems[term]?.exam) || 40;
+    const examPercent = examMax > 0 ? (examVal / examMax) * 40 : 0;
+
+    const totalScore = csPercent + charPercent + examPercent;
+    const rating = Math.min(100, Math.max(0, Math.round(totalScore)));
+
+    return {
+      csTotal,
+      csPercent: totalActMax > 0 ? (csTotal / totalActMax) * 100 : 0,
+      examPercent: examMax > 0 ? (examVal / examMax) * 100 : 0,
+      rating
+    };
+  };
+
+  const prelimResult = calcPeriodRating('Prelim');
+  const midtermResult = calcPeriodRating('Midterm');
+  const semiFinalResult = calcPeriodRating('Semi-Final');
+  const finalResult = calcPeriodRating('Final');
+
   const mr = Math.round((prelimResult.rating + midtermResult.rating) / 2);
   const tfr = Math.round((semiFinalResult.rating + finalResult.rating) / 2);
   const sg = Math.round((mr + tfr) / 2);
 
-  // Transmute semestral grade to university GWA (DYCI Standard)
-  const getTransmutedGrade = (score) => {
-    if (score >= 98) return '1.00';
-    if (score >= 95) return '1.25';
-    if (score >= 92) return '1.50';
-    if (score >= 89) return '1.75';
-    if (score >= 86) return '2.00';
-    if (score >= 83) return '2.25';
-    if (score >= 80) return '2.50';
-    if (score >= 77) return '2.75';
-    if (score >= 75) return '3.00';
-    return '5.00';
-  };
-
   const storedAbsences = localStorage.getItem(`sage_absences_${classCode}_${student.id}`);
-  const absences = storedAbsences !== null ? parseInt(storedAbsences) : (
-    student.name?.toLowerCase().includes('mabini') ? 4 : (student.name?.toLowerCase().includes('celestino') ? 4 : 0)
-  );
+  const absences = storedAbsences !== null ? parseInt(storedAbsences) : 0;
   const isFDA = absences >= 4;
 
-  const rawGrade = getTransmutedGrade(sg);
+  const rawGrade = getTransmutedGrade(sg).toFixed(2);
   const autoRemarks = isFDA ? 'FDA' : (parseFloat(rawGrade) <= 3.00 ? 'Passed' : 'Failed');
-  const remarks = isFDA ? 'FDA' : (customRemarks || autoRemarks);
+  const remarks = isFDA ? 'FDA' : (scores.customRemarks || autoRemarks);
 
-  // Grade displayed is affected by remark override
   const grade = (() => {
     if (remarks === 'FDA') return '5.00';
     if (remarks === 'INC') return rawGrade;
@@ -279,7 +170,6 @@ export default function StudentRow({
 
   const isNonPassing = ['Failed', 'INC', 'FDA', 'Dropped'].includes(remarks);
 
-  // Determine status indicators
   const getStatus = (score) => {
     if (remarks === 'FDA') return { label: 'Failing', color: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500 shadow-rose-500/40 animate-pulse' };
     if (score >= 80) return { label: 'Safe', color: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500 shadow-emerald-500/40' };
@@ -287,22 +177,13 @@ export default function StudentRow({
     return { label: 'Failing', color: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500 shadow-rose-500/40 animate-pulse' };
   };
 
-  const pMax = maxItems.Prelim || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
-  const mMax = maxItems.Midterm || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
-  const sfMax = maxItems['Semi-Final'] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
-  const fMax = maxItems.Final || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
-
   const statusInfo = getStatus(sg);
 
   const isLocked = readOnly || (studentLocked !== undefined ? studentLocked : (lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final')));
-  const isPrelimLocked = isLocked;
-  const isMidtermLocked = isLocked;
-  const isSemiFinalLocked = isLocked;
-  const isFinalLocked = isLocked;
 
-  // Input Cell Renderer Helper (replaces raw input elements, adds onFocus select, cap checks and formatting)
-  const renderInputCell = (value, setValue, maxVal, isLocked, widthClass = "w-12") => {
-    if (isLocked) {
+  const renderInputCell = (term, key, maxVal, isTermLocked, widthClass = "w-12") => {
+    const value = scores[term]?.[key] ?? '';
+    if (isTermLocked) {
       return <span className="font-mono text-xs">{value === '' ? '0' : value}</span>;
     }
     return (
@@ -314,7 +195,7 @@ export default function StudentRow({
         onFocus={(e) => e.target.select()}
         onChange={(e) => {
           const val = e.target.value === '' ? '' : Math.max(0, Math.min(maxVal, Number(e.target.value)));
-          setValue(val);
+          handleCellChange(term, key, val);
         }}
         className={cn(
           widthClass,
@@ -337,109 +218,94 @@ export default function StudentRow({
       statusInfo.label === 'At-Risk' && "bg-amber-50/10 hover:bg-amber-50/30",
       statusInfo.label === 'Failing' && "bg-rose-50/10 hover:bg-rose-50/30 border-l-2 border-l-rose-400"
     )}>
-      {/* Row Number */}
       <td className={cn("px-2 py-3 border-r border-slate-200 text-slate-500 font-mono text-[11px] w-10 sticky left-0 z-10", stickyBgClass)}>
         {rowNo}
       </td>
-      
-      {/* Student Number */}
       <td className={cn("px-2 py-3 border-r border-slate-200 text-slate-500 font-mono text-[11px] w-24 sticky left-[40px] z-10", stickyBgClass)}>
         {student.studentNo || student.id}
       </td>
-      
-      {/* Student Name (Sticky on Left) */}
       <td className={cn("px-4 py-3 text-left font-semibold text-slate-900 sticky left-[136px] border-r border-slate-200 z-10 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]", stickyBgClass)}>
         {student.name}
       </td>
       
-      {/* ==================== PRELIMINARY GRADE ==================== */}
-      {(viewMode === 'All' || viewMode === 'Prelim') && (
+      {/* PRELIM */}
+      {((!periodsList || periodsList.includes('Prelim')) && (viewMode === 'All' || viewMode === 'Prelim')) && (
         <>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pAct1, setPAct1, pMax.act1, isPrelimLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pAct2, setPAct2, pMax.act2, isPrelimLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pAct3, setPAct3, pMax.act3, isPrelimLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pAct4, setPAct4, pMax.act4, isPrelimLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pAct5, setPAct5, pMax.act5, isPrelimLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pAct6, setPAct6, pMax.act6, isPrelimLocked)}</td>
+          {(activities.Prelim || []).map(act => (
+            <td key={act.id} className="p-1 border-r border-slate-100 w-12">
+              {renderInputCell('Prelim', act.id, act.max, isLocked)}
+            </td>
+          ))}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{prelimResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell(pChar, setPChar, pMax.char, isPrelimLocked, "w-16")}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(pExam, setPExam, pMax.exam, isPrelimLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Prelim', 'char', 100, isLocked, "w-16")}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell('Prelim', 'exam', maxItems.Prelim?.exam || 40, isLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-sky-50 border-r border-slate-200 text-sky-850 w-14 text-center">{prelimResult.rating}</td>
         </>
       )}
-      
-      {/* ==================== MIDTERM GRADE ==================== */}
+
+      {/* MIDTERM */}
       {(viewMode === 'All' || viewMode === 'Midterm') && (
         <>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mAct1, setMAct1, mMax.act1, isMidtermLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mAct2, setMAct2, mMax.act2, isMidtermLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mAct3, setMAct3, mMax.act3, isMidtermLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mAct4, setMAct4, mMax.act4, isMidtermLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mAct5, setMAct5, mMax.act5, isMidtermLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mAct6, setMAct6, mMax.act6, isMidtermLocked)}</td>
+          {(activities.Midterm || []).map(act => (
+            <td key={act.id} className="p-1 border-r border-slate-100 w-12">
+              {renderInputCell('Midterm', act.id, act.max, isLocked)}
+            </td>
+          ))}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{midtermResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell(mChar, setMChar, mMax.char, isMidtermLocked, "w-16")}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(mExam, setMExam, mMax.exam, isMidtermLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Midterm', 'char', 100, isLocked, "w-16")}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell('Midterm', 'exam', maxItems.Midterm?.exam || 40, isLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-indigo-50 border-r border-slate-200 text-indigo-800 w-14 text-center">{midtermResult.rating}</td>
         </>
       )}
-      
-      {/* ==================== MIDTERM RATING (MR) ==================== */}
+
       {(viewMode === 'All' || viewMode === 'Midterm') && (
         <td className="px-3 py-3 font-mono font-extrabold bg-indigo-100 border-r border-slate-200 text-indigo-950 w-16 text-center text-sm">{mr}</td>
       )}
-      
-      {/* ==================== SEMI-FINAL GRADE ==================== */}
-      {(viewMode === 'All' || viewMode === 'Semi-Final') && (
+
+      {/* SEMI-FINAL */}
+      {((!periodsList || periodsList.includes('Semi-Final')) && (viewMode === 'All' || viewMode === 'Semi-Final')) && (
         <>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfAct1, setSfAct1, sfMax.act1, isSemiFinalLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfAct2, setSfAct2, sfMax.act2, isSemiFinalLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfAct3, setSfAct3, sfMax.act3, isSemiFinalLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfAct4, setSfAct4, sfMax.act4, isSemiFinalLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfAct5, setSfAct5, sfMax.act5, isSemiFinalLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfAct6, setSfAct6, sfMax.act6, isSemiFinalLocked)}</td>
+          {(activities['Semi-Final'] || []).map(act => (
+            <td key={act.id} className="p-1 border-r border-slate-100 w-12">
+              {renderInputCell('Semi-Final', act.id, act.max, isLocked)}
+            </td>
+          ))}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{semiFinalResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell(sfChar, setSfChar, sfMax.char, isSemiFinalLocked, "w-16")}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(sfExam, setSfExam, sfMax.exam, isSemiFinalLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Semi-Final', 'char', 100, isLocked, "w-16")}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell('Semi-Final', 'exam', maxItems['Semi-Final']?.exam || 40, isLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-amber-50 border-r border-slate-200 text-amber-800 w-14 text-center">{semiFinalResult.rating}</td>
         </>
       )}
-      
-      {/* ==================== FINAL GRADE ==================== */}
+
+      {/* FINAL */}
       {(viewMode === 'All' || viewMode === 'Final') && (
         <>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fAct1, setFAct1, fMax.act1, isFinalLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fAct2, setFAct2, fMax.act2, isFinalLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fAct3, setFAct3, fMax.act3, isFinalLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fAct4, setFAct4, fMax.act4, isFinalLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fAct5, setFAct5, fMax.act5, isFinalLocked)}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fAct6, setFAct6, fMax.act6, isFinalLocked)}</td>
+          {(activities.Final || []).map(act => (
+            <td key={act.id} className="p-1 border-r border-slate-100 w-12">
+              {renderInputCell('Final', act.id, act.max, isLocked)}
+            </td>
+          ))}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{finalResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell(fChar, setFChar, fMax.char, isFinalLocked, "w-16")}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell(fExam, setFExam, fMax.exam, isFinalLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Final', 'char', 100, isLocked, "w-16")}</td>
+          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell('Final', 'exam', maxItems.Final?.exam || 40, isLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-orange-50 border-r border-slate-200 text-orange-850 w-14 text-center">{finalResult.rating}</td>
         </>
       )}
-      
-      {/* ==================== TENTATIVE FINAL RATING (TFR) ==================== */}
+
       {(viewMode === 'All' || viewMode === 'Final') && (
         <td className="px-3 py-3 font-mono font-extrabold bg-orange-100 border-r border-slate-200 text-orange-950 w-16 text-center text-sm">{tfr}</td>
       )}
-      
-      {/* ==================== SEMESTRAL GRADE (SG) ==================== */}
       {(viewMode === 'All' || viewMode === 'Final') && (
         <td className="px-3 py-3 font-mono font-extrabold bg-emerald-50 border-r border-slate-200 text-emerald-800 w-16 text-center text-sm">{sg}</td>
       )}
-      
-      {/* ==================== EQUIVALENT GWA ==================== */}
       {(viewMode === 'All' || viewMode === 'Final') && (
         <td className="px-3 py-3 border-r border-slate-200 bg-emerald-100/50 w-16 text-center">
           <span className={cn(
@@ -450,8 +316,7 @@ export default function StudentRow({
           </span>
         </td>
       )}
-      
-      {/* ==================== REMARKS ==================== */}
+
       {(viewMode === 'All' || viewMode === 'Final') && (
         <td className="px-4 py-3 border-r border-slate-200 bg-emerald-100/30 w-36 text-center font-bold text-xs">
           {readOnly ? (
@@ -464,16 +329,14 @@ export default function StudentRow({
             </span>
           ) : (
             <div className="flex flex-col gap-1 items-center">
-              {/* Remark selector */}
               <select
                 value={remarks}
                 disabled={isFDA}
                 onChange={(e) => {
                   const val = e.target.value;
-                  setCustomRemarks(val);
-                  // Show note input whenever faculty manually picks a non-auto remark
+                  setScores(prev => ({ ...prev, customRemarks: val }));
                   setShowNoteInput(val !== autoRemarks);
-                  if (val === autoRemarks) setRemarksNote('');
+                  if (val === autoRemarks) setScores(prev => ({ ...prev, remarksNote: '' }));
                 }}
                 className={cn(
                   "appearance-none border px-2 py-1 rounded text-[10px] font-extrabold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all w-full text-center",
@@ -489,19 +352,17 @@ export default function StudentRow({
                 <option value="Dropped">Dropped</option>
               </select>
 
-              {/* FDA Advisory Policy Notice */}
               {remarks === 'FDA' && (
-                <span className="block text-[8px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 mt-0.5 text-center" title="Capstone Policy: 4 absences trigger an FDA recommendation for faculty review, not an automatic fail.">
+                <span className="block text-[8px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 mt-0.5 text-center" title="FDA Recommendation Alert.">
                   FDA Advisory (4 Absences)
                 </span>
               )}
 
-              {/* Optional note — appears only when remark is manually overridden */}
               {showNoteInput && (
                 <div className="w-full mt-0.5 relative group">
                   <textarea
-                    value={remarksNote}
-                    onChange={(e) => setRemarksNote(e.target.value)}
+                    value={scores.remarksNote || ''}
+                    onChange={(e) => setScores(prev => ({ ...prev, remarksNote: e.target.value }))}
                     placeholder="Reason for override…"
                     rows={2}
                     className="w-full text-[9px] px-2 py-1 rounded border border-amber-300 bg-amber-50 text-amber-900 placeholder-amber-400 focus:ring-1 focus:ring-amber-400 focus:border-amber-400 outline-none resize-none transition-all font-normal"
@@ -510,7 +371,6 @@ export default function StudentRow({
                 </div>
               )}
 
-              {/* Auto-save status indicator */}
               {saveStatus === 'saving' && (
                 <span className="flex items-center gap-1 text-[9px] text-slate-400 font-medium mt-1">
                   <CloudUpload className="h-2.5 w-2.5 animate-pulse" /> Saving…
@@ -525,7 +385,6 @@ export default function StudentRow({
           )}
         </td>
       )}
-      
     </tr>
   );
 }

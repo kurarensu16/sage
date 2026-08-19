@@ -1,3 +1,4 @@
+import { getTransmutedGrade } from '../../lib/gradingMath';
 import { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { useAuth } from '../../lib/AuthContext';
@@ -15,18 +16,7 @@ import { cn } from '../../lib/utils';
 import { getAiAcademicInsight } from '../../lib/openrouter';
 
 // Helper to transmute raw scores to DYCI standard grades
-const getTransmutedGrade = (score) => {
-  if (score >= 98) return 1.00;
-  if (score >= 95) return 1.25;
-  if (score >= 92) return 1.50;
-  if (score >= 89) return 1.75;
-  if (score >= 86) return 2.00;
-  if (score >= 83) return 2.25;
-  if (score >= 80) return 2.50;
-  if (score >= 77) return 2.75;
-  if (score >= 75) return 3.00;
-  return 5.00;
-};
+
 
 // Helper to calculate term ratings from draft scores
 const calculateTermRating = (draftScores, maxSetup) => {
@@ -643,7 +633,7 @@ export default function AcademicInsights() {
     <>
       <PageHeader title="Academic Insights" breadcrumb="Student Portal" />
 
-      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 max-w-5xl mx-auto w-full space-y-4 sm:space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
         
         {/* Native Mobile App Style Segmented Scope Bar */}
         <div className="bg-slate-200/70 p-1 rounded-2xl shadow-inner grid grid-cols-2 gap-1">

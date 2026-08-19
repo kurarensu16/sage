@@ -55,6 +55,10 @@ import StudentEvalList from './pages/student/EvalList';
 import StudentEvalForm from './pages/student/EvalForm';
 import StudentAcademicInsights from './pages/student/AcademicInsights';
 import StudentNotifications from './pages/student/Notifications';
+import AdminGradeComputationsList from './pages/admin/GradeComputationsList';
+import AdminDepartmentsList from './pages/admin/DepartmentsList';
+import FacultyVerificationQueue from './pages/faculty/VerificationQueue';
+import StudentAttendance from './pages/student/Attendance';
 import Settings from './pages/shared/Settings';
 
 function App() {
@@ -85,6 +89,8 @@ function App() {
               <Route path="/admin/sectionform" element={<AdminSectionForm />} />
               <Route path="/admin/notifications" element={<AdminNotifications />} />
               <Route path="/admin/termmanagement" element={<AdminTermManagement />} />
+              <Route path="/admin/gradecomputationslist" element={<AdminGradeComputationsList />} />
+              <Route path="/admin/departmentslist" element={<AdminDepartmentsList />} />
               <Route path="/admin/settings" element={<Settings />} />
             </Route>
 
@@ -128,6 +134,7 @@ function App() {
               <Route path="/faculty/classattendance" element={<FacultyClassAttendance />} />
               <Route path="/faculty/evalresultsmy" element={<FacultyEvalResultsMy />} />
               <Route path="/faculty/notifications" element={<FacultyNotifications />} />
+              <Route path="/faculty/verificationqueue" element={<FacultyVerificationQueue />} />
               <Route path="/faculty/settings" element={<Settings />} />
             </Route>
 
@@ -141,6 +148,7 @@ function App() {
               <Route path="/student/academic-insights" element={<StudentAcademicInsights />} />
               <Route path="/student/airecommendation" element={<Navigate to="/student/academic-insights" replace />} />
               <Route path="/student/notifications" element={<StudentNotifications />} />
+              <Route path="/student/attendance" element={<StudentAttendance />} />
               <Route path="/student/settings" element={<Settings />} />
             </Route>
           </Route>

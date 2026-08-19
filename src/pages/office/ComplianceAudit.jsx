@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
-import { ShieldAlert, Search, CheckCircle, XCircle, Loader2, Check, UserCheck, ShieldCheck, AlertTriangle, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { ShieldAlert, Search, CheckCircle, XCircle, Loader2, Check, UserCheck, ShieldCheck, AlertTriangle, X, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Eye, ClipboardList } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
@@ -24,6 +24,12 @@ export default function ComplianceAudit() {
   const [processing, setProcessing] = useState(false);
   const [confirmConfig, setConfirmConfig] = useState(null);
   const [successModalData, setSuccessModalData] = useState({ isOpen: false, title: '', message: '' });
+  
+  // Evaluation Details Modal State
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [selectedStudentForDetails, setSelectedStudentForDetails] = useState(null);
+  const [studentEvaluationList, setStudentEvaluationList] = useState([]);
+  const [loadingDetails, setLoadingDetails] = useState(false);
 
   const userDepartmentId = profile?.department_id;
   const userDepartmentName = profile?.departments?.name || 'Department';
@@ -100,6 +106,7 @@ export default function ComplianceAudit() {
           email: s.email,
           userNumber: s.user_number,
           section: sectionName,
+          section_id: s.section_id,
           programPrefix,
           yearLevel: derivedYear,
           clearanceStatus: clearance?.status === 'SIGNED' ? 'SIGNED' : 'UNSIGNED',
@@ -179,6 +186,114 @@ export default function ComplianceAudit() {
       console.error('Error updating clearance:', err);
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const handleViewEvaluationDetails = async (student) => {
+    if (!activeTerm) return;
+    setSelectedStudentForDetails(student);
+    setIsDetailsModalOpen(true);
+    setLoadingDetails(true);
+    setStudentEvaluationList([]);
+
+    try {
+      // 1. Fetch ALL evaluation windows for this term (broad query)
+      const { data: windows } = await supabase
+        .from('evaluation_windows')
+        .select(`
+          window_id, term_id, faculty_id,
+          faculty:users!faculty_id ( first_name, last_name )
+        `)
+        .eq('term_id', activeTerm.term_id)
+        .eq('is_active', true);
+
+      // 2. Fetch student's evaluation submission responses
+      const { data: responses } = await supabase
+        .from('evaluation_responses')
+        .select('window_id')
+        .eq('student_id', student.id);
+
+      const submittedWindowIds = new Set(responses?.map(r => r.window_id) || []);
+
+      // 3. Try to get subject info via class_records for the student's section
+      let facultySubjectMap = {};
+      const sectionId = student.section_id;
+      
+      if (sectionId) {
+        const { data: classRecords } = await supabase
+          .from('class_records')
+          .select('faculty_id, subject_id, subjects(code, name)')
+          .eq('section_id', sectionId)
+          .eq('status', 'active');
+
+        (classRecords || []).forEach(cr => {
+          if (cr.faculty_id && cr.subjects) {
+            facultySubjectMap[cr.faculty_id] = cr.subjects;
+          }
+        });
+      }
+
+      // 4. Fallback: also check enrollments table
+      if (Object.keys(facultySubjectMap).length === 0) {
+        const { data: enrolls } = await supabase
+          .from('enrollments')
+          .select('subject_id, section_id, subjects(code, name)')
+          .eq('student_id', student.id);
+
+        if (enrolls && enrolls.length > 0) {
+          const fallbackSectionId = enrolls[0].section_id;
+          const subjectIds = enrolls.map(e => e.subject_id).filter(Boolean);
+          
+          if (fallbackSectionId && subjectIds.length > 0) {
+            const { data: classRecords } = await supabase
+              .from('class_records')
+              .select('faculty_id, subject_id, subjects(code, name)')
+              .eq('section_id', fallbackSectionId)
+              .in('subject_id', subjectIds)
+              .eq('status', 'active');
+
+            (classRecords || []).forEach(cr => {
+              if (cr.faculty_id && cr.subjects) {
+                facultySubjectMap[cr.faculty_id] = cr.subjects;
+              }
+            });
+          }
+        }
+      }
+
+      // 5. Compile evaluation list
+      let compiled;
+      if (Object.keys(facultySubjectMap).length > 0) {
+        // Match windows to student's actual instructors
+        compiled = (windows || [])
+          .filter(w => facultySubjectMap[w.faculty_id])
+          .map(w => ({
+            window_id: w.window_id,
+            subjectCode: facultySubjectMap[w.faculty_id].code,
+            subjectName: facultySubjectMap[w.faculty_id].name,
+            instructorName: w.faculty 
+              ? `Prof. ${w.faculty.first_name} ${w.faculty.last_name}` 
+              : 'TBA',
+            submitted: submittedWindowIds.has(w.window_id)
+          }));
+      } else {
+        // Fallback: show ALL windows in the term (no subject-level mapping available)
+        compiled = (windows || []).map(w => ({
+          window_id: w.window_id,
+          subjectCode: '—',
+          subjectName: 'Faculty Evaluation',
+          instructorName: w.faculty 
+            ? `Prof. ${w.faculty.first_name} ${w.faculty.last_name}` 
+            : 'TBA',
+          submitted: submittedWindowIds.has(w.window_id)
+        }));
+      }
+
+      setStudentEvaluationList(compiled);
+    } catch (err) {
+      console.error('Error loading evaluation details:', err);
+    } finally {
+      setLoadingDetails(false);
     }
   };
 
@@ -546,6 +661,7 @@ export default function ComplianceAudit() {
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Student Name</th>
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Section</th>
                   <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Clearance Status</th>
+                  <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Evaluation</th>
                   <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
@@ -584,6 +700,15 @@ export default function ComplianceAudit() {
                           </span>
                         )}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
+                        <button
+                          onClick={() => handleViewEvaluationDetails(s)}
+                          disabled={!activeTerm}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                        >
+                          <Eye className="h-3.5 w-3.5" /> View Details
+                        </button>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                         <button
                           onClick={() => promptToggleStatus(s)}
@@ -594,7 +719,7 @@ export default function ComplianceAudit() {
                               : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'
                           }`}
                         >
-                          {s.clearanceStatus === 'SIGNED' ? 'Revoke Clearance' : 'Sign Off Clearance'}
+                          {s.clearanceStatus === 'SIGNED' ? 'Revoke' : 'Sign Off'}
                         </button>
                       </td>
                     </tr>
@@ -762,6 +887,139 @@ export default function ComplianceAudit() {
                   <Check className="h-4 w-4" />
                 )}
                 {confirmConfig.actionLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📋 Evaluation Details Inspect Modal */}
+      {isDetailsModalOpen && selectedStudentForDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm text-left animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 font-sans">
+                <ClipboardList className="h-4.5 w-4.5 text-sage-600" />
+                <span>Evaluation Progress: {selectedStudentForDetails.lastName}, {selectedStudentForDetails.firstName}</span>
+              </h3>
+              <button 
+                onClick={() => setIsDetailsModalOpen(false)}
+                className="text-slate-400 hover:text-slate-650 transition-colors text-lg font-semibold cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              {/* Info Bar */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/60 flex justify-between items-center text-xs">
+                <div>
+                  <span className="text-slate-450 block uppercase font-bold text-[9px] tracking-wide">Section & Roster</span>
+                  <span className="font-bold text-slate-800 mt-0.5 block">{selectedStudentForDetails.section || 'Unassigned'}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-slate-450 block uppercase font-bold text-[9px] tracking-wide">Overall Clearance</span>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border mt-0.5 ${
+                    selectedStudentForDetails.clearanceStatus === 'SIGNED'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                      : 'bg-rose-50 text-rose-700 border-rose-100'
+                  }`}>
+                    {selectedStudentForDetails.clearanceStatus === 'SIGNED' ? 'Cleared' : 'Pending'}
+                  </span>
+                </div>
+              </div>
+
+              {loadingDetails ? (
+                <div className="py-12 flex flex-col items-center gap-2.5">
+                  <Loader2 className="h-6 w-6 animate-spin text-sage-600" />
+                  <span className="text-xs text-slate-400 font-medium">Auditing evaluations...</span>
+                </div>
+              ) : studentEvaluationList.length > 0 ? (
+                <div className="space-y-4 max-h-[380px] overflow-y-auto pr-1">
+                  {/* Progress Overview */}
+                  {(() => {
+                    const completed = studentEvaluationList.filter(e => e.submitted).length;
+                    const total = studentEvaluationList.length;
+                    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+                    return (
+                      <div className="bg-slate-50 rounded-xl border border-slate-200/60 p-3 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-700">Completion Rate</span>
+                          <span className="font-mono font-bold text-slate-800">{completed}/{total} ({pct}%)</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full transition-all duration-500 ${pct === 100 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Layer 1: Pending Evaluations */}
+                  {studentEvaluationList.filter(e => !e.submitted).length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 pl-1">
+                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                        <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">
+                          Pending ({studentEvaluationList.filter(e => !e.submitted).length})
+                        </span>
+                      </div>
+                      <div className="bg-amber-50/40 border border-amber-200/60 rounded-xl divide-y divide-amber-100 overflow-hidden">
+                        {studentEvaluationList.filter(e => !e.submitted).map((evalItem, idx) => (
+                          <div key={idx} className="px-4 py-3 flex items-center justify-between hover:bg-amber-50/60 transition-all">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-bold text-slate-800">{evalItem.subjectCode} — {evalItem.subjectName}</span>
+                              <span className="text-[10px] text-slate-400 mt-0.5">{evalItem.instructorName}</span>
+                            </div>
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                              <XCircle className="h-3 w-3" /> Not Submitted
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Layer 2: Completed Evaluations */}
+                  {studentEvaluationList.filter(e => e.submitted).length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 pl-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
+                          Completed ({studentEvaluationList.filter(e => e.submitted).length})
+                        </span>
+                      </div>
+                      <div className="bg-emerald-50/40 border border-emerald-200/60 rounded-xl divide-y divide-emerald-100 overflow-hidden">
+                        {studentEvaluationList.filter(e => e.submitted).map((evalItem, idx) => (
+                          <div key={idx} className="px-4 py-3 flex items-center justify-between hover:bg-emerald-50/60 transition-all">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-bold text-slate-800">{evalItem.subjectCode} — {evalItem.subjectName}</span>
+                              <span className="text-[10px] text-slate-400 mt-0.5">{evalItem.instructorName}</span>
+                            </div>
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              <CheckCircle className="h-3 w-3" /> Submitted
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="py-8 text-center text-xs text-slate-400 italic bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                  No active evaluation windows mapped to this student's class section.
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
+              <button 
+                onClick={() => setIsDetailsModalOpen(false)}
+                className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Close Audit
               </button>
             </div>
           </div>

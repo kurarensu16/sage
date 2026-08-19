@@ -146,7 +146,7 @@ export default function EvalList() {
     <>
       <PageHeader title="Faculty Evaluations" breadcrumb="Student Portal" />
 
-      <div className="p-8 overflow-y-auto flex-1 max-w-4xl mx-auto w-full space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
         
         {/* Info Header Banner */}
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-3 items-start">
