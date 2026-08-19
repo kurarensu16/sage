@@ -1,0 +1,18 @@
+{
+  "name": "SAGE - Smart Academic Grading & Evaluation System",
+  "short_name": "SAGE",
+  "description": "Automated academic grading, evaluation, and student performance portal.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,9 +1,8 @@
-import React from 'react';
 import { useAuth } from '../../lib/AuthContext';
 import { useLocation, Link } from 'react-router-dom';
-import { Search, Bell, Settings, PanelLeft } from 'lucide-react';
+import { Search, Bell, PanelLeft, Menu } from 'lucide-react';
 
-export default function Topbar({ toggleSidebar, isCollapsed }) {
+export default function Topbar({ toggleSidebar, toggleMobileSidebar }) {
   const location = useLocation();
   const path = location.pathname;
   const role = path.split('/')[1] || 'faculty';
@@ -28,6 +27,12 @@ export default function Topbar({ toggleSidebar, isCollapsed }) {
       title: 'College Dean',
       avatarBg: 'bg-emerald-100 text-emerald-800 border-emerald-200'
     },
+    office: {
+      name: 'College Office Staff',
+      email: 'office@sage.edu.ph',
+      title: 'College Office',
+      avatarBg: 'bg-amber-100 text-amber-800 border-amber-200'
+    },
     student: {
       name: 'Student',
       email: 'student@sage.edu.ph',
@@ -39,29 +44,37 @@ export default function Topbar({ toggleSidebar, isCollapsed }) {
   const { profile } = useAuth();
   const currentMeta = roleMeta[role] || roleMeta.faculty;
   const displayName = profile?.first_name ? `${profile.first_name} ${profile.last_name}` : currentMeta.name;
-  // Determine title based on role
+  
   const displayTitle = (() => {
     if (role === 'student') {
       const prog = profile?.program || '';
       const year = profile?.year_level || profile?.yearLevel || '';
       return [prog, year].filter(Boolean).join(' • ') || currentMeta.title;
     }
-    // faculty and dean (and admin) show department/college
     const dept = profile?.departments?.name || profile?.department || profile?.department_name || '';
     return dept || currentMeta.title;
   })();
 
+  const handleToggle = () => {
+    if (window.innerWidth < 1024 && toggleMobileSidebar) {
+      toggleMobileSidebar();
+    } else {
+      toggleSidebar();
+    }
+  };
+
   return (
-    <header className="bg-white border-b border-slate-200 h-16 px-8 flex items-center justify-between flex-shrink-0 z-20">
+    <header className="bg-white border-b border-slate-200 h-16 px-4 md:px-8 flex items-center justify-between flex-shrink-0 z-20">
       
       {/* Left controls: Toggle button & Search bar */}
-      <div className="flex items-center gap-4 flex-1 max-w-lg">
+      <div className="flex items-center gap-3 flex-1 max-w-lg">
         <button 
-          onClick={toggleSidebar}
-          className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-colors"
-          title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          onClick={handleToggle}
+          className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
+          title="Toggle Navigation Menu"
         >
-          <PanelLeft className="h-5 w-5" />
+          <Menu className="h-5 w-5 lg:hidden" />
+          <PanelLeft className="h-5 w-5 hidden lg:block" />
         </button>
 
         <div className="relative w-full hidden md:block">
@@ -76,23 +89,13 @@ export default function Topbar({ toggleSidebar, isCollapsed }) {
         </div>
       </div>
 
-
       <div className="md:hidden flex items-center">
-        <span className="font-bold font-display text-slate-900 tracking-tight">SAGE Portal</span>
+        <span className="font-bold font-display text-sage-700 tracking-tight text-sm">SAGE</span>
       </div>
 
       {/* Right side controls */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4">
         
-        {/* Settings Icon */}
-        <Link 
-          to={`/${role}/settings`}
-          title="Account Settings"
-          className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-colors block"
-        >
-          <Settings className="h-5 w-5" />
-        </Link>
-
         {/* Notifications Icon */}
         <div className="relative">
           <Link 
@@ -109,7 +112,7 @@ export default function Topbar({ toggleSidebar, isCollapsed }) {
         <div className="h-8 w-px bg-slate-200"></div>
 
         {/* Profile Dropdown Block */}
-        <div className="flex items-center gap-3 cursor-pointer group select-none">
+        <div className="flex items-center gap-2.5 cursor-pointer group select-none">
           <div className={`w-8 h-8 rounded-full border font-bold text-xs flex items-center justify-center font-mono ${currentMeta.avatarBg}`}>
             {currentMeta.name.split(' ').map(n => n[0]).filter(Boolean).slice(-2).join('')}
           </div>

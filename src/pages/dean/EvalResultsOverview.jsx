@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, Star, ArrowRight, Filter, Users, AlertTriangle, Building2 } from 'lucide-react';
+import { Search, Star, ArrowRight, Filter, Users, AlertTriangle, Building2, Lock, Unlock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { mockDeanFacultyData } from '../../lib/mockdb';
@@ -47,9 +47,11 @@ export default function EvalResultsOverview() {
             faculty_id,
             section_id,
             is_closed,
+            is_released_to_faculty,
             sections ( name ),
             evaluation_responses (
               response_id,
+              is_on_time,
               evaluation_ratings (
                 rating,
                 criteria_id,
@@ -61,28 +63,28 @@ export default function EvalResultsOverview() {
         if (wErr) throw wErr;
 
         // 3. Aggregate per faculty: group windows → responses → ratings
-        //    Compute: overall avg rating, number of windows, sections taught
+        //    Fairness Clause: Calculate average rating strictly from on-time responses
         const aggregated = (facultyData || []).map(f => {
           const myWindows = (windowData || []).filter(w => w.faculty_id === f.user_id);
 
-          // Gather all rating values across all windows
-          const allRatings = myWindows.flatMap(w =>
-            (w.evaluation_responses || []).flatMap(r =>
-              (r.evaluation_ratings || []).map(er => er.rating)
-            )
+          const allResponses = myWindows.flatMap(w => w.evaluation_responses || []);
+          const onTimeResponses = allResponses.filter(r => r.is_on_time !== false);
+          const lateResponses = allResponses.filter(r => r.is_on_time === false);
+
+          const onTimeRatings = onTimeResponses.flatMap(r =>
+            (r.evaluation_ratings || []).map(er => er.rating)
           );
 
-          const rating = allRatings.length > 0
-            ? allRatings.reduce((acc, r) => acc + r, 0) / allRatings.length
+          const rating = onTimeRatings.length > 0
+            ? onTimeRatings.reduce((acc, r) => acc + r, 0) / onTimeRatings.length
             : null;
-
-          const responseCount = myWindows.reduce(
-            (acc, w) => acc + (w.evaluation_responses?.length || 0), 0
-          );
 
           const sectionCodes = myWindows
             .filter(w => w.sections?.name)
             .map(w => w.sections.name);
+
+          // Released status: true if any window has is_released_to_faculty === true
+          const isReleased = myWindows.some(w => w.is_released_to_faculty === true);
 
           return {
             id: f.user_id,
@@ -93,8 +95,12 @@ export default function EvalResultsOverview() {
             sectionsCount: myWindows.length,
             subjectCodes: [...new Set(sectionCodes)],
             rating,
-            responseCount,
-            hasResponses: allRatings.length > 0,
+            responseCount: allResponses.length,
+            onTimeCount: onTimeResponses.length,
+            lateCount: lateResponses.length,
+            hasResponses: allResponses.length > 0,
+            isReleased,
+            windows: myWindows
           };
         });
 
@@ -116,6 +122,22 @@ export default function EvalResultsOverview() {
     load();
     return () => { cancelled = true; };
   }, [profile?.department_id]);
+
+  // Toggle Dean Release Status
+  const toggleReleaseStatus = async (facultyId, currentStatus) => {
+    const nextStatus = !currentStatus;
+    try {
+      // Update Supabase evaluation_windows for this faculty
+      await supabase
+        .from('evaluation_windows')
+        .update({ is_released_to_faculty: nextStatus })
+        .eq('faculty_id', facultyId);
+
+      setFacultyList(prev => prev.map(f => f.id === facultyId ? { ...f, isReleased: nextStatus } : f));
+    } catch (err) {
+      console.error('Error toggling release status:', err);
+    }
+  };
 
   // ── Filtering — search only (dept is already scoped to dean's college) ───────
   const filtered = facultyList.filter(f =>
@@ -261,6 +283,14 @@ export default function EvalResultsOverview() {
                       {f.responseCount} student{f.responseCount !== 1 ? 's' : ''}
                     </span>
                   </div>
+                  
+                  {/* Fairness Clause Breakdown */}
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-slate-500 font-medium">Fairness Audit:</span>
+                    <span className="font-semibold text-slate-700 font-mono">
+                      {f.onTimeCount} On-Time {f.lateCount > 0 && <span className="text-amber-600">({f.lateCount} late excluded)</span>}
+                    </span>
+                  </div>
 
                   {/* Section tags */}
                   {f.subjectCodes.length > 0 && (
@@ -285,13 +315,31 @@ export default function EvalResultsOverview() {
                   )}
                 </div>
 
-                {/* Drilldown */}
-                <button
-                  onClick={() => navigate(`/dean/evalresultsfaculty?id=${f.id}`)}
-                  className="w-full py-2.5 bg-slate-50 hover:bg-sage-600 text-slate-700 hover:text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-slate-200/50 hover:border-transparent"
-                >
-                  Inspect Ratings Dashboard <ArrowRight className="h-3.5 w-3.5" />
-                </button>
+                {/* Dean Controlled Release & Drilldown Actions */}
+                <div className="pt-1 flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => toggleReleaseStatus(f.id, f.isReleased)}
+                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border ${
+                      f.isReleased
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                        : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                    }`}
+                  >
+                    {f.isReleased ? (
+                      <><Unlock className="h-3.5 w-3.5 text-emerald-600" /> Released to Faculty</>
+                    ) : (
+                      <><Lock className="h-3.5 w-3.5 text-amber-600" /> Release to Faculty</>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => navigate(`/dean/evalresultsfaculty?id=${f.id}`)}
+                    className="py-2 px-3 bg-slate-50 hover:bg-sage-600 text-slate-700 hover:text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer border border-slate-200"
+                    title="Inspect Ratings Dashboard"
+                  >
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             )) : (
               <div className="col-span-full bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-400 text-sm">

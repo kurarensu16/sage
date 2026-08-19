@@ -135,7 +135,7 @@ const PPST_STANDARD_QUESTIONS = [
   }
 ];
 
-export default function EvalFormBuilder() {
+export default function EvalBuilder() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, profile } = useAuth();
@@ -335,14 +335,14 @@ export default function EvalFormBuilder() {
     <>
       <PageHeader 
         title={isEditMode ? "Edit Evaluation Form" : "Create Evaluation Form"} 
-        breadcrumb="Admin Portal" 
+        breadcrumb="College Office Portal" 
       />
 
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
         
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-sm text-slate-500">
-          <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/admin/evalformslist')}>
+          <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/office/evalformslist')}>
             Evaluation Forms
           </span>
           <ChevronRight className="h-3 w-3" />
@@ -514,7 +514,7 @@ export default function EvalFormBuilder() {
             <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
               <button 
                 type="button" 
-                onClick={() => navigate('/admin/evalformslist')}
+                onClick={() => navigate('/office/evalformslist')}
                 className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors"
               >
                 Cancel
@@ -611,7 +611,7 @@ export default function EvalFormBuilder() {
         message={successModalMessage}
         onClose={() => {
           setIsSuccessModalOpen(false);
-          navigate('/admin/evalformslist');
+          navigate('/office/evalformslist');
         }}
       />
     </>

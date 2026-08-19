@@ -25,6 +25,10 @@ export const AuthProvider = ({ children }) => {
           await supabase.auth.signOut();
           setUserProfile(null);
         } else {
+          // Workaround for office role enum constraint
+          if (data?.email === 'office@sage.edu.ph' || data?.user_number?.startsWith('OFC-') || data?.role === 'office') {
+            data.role = 'office';
+          }
           setUserProfile(data);
         }
       }
@@ -60,13 +64,21 @@ export const AuthProvider = ({ children }) => {
     return () => subscription.unsubscribe();
   }, []);
 
+  const signOut = async () => {
+    setLoading(true);
+    setUserProfile(null);
+    setSession(null);
+    await supabase.auth.signOut();
+    setLoading(false);
+  };
+
   const value = {
     session,
     user: session?.user ?? null,
     profile: userProfile,
     role: userProfile?.role ?? null,
     loading,
-    signOut: () => supabase.auth.signOut(),
+    signOut,
     refreshProfile: () => session?.user && fetchUserProfile(session.user.id),
   };
 
@@ -80,4 +92,3 @@ export const AuthProvider = ({ children }) => {
 export const useAuth = () => {
   return useContext(AuthContext);
 };
-

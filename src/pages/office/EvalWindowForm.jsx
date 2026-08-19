@@ -316,14 +316,14 @@ export default function EvalWindowForm() {
     <>
       <PageHeader 
         title={isEditMode ? "Modify Evaluation Window" : "Schedule Evaluation Window"} 
-        breadcrumb="Admin Portal" 
+        breadcrumb="College Office Portal" 
       />
 
       <div className="p-8 overflow-y-auto flex-1 max-w-2xl mx-auto w-full space-y-6">
         
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-sm text-slate-500">
-          <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/admin/evalwindowlist')}>
+          <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/office/evalwindowlist')}>
             Evaluation Windows
           </span>
           <ChevronRight className="h-3 w-3" />
@@ -659,7 +659,7 @@ export default function EvalWindowForm() {
           <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
             <button 
               type="button" 
-              onClick={() => navigate('/admin/evalwindowlist')}
+              onClick={() => navigate('/office/evalwindowlist')}
               className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors"
             >
               Cancel
@@ -680,7 +680,7 @@ export default function EvalWindowForm() {
         message={successModalMessage}
         onClose={() => {
           setIsSuccessModalOpen(false);
-          navigate('/admin/evalwindowlist');
+          navigate('/office/evalwindowlist');
         }}
       />
     </>

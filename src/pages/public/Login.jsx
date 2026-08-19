@@ -14,6 +14,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // If already authenticated with a valid role, redirect to appropriate portal dashboard
   useEffect(() => {
     if (session && role) {
       navigate(`/${role}/dashboard`, { replace: true });
@@ -59,11 +60,16 @@ export default function Login() {
         return;
       }
 
+      // Resolve role (with office mapping)
+      const userRole = (profile.role === 'office' || email.trim().toLowerCase() === 'office@sage.edu.ph' || profile.email === 'office@sage.edu.ph' || profile.user_number?.startsWith('OFC-'))
+        ? 'office'
+        : profile.role;
+
       // Log login activity
       const actorName = `${profile.first_name} ${profile.last_name}`;
       await logActivity(
         'User Login',
-        `User logged in: ${email.trim()} (Role: ${profile.role}).`,
+        `User logged in: ${email.trim()} (Role: ${userRole}).`,
         actorName
       );
 
@@ -71,7 +77,7 @@ export default function Login() {
       if (profile.must_change_password) {
         navigate('/change-password');
       } else {
-        navigate(`/${profile.role}/dashboard`);
+        navigate(`/${userRole}/dashboard`);
       }
     } catch (err) {
       setErrorMsg('An unexpected error occurred during login.');
@@ -79,15 +85,17 @@ export default function Login() {
     }
   };
 
-  // Removed Quick Demo accounts helper to enforce real authentication
-
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-slate-50">
       
       {/* Left Pane: Form (Welcome back & credentials) */}
       <div className="flex flex-col justify-between p-8 lg:p-12 xl:p-16 bg-white min-h-screen">
         
-
+        {/* Header Branding (Mobile view only) */}
+        <div className="flex lg:hidden items-center gap-3">
+          <SageLogo className="h-8 w-8 text-sage-600" />
+          <span className="text-xl font-bold font-display text-sage-700 tracking-tight">SAGE</span>
+        </div>
 
         {/* Form Container */}
         <div className="max-w-md w-full mx-auto my-auto py-12 space-y-8">
@@ -101,104 +109,95 @@ export default function Login() {
           </div>
 
           {errorMsg && (
-            <div className="bg-rose-50 border border-rose-100 text-rose-700 p-4 rounded-xl text-xs font-semibold flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+            <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-semibold flex items-center gap-3 animate-shake">
+              <AlertCircle className="h-5 w-5 flex-shrink-0 text-rose-600" />
               <span>{errorMsg}</span>
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            {/* Email field */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Email Address</label>
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                Email Address
+              </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Mail className="h-4 w-4 text-slate-400" />
-                </div>
                 <input 
-                  type="email" 
+                  type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@sage.edu.ph"
-                  className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 focus:border-sage-500 rounded-xl text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500 bg-slate-50/30 focus:bg-white"
+                  className="block w-full border border-slate-200 rounded-xl p-3 pl-10 text-sm focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all"
                 />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
               </div>
             </div>
 
-            {/* Password field */}
-            <div className="flex flex-col gap-1.5">
-              <div className="flex justify-between items-center">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Password</label>
-                <Link to="/forgotpassword" className="text-xs font-bold text-sage-600 hover:text-sage-700">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Password
+                </label>
+                <Link to="/forgotpassword" className="text-xs text-sage-600 hover:underline font-medium">
                   Forgot password?
                 </Link>
               </div>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Lock className="h-4 w-4 text-slate-400" />
-                </div>
                 <input 
-                  type={showPassword ? "text" : "password"} 
+                  type={showPassword ? "text" : "password"}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="block w-full pl-10 pr-10 py-2.5 border border-slate-200 focus:border-sage-500 rounded-xl text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500 bg-slate-50/30 focus:bg-white"
+                  className="block w-full border border-slate-200 rounded-xl p-3 pl-10 pr-10 text-sm focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all"
                 />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
 
-            {/* Submit Button */}
-            <button 
+            <button
               type="submit"
-              className="w-full py-3 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm mt-6 cursor-pointer"
+              className="w-full py-3 bg-sage-800 hover:bg-sage-900 text-white rounded-xl font-semibold text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
             >
-              Sign In <ArrowRight className="h-4 w-4" />
+              Sign in to Portal <ArrowRight className="h-4 w-4" />
             </button>
           </form>
-
-
         </div>
 
         {/* Footer info */}
         <div className="text-xs text-slate-400">
           &copy; {new Date().getFullYear()} Dr. Yanga's Colleges, Inc. All rights reserved.
         </div>
+
       </div>
 
       {/* Right Pane: Premium branding view */}
       <div className="hidden lg:flex flex-col justify-center items-center p-12 bg-sage-900 text-white relative overflow-hidden">
-        
-        {/* Subtle decorative circles */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-sage-800/20 rounded-full blur-3xl -mr-20 -mt-20"></div>
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-sage-800/20 rounded-full blur-3xl -ml-20 -mb-20"></div>
-        
+        <div className="absolute top-0 right-0 w-96 h-96 bg-sage-800/20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-sage-800/20 rounded-full blur-3xl -ml-20 -mb-20 pointer-events-none" />
+
         <div className="max-w-md text-center space-y-6 z-10">
           <div className="inline-flex text-sage-200">
-            <SageLogo className="h-48 w-48" />
+            <SageLogo className="h-44 w-44" />
           </div>
           <div className="space-y-3">
             <h1 className="text-4xl font-bold font-display tracking-tight text-white">
-              SAGE System
+              SAGE
             </h1>
-            <p className="text-sage-200 text-sm leading-relaxed max-w-sm mx-auto">
+            <p className="text-sage-200/90 text-sm leading-relaxed max-w-sm mx-auto">
               Smart Academic Grading and Evaluation System. Seamless grades oversight, evaluation workflows, and analytical tracking.
             </p>
           </div>
         </div>
       </div>
+
     </div>
   );
 }

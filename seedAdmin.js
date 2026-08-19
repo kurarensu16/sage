@@ -31,7 +31,8 @@ const defaultUsers = [
   { lastName: 'System', firstName: 'Admin', middleName: 'Control', email: 'admin@sage.edu.ph', role: 'admin', user_number: 'ADM-2026-00001', departmentName: 'College of Computer Studies' },
   { lastName: 'Valdes', firstName: 'Carlos', middleName: 'Mendoza', email: 'c.valdes@sage.edu.ph', role: 'dean', user_number: 'DN-2026-00002', departmentName: 'College of Computer Studies' },
   { lastName: 'Rivera', firstName: 'Amanda', middleName: 'Santos', email: 'a.rivera@sage.edu.ph', role: 'faculty', user_number: 'FAC-2026-00003', departmentName: 'College of Computer Studies' },
-  { lastName: 'Jenkins', firstName: 'Sarah', middleName: 'Lee', email: 's.jenkins@student.sage.edu', role: 'student', user_number: '2026-00005', year_level: '1st Year', departmentName: 'College of Computer Studies' }
+  { lastName: 'Jenkins', firstName: 'Sarah', middleName: 'Lee', email: 's.jenkins@student.sage.edu', role: 'student', user_number: '2026-00005', year_level: '1st Year', departmentName: 'College of Computer Studies' },
+  { lastName: 'Staff', firstName: 'College', middleName: 'Office', email: 'office@sage.edu.ph', role: 'admin', user_number: 'OFC-2026-00008', departmentName: 'College of Computer Studies' }
 ];
 
 async function seed() {
