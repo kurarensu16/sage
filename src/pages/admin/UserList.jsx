@@ -1188,8 +1188,16 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
                         <div>{user.department === 'College of IT' || user.department === 'College of CS' ? 'College of Computer Studies' : user.department}</div>
                         {user.program && <div className="text-[10px] text-slate-400 font-normal">{user.program}</div>}
                         {user.role === 'student' && (
-                          <div className="text-[10px] text-sage-600 font-semibold mt-0.5">
-                            {user.yearLevel || '1st Year'}{user.section ? ` | Section: ${user.section}` : ''}
+                          <div className="text-[10px] font-semibold mt-0.5 flex items-center gap-1.5">
+                            <span className="text-sage-600">{user.yearLevel || '1st Year'}</span>
+                            {user.section && (
+                              <span className={user.section === 'Irregular' 
+                                ? 'bg-amber-50 text-amber-700 border border-amber-100 rounded px-1.5 py-0.5 text-[9px] font-bold' 
+                                : 'bg-slate-100 text-slate-600 rounded px-1.5 py-0.5 text-[9px] font-medium'
+                              }>
+                                {user.section}
+                              </span>
+                            )}
                           </div>
                         )}
                       </td>

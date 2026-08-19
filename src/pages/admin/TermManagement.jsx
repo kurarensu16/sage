@@ -351,7 +351,7 @@ export default function TermManagement() {
     <>
       <PageHeader title="School Term & Semester Transition" breadcrumb="Admin Portal" />
 
-      <div className="p-8 overflow-y-auto flex-1 space-y-6 max-w-6xl mx-auto w-full">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
         
         {/* Info Box */}
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-3 shadow-sm">

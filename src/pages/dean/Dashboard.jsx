@@ -1,3 +1,4 @@
+import { getTransmutedGrade } from '../../lib/gradingMath';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
@@ -37,18 +38,7 @@ function classifyRisk(avgGwa, failingCount) {
 }
 
 // Helper to transmute raw scores to GWA
-function getTransmutedGrade(score) {
-  if (score >= 98) return 1.00;
-  if (score >= 95) return 1.25;
-  if (score >= 92) return 1.50;
-  if (score >= 89) return 1.75;
-  if (score >= 86) return 2.00;
-  if (score >= 83) return 2.25;
-  if (score >= 80) return 2.50;
-  if (score >= 77) return 2.75;
-  if (score >= 75) return 3.00;
-  return 5.00;
-}
+
 
 // Compute tentative GWA for a class record from its scores
 function computeTentativeGrade(classRecordScores, classRecordCols) {

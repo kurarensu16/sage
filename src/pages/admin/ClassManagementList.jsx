@@ -694,7 +694,9 @@ export default function ClassManagementList() {
               {(() => {
                 const targetFacultyObj = facultyUsers.find(f => f.id === targetFacultyId);
                 const classSubjectObj = subjects.find(s => s.code === selectedClass.subjectCode);
-                const isMismatched = targetFacultyObj && classSubjectObj && targetFacultyObj.department !== classSubjectObj.department;
+                const subjectDept = classSubjectObj?.departments?.name || '';
+                const facultyDept = targetFacultyObj?.department || '';
+                const isMismatched = targetFacultyObj && classSubjectObj && subjectDept && facultyDept && subjectDept !== facultyDept;
                 if (!isMismatched) return null;
                 return (
                   <div className="bg-amber-50 border border-amber-250 text-amber-800 p-3 rounded-lg text-xs flex items-start gap-2 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
@@ -702,7 +704,7 @@ export default function ClassManagementList() {
                     <div>
                       <span className="font-bold block">Department Mismatch Warning</span>
                       <span className="text-[11px] leading-relaxed block mt-0.5">
-                        The subject belongs to "{classSubjectObj.department}", but Prof. {targetFacultyObj.firstName} {targetFacultyObj.lastName} belongs to "{targetFacultyObj.department}".
+                        The subject belongs to "{subjectDept}", but Prof. {targetFacultyObj.firstName} {targetFacultyObj.lastName} belongs to "{facultyDept}".
                       </span>
                     </div>
                   </div>

@@ -212,7 +212,7 @@ export default function GradeOverride() {
     <>
       <PageHeader title="Administrative Grade Override" breadcrumb="Admin Portal" />
 
-      <div className="p-8 overflow-y-auto flex-1 max-w-4xl mx-auto w-full space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
         
         {/* Warning Banner */}
         <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-4 flex gap-3 text-xs leading-relaxed">

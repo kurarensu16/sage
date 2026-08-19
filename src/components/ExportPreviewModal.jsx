@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FileSpreadsheet, FileText, X, Check } from 'lucide-react';
+import { getTransmutedGrade } from '../lib/gradingMath';
 
 export default function ExportPreviewModal({
   isOpen,
@@ -21,19 +22,6 @@ export default function ExportPreviewModal({
   const sectionName = classInfo.sections?.name || '';
 
   // Helpers to calculate student values
-  const getTransmutedGwa = (score) => {
-    if (score >= 98) return 1.00;
-    if (score >= 95) return 1.25;
-    if (score >= 92) return 1.50;
-    if (score >= 89) return 1.75;
-    if (score >= 86) return 2.00;
-    if (score >= 83) return 2.25;
-    if (score >= 80) return 2.50;
-    if (score >= 77) return 2.75;
-    if (score >= 75) return 3.00;
-    return 5.00;
-  };
-
   const getComputedStudentRow = (student) => {
     const getTermRating = (termName) => {
       const termScores = student.periods?.[termName] || {};
@@ -64,7 +52,7 @@ export default function ExportPreviewModal({
     const tfr = Math.round((semiFinal + finalTerm) / 2);
     const sg = Math.round((mr + tfr) / 2);
 
-    const rawGwa = getTransmutedGwa(sg);
+    const rawGwa = getTransmutedGrade(sg);
     const remarkLower = student.customRemarks?.toLowerCase() || '';
 
     let gwa = rawGwa;

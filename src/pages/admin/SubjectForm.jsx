@@ -51,7 +51,8 @@ export default function SubjectForm() {
     programName: '',
     yearLevel: '1st Year',
     semester: '1st Semester',
-    subjectPrefix: ''
+    subjectPrefix: '',
+    computationId: ''
   });
   
   const [errorMsg, setErrorMsg] = useState('');
@@ -61,15 +62,18 @@ export default function SubjectForm() {
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
   const [successModalMessage, setSuccessModalMessage] = useState('');
   const [allPrograms, setAllPrograms] = useState([]);
+  const [allComputations, setAllComputations] = useState([]);
 
   useEffect(() => {
     async function loadData() {
       try {
         const { data: depts } = await supabase.from('departments').select('*').order('name');
         const { data: progs } = await supabase.from('programs').select('*').order('name');
+        const { data: comps } = await supabase.from('grade_computations').select('*').order('name');
         
         if (depts) setAllDepartments(depts);
         if (progs) setAllPrograms(progs);
+        if (comps) setAllComputations(comps);
 
         if (!subjectId && depts && depts.length > 0) {
           setFormData(prev => ({ ...prev, departmentId: depts[0].department_id }));
@@ -126,7 +130,8 @@ export default function SubjectForm() {
             programName: matchedProgramName,
             yearLevel: yearLevelText,
             semester: semesterText,
-            subjectPrefix: prefix || ''
+            subjectPrefix: prefix || '',
+            computationId: data.computation_id || ''
           });
         } else {
           setErrorMsg('Subject not found in database.');
@@ -226,7 +231,8 @@ export default function SubjectForm() {
         code: formData.code.trim().toUpperCase(),
         name: formData.name.trim(),
         units: parseInt(formData.units, 10),
-        department_id: formData.departmentId
+        department_id: formData.departmentId,
+        computation_id: formData.computationId || null
       };
 
       if (isEditMode) {
@@ -339,6 +345,21 @@ export default function SubjectForm() {
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* Grading System Template */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Grading System Template</label>
+            <select
+              value={formData.computationId}
+              onChange={(e) => setFormData({...formData, computationId: e.target.value})}
+              className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+            >
+              <option value="">No Template (Professor Defaults Standard)</option>
+              {allComputations.map(comp => (
+                <option key={comp.computation_id} value={comp.computation_id}>{comp.name}</option>
+              ))}
+            </select>
           </div>
 
           {/* Group 2: Prefix, Year Level, Semester, Code (4 columns) */}

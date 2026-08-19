@@ -356,6 +356,8 @@ export default function MyGradesDetail() {
   }
 
   const activeData = termData[activeTab] || { rating: 0, grade: '—', status: 'Draft', overallPct: 0, components: [], missingScores: [] };
+  const isSummer = classInfo?.sections?.semester === 'Summer' || classInfo?.sections?.semester?.toLowerCase().includes('summer') || classInfo?.semester === 'Summer';
+  const periodsList = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
   const subjectCode = classInfo.subjects?.code || '—';
   const subjectName = classInfo.subjects?.name || '—';
   const credits = classInfo.subjects?.units || 0;
@@ -365,7 +367,7 @@ export default function MyGradesDetail() {
     <>
       <PageHeader title="Grade Breakdown" breadcrumb="Student Portal" />
       
-      <div className="p-8 overflow-y-auto flex-1 max-w-5xl mx-auto w-full space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
         
         {/* Navigation Breadcrumb detail */}
         <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -397,7 +399,7 @@ export default function MyGradesDetail() {
 
         {/* Period tabs */}
         <div className="flex border-b border-slate-200">
-          {['Prelim', 'Midterm', 'Semi-Final', 'Final'].map(tab => (
+          {periodsList.map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -461,11 +463,14 @@ export default function MyGradesDetail() {
                             <td colSpan={4} className="p-0 bg-slate-50/40">
                               <div className="px-8 py-3 border-b border-slate-100/80 space-y-2">
                                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Individual Formative Assessments Breakdown</div>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                <div className="bg-white border border-slate-250 rounded-xl divide-y divide-slate-100 overflow-hidden shadow-xs">
                                   {item.breakdown.map((act, aIdx) => (
-                                    <div key={aIdx} className="bg-white border border-slate-200 rounded-lg p-2.5 shadow-sm flex flex-col justify-center">
-                                      <span className="text-[10px] text-slate-400 uppercase font-mono">{act.name}</span>
-                                      <span className="text-sm font-bold font-mono text-slate-800 mt-1">
+                                    <div key={aIdx} className="px-4 py-3 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
+                                      <div className="flex flex-col">
+                                        <span className="text-xs font-bold text-slate-800 font-sans">{act.name}</span>
+                                        <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wide mt-0.5">Formative Assessment Item</span>
+                                      </div>
+                                      <span className="text-sm font-bold font-mono text-slate-850">
                                         {act.obtained} <span className="text-xs font-normal text-slate-400">/ {act.max}</span>
                                       </span>
                                     </div>
@@ -530,6 +535,43 @@ export default function MyGradesDetail() {
                 </ul>
               </div>
             )}
+
+            {/* 🎓 Semestral Summary Card */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-705 uppercase tracking-wide">Semestral Summary</h3>
+                <span className={cn(
+                  "px-2 py-0.5 rounded-full text-[9px] font-bold border font-sans",
+                  finalCalculations.remarks === 'Passed' 
+                    ? "bg-emerald-50 text-emerald-705 border-emerald-200" 
+                    : "bg-rose-50 text-rose-705 border-rose-200"
+                )}>
+                  {finalCalculations.remarks}
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3 text-center">
+                <div className="bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
+                  <span className="text-[9px] text-slate-400 block uppercase tracking-wide">Midterm Rating</span>
+                  <span className="text-sm font-bold font-mono text-slate-800">{finalCalculations.mr !== null ? `${finalCalculations.mr}%` : '—'}</span>
+                </div>
+                <div className="bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
+                  <span className="text-[9px] text-slate-400 block uppercase tracking-wide">Final Rating</span>
+                  <span className="text-sm font-bold font-mono text-slate-800">{finalCalculations.tfr !== null ? `${finalCalculations.tfr}%` : '—'}</span>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
+                <div>
+                  <span className="text-[9px] text-slate-450 block uppercase tracking-wide">Semestral GWA</span>
+                  <span className="text-2xl font-black font-mono text-sage-600 mt-1 block">{finalCalculations.finalGwa}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[9px] text-slate-450 block uppercase tracking-wide">Calculated Rating</span>
+                  <span className="text-sm font-bold font-mono text-slate-750 mt-1 block">{finalCalculations.sg !== null ? `${finalCalculations.sg}%` : '—'}</span>
+                </div>
+              </div>
+            </div>
 
           </div>
 
