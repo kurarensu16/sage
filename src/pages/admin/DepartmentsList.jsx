@@ -25,6 +25,7 @@ export default function DepartmentsList() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -76,6 +77,7 @@ export default function DepartmentsList() {
     setSelectedDeanId('');
     setErrorMsg('');
     setSuccessMsg('');
+    setShowConfirmModal(false);
     setIsEditorOpen(true);
   };
 
@@ -85,10 +87,11 @@ export default function DepartmentsList() {
     setSelectedDeanId(dept.deans?.[0]?.user_id || '');
     setErrorMsg('');
     setSuccessMsg('');
+    setShowConfirmModal(false);
     setIsEditorOpen(true);
   };
 
-  const handleSubmit = async (e) => {
+  const handleOpenConfirm = (e) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
@@ -98,6 +101,11 @@ export default function DepartmentsList() {
       return;
     }
 
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSave = async () => {
+    setShowConfirmModal(false);
     setSaving(true);
     try {
       const actorName = resolveActorName(profile, user);
@@ -275,7 +283,7 @@ export default function DepartmentsList() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="flex-1 p-6 space-y-6 flex flex-col justify-between">
+            <form onSubmit={handleOpenConfirm} className="flex-1 p-6 space-y-6 flex flex-col justify-between">
               <div className="space-y-6 text-left">
                 {errorMsg && (
                   <div className="p-3 bg-rose-50 border border-rose-100 text-rose-700 text-xs font-semibold rounded-lg flex items-center gap-2">
@@ -342,6 +350,62 @@ export default function DepartmentsList() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 space-y-5 text-left animate-in zoom-in-95 duration-200 max-w-md w-full">
+            <div className="flex items-start gap-4">
+              <div className="w-11 h-11 rounded-full bg-sage-50 text-sage-600 flex items-center justify-center flex-shrink-0">
+                <Building className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 font-display">
+                  {editingDept ? 'Confirm Department Changes' : 'Confirm College Registration'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1 font-sans">
+                  {editingDept 
+                    ? 'Please review your changes before updating this college department.' 
+                    : 'Are you sure you want to register this new college department?'}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-150 space-y-2.5 text-xs">
+              <div className="flex justify-between items-start gap-3">
+                <span className="text-slate-450 font-bold uppercase tracking-wider text-[10px]">College Name:</span>
+                <span className="font-bold text-slate-900 text-right">{name.trim()}</span>
+              </div>
+              <div className="flex justify-between items-start gap-3 pt-2 border-t border-slate-200/60">
+                <span className="text-slate-450 font-bold uppercase tracking-wider text-[10px]">Assigned Dean:</span>
+                <span className="font-semibold text-slate-800 text-right">
+                  {deansList.find(d => d.user_id === selectedDeanId)
+                    ? `${deansList.find(d => d.user_id === selectedDeanId).last_name}, ${deansList.find(d => d.user_id === selectedDeanId).first_name}`
+                    : 'Unassigned'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSave}
+                className="flex-1 px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm flex items-center justify-center gap-1.5"
+              >
+                <Save className="h-3.5 w-3.5" />
+                {editingDept ? 'Save Changes' : 'Register College'}
+              </button>
+            </div>
           </div>
         </div>
       )}

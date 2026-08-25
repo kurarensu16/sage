@@ -103,6 +103,35 @@ export async function seedDatabase() {
       if (profileErr) throw profileErr;
     }
 
+    // 5. Seed Default Grade Computations
+    const { data: existingComps } = await supabase.from('grade_computations').select('computation_id, name');
+    const existingCompNames = (existingComps || []).map(c => c.name);
+
+    if (!existingCompNames.includes('General Education Core')) {
+      const { data: insertedComp, error: compErr } = await supabase
+        .from('grade_computations')
+        .insert({
+          name: 'General Education Core',
+          description: 'Standard institutional lecture scale: 50% Class Standing, 40% Major Examination, 10% Character Rating.'
+        })
+        .select()
+        .single();
+
+      if (!compErr && insertedComp) {
+        await supabase.from('grade_computation_components').insert([
+          { computation_id: insertedComp.computation_id, name: 'Class Standing (Formative)', weight: 50, max_score: 20, is_multiple: true },
+          { computation_id: insertedComp.computation_id, name: 'Major Examination', weight: 40, max_score: 40, is_multiple: false },
+          { computation_id: insertedComp.computation_id, name: 'Character Rating', weight: 10, max_score: 100, is_multiple: false }
+        ]);
+
+        // Link subjects without a computation_id to this default template
+        await supabase
+          .from('subjects')
+          .update({ computation_id: insertedComp.computation_id })
+          .is('computation_id', null);
+      }
+    }
+
     console.log("Seeding complete!");
     alert("Database seeded successfully! You can now log in.");
   } catch (error) {

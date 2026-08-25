@@ -21,57 +21,6 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
-// Fallback Mock Data matching the Redesign Spec
-const mockFacultyInsight = {
-  facultyId: "usr-003",
-  name: "Prof. Amanda Rivera",
-  overallVerdict: "needs_improvement",
-  overallRating: 3.20,
-  overallSummary: "Your classroom communication and subject knowledge scores remain highly satisfactory. However, student feedback indicates significant delays in encoding activity and quiz scores. Bringing your grading turnaround times within the 7-day threshold next term will resolve this warning flag.",
-  overallSpotlight: {
-    highestCriteria: "Subject Knowledge",
-    highestScore: 3.95,
-    lowestCriteria: "Classroom Turnaround & Grading",
-    lowestScore: 3.20
-  },
-  sections: [
-    {
-      sectionCode: "BSIT-1A",
-      subjectName: "Introduction to Computing",
-      sectionRating: 3.85,
-      ratingsSummary: {
-        subjectKnowledge: 3.95,
-        methodology: 3.80,
-        communication: 3.90,
-        turnaround: 3.20
-      },
-      insight: "Students in BSIT-1A highly appreciate your practical programming challenges and active assistance in the lab. Methodology and clarity scores are near perfect. Keep up this teaching structure!",
-      perceptions: {
-        workload: "Students perceive lab assignments as highly practical, challenging but highly rewarding.",
-        delivery: "The use of real-time coding examples on the whiteboard greatly helps visual learners.",
-        topSuggestion: "A significant cluster of students requested uploading lab slides 24 hours prior to the actual lab session."
-      }
-    },
-    {
-      sectionCode: "BSIT-2B",
-      subjectName: "Data Structures and Algorithms",
-      sectionRating: 3.65,
-      ratingsSummary: {
-        subjectKnowledge: 3.85,
-        methodology: 3.70,
-        communication: 3.75,
-        turnaround: 3.30
-      },
-      insight: "BSIT-2B students responded very well to the algorithmic visualization exercises. Focus on guiding struggling students during individual coding tasks.",
-      perceptions: {
-        workload: "Moderate workload, but logic design tasks require extra guided lab hours.",
-        delivery: "Visual animations of memory pointers significantly improved concept retention.",
-        topSuggestion: "Provide more practice problems before the mid-term rating exams."
-      }
-    }
-  ]
-};
-
 export default function EvalResultsMy() {
   const { user, profile } = useAuth();
   
@@ -409,10 +358,23 @@ export default function EvalResultsMy() {
   const activeClassObj = classesList.find(c => c.id === selectedClass);
   const sectionName = activeClassObj?.section; // e.g. "BSIT-1A"
 
+  const sortedCriteria = [...stats.criteria].sort((a, b) => b.score - a.score);
+
   const activeInsight = dbInsight?.basis_snapshot || {
-    ...mockFacultyInsight,
-    name: profile ? `Prof. ${profile.first_name} ${profile.last_name}` : "Prof. Amanda Rivera",
-    facultyId: user?.id || "usr-003"
+    name: profile ? `Prof. ${profile.first_name} ${profile.last_name}` : "Faculty Member",
+    facultyId: user?.id || "",
+    overallVerdict: stats.overall >= 3.60 ? 'excellent' : stats.overall >= 3.00 ? 'satisfactory' : 'needs_improvement',
+    overallRating: stats.overall,
+    overallSummary: stats.overall > 0 
+      ? `Evaluation score for this period is ${stats.overall.toFixed(2)}. ${stats.comments.length} student feedback responses recorded.`
+      : "No evaluation records processed yet for the active term.",
+    overallSpotlight: {
+      highestCriteria: sortedCriteria[0]?.name || "N/A",
+      highestScore: sortedCriteria[0]?.score || 0,
+      lowestCriteria: sortedCriteria[sortedCriteria.length - 1]?.name || "N/A",
+      lowestScore: sortedCriteria[sortedCriteria.length - 1]?.score || 0
+    },
+    sections: []
   };
 
   // Find section-specific insight
@@ -450,7 +412,6 @@ export default function EvalResultsMy() {
   }
 
   // Derive dynamic or snapshot values for overall standing
-  const sortedCriteria = [...stats.criteria].sort((a, b) => b.score - a.score);
   const highestCriteria = activeInsight.overallSpotlight?.highestCriteria || sortedCriteria[0]?.name || 'N/A';
   const highestScore = activeInsight.overallSpotlight?.highestScore || sortedCriteria[0]?.score || 0;
   const lowestCriteria = activeInsight.overallSpotlight?.lowestCriteria || sortedCriteria[sortedCriteria.length - 1]?.name || 'N/A';

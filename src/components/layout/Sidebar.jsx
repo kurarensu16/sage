@@ -28,7 +28,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
     ],
     office: [
       { to: '/office/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/office/rosterimport', icon: Users, label: 'Roster Import' },
+      { to: '/office/rosterimport', icon: Users, label: 'Department Roster' },
       { to: '/office/complianceaudit', icon: ClipboardList, label: 'Clearance Audit' },
       { to: '/office/subjectassignmentlist', icon: BookOpen, label: 'Subject Assignments' },
       { to: '/office/evalformslist', icon: FileText, label: 'Evaluation Forms' },

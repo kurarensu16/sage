@@ -30,6 +30,7 @@ import OfficeEvalFormsList from './pages/office/EvalFormsList';
 import OfficeEvalWindowList from './pages/office/EvalWindowList';
 import OfficeEvalWindowForm from './pages/office/EvalWindowForm';
 import OfficeStudentSections from './pages/office/StudentSections';
+import OfficeNotifications from './pages/office/Notifications';
 import DeanDashboard from './pages/dean/Dashboard';
 import DeanGradePostingStatus from './pages/dean/GradePostingStatus';
 import DeanGradeDistribution from './pages/dean/GradeDistribution';
@@ -97,6 +98,7 @@ function App() {
             {/* Office Routes */}
             <Route element={<RoleGuard allowedRoles={['office']} />}>
               <Route path="/office/dashboard" element={<OfficeDashboard />} />
+              <Route path="/office/roster" element={<OfficeRosterImport />} />
               <Route path="/office/rosterimport" element={<OfficeRosterImport />} />
               <Route path="/office/complianceaudit" element={<OfficeComplianceAudit />} />
               <Route path="/office/subjectassignmentlist" element={<OfficeSubjectAssignmentList />} />
@@ -106,6 +108,7 @@ function App() {
               <Route path="/office/evalwindowlist" element={<OfficeEvalWindowList />} />
               <Route path="/office/evalwindowform" element={<OfficeEvalWindowForm />} />
               <Route path="/office/studentsections" element={<OfficeStudentSections />} />
+              <Route path="/office/notifications" element={<OfficeNotifications />} />
               <Route path="/office/settings" element={<Settings />} />
             </Route>
 

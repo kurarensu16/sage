@@ -29,6 +29,7 @@ export default function GradeComputationsList() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   useEffect(() => {
     loadTemplates();
@@ -62,6 +63,7 @@ export default function GradeComputationsList() {
     ]);
     setErrorMsg('');
     setSuccessMsg('');
+    setShowConfirmModal(false);
     setIsEditorOpen(true);
   };
 
@@ -80,6 +82,7 @@ export default function GradeComputationsList() {
     setComponents(mapped.length > 0 ? mapped : [{ name: '', weight: 0, max_score: 10 }]);
     setErrorMsg('');
     setSuccessMsg('');
+    setShowConfirmModal(false);
     setIsEditorOpen(true);
   };
 
@@ -100,7 +103,7 @@ export default function GradeComputationsList() {
   // Calculate sum of weights reactively
   const totalWeight = components.reduce((acc, curr) => acc + (parseFloat(curr.weight) || 0), 0);
 
-  const handleSubmit = async (e) => {
+  const handleOpenConfirm = (e) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
@@ -132,6 +135,11 @@ export default function GradeComputationsList() {
       return;
     }
 
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSave = async () => {
+    setShowConfirmModal(false);
     setSaving(true);
     try {
       let computationId;
@@ -351,7 +359,7 @@ export default function GradeComputationsList() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 flex flex-col justify-between">
+            <form onSubmit={handleOpenConfirm} className="flex-1 overflow-y-auto p-6 space-y-6 flex flex-col justify-between">
               <div className="space-y-6 text-left">
                 {errorMsg && (
                   <div className="p-3 bg-rose-50 border border-rose-100 text-rose-700 text-xs font-semibold rounded-lg flex items-center gap-2">
@@ -504,6 +512,76 @@ export default function GradeComputationsList() {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 space-y-5 text-left animate-in zoom-in-95 duration-200 max-w-md w-full">
+            <div className="flex items-start gap-4">
+              <div className="w-11 h-11 rounded-full bg-sage-50 text-sage-600 flex items-center justify-center flex-shrink-0">
+                <Settings className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 font-display">
+                  {editingTemplate ? 'Confirm Template Changes' : 'Confirm New Grading Template'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1 font-sans">
+                  {editingTemplate 
+                    ? 'Please review the template components and weights before updating.' 
+                    : 'Are you sure you want to register this new grading computation template?'}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-150 space-y-3 text-xs">
+              <div className="flex justify-between items-start gap-3">
+                <span className="text-slate-450 font-bold uppercase tracking-wider text-[10px]">Template Name:</span>
+                <span className="font-bold text-slate-900 text-right">{name.trim()}</span>
+              </div>
+              {description.trim() && (
+                <div className="flex justify-between items-start gap-3 pt-2 border-t border-slate-200/60">
+                  <span className="text-slate-450 font-bold uppercase tracking-wider text-[10px]">Description:</span>
+                  <span className="text-slate-600 text-right line-clamp-2 max-w-[220px]">{description.trim()}</span>
+                </div>
+              )}
+              <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-450 font-bold uppercase tracking-wider text-[10px]">Components Breakdown ({components.length}):</span>
+                  <span className="font-mono text-emerald-700 font-bold text-[11px]">Sum: {totalWeight}%</span>
+                </div>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  {components.map((c, i) => (
+                    <div key={i} className="flex justify-between items-center py-1 px-2 rounded-md bg-white border border-slate-200/70 text-xs">
+                      <span className="font-semibold text-slate-700 truncate max-w-[200px]">{c.name}</span>
+                      <span className="font-mono text-slate-600 font-bold">
+                        {c.weight}% <span className="text-[10px] text-slate-400 font-normal">(Max: {c.max_score})</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSave}
+                className="flex-1 px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm flex items-center justify-center gap-1.5"
+              >
+                <Save className="h-3.5 w-3.5" />
+                {editingTemplate ? 'Save Changes' : 'Register Template'}
+              </button>
+            </div>
           </div>
         </div>
       )}

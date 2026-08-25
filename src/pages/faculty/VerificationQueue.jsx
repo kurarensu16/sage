@@ -4,7 +4,6 @@ import { UserCheck, X, FileText, CheckCircle2, ShieldAlert, Eye } from 'lucide-r
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { mockVerificationQueue } from '../../lib/mockdb';
 
 export default function VerificationQueue() {
   const { user, profile } = useAuth();
@@ -46,50 +45,10 @@ export default function VerificationQueue() {
         .eq('class_records.faculty_id', user.id);
 
       if (error) throw error;
-      const fetched = data || [];
-      if (fetched.length === 0) {
-        setRequests([
-          {
-            enrollment_id: "mock-req-1",
-            status: "pending_verification",
-            student_id: "mock-stud-1",
-            student: {
-              first_name: "Julia",
-              last_name: "Ocampo",
-              email: "ocampo.julianicole.college@dyci.edu.ph",
-              latest_cor_url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
-            },
-            class_records: {
-              class_record_id: "35d248d1-ef72-4569-8f40-ca0dfe141941",
-              faculty_id: user.id,
-              subjects: { code: "INP113", name: "Integratibong Pananaliksik" }
-            },
-            sections: { name: "BSIT-2A" }
-          },
-          {
-            enrollment_id: "mock-req-2",
-            status: "pending_verification",
-            student_id: "mock-stud-2",
-            student: {
-              first_name: "Juan",
-              last_name: "Dela Cruz",
-              email: "delacruz.juan.college@dyci.edu.ph",
-              latest_cor_url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
-            },
-            class_records: {
-              class_record_id: "35d248d1-ef72-4569-8f40-ca0dfe141941",
-              faculty_id: user.id,
-              subjects: { code: "INP113", name: "Integratibong Pananaliksik" }
-            },
-            sections: { name: "BSIT-2A" }
-          }
-        ]);
-      } else {
-        setRequests(fetched);
-      }
+      setRequests(data || []);
     } catch (err) {
-      console.warn('Database query failed, falling back to mock dataset:', err);
-      setRequests(mockVerificationQueue);
+      console.error('Database query failed:', err);
+      setErrorMsg('Failed to load pending verification requests from database.');
     } finally {
       setLoading(false);
     }
