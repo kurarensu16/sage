@@ -58,7 +58,6 @@ import StudentAcademicInsights from './pages/student/AcademicInsights';
 import StudentNotifications from './pages/student/Notifications';
 import AdminGradeComputationsList from './pages/admin/GradeComputationsList';
 import AdminDepartmentsList from './pages/admin/DepartmentsList';
-import FacultyVerificationQueue from './pages/faculty/VerificationQueue';
 import StudentAttendance from './pages/student/Attendance';
 import Settings from './pages/shared/Settings';
 
@@ -137,7 +136,6 @@ function App() {
               <Route path="/faculty/classattendance" element={<FacultyClassAttendance />} />
               <Route path="/faculty/evalresultsmy" element={<FacultyEvalResultsMy />} />
               <Route path="/faculty/notifications" element={<FacultyNotifications />} />
-              <Route path="/faculty/verificationqueue" element={<FacultyVerificationQueue />} />
               <Route path="/faculty/settings" element={<Settings />} />
             </Route>
 
