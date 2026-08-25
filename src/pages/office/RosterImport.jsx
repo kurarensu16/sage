@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   Users, UserPlus, Upload, FileSpreadsheet, Search, Check, 
   AlertCircle, Loader2, X, Download, Eye, Edit2, Lock, 
   Layers, GraduationCap, Briefcase, CheckCircle, Power, 
   MoreVertical, Archive, RotateCcw, ChevronLeft, ChevronRight, 
-  ChevronsLeft, ChevronsRight, Plus, SlidersHorizontal
+  ChevronsLeft, ChevronsRight, Plus, SlidersHorizontal, BookOpen
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../lib/supabase';
@@ -15,6 +16,7 @@ import { cn } from '../../lib/utils';
 
 export default function RosterImport() {
   const { user, profile } = useAuth();
+  const navigate = useNavigate();
   
   // Department scoping
   const userDepartmentId = profile?.department_id;
@@ -1045,6 +1047,19 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,Bachelor of Science in Informa
                                 <Edit2 className="h-3.5 w-3.5 text-slate-400" />
                                 Edit Details
                               </button>
+
+                              {u.role === 'student' && (
+                                <button
+                                  onClick={() => {
+                                    setActiveDropdownId(null);
+                                    navigate(`/office/studentsections?studentId=${u.id}`);
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-xs font-medium text-sage-700 hover:bg-sage-50 flex items-center gap-2"
+                                >
+                                  <BookOpen className="h-3.5 w-3.5 text-sage-600" />
+                                  Manage Subject Load
+                                </button>
+                              )}
 
                               <button
                                 onClick={() => handleToggleStatus(u)}

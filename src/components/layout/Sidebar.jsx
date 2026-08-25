@@ -40,7 +40,6 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
       { to: '/faculty/classrecordslist', icon: BookOpen, label: 'Class Records' },
       { to: '/faculty/scoreinput', icon: FileText, label: 'Score Input' },
       { to: '/faculty/classattendance', icon: Calendar, label: 'Class Attendance' },
-      { to: '/faculty/verificationqueue', icon: ClipboardList, label: 'Verification Queue' },
       { to: '/faculty/evalresultsmy', icon: FileText, label: 'Eval Results' },
     ],
     dean: [
