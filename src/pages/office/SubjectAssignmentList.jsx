@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, Filter, Plus, UserCheck, Archive, X, Check, AlertTriangle, BookOpen, Users, UserPlus, UserMinus } from 'lucide-react';
+import { Search, Plus, UserCheck, Archive, X, Check, AlertTriangle, BookOpen, Users, UserPlus, UserMinus, MoreVertical, RotateCcw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
@@ -13,6 +13,8 @@ export default function SubjectAssignmentList() {
   const [subjects, setSubjects] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusTab, setStatusTab] = useState('active'); // active | archived
+  const [activeDropdownId, setActiveDropdownId] = useState(null);
+  const [confirmModalConfig, setConfirmModalConfig] = useState(null);
 
   // Reassignment Modal State
   const [isReassignOpen, setIsReassignOpen] = useState(false);
@@ -133,13 +135,24 @@ export default function SubjectAssignmentList() {
     loadData();
   }, []);
 
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (activeDropdownId && !e.target.closest('.dropdown-trigger') && !e.target.closest('.dropdown-menu')) {
+        setActiveDropdownId(null);
+      }
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => document.removeEventListener('click', handleOutsideClick);
+  }, [activeDropdownId]);
+
   const handleOpenReassign = (cls) => {
     setSelectedClass(cls);
     setTargetFacultyId(cls.facultyId || '');
     setIsReassignOpen(true);
   };
 
-  const handleSaveReassignment = async () => {
+  const executeSaveReassignment = async () => {
     if (!selectedClass || !targetFacultyId) return;
     
     try {
@@ -165,29 +178,107 @@ export default function SubjectAssignmentList() {
     }
   };
 
-  const handleArchiveClass = async (cls) => {
-    const message = `Are you sure you want to archive ${cls.subjectCode} - ${cls.section}?\n\nWARNING: Archiving will prevent new enrollments and lock all grades for this section from further edits.`;
+  const triggerReassignConfirm = () => {
+    if (!selectedClass || !targetFacultyId) return;
+    const targetFac = facultyUsers.find(f => f.id === targetFacultyId);
     
-    if (confirm(message)) {
-      try {
-        const { error } = await supabase
-          .from('class_records')
-          .update({ status: 'archived' })
-          .eq('class_record_id', cls.id);
-        if (error) throw error;
-
-        const actorName = resolveActorName(profile, user);
-        await logActivity(
-          'Class Archival',
-          `Archived classroom record ${cls.subjectCode} (${cls.section}).`,
-          actorName
-        );
-        loadData();
-      } catch (err) {
-        console.error('Failed to archive class:', err);
-        alert('Failed to archive class: ' + err.message);
+    setConfirmModalConfig({
+      title: 'Confirm Faculty Reassignment',
+      message: (
+        <span>
+          Are you sure you want to reassign{' '}
+          <strong className="text-slate-800 font-semibold">Prof. {targetFac?.firstName} {targetFac?.lastName}</strong> to teach{' '}
+          <strong className="text-slate-800 font-semibold">{selectedClass.subjectCode} ({selectedClass.section})</strong>?
+        </span>
+      ),
+      confirmText: 'Confirm Assignment',
+      confirmBg: 'bg-sage-600 hover:bg-sage-700 focus:ring-sage-500',
+      icon: <UserCheck className="h-6 w-6 text-sage-600" />,
+      iconBg: 'bg-sage-50',
+      onConfirm: async () => {
+        setConfirmModalConfig(null);
+        await executeSaveReassignment();
       }
-    }
+    });
+  };
+
+  const triggerArchiveConfirm = (cls) => {
+    setActiveDropdownId(null);
+    setConfirmModalConfig({
+      title: 'Archive Classroom',
+      message: (
+        <span>
+          Are you sure you want to archive{' '}
+          <strong className="text-slate-800 font-semibold">{cls.subjectCode} - {cls.section}</strong> ({cls.subjectName})?
+          <span className="text-rose-600 block mt-2 text-xs bg-rose-50 border border-rose-200 p-2.5 rounded-lg text-left">
+            ⚠️ <strong>Warning:</strong> Archiving will lock all recorded grades and prevent any further student enrollments for this classroom.
+          </span>
+        </span>
+      ),
+      confirmText: 'Archive Classroom',
+      confirmBg: 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500',
+      icon: <Archive className="h-6 w-6 text-rose-600" />,
+      iconBg: 'bg-rose-50',
+      onConfirm: async () => {
+        try {
+          const { error } = await supabase
+            .from('class_records')
+            .update({ status: 'archived' })
+            .eq('class_record_id', cls.id);
+          if (error) throw error;
+
+          const actorName = resolveActorName(profile, user);
+          await logActivity(
+            'Class Archival',
+            `Archived classroom record ${cls.subjectCode} (${cls.section}).`,
+            actorName
+          );
+          setConfirmModalConfig(null);
+          loadData();
+        } catch (err) {
+          console.error('Failed to archive class:', err);
+          alert('Failed to archive class: ' + err.message);
+        }
+      }
+    });
+  };
+
+  const triggerRestoreConfirm = (cls) => {
+    setActiveDropdownId(null);
+    setConfirmModalConfig({
+      title: 'Restore Classroom',
+      message: (
+        <span>
+          Are you sure you want to restore{' '}
+          <strong className="text-slate-800 font-semibold">{cls.subjectCode} - {cls.section}</strong> ({cls.subjectName}) back to active status?
+        </span>
+      ),
+      confirmText: 'Restore Classroom',
+      confirmBg: 'bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500',
+      icon: <RotateCcw className="h-6 w-6 text-emerald-600" />,
+      iconBg: 'bg-emerald-50',
+      onConfirm: async () => {
+        try {
+          const { error } = await supabase
+            .from('class_records')
+            .update({ status: 'active' })
+            .eq('class_record_id', cls.id);
+          if (error) throw error;
+
+          const actorName = resolveActorName(profile, user);
+          await logActivity(
+            'Class Restoration',
+            `Restored classroom record ${cls.subjectCode} (${cls.section}).`,
+            actorName
+          );
+          setConfirmModalConfig(null);
+          loadData();
+        } catch (err) {
+          console.error('Failed to restore class:', err);
+          alert('Failed to restore class: ' + err.message);
+        }
+      }
+    });
   };
 
   // Manage Students Handlers
@@ -206,7 +297,7 @@ export default function SubjectAssignmentList() {
     return student.sectionId === cls.sectionId;
   };
 
-  const handleEnrollSelected = async () => {
+  const executeEnrollSelected = async () => {
     if (!selectedClassForStudents || selectedStudentIdsToEnroll.length === 0) return;
 
     try {
@@ -249,7 +340,28 @@ export default function SubjectAssignmentList() {
     }
   };
 
-  const handleRemoveStudent = async (studentId) => {
+  const triggerEnrollSelectedConfirm = () => {
+    if (!selectedClassForStudents || selectedStudentIdsToEnroll.length === 0) return;
+    setConfirmModalConfig({
+      title: 'Enroll Students to Classroom',
+      message: (
+        <span>
+          Are you sure you want to enroll the <strong className="text-slate-800 font-semibold">{selectedStudentIdsToEnroll.length} selected student(s)</strong> into{' '}
+          <strong className="text-slate-800 font-semibold">{selectedClassForStudents.subjectCode} ({selectedClassForStudents.section})</strong>?
+        </span>
+      ),
+      confirmText: 'Confirm Enrollment',
+      confirmBg: 'bg-sage-600 hover:bg-sage-700 focus:ring-sage-500',
+      icon: <UserPlus className="h-6 w-6 text-sage-600" />,
+      iconBg: 'bg-sage-50',
+      onConfirm: async () => {
+        setConfirmModalConfig(null);
+        await executeEnrollSelected();
+      }
+    });
+  };
+
+  const executeRemoveStudent = async (studentId) => {
     if (!selectedClassForStudents) return;
 
     try {
@@ -283,6 +395,28 @@ export default function SubjectAssignmentList() {
       console.error('Failed to remove student:', err);
       alert('Failed to remove student: ' + err.message);
     }
+  };
+
+  const triggerRemoveStudentConfirm = (studentId) => {
+    const stud = allStudents.find(s => s.id === studentId);
+    setConfirmModalConfig({
+      title: 'Remove Student from Classroom',
+      message: (
+        <span>
+          Are you sure you want to remove{' '}
+          <strong className="text-slate-800 font-semibold">{stud?.firstName} {stud?.lastName}</strong> from{' '}
+          <strong className="text-slate-800 font-semibold">{selectedClassForStudents?.subjectCode} ({selectedClassForStudents?.section})</strong>?
+        </span>
+      ),
+      confirmText: 'Remove Student',
+      confirmBg: 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500',
+      icon: <UserMinus className="h-6 w-6 text-rose-600" />,
+      iconBg: 'bg-rose-50',
+      onConfirm: async () => {
+        setConfirmModalConfig(null);
+        await executeRemoveStudent(studentId);
+      }
+    });
   };
 
   const toggleStudentSelection = (studentId) => {
@@ -433,36 +567,65 @@ export default function SubjectAssignmentList() {
                           {cls.status === 'active' ? 'Active' : 'Archived'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex justify-end gap-2">
-                          {cls.status === 'active' ? (
-                            <>
-                              <button 
-                                onClick={() => handleOpenManageStudents(cls)}
-                                title="Manage Students"
-                                className="p-1.5 text-blue-600 hover:bg-blue-50 border border-blue-100 rounded-md transition-colors flex items-center gap-1"
-                              >
-                                <Users className="h-4 w-4" />
-                              </button>
-                              
-                              <button 
-                                onClick={() => handleOpenReassign(cls)}
-                                title="Reassign Faculty"
-                                className="p-1.5 text-sage-600 hover:bg-sage-50 border border-sage-100 rounded-md transition-colors flex items-center gap-1"
-                              >
-                                <UserCheck className="h-4 w-4" />
-                              </button>
-                              
-                              <button 
-                                onClick={() => handleArchiveClass(cls)}
-                                title="Archive Classroom"
-                                className="p-1.5 text-rose-600 hover:bg-rose-50 border border-rose-100 rounded-md transition-colors flex items-center gap-1"
-                              >
-                                <Archive className="h-4 w-4" />
-                              </button>
-                            </>
-                          ) : (
-                            <span className="text-xs text-slate-400 font-mono italic pr-2">Read Only</span>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative">
+                        <div className="inline-block text-left">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveDropdownId(activeDropdownId === cls.id ? null : cls.id);
+                            }}
+                            className="dropdown-trigger p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+                            aria-label="Actions"
+                          >
+                            <MoreVertical className="h-5 w-5" />
+                          </button>
+
+                          {activeDropdownId === cls.id && (
+                            <div className="dropdown-menu absolute right-6 mt-1 w-52 rounded-lg bg-white border border-slate-200 shadow-lg py-1 z-40 text-left">
+                              {cls.status === 'active' ? (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      setActiveDropdownId(null);
+                                      handleOpenManageStudents(cls);
+                                    }}
+                                    className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                  >
+                                    <Users className="h-3.5 w-3.5 text-blue-500" />
+                                    Manage Students ({cls.enrolledCount})
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      setActiveDropdownId(null);
+                                      handleOpenReassign(cls);
+                                    }}
+                                    className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                  >
+                                    <UserCheck className="h-3.5 w-3.5 text-sage-600" />
+                                    Reassign Faculty
+                                  </button>
+
+                                  <div className="border-t border-slate-100 my-1"></div>
+
+                                  <button
+                                    onClick={() => triggerArchiveConfirm(cls)}
+                                    className="w-full text-left px-4 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50/50 flex items-center gap-2"
+                                  >
+                                    <Archive className="h-3.5 w-3.5 text-rose-500" />
+                                    Archive Classroom
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={() => triggerRestoreConfirm(cls)}
+                                  className="w-full text-left px-4 py-2 text-xs font-medium text-emerald-600 hover:bg-emerald-50/50 flex items-center gap-2"
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5 text-emerald-500" />
+                                  Restore Classroom
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       </td>
@@ -540,7 +703,7 @@ export default function SubjectAssignmentList() {
                                 <span className="text-[10px] text-slate-400 italic">Block Section</span>
                               ) : (
                                 <button 
-                                  onClick={() => handleRemoveStudent(stud.id)}
+                                  onClick={() => triggerRemoveStudentConfirm(stud.id)}
                                   className="text-rose-600 hover:text-rose-800 text-xs font-bold flex items-center gap-0.5 ml-auto hover:underline"
                                   title="Unenroll student"
                                 >
@@ -636,7 +799,7 @@ export default function SubjectAssignmentList() {
                   Close
                 </button>
                 <button 
-                  onClick={handleEnrollSelected}
+                  onClick={triggerEnrollSelectedConfirm}
                   disabled={selectedStudentIdsToEnroll.length === 0}
                   className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
                 >
@@ -721,7 +884,7 @@ export default function SubjectAssignmentList() {
                 Cancel
               </button>
               <button 
-                onClick={handleSaveReassignment}
+                onClick={triggerReassignConfirm}
                 disabled={!targetFacultyId}
                 className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
               >
@@ -729,6 +892,39 @@ export default function SubjectAssignmentList() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Action Confirmation Modal */}
+      {confirmModalConfig && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 space-y-5 text-center animate-in zoom-in-95 duration-200 max-w-sm w-full">
+            <div className={`mx-auto w-14 h-14 rounded-full ${confirmModalConfig.iconBg} flex items-center justify-center shadow-xs animate-pulse duration-[2000ms]`}>
+              {confirmModalConfig.icon}
+            </div>
+            <div className="space-y-1.5 text-center">
+              <h3 className="text-base font-bold text-slate-900 font-display">{confirmModalConfig.title}</h3>
+              <div className="text-xs text-slate-500 leading-relaxed font-sans font-medium">
+                {confirmModalConfig.message}
+              </div>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmModalConfig(null)}
+                className="flex-1 px-4 py-2.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-all duration-150 outline-none cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmModalConfig.onConfirm}
+                className={`flex-1 px-4 py-2.5 text-xs font-semibold text-white ${confirmModalConfig.confirmBg} rounded-xl shadow-xs transition-all duration-150 transform hover:scale-[1.02] active:scale-[0.98] outline-none cursor-pointer`}
+              >
+                {confirmModalConfig.confirmText}
+              </button>
+            </div>
           </div>
         </div>
       )}

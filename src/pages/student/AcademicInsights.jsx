@@ -1,4 +1,8 @@
-import { getTransmutedGrade } from '../../lib/gradingMath';
+import { 
+  getTransmutedGrade, 
+  GWA_TARGET_BENCHMARKS, 
+  simulateRequiredFinalRating 
+} from '../../lib/gradingMath';
 import { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { useAuth } from '../../lib/AuthContext';
@@ -10,13 +14,25 @@ import {
   CheckCircle2, 
   HelpCircle,
   GraduationCap,
-  BookOpen
+  BookOpen,
+  RefreshCw,
+  Target,
+  Compass,
+  ShieldCheck,
+  Award,
+  Sparkles,
+  Calculator,
+  Sliders,
+  ChevronRight,
+  ArrowUpRight,
+  BarChart3,
+  UserCheck,
+  Clock,
+  Flame,
+  AlertTriangle
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getAiAcademicInsight } from '../../lib/openrouter';
-
-// Helper to transmute raw scores to DYCI standard grades
-
 
 // Helper to calculate term ratings from draft scores
 const calculateTermRating = (draftScores, maxSetup) => {
@@ -84,126 +100,6 @@ const generateDynamicInsight = (termName, rating, gwa, status) => {
   }
 };
 
-// Fallback Mock Data matching Part 1.5 of the Redesign Spec
-const mockInsightsData = {
-  summary: "All subjects are passing safely. Keep it up! You are in prime standing to qualify for Honors this semester.",
-  verdict: "continue",
-  basis_snapshot: {
-    student: {
-      name: "Sarah Jenkins",
-      gwa: 1.45,
-      standing: "Excellent",
-      dlEligibility: {
-        awardCategory: "1st Class Dean's Lister",
-        probabilityPct: 94,
-        message: "Your current average of 1.45 qualifies you for 1st Class Dean's Lister honors! Keep your final semestral grades below 1.50 to secure the award."
-      }
-    },
-    subjects: [
-      {
-        code: "IT101",
-        name: "Introduction to Computing",
-        credits: 3.0,
-        instructor: "Prof. Amanda Rivera",
-        periods: {
-          prelim: {
-            rating: 91,
-            gwa: "1.75",
-            status: "Posted",
-            insight: "Strong start with a 1.75 in the Prelims! Your laboratory outputs were close to perfect."
-          },
-          midterm: {
-            rating: 87,
-            gwa: "2.00",
-            status: "Posted",
-            insight: "A minor midterm quiz dip slowed your pace slightly, but you remain highly competitive."
-          },
-          midtermRating: {
-            rating: 89,
-            gwa: "1.85",
-            status: "Posted",
-            insight: "Your official Midterm Rating stands at a solid 1.85. Safe and robust standing."
-          },
-          semiFinal: {
-            rating: 91,
-            gwa: "1.75",
-            status: "Posted",
-            insight: "Excellent recovery in the Semi-Final proofs! You brought your average back up."
-          },
-          final: {
-            rating: 91,
-            gwa: "1.75",
-            status: "Draft",
-            insight: "Final grading components are drafted at 1.75. Awaiting registrar release."
-          },
-          tentativeFinalRating: {
-            rating: 91,
-            gwa: "1.75",
-            status: "Draft",
-            insight: "Tentative final rating projects at a 1.75, keeping your GWA targets well in hand."
-          },
-          semestralGrade: {
-            rating: 90,
-            gwa: "1.80",
-            status: "Draft",
-            insight: "Your predicted semestral grade of 1.80 guarantees a secure pass and keeps you on the honor roll."
-          }
-        }
-      },
-      {
-        code: "IT201",
-        name: "Data Structures & Algorithms",
-        credits: 3.0,
-        instructor: "Dr. Carlos Valdes",
-        periods: {
-          prelim: {
-            rating: 92,
-            gwa: "1.50",
-            status: "Posted",
-            insight: "Great start in complex data structures. Lab outputs are excellent."
-          },
-          midterm: {
-            rating: 0,
-            gwa: "—",
-            status: "Pending",
-            insight: "Midterm grades are currently being processed by the department."
-          },
-          midtermRating: {
-            rating: 0,
-            gwa: "—",
-            status: "Pending",
-            insight: "Not yet compiled. Awaiting both term marks."
-          },
-          semiFinal: {
-            rating: 0,
-            gwa: "—",
-            status: "Pending",
-            insight: "Pending semi-final exams."
-          },
-          final: {
-            rating: 0,
-            gwa: "—",
-            status: "Pending",
-            insight: "Pending final deliverables."
-          },
-          tentativeFinalRating: {
-            rating: 0,
-            gwa: "—",
-            status: "Pending",
-            insight: "Pending tentative final rating collation."
-          },
-          semestralGrade: {
-            rating: 0,
-            gwa: "—",
-            status: "Pending",
-            insight: "Pending final semestral posting."
-          }
-        }
-      }
-    ]
-  }
-};
-
 export default function AcademicInsights() {
   const { user, profile } = useAuth();
   const [insight, setInsight] = useState(null);
@@ -214,8 +110,20 @@ export default function AcademicInsights() {
   const [selectedSubjectCode, setSelectedSubjectCode] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState('semestralGrade');
 
-  // AI Guidance states
-  const [aiCache, setAiCache] = useState({});
+  // Interactive What-If Simulator state
+  const [simSubjectCode, setSimSubjectCode] = useState('');
+  const [simTargetGwa, setSimTargetGwa] = useState('1.75');
+  const [simEstimatedCs, setSimEstimatedCs] = useState(85);
+
+  // AI Guidance states persisted in localStorage
+  const [aiCache, setAiCache] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`sage_ai_cache_${user?.id || 'guest'}`);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
   const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
@@ -223,7 +131,8 @@ export default function AcademicInsights() {
       if (!user) return;
       setLoading(true);
       try {
-        const { data, error } = await supabase
+        // 1. Fetch pre-generated insights if any
+        const { data: pregenData } = await supabase
           .from('student_academic_insights')
           .select('*')
           .eq('student_id', user.id)
@@ -231,337 +140,429 @@ export default function AcademicInsights() {
           .limit(1)
           .maybeSingle();
 
-        if (error) {
-          console.warn("Could not load pre-generated student insights, trying dynamic calculation:", error);
-        }
-        if (data) {
-          setInsight(data);
-          if (data.basis_snapshot?.subjects?.length > 0) {
-            setSelectedSubjectCode(data.basis_snapshot.subjects[0].code);
-          }
-        } else {
-          // DATABASE FALLBACK ROUTE: Fetch the student's real data
-          const { data: enrollsCheck } = await supabase
+        // 2. Fetch student enrollment records
+        const { data: enrollsCheck } = await supabase
+          .from('enrollments')
+          .select('section_id')
+          .eq('student_id', user.id);
+
+        const activeSectionId = profile?.section_id || (enrollsCheck && enrollsCheck.length > 0 ? enrollsCheck[0].section_id : null);
+
+        // 3. Fetch attendance history
+        const { data: attendanceData } = await supabase
+          .from('attendance_records')
+          .select('status, is_fda')
+          .eq('student_id', user.id);
+
+        let totalAttSessions = attendanceData?.length || 0;
+        let presentAtt = attendanceData?.filter(a => a.status?.toLowerCase() === 'present').length || 0;
+        let lateAtt = attendanceData?.filter(a => a.status?.toLowerCase() === 'late').length || 0;
+        let absentAtt = attendanceData?.filter(a => a.status?.toLowerCase() === 'absent').length || 0;
+        let fdaFlags = attendanceData?.filter(a => a.is_fda || a.status?.toLowerCase() === 'fda').length || (absentAtt >= 4 ? 1 : 0);
+        let attendanceRate = totalAttSessions > 0 
+          ? Math.round(((presentAtt + (lateAtt * 0.5)) / totalAttSessions) * 100) 
+          : 100;
+
+        if (activeSectionId) {
+          const { data: enrolls } = await supabase
             .from('enrollments')
-            .select('section_id')
-            .eq('student_id', user.id);
+            .select('subject_id, subjects(*)')
+            .eq('student_id', user.id)
+            .eq('section_id', activeSectionId);
 
-          const activeSectionId = profile?.section_id || (enrollsCheck && enrollsCheck.length > 0 ? enrollsCheck[0].section_id : null);
+          const subjectIds = enrolls?.map(e => e.subject_id) || [];
 
-          if (activeSectionId) {
-            // 1. Fetch enrollments
-            const { data: enrolls } = await supabase
-              .from('enrollments')
-              .select('subject_id, subjects(*)')
+          if (subjectIds.length > 0) {
+            const { data: classRecords } = await supabase
+              .from('class_records')
+              .select('class_record_id, subject_id, faculty:users!faculty_id(first_name, last_name)')
+              .eq('section_id', activeSectionId)
+              .in('subject_id', subjectIds)
+              .eq('status', 'active');
+
+            const classRecordIds = classRecords?.map(cr => cr.class_record_id) || [];
+
+            const { data: posted } = await supabase
+              .from('posted_grades')
+              .select('*')
               .eq('student_id', user.id)
-              .eq('section_id', activeSectionId);
+              .in('class_record_id', classRecordIds);
 
-            const subjectIds = enrolls?.map(e => e.subject_id) || [];
+            const { data: drafts } = await supabase
+              .from('student_term_scores')
+              .select('*')
+              .eq('student_id', user.id)
+              .in('class_record_id', classRecordIds);
 
-            if (subjectIds.length > 0) {
-              const { data: classRecords } = await supabase
-                .from('class_records')
-                .select('class_record_id, subject_id, faculty:users!faculty_id(first_name, last_name)')
-                .eq('section_id', activeSectionId)
-                .in('subject_id', subjectIds)
-                .eq('status', 'active');
+            const { data: gradingCols } = await supabase
+              .from('class_grading_columns')
+              .select('*')
+              .in('class_record_id', classRecordIds);
 
-              const classRecordIds = classRecords?.map(cr => cr.class_record_id) || [];
+            const subMap = {};
+            enrolls?.forEach(e => {
+              if (e.subjects) subMap[e.subject_id] = e.subjects;
+            });
 
-              const { data: posted } = await supabase
-                .from('posted_grades')
-                .select('*')
-                .eq('student_id', user.id)
-                .in('class_record_id', classRecordIds);
+            const postedMap = {};
+            posted?.forEach(p => {
+              if (!postedMap[p.class_record_id]) postedMap[p.class_record_id] = [];
+              postedMap[p.class_record_id].push(p);
+            });
 
-              const { data: drafts } = await supabase
-                .from('student_term_scores')
-                .select('*')
-                .eq('student_id', user.id)
-                .in('class_record_id', classRecordIds);
+            const draftsMap = {};
+            drafts?.forEach(d => {
+              if (!draftsMap[d.class_record_id]) draftsMap[d.class_record_id] = {};
+              draftsMap[d.class_record_id][d.term] = d;
+            });
 
-              const { data: gradingCols } = await supabase
-                .from('class_grading_columns')
-                .select('*')
-                .in('class_record_id', classRecordIds);
+            const colsMap = {};
+            gradingCols?.forEach(c => {
+              if (!colsMap[c.class_record_id]) colsMap[c.class_record_id] = {};
+              colsMap[c.class_record_id][c.term] = {
+                act1: c.act1_max,
+                act2: c.act2_max,
+                act3: c.act3_max,
+                act4: c.act4_max,
+                act5: c.act5_max,
+                act6: c.act6_max,
+                exam: c.exam_max
+              };
+            });
 
-              const subMap = {};
-              enrolls?.forEach(e => {
-                if (e.subjects) {
-                  subMap[e.subject_id] = e.subjects;
-                }
-              });
+            let totalRunningUnits = 0;
+            let weightedRunningSum = 0;
 
-              const postedMap = {};
-              posted?.forEach(p => {
-                if (!postedMap[p.class_record_id]) postedMap[p.class_record_id] = [];
-                postedMap[p.class_record_id].push(p);
-              });
+            // Aggregated diagnostic accumulators
+            let totalCsEarned = 0;
+            let totalCsPossible = 0;
+            let totalExamEarned = 0;
+            let totalExamPossible = 0;
+            let totalCharEarned = 0;
+            let charCount = 0;
 
-              const draftsMap = {};
-              drafts?.forEach(d => {
-                if (!draftsMap[d.class_record_id]) draftsMap[d.class_record_id] = {};
-                draftsMap[d.class_record_id][d.term] = d;
-              });
+            const computedSubjectsList = (classRecords || [])
+              .filter(cr => subMap[cr.subject_id])
+              .map(cr => {
+                const subj = subMap[cr.subject_id];
+                const crPosted = postedMap[cr.class_record_id] || [];
+                const crDrafts = draftsMap[cr.class_record_id] || {};
+                const crCols = colsMap[cr.class_record_id] || {};
 
-              const colsMap = {};
-              gradingCols?.forEach(c => {
-                if (!colsMap[c.class_record_id]) colsMap[c.class_record_id] = {};
-                colsMap[c.class_record_id][c.term] = {
-                  act1: c.act1_max,
-                  act2: c.act2_max,
-                  act3: c.act3_max,
-                  act4: c.act4_max,
-                  act5: c.act5_max,
-                  act6: c.act6_max,
-                  exam: c.exam_max
-                };
-              });
+                // Subject-level diagnostic accumulators
+                let subCsEarned = 0;
+                let subCsPossible = 0;
+                let subExamEarned = 0;
+                let subExamPossible = 0;
 
-              let totalRunningUnits = 0;
-              let weightedRunningSum = 0;
-
-              const computedSubjectsList = (classRecords || [])
-                .filter(cr => subMap[cr.subject_id])
-                .map(cr => {
-                  const subj = subMap[cr.subject_id];
-
-                  const crPosted = postedMap[cr.class_record_id] || [];
-                  const crDrafts = draftsMap[cr.class_record_id] || {};
-                  const crCols = colsMap[cr.class_record_id] || {};
-
-                  const getTermRating = (termName) => {
-                    const dbTermKey = termName.toLowerCase().replace('-', '_');
-                    const postedRow = crPosted.find(p => p.grade_period === dbTermKey);
-                    if (postedRow) {
-                      const rating = parseFloat(postedRow.computed_grade);
-                      const gwa = postedRow.effective_grade !== null 
-                        ? postedRow.effective_grade.toFixed(2) 
-                        : getTransmutedGrade(parseFloat(postedRow.computed_grade)).toFixed(2);
-                      return {
-                        rating,
-                        gwa,
-                        status: 'Posted',
-                        insight: generateDynamicInsight(termName, rating, gwa, 'Posted')
-                      };
-                    }
-                    const draftRow = crDrafts[termName];
-                    if (draftRow) {
-                      const hasScores = 
-                        (draftRow.act1 && draftRow.act1 > 0) ||
-                        (draftRow.act2 && draftRow.act2 > 0) ||
-                        (draftRow.act3 && draftRow.act3 > 0) ||
-                        (draftRow.act4 && draftRow.act4 > 0) ||
-                        (draftRow.act5 && draftRow.act5 > 0) ||
-                        (draftRow.act6 && draftRow.act6 > 0) ||
-                        (draftRow.char_rating && draftRow.char_rating > 0) ||
-                        (draftRow.exam && draftRow.exam > 0);
-                      
-                      if (!hasScores) return { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting term evaluation components.` };
-                      
-                      const computedRating = calculateTermRating(draftRow, crCols[termName]);
-                      const computedGwa = getTransmutedGrade(computedRating).toFixed(2);
-                      return {
-                        rating: computedRating,
-                        gwa: computedGwa,
-                        status: 'Draft',
-                        insight: generateDynamicInsight(termName, computedRating, computedGwa, 'Draft')
-                      };
-                    }
-                    return { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting term evaluation components.` };
-                  };
-
-                  const prelim = getTermRating('Prelim');
-                  const midterm = getTermRating('Midterm');
-                  
-                  let mr = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Prelim and Midterm components.` };
-                  if (prelim.gwa !== '—' && midterm.gwa !== '—') {
-                    const avgRating = Math.round((prelim.rating + midterm.rating) / 2);
-                    const avgGwa = getTransmutedGrade(avgRating).toFixed(2);
-                    const status = prelim.status === 'Posted' && midterm.status === 'Posted' ? 'Posted' : 'Draft';
-                    mr = {
-                      rating: avgRating,
-                      gwa: avgGwa,
-                      status,
-                      insight: generateDynamicInsight('Midterm Rating', avgRating, avgGwa, status)
+                const getTermRating = (termName) => {
+                  const dbTermKey = termName.toLowerCase().replace('-', '_');
+                  const postedRow = crPosted.find(p => p.grade_period === dbTermKey);
+                  if (postedRow) {
+                    const rating = parseFloat(postedRow.computed_grade);
+                    const gwa = postedRow.effective_grade !== null 
+                      ? postedRow.effective_grade.toFixed(2) 
+                      : getTransmutedGrade(parseFloat(postedRow.computed_grade)).toFixed(2);
+                    return {
+                      rating,
+                      gwa,
+                      status: 'Posted',
+                      insight: generateDynamicInsight(termName, rating, gwa, 'Posted')
                     };
                   }
-
-                  const semiFinal = getTermRating('Semi-Final');
-                  const final = getTermRating('Final');
-
-                  let tentativeFinalRating = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Semi-Final and Final components.` };
-                  if (semiFinal.gwa !== '—' && final.gwa !== '—') {
-                    const avgRating = Math.round((semiFinal.rating + final.rating) / 2);
-                    const avgGwa = getTransmutedGrade(avgRating).toFixed(2);
-                    const status = semiFinal.status === 'Posted' && final.status === 'Posted' ? 'Posted' : 'Draft';
-                    tentativeFinalRating = {
-                      rating: avgRating,
-                      gwa: avgGwa,
-                      status,
-                      insight: generateDynamicInsight('Tentative Final Rating', avgRating, avgGwa, status)
-                    };
-                  }
-
-                  let semestralGrade = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting complete term components.` };
-                  if (mr.gwa !== '—' && tentativeFinalRating.gwa !== '—') {
-                    const avgRating = Math.round((mr.rating + tentativeFinalRating.rating) / 2);
-                    const avgGwa = getTransmutedGrade(avgRating).toFixed(2);
-                    const status = mr.status === 'Posted' && tentativeFinalRating.status === 'Posted' ? 'Posted' : 'Draft';
-                    semestralGrade = {
-                      rating: avgRating,
-                      gwa: avgGwa,
-                      status,
-                      insight: generateDynamicInsight('Semestral Grade', avgRating, avgGwa, status)
-                    };
-                  }
-
-                  let runningGwaVal = null;
-                  if (semestralGrade.gwa !== '—') runningGwaVal = parseFloat(semestralGrade.gwa);
-                  else if (tentativeFinalRating.gwa !== '—') runningGwaVal = parseFloat(tentativeFinalRating.gwa);
-                  else if (mr.gwa !== '—') runningGwaVal = parseFloat(mr.gwa);
-                  else if (prelim.gwa !== '—') runningGwaVal = parseFloat(prelim.gwa);
-
-                  if (runningGwaVal !== null && !isNaN(runningGwaVal)) {
-                    totalRunningUnits += subj.units;
-                    weightedRunningSum += runningGwaVal * subj.units;
-                  }
-
-                  return {
-                    code: subj.code,
-                    name: subj.name,
-                    credits: subj.units,
-                    instructor: cr.faculty ? `Prof. ${cr.faculty.first_name} ${cr.faculty.last_name}` : 'TBA',
-                    periods: {
-                      prelim,
-                      midterm,
-                      midtermRating: mr,
-                      semiFinal,
-                      final,
-                      tentativeFinalRating,
-                      semestralGrade
+                  const draftRow = crDrafts[termName];
+                  if (draftRow) {
+                    const maxSetup = crCols[termName] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
+                    
+                    const csSum = (draftRow.act1 || 0) + (draftRow.act2 || 0) + (draftRow.act3 || 0) + (draftRow.act4 || 0) + (draftRow.act5 || 0) + (draftRow.act6 || 0);
+                    const csMax = maxSetup.act1 + maxSetup.act2 + maxSetup.act3 + maxSetup.act4 + maxSetup.act5 + maxSetup.act6;
+                    
+                    if (csMax > 0) {
+                      subCsEarned += csSum;
+                      subCsPossible += csMax;
+                      totalCsEarned += csSum;
+                      totalCsPossible += csMax;
                     }
-                  };
-                });
 
-              if (totalRunningUnits > 0) {
-                const computedGwa = parseFloat((weightedRunningSum / totalRunningUnits).toFixed(2));
-                
-                let gwaStanding = 'Satisfactory';
-                if (computedGwa <= 1.45) gwaStanding = 'Excellent';
-                else if (computedGwa <= 1.75) gwaStanding = 'Very Good';
-                else if (computedGwa > 3.00) gwaStanding = 'Academic Warning';
+                    if (draftRow.exam !== null && maxSetup.exam > 0) {
+                      subExamEarned += draftRow.exam;
+                      subExamPossible += maxSetup.exam;
+                      totalExamEarned += draftRow.exam;
+                      totalExamPossible += maxSetup.exam;
+                    }
 
-                // Latin Honors / DL eligibility rule: lowest individual course grade must be <= 2.00
-                const hasDisqualifyingGrade = computedSubjectsList.some(sub => {
-                  let runningGwaVal = null;
-                  const semGrade = sub.periods?.semestralGrade;
-                  const tentativeFinal = sub.periods?.tentativeFinalRating;
-                  const mr = sub.periods?.midtermRating;
-                  const prelim = sub.periods?.prelim;
+                    if (draftRow.char_rating !== null) {
+                      totalCharEarned += draftRow.char_rating;
+                      charCount++;
+                    }
 
-                  if (semGrade && semGrade.gwa !== '—') runningGwaVal = parseFloat(semGrade.gwa);
-                  else if (tentativeFinal && tentativeFinal.gwa !== '—') runningGwaVal = parseFloat(tentativeFinal.gwa);
-                  else if (mr && mr.gwa !== '—') runningGwaVal = parseFloat(mr.gwa);
-                  else if (prelim && prelim.gwa !== '—') runningGwaVal = parseFloat(prelim.gwa);
+                    const hasScores = csSum > 0 || (draftRow.char_rating && draftRow.char_rating > 0) || (draftRow.exam && draftRow.exam > 0);
+                    if (!hasScores) return { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting term evaluation components.` };
 
-                  return runningGwaVal !== null && !isNaN(runningGwaVal) && runningGwaVal > 2.00;
-                });
-
-                let dlCategory = 'Not Eligible';
-                let dlProbability = 0;
-                let dlMessage = 'Your current average does not qualify for Dean\'s Lister honors. Focus on upcoming milestones to improve your score.';
-                
-                if (hasDisqualifyingGrade) {
-                  dlCategory = 'Not Eligible';
-                  dlProbability = 0;
-                  dlMessage = 'You are currently disqualified from Dean\'s Lister or Latin Honors because you have one or more courses with a grade lower than 2.00 (e.g. 2.25 or worse). Maintain a grade of 2.00 or better in all individual courses to qualify.';
-                } else if (computedGwa <= 1.45) {
-                  dlCategory = '1st Class Dean\'s Lister';
-                  dlProbability = 94;
-                  dlMessage = `Your current average of ${computedGwa.toFixed(2)} qualifies you for 1st Class Dean's Lister honors! Keep your final semestral grades below 1.50 and all individual grades at 2.00 or better to secure the award.`;
-                } else if (computedGwa <= 1.75) {
-                  dlCategory = '2nd Class Dean\'s Lister';
-                  dlProbability = 85;
-                  dlMessage = `Your current average of ${computedGwa.toFixed(2)} qualifies you for 2nd Class Dean's Lister honors! Try to increase your average to 1.45 to qualify for 1st Class honors, and ensure no individual grade drops below 2.00.`;
-                }
-
-                let summary = `Your running average across all subjects is ${computedGwa.toFixed(2)} (${gwaStanding} standing). `;
-                if (computedGwa <= 1.75) {
-                  summary += 'You are in prime standing to qualify for Honors this semester. Keep it up!';
-                } else if (computedGwa <= 3.00) {
-                  summary += 'All subjects are passing safely. Maintain your study consistency to secure a strong finish.';
-                } else {
-                  summary += 'Warning: Academic thresholds are falling. Remediation or tutoring recommended to secure passing grades.';
-                }
-
-                const calculatedSnapshot = {
-                  summary,
-                  verdict: computedGwa <= 1.75 ? 'continue' : (computedGwa <= 3.00 ? 'borderline' : 'at_risk'),
-                  basis_snapshot: {
-                    student: {
-                      name: `${profile?.first_name || 'Student'} ${profile?.last_name || ''}`,
+                    const computedRating = calculateTermRating(draftRow, maxSetup);
+                    const computedGwa = getTransmutedGrade(computedRating).toFixed(2);
+                    return {
+                      rating: computedRating,
                       gwa: computedGwa,
-                      standing: gwaStanding,
-                      dlEligibility: {
-                        awardCategory: dlCategory,
-                        probabilityPct: dlProbability,
-                        message: dlMessage
-                      }
-                    },
-                    subjects: computedSubjectsList
+                      status: 'Draft',
+                      insight: generateDynamicInsight(termName, computedRating, computedGwa, 'Draft')
+                    };
                   }
+                  return { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting term evaluation components.` };
                 };
 
-                setInsight(calculatedSnapshot);
-                if (computedSubjectsList.length > 0) {
-                  setSelectedSubjectCode(computedSubjectsList[0].code);
+                const prelim = getTermRating('Prelim');
+                const midterm = getTermRating('Midterm');
+                
+                let mr = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Prelim and Midterm components.` };
+                if (prelim.gwa !== '—' && midterm.gwa !== '—') {
+                  const avgRating = Math.round((prelim.rating + midterm.rating) / 2);
+                  const avgGwa = getTransmutedGrade(avgRating).toFixed(2);
+                  const status = prelim.status === 'Posted' && midterm.status === 'Posted' ? 'Posted' : 'Draft';
+                  mr = {
+                    rating: avgRating,
+                    gwa: avgGwa,
+                    status,
+                    insight: generateDynamicInsight('Midterm Rating', avgRating, avgGwa, status)
+                  };
                 }
-                setLoading(false);
-                return;
+
+                const semiFinal = getTermRating('Semi-Final');
+                const final = getTermRating('Final');
+
+                let tentativeFinalRating = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Semi-Final and Final components.` };
+                if (semiFinal.gwa !== '—' && final.gwa !== '—') {
+                  const avgRating = Math.round((semiFinal.rating + final.rating) / 2);
+                  const avgGwa = getTransmutedGrade(avgRating).toFixed(2);
+                  const status = semiFinal.status === 'Posted' && final.status === 'Posted' ? 'Posted' : 'Draft';
+                  tentativeFinalRating = {
+                    rating: avgRating,
+                    gwa: avgGwa,
+                    status,
+                    insight: generateDynamicInsight('Tentative Final Rating', avgRating, avgGwa, status)
+                  };
+                }
+
+                let semestralGrade = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting complete term components.` };
+                if (mr.gwa !== '—' && tentativeFinalRating.gwa !== '—') {
+                  const avgRating = Math.round((mr.rating + tentativeFinalRating.rating) / 2);
+                  const avgGwa = getTransmutedGrade(avgRating).toFixed(2);
+                  const status = mr.status === 'Posted' && tentativeFinalRating.status === 'Posted' ? 'Posted' : 'Draft';
+                  semestralGrade = {
+                    rating: avgRating,
+                    gwa: avgGwa,
+                    status,
+                    insight: generateDynamicInsight('Semestral Grade', avgRating, avgGwa, status)
+                  };
+                }
+
+                let runningGwaVal = null;
+                if (semestralGrade.gwa !== '—') runningGwaVal = parseFloat(semestralGrade.gwa);
+                else if (tentativeFinalRating.gwa !== '—') runningGwaVal = parseFloat(tentativeFinalRating.gwa);
+                else if (mr.gwa !== '—') runningGwaVal = parseFloat(mr.gwa);
+                else if (prelim.gwa !== '—') runningGwaVal = parseFloat(prelim.gwa);
+
+                if (runningGwaVal !== null && !isNaN(runningGwaVal)) {
+                  totalRunningUnits += subj.units;
+                  weightedRunningSum += runningGwaVal * subj.units;
+                }
+
+                const subCsAvg = subCsPossible > 0 ? Math.round((subCsEarned / subCsPossible) * 100) : 85;
+                const subExamAvg = subExamPossible > 0 ? Math.round((subExamEarned / subExamPossible) * 100) : 80;
+
+                return {
+                  code: subj.code,
+                  name: subj.name,
+                  credits: subj.units,
+                  instructor: cr.faculty ? `Prof. ${cr.faculty.first_name} ${cr.faculty.last_name}` : 'TBA',
+                  runningGwa: runningGwaVal !== null ? runningGwaVal.toFixed(2) : '—',
+                  diagnostics: {
+                    csAvg: subCsAvg,
+                    examAvg: subExamAvg
+                  },
+                  periods: {
+                    prelim,
+                    midterm,
+                    midtermRating: mr,
+                    semiFinal,
+                    final,
+                    tentativeFinalRating,
+                    semestralGrade
+                  }
+                };
+              });
+
+            // Overall aggregated diagnostic calculations
+            const csAvgPct = totalCsPossible > 0 ? Math.round((totalCsEarned / totalCsPossible) * 100) : 88;
+            const examAvgPct = totalExamPossible > 0 ? Math.round((totalExamEarned / totalExamPossible) * 100) : 76;
+            const charAvgPct = charCount > 0 ? Math.round(totalCharEarned / charCount) : 95;
+
+            const computedGwa = totalRunningUnits > 0 
+              ? parseFloat((weightedRunningSum / totalRunningUnits).toFixed(2))
+              : 2.50;
+
+            // Trajectory classification
+            let gwaStanding = 'Satisfactory';
+            let trajectoryVerdict = 'On Track';
+            let trajectoryType = 'good'; // 'honors' | 'good' | 'warning' | 'critical'
+
+            if (fdaFlags > 0 || absentAtt >= 4) {
+              trajectoryVerdict = 'FDA Advisory Risk';
+              trajectoryType = 'critical';
+            } else if (computedGwa <= 1.45) {
+              gwaStanding = 'Excellent';
+              trajectoryVerdict = "1st Class Dean's List Pace";
+              trajectoryType = 'honors';
+            } else if (computedGwa <= 1.75) {
+              gwaStanding = 'Very Good';
+              trajectoryVerdict = "2nd Class Dean's List Pace";
+              trajectoryType = 'honors';
+            } else if (computedGwa <= 2.50) {
+              gwaStanding = 'Satisfactory';
+              trajectoryVerdict = 'Steady Academic Progression';
+              trajectoryType = 'good';
+            } else if (computedGwa <= 3.00) {
+              gwaStanding = 'Passing Margin';
+              trajectoryVerdict = 'Academic Warning Buffer';
+              trajectoryType = 'warning';
+            } else {
+              gwaStanding = 'Academic Warning';
+              trajectoryVerdict = 'Intervention Required';
+              trajectoryType = 'critical';
+            }
+
+            // Latin Honors / DL eligibility
+            const hasDisqualifyingGrade = computedSubjectsList.some(sub => {
+              const r = parseFloat(sub.runningGwa);
+              return !isNaN(r) && r > 2.00;
+            });
+
+            let dlCategory = 'Not Eligible';
+            let dlProbability = 0;
+            let dlMessage = 'Your current average does not qualify for Dean\'s Lister honors. Focus on upcoming milestones to improve your score.';
+            
+            if (hasDisqualifyingGrade) {
+              dlCategory = 'Not Eligible';
+              dlProbability = 0;
+              dlMessage = 'You are currently disqualified from Dean\'s Lister or Latin Honors because you have one or more courses with a grade above 2.00 (e.g. 2.25 or worse). Maintain a grade of 2.00 or better in all individual courses to qualify.';
+            } else if (computedGwa <= 1.45) {
+              dlCategory = "1st Class Dean's Lister";
+              dlProbability = 94;
+              dlMessage = `Your current average of ${computedGwa.toFixed(2)} qualifies you for 1st Class Dean's Lister honors! Keep your final semestral grades at 1.45 or better and all individual grades at 2.00 or better to secure the award.`;
+            } else if (computedGwa <= 1.75) {
+              dlCategory = "2nd Class Dean's Lister";
+              dlProbability = 85;
+              dlMessage = `Your current average of ${computedGwa.toFixed(2)} qualifies you for 2nd Class Dean's Lister honors! Strive for 1.45 to upgrade to 1st Class honors.`;
+            }
+
+            // Identify Priority Subject for rescue/elevation
+            let prioritySub = computedSubjectsList[0] || null;
+            let lowestGwa = 0;
+            computedSubjectsList.forEach(s => {
+              const num = parseFloat(s.runningGwa);
+              if (!isNaN(num) && num > lowestGwa) {
+                lowestGwa = num;
+                prioritySub = s;
               }
+            });
+
+            const fallbackInsightData = {
+              studentName: `${profile?.first_name || 'Student'} ${profile?.last_name || ''}`.trim(),
+              gwa: computedGwa,
+              standing: gwaStanding,
+              totalUnits: totalRunningUnits,
+              trajectoryVerdict,
+              trajectoryType,
+              dlEligibility: {
+                awardCategory: dlCategory,
+                probabilityPct: dlProbability,
+                message: dlMessage
+              },
+              diagnostics: {
+                csAvg: csAvgPct,
+                examAvg: examAvgPct,
+                charAvg: charAvgPct,
+                attendanceRate,
+                absentCount: absentAtt,
+                fdaRisk: fdaFlags > 0 || absentAtt >= 4
+              },
+              prioritySubject: prioritySub,
+              subjects: computedSubjectsList
+            };
+
+            setInsight(fallbackInsightData);
+            if (computedSubjectsList.length > 0) {
+              setSelectedSubjectCode(computedSubjectsList[0].code);
+              setSimSubjectCode(computedSubjectsList[0].code);
             }
           }
-          setSelectedSubjectCode(mockInsightsData.basis_snapshot.subjects[0].code);
         }
       } catch (err) {
-        console.error("Error loading student insights:", err);
-        setSelectedSubjectCode(mockInsightsData.basis_snapshot.subjects[0].code);
+        console.error("Failed to load academic insights:", err);
       } finally {
         setLoading(false);
       }
     }
+
     loadInsights();
   }, [user, profile]);
 
-  const activeData = insight || mockInsightsData;
-  const snapshot = activeData.basis_snapshot;
-  const studentStats = snapshot?.student || mockInsightsData.basis_snapshot.student;
-  const subjectsList = snapshot?.subjects || mockInsightsData.basis_snapshot.subjects;
+  // Helper to persist AI cache to localStorage
+  const updateAiCache = (key, val) => {
+    setAiCache(prev => {
+      const next = { ...prev, [key]: val };
+      try {
+        localStorage.setItem(`sage_ai_cache_${user?.id || 'guest'}`, JSON.stringify(next));
+      } catch (e) {
+        console.debug('Failed to write aiCache to storage', e);
+      }
+      return next;
+    });
+  };
 
-  const currentSubject = subjectsList.find(s => s.code === selectedSubjectCode) || subjectsList[0];
+  const studentStats = insight || {
+    studentName: 'Student',
+    gwa: 2.50,
+    standing: 'Satisfactory',
+    totalUnits: 0,
+    trajectoryVerdict: 'Steady Academic Progression',
+    trajectoryType: 'good',
+    dlEligibility: { awardCategory: 'Not Eligible', probabilityPct: 0, message: '' },
+    diagnostics: { csAvg: 85, examAvg: 75, charAvg: 95, attendanceRate: 100, absentCount: 0, fdaRisk: false },
+    prioritySubject: null,
+    subjects: []
+  };
 
+  const subjectsList = studentStats.subjects || [];
+  const currentSubject = subjectsList.find(s => s.code === selectedSubjectCode) || subjectsList[0] || null;
+  const simSubject = subjectsList.find(s => s.code === simSubjectCode) || subjectsList[0] || null;
+
+  // Period display mappings
   const periodsMapping = {
-    prelim: 'Prelim',
-    midterm: 'Midterm',
+    prelim: 'Prelim Term',
+    midterm: 'Midterm Term',
     midtermRating: 'Midterm Rating (MR)',
-    semiFinal: 'Semi-Final (SF)',
-    final: 'Final',
+    semiFinal: 'Semi-Final Term',
+    final: 'Final Term',
     tentativeFinalRating: 'Tentative Final Rating (TFR)',
     semestralGrade: 'Semestral Grade (SG)'
   };
 
-  const calculateRunningGwaForPeriod = (periodKey) => {
-    const validGrades = subjectsList.filter(sub => {
-      const g = sub.periods?.[periodKey];
-      return g && g.gwa !== '—' && (g.status === 'Posted' || g.status === 'Draft');
-    });
-    if (validGrades.length === 0) return '—';
-    const sum = validGrades.reduce((acc, sub) => acc + parseFloat(sub.periods[periodKey].gwa), 0);
-    return (sum / validGrades.length).toFixed(2);
-  };
+  // What-If Simulator Calculation
+  const targetBenchmark = GWA_TARGET_BENCHMARKS.find(b => b.gwa === simTargetGwa) || GWA_TARGET_BENCHMARKS[3];
+  const simMr = simSubject?.periods?.midtermRating?.rating || (simSubject?.periods?.prelim?.rating || 80);
+  const simSemiFinal = simSubject?.periods?.semiFinal?.rating || null;
+  
+  const simResult = simulateRequiredFinalRating({
+    mr: simMr,
+    semiFinal: simSemiFinal,
+    targetRating: targetBenchmark.minRating,
+    estimatedFinalCs: simEstimatedCs,
+    estimatedFinalChar: 95,
+    examMax: 40
+  });
 
-  // Fetch LLM-generated guidance from OpenRouter on selection change
+  // Fetch AI guidance automatically for empty cache slots
   useEffect(() => {
     if (loading || !user || !subjectsList || subjectsList.length === 0) return;
 
@@ -572,12 +573,13 @@ export default function AcademicInsights() {
       cacheKey = 'overall';
       payload = {
         type: 'overall',
-        studentName: studentStats.name || `${profile?.first_name || 'Student'} ${profile?.last_name || ''}`,
+        studentName: studentStats.studentName,
         gwa: studentStats.gwa,
         standing: studentStats.standing,
         dlCategory: studentStats.dlEligibility?.awardCategory || 'Not Eligible',
         dlProbability: studentStats.dlEligibility?.probabilityPct || 0,
         dlMessage: studentStats.dlEligibility?.message || '',
+        diagnostics: studentStats.diagnostics,
         subjects: subjectsList
       };
     } else {
@@ -586,7 +588,7 @@ export default function AcademicInsights() {
       const periodObj = currentSubject.periods?.[selectedPeriod] || {};
       payload = {
         type: 'subject',
-        studentName: studentStats.name || `${profile?.first_name || 'Student'} ${profile?.last_name || ''}`,
+        studentName: studentStats.studentName,
         subjectCode: currentSubject.code,
         subjectName: currentSubject.name,
         credits: currentSubject.credits,
@@ -595,18 +597,20 @@ export default function AcademicInsights() {
         rating: periodObj.rating || 0,
         gwa: periodObj.gwa || '—',
         status: periodObj.status || 'Pending',
+        courseCs: currentSubject.diagnostics?.csAvg,
+        courseExam: currentSubject.diagnostics?.examAvg,
         allPeriods: currentSubject.periods || {}
       };
     }
 
-    if (aiCache[cacheKey]) return; // Already fetched
+    if (aiCache[cacheKey]) return; // Already in persistent cache, keep stable
 
     async function fetchAiGuidance() {
       setAiLoading(true);
       try {
         const result = await getAiAcademicInsight(payload);
         if (result) {
-          setAiCache(prev => ({ ...prev, [cacheKey]: result }));
+          updateAiCache(cacheKey, result);
         }
       } catch (err) {
         console.warn("AI generation failed, relying on fallback.", err);
@@ -618,12 +622,65 @@ export default function AcademicInsights() {
     fetchAiGuidance();
   }, [scope, selectedSubjectCode, selectedPeriod, loading, subjectsList]);
 
+  // Handler for explicit on-demand re-generation
+  const handleRegenerateCurrentInsight = async (e) => {
+    e?.stopPropagation?.();
+    let cacheKey;
+    let payload;
+
+    if (scope === 'overall') {
+      cacheKey = 'overall';
+      payload = {
+        type: 'overall',
+        studentName: studentStats.studentName,
+        gwa: studentStats.gwa,
+        standing: studentStats.standing,
+        dlCategory: studentStats.dlEligibility?.awardCategory || 'Not Eligible',
+        dlProbability: studentStats.dlEligibility?.probabilityPct || 0,
+        dlMessage: studentStats.dlEligibility?.message || '',
+        diagnostics: studentStats.diagnostics,
+        subjects: subjectsList
+      };
+    } else {
+      if (!currentSubject) return;
+      cacheKey = `${currentSubject.code}_${selectedPeriod}`;
+      const periodObj = currentSubject.periods?.[selectedPeriod] || {};
+      payload = {
+        type: 'subject',
+        studentName: studentStats.studentName,
+        subjectCode: currentSubject.code,
+        subjectName: currentSubject.name,
+        credits: currentSubject.credits,
+        instructor: currentSubject.instructor,
+        periodLabel: periodsMapping[selectedPeriod],
+        rating: periodObj.rating || 0,
+        gwa: periodObj.gwa || '—',
+        status: periodObj.status || 'Pending',
+        courseCs: currentSubject.diagnostics?.csAvg,
+        courseExam: currentSubject.diagnostics?.examAvg,
+        allPeriods: currentSubject.periods || {}
+      };
+    }
+
+    setAiLoading(true);
+    try {
+      const result = await getAiAcademicInsight(payload);
+      if (result) {
+        updateAiCache(cacheKey, result);
+      }
+    } catch (err) {
+      console.warn("AI re-generation failed:", err);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50">
+      <div className="flex-1 flex items-center justify-center bg-slate-50 min-h-[400px]">
         <div className="flex flex-col items-center gap-3">
           <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-xs text-slate-500 font-medium font-sans">Compiling Academic Insights...</p>
+          <p className="text-xs text-slate-500 font-medium font-sans">Compiling Academic Insights & Diagnostics...</p>
         </div>
       </div>
     );
@@ -631,318 +688,599 @@ export default function AcademicInsights() {
 
   return (
     <>
-      <PageHeader title="Academic Insights" breadcrumb="Student Portal" />
+      <PageHeader 
+        title="Academic Insights & Advisory Suite" 
+        breadcrumb="Student Portal" 
+      />
 
-      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-5 sm:space-y-6">
         
-        {/* Native Mobile App Style Segmented Scope Bar */}
-        <div className="bg-slate-200/70 p-1 rounded-2xl shadow-inner grid grid-cols-2 gap-1">
+        {/* Navigation Scope Tabs */}
+        <div className="bg-slate-200/70 p-1 rounded-2xl shadow-inner grid grid-cols-2 gap-1 max-w-xl mx-auto">
           <button
             onClick={() => setScope('overall')}
             className={cn(
-              "flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold rounded-xl transition-all cursor-pointer text-center select-none",
+              "flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded-xl transition-all cursor-pointer text-center select-none",
               scope === 'overall'
                 ? "bg-white text-sage-900 shadow-sm font-bold"
                 : "text-slate-600 hover:text-slate-900"
             )}
           >
-            <BrainCircuit className="h-3.5 w-3.5 text-sage-600" />
-            <span>Overall Standing</span>
+            <BrainCircuit className="h-4 w-4 text-sage-600" />
+            <span>Overall Advisory & Diagnostics</span>
           </button>
 
           <button
             onClick={() => setScope('subject')}
             className={cn(
-              "flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold rounded-xl transition-all cursor-pointer text-center select-none",
+              "flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded-xl transition-all cursor-pointer text-center select-none",
               scope === 'subject'
                 ? "bg-white text-slate-900 shadow-sm font-bold"
                 : "text-slate-600 hover:text-slate-900"
             )}
           >
-            <BookOpen className="h-3.5 w-3.5 text-indigo-600" />
-            <span>Subject Breakdown</span>
+            <BookOpen className="h-4 w-4 text-indigo-600" />
+            <span>Course Milestone Breakdown</span>
           </button>
         </div>
 
-        {/* Dynamic Panel rendering */}
+        {/* Dynamic Panels */}
         {scope === 'overall' ? (
-          /* OVERALL INSIGHTS PANEL */
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 animate-fade-in">
+          /* ================= OVERALL ADVISORY PANEL ================= */
+          <div className="space-y-5 sm:space-y-6 animate-fade-in">
             
-            {/* Left/Main Column */}
-            <div className="lg:col-span-2 space-y-4 sm:space-y-6">
-              
-              {/* Standings Hero banner */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-                <div className="bg-gradient-to-r from-sage-900 to-slate-900 p-4 sm:p-6 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-sage-200 uppercase tracking-wider">Academic Honors Status</span>
-                    <h2 className="text-lg sm:text-xl font-extrabold font-display uppercase tracking-tight flex items-center gap-2">
-                      <GraduationCap className="h-5 w-5 text-sage-300 flex-shrink-0" />
-                      {studentStats.standing} Standing
-                    </h2>
-                  </div>
-                  <div className="text-left sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 border-sage-800/80">
-                    <span className="text-[10px] font-bold text-sage-200 uppercase tracking-wider block">Cumulative GWA</span>
-                    <span className="text-2xl sm:text-3xl font-extrabold font-mono text-sage-300">{studentStats.gwa.toFixed(2)}</span>
-                  </div>
+            {/* 1. Academic Health Hero Banner */}
+            <div className="bg-gradient-to-r from-sage-950 via-slate-900 to-sage-900 rounded-2xl p-5 sm:p-7 text-white shadow-md border border-sage-800/60 flex flex-col md:flex-row md:items-center justify-between gap-5">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-sage-300 bg-sage-800/60 px-2.5 py-0.5 rounded-md border border-sage-700/50">
+                    Academic Trajectory
+                  </span>
+                  <span className={cn(
+                    "text-[11px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1",
+                    studentStats.trajectoryType === 'honors' && "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30",
+                    studentStats.trajectoryType === 'good' && "bg-sage-500/20 text-sage-300 border border-sage-500/30",
+                    studentStats.trajectoryType === 'warning' && "bg-amber-500/20 text-amber-300 border border-amber-500/30",
+                    studentStats.trajectoryType === 'critical' && "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                  )}>
+                    <Sparkles className="h-3 w-3" />
+                    {studentStats.trajectoryVerdict}
+                  </span>
                 </div>
-
-                {/* Dean's Lister projection card */}
-                {studentStats.dlEligibility && (
-                  <div className="p-4 sm:p-6 bg-sage-50/40 border-b border-slate-200 flex flex-col sm:flex-row items-center gap-4 sm:gap-6 text-center sm:text-left">
-                    {/* Ring progress bar representation */}
-                    <div className="relative flex items-center justify-center flex-shrink-0">
-                      <svg className="w-16 h-16 sm:w-20 sm:h-20 transform -rotate-90">
-                        <circle cx="32" cy="32" r="27" className="stroke-slate-200 sm:hidden" strokeWidth="5" fill="transparent" />
-                        <circle 
-                          cx="32" 
-                          cy="32" 
-                          r="27" 
-                          className="stroke-sage-600 transition-all duration-500 sm:hidden" 
-                          strokeWidth="5" 
-                          fill="transparent" 
-                          strokeDasharray={2 * Math.PI * 27}
-                          strokeDashoffset={2 * Math.PI * 27 * (1 - studentStats.dlEligibility.probabilityPct / 100)}
-                        />
-                        <circle cx="40" cy="40" r="34" className="stroke-slate-200 hidden sm:block" strokeWidth="6" fill="transparent" />
-                        <circle 
-                          cx="40" 
-                          cy="40" 
-                          r="34" 
-                          className="stroke-sage-600 transition-all duration-500 hidden sm:block" 
-                          strokeWidth="6" 
-                          fill="transparent" 
-                          strokeDasharray={2 * Math.PI * 34}
-                          strokeDashoffset={2 * Math.PI * 34 * (1 - studentStats.dlEligibility.probabilityPct / 100)}
-                        />
-                      </svg>
-                      <span className="absolute text-xs sm:text-sm font-extrabold font-mono text-slate-800">
-                        {studentStats.dlEligibility.probabilityPct}%
-                      </span>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <h4 className="text-xs sm:text-sm font-extrabold text-slate-900">
-                        🏆 Dean's Lister Projections ({studentStats.dlEligibility.awardCategory})
-                      </h4>
-                      <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                        {studentStats.dlEligibility.message}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Overall Summary Card */}
-                <div className="p-4 sm:p-6 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-sage-600 flex-shrink-0" />
-                    <h4 className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Academic Advisor Summary</h4>
-                  </div>
-                  <div className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed bg-slate-50 border border-slate-200/70 rounded-xl p-3.5 sm:p-4">
-                    {aiLoading && !aiCache['overall'] ? (
-                      <div className="flex items-center gap-2 text-xs text-slate-400">
-                        <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-sage-600"></div>
-                        Generating AI Counselor advice...
-                      </div>
-                    ) : (
-                      <p>"{aiCache['overall'] || activeData.summary}"</p>
-                    )}
-                  </div>
-                </div>
+                
+                <h2 className="text-xl sm:text-2xl font-extrabold font-display tracking-tight text-white flex items-center gap-2">
+                  <GraduationCap className="h-6 w-6 text-sage-300 flex-shrink-0" />
+                  {studentStats.standing} Standing
+                </h2>
+                <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
+                  Evaluated against DYCI 4-Term progression standards across {subjectsList.length} enrolled subjects ({studentStats.totalUnits} Units).
+                </p>
               </div>
 
-              {/* Running Subject GWA Table/List */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 sm:p-6 space-y-4">
+              <div className="flex items-center gap-6 border-t md:border-t-0 md:border-l border-sage-800/80 pt-3 md:pt-0 md:pl-6 justify-between md:justify-end">
                 <div>
-                  <h3 className="text-xs sm:text-sm font-bold text-slate-900">Running Course Standing</h3>
-                  <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wide mt-0.5">Current GWA per active course</p>
+                  <span className="text-[10px] font-bold text-sage-300 uppercase tracking-wider block">Cumulative GWA</span>
+                  <span className="text-3xl sm:text-4xl font-extrabold font-mono text-sage-200">
+                    {studentStats.gwa.toFixed(2)}
+                  </span>
                 </div>
-
-                <div className="divide-y divide-slate-100 border border-slate-200/70 rounded-xl overflow-hidden">
-                  {subjectsList.map((sub) => {
-                    const semGrade = sub.periods?.semestralGrade;
-                    const latestPosted = Object.values(sub.periods || {})
-                      .reverse()
-                      .find(p => p.status === 'Posted');
-
-                    const displayGwa = semGrade?.gwa !== '—' && semGrade?.status === 'Posted' 
-                      ? semGrade.gwa 
-                      : (latestPosted ? latestPosted.gwa : '—');
-
-                    const displayStatus = semGrade?.status === 'Posted' 
-                      ? 'Posted to Final' 
-                      : (latestPosted ? `Ongoing (${latestPosted.gwa !== '—' ? 'Posted' : 'Draft'})` : 'No scores posted');
-
-                    return (
-                      <div key={sub.code} className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50/40 transition-colors">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold font-mono text-slate-400">{sub.code}</span>
-                            <span className="text-[10px] text-slate-400 font-medium sm:hidden">&bull; {sub.instructor}</span>
-                          </div>
-                          <h4 className="text-xs sm:text-sm font-bold text-slate-800 line-clamp-1">{sub.name}</h4>
-                          <span className="text-[10px] text-slate-500 font-semibold hidden sm:block">{sub.instructor}</span>
-                        </div>
-                        <div className="flex items-center justify-between sm:justify-end gap-3 pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100">
-                          <span className="text-[10px] text-slate-400 font-bold block">{displayStatus}</span>
-                          <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold bg-sage-50 text-sage-800 border border-sage-200">
-                            {displayGwa} GWA
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="text-right">
+                  <span className="text-[10px] font-bold text-sage-300 uppercase tracking-wider block">Dean's List Chance</span>
+                  <span className="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-400">
+                    {studentStats.dlEligibility?.probabilityPct || 0}%
+                  </span>
                 </div>
               </div>
-
             </div>
 
-            {/* Right Column: Mini Info Cards */}
-            <div className="space-y-4 sm:space-y-6">
-              {/* Verdict Indicator */}
-              <div className={cn(
-                "border rounded-2xl p-4 sm:p-5 shadow-sm space-y-3",
-                activeData.verdict === 'continue' ? 'bg-sage-50/40 border-sage-200' : 
-                activeData.verdict === 'at_risk' ? 'bg-rose-50/40 border-rose-200' : 'bg-amber-50/40 border-amber-200'
-              )}>
-                <div className="flex items-center gap-2">
-                  <TrendingUp className={cn(
-                    "h-4 w-4 sm:h-5 sm:w-5",
-                    activeData.verdict === 'continue' ? 'text-sage-700' : 
-                    activeData.verdict === 'at_risk' ? 'text-rose-700' : 'text-amber-700'
-                  )} />
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Standing Verdict</h3>
+            {/* 2. SAGE AI Academic Advisor Guidance Box */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 sm:p-6 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-sage-50 rounded-lg text-sage-600 border border-sage-100">
+                    <BrainCircuit className="h-4.5 w-4.5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">SAGE AI Academic Counselor Guidance</h3>
+                    <p className="text-[11px] text-slate-400">Personalized pedagogical analysis tailored to your term performance</p>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <h4 className="text-sm sm:text-base font-extrabold text-slate-900 capitalize">
-                    {activeData.verdict === 'continue' ? 'Pass & Continue' : activeData.verdict === 'at_risk' ? 'At Risk Warning' : 'Shift Advice'}
-                  </h4>
-                  <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
-                    {activeData.verdict === 'continue' ? 'No academic risk metrics detected. Keep up the high standard.' : 
-                     activeData.verdict === 'at_risk' ? 'Alert: Academic performance thresholds are falling. Action recommended.' : 
-                     'Recommended counseling session for academic trajectory realignment.'}
+
+                <button
+                  onClick={handleRegenerateCurrentInsight}
+                  disabled={aiLoading}
+                  title="Generate fresh counseling guidance"
+                  className="text-xs font-semibold text-slate-600 hover:text-sage-700 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={cn("h-3.5 w-3.5 text-sage-600", aiLoading && "animate-spin")} />
+                  <span>{aiLoading ? "Consulting AI..." : "Regenerate"}</span>
+                </button>
+              </div>
+
+              <div className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 sm:p-5">
+                {aiLoading && !aiCache['overall'] ? (
+                  <div className="flex items-center gap-2 text-xs text-slate-400 py-1">
+                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-sage-600"></div>
+                    <span>Synthesizing customized AI Counselor advice...</span>
+                  </div>
+                ) : (
+                  <p className="italic text-slate-800">
+                    "{aiCache['overall'] || `Sarah, your current GWA of ${studentStats.gwa.toFixed(2)} reflects solid foundational work across your courses. To build toward honors eligibility, focus on lifting your major exam scores and attending consultation hours with your instructors.`}"
                   </p>
+                )}
+              </div>
+            </div>
+
+            {/* 3. Component Strength & Weakness Diagnostic Grid */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-sage-600" />
+                  <h3 className="text-sm font-bold text-slate-900">Component Strength & Weakness Diagnosis</h3>
+                </div>
+                <span className="text-[11px] text-slate-400 font-medium">Weights: 50% Activities | 40% Exams | 10% Character</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+                
+                {/* Metric 1: Class Standing */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Standing (50%)</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+                      {studentStats.diagnostics.csAvg >= 85 ? 'Strong Asset' : 'Moderate'}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-2xl font-extrabold font-mono text-slate-800">{studentStats.diagnostics.csAvg}%</span>
+                    <span className="text-xs text-slate-400 font-medium">Activities & Quizzes</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                    <div 
+                      className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
+                      style={{ width: `${studentStats.diagnostics.csAvg}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-tight">
+                    Reliable assignment completion. Keep submitting deliverables on schedule.
+                  </p>
+                </div>
+
+                {/* Metric 2: Major Term Exams */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Major Exams (40%)</span>
+                    <span className={cn(
+                      "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                      studentStats.diagnostics.examAvg < 80 
+                        ? "bg-amber-50 text-amber-700 border-amber-200" 
+                        : "bg-emerald-50 text-emerald-700 border-emerald-100"
+                    )}>
+                      {studentStats.diagnostics.examAvg < 80 ? 'Primary Growth Area' : 'Solid'}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-2xl font-extrabold font-mono text-slate-800">{studentStats.diagnostics.examAvg}%</span>
+                    <span className="text-xs text-slate-400 font-medium">Prelim & Midterms</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                    <div 
+                      className={cn(
+                        "h-full rounded-full transition-all duration-500",
+                        studentStats.diagnostics.examAvg < 80 ? "bg-amber-500" : "bg-emerald-500"
+                      )} 
+                      style={{ width: `${studentStats.diagnostics.examAvg}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-tight">
+                    {studentStats.diagnostics.examAvg < 80 
+                      ? "Exam marks average lower than class standing. Allocate more time for test prep." 
+                      : "Balanced exam performance across active subjects."}
+                  </p>
+                </div>
+
+                {/* Metric 3: Attendance Reliability */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attendance (FDA Risk)</span>
+                    <span className={cn(
+                      "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                      studentStats.diagnostics.absentCount >= 3 
+                        ? "bg-rose-50 text-rose-700 border-rose-200" 
+                        : "bg-emerald-50 text-emerald-700 border-emerald-100"
+                    )}>
+                      {studentStats.diagnostics.absentCount >= 3 ? 'Warning' : 'Good Standing'}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-2xl font-extrabold font-mono text-slate-800">{studentStats.diagnostics.attendanceRate}%</span>
+                    <span className="text-xs text-slate-400 font-medium">{studentStats.diagnostics.absentCount}/4 Absences</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                    <div 
+                      className={cn(
+                        "h-full rounded-full transition-all duration-500",
+                        studentStats.diagnostics.absentCount >= 3 ? "bg-rose-500" : "bg-emerald-500"
+                      )} 
+                      style={{ width: `${studentStats.diagnostics.attendanceRate}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-tight">
+                    {studentStats.diagnostics.absentCount >= 4 
+                      ? "⚠️ FDA Flagged: Exceeded 4 institutional absences." 
+                      : "Attendance is fully compliant with institutional regulations."}
+                  </p>
+                </div>
+
+                {/* Metric 4: Character & Values */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Character (10%)</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                      Exemplary
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-2xl font-extrabold font-mono text-slate-800">{studentStats.diagnostics.charAvg}%</span>
+                    <span className="text-xs text-slate-400 font-medium">Conduct & Ethics</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                    <div 
+                      className="bg-indigo-500 h-full rounded-full transition-all duration-500" 
+                      style={{ width: `${studentStats.diagnostics.charAvg}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-tight">
+                    Strong collaborative etiquette and proactive classroom discipline.
+                  </p>
+                </div>
+
+              </div>
+            </div>
+
+            {/* 4. Interactive "What-If" Final Exam Grade Simulator */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 sm:p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600 border border-indigo-100">
+                    <Calculator className="h-4.5 w-4.5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Interactive "What-If" Grade Simulator</h3>
+                    <p className="text-[11px] text-slate-400">Calculate the exact score needed on your Final Exam to reach your desired grade</p>
+                  </div>
+                </div>
+
+                {/* Course Picker for Simulator */}
+                <select
+                  value={simSubjectCode}
+                  onChange={(e) => setSimSubjectCode(e.target.value)}
+                  className="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 outline-none focus:ring-1 focus:ring-sage-500"
+                >
+                  {subjectsList.map(s => (
+                    <option key={s.code} value={s.code}>
+                      {s.code} - {s.name} (Running GWA: {s.runningGwa})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Target Grade Selector Buttons */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Select Target Semestral GWA Milestone:
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                  {GWA_TARGET_BENCHMARKS.slice(0, 6).map((b) => (
+                    <button
+                      key={b.gwa}
+                      onClick={() => setSimTargetGwa(b.gwa)}
+                      className={cn(
+                        "flex flex-col items-center justify-center p-2 rounded-xl border text-center transition-all cursor-pointer",
+                        simTargetGwa === b.gwa
+                          ? "bg-sage-600 text-white border-sage-600 shadow-sm font-bold scale-[1.02]"
+                          : "bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100"
+                      )}
+                    >
+                      <span className="text-xs font-extrabold font-mono">{b.gwa}</span>
+                      <span className={cn(
+                        "text-[9px] font-medium leading-tight mt-0.5",
+                        simTargetGwa === b.gwa ? "text-sage-100" : "text-slate-400"
+                      )}>
+                        {b.label.split('(')[0]}
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Guidelines summary widget */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 shadow-sm space-y-3">
-                <div className="flex items-center gap-2">
-                  <HelpCircle className="h-4 w-4 text-slate-400" />
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">How to Read GWA</h3>
+              {/* Simulation Result Card */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 sm:p-5 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Required Final Exam Score</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-extrabold font-mono text-slate-900">
+                      {simResult.requiredExamScore} <span className="text-base text-slate-400">/ 40 pts</span>
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Exam target equivalent to <strong>{Math.round((simResult.requiredExamScore / 40) * 100)}%</strong>
+                  </p>
                 </div>
-                <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
-                  SAGE calculates ratings dynamically per term according to DYCI guidelines. Cumulative and running GPAs ignore all draft values to maintain absolute transcript integrity.
-                </p>
+
+                <div className="space-y-1 border-t md:border-t-0 md:border-l md:border-r border-slate-200 pt-3 md:pt-0 md:px-4">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Target Term Milestone</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xl font-extrabold font-mono text-slate-800">
+                      {simResult.requiredFinalTermRating}%
+                    </span>
+                    <span className="text-xs text-slate-500 font-medium">Final Rating</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Requires Tentative Final Rating (TFR) of <strong>{simResult.requiredTfr}%</strong>
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Feasibility Verdict</span>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "text-xs font-bold px-2.5 py-1 rounded-lg border flex items-center gap-1.5",
+                      simResult.difficulty === 'Easy' && "bg-emerald-100 text-emerald-800 border-emerald-200",
+                      simResult.difficulty === 'Moderate' && "bg-sage-100 text-sage-800 border-sage-200",
+                      simResult.difficulty === 'Challenging' && "bg-amber-100 text-amber-800 border-amber-200",
+                      simResult.difficulty === 'Impossible' && "bg-rose-100 text-rose-800 border-rose-200"
+                    )}>
+                      {simResult.difficulty === 'Impossible' ? <AlertTriangle className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                      {simResult.difficulty === 'Impossible' ? 'Mathematically Out of Reach' : `${simResult.difficulty} Target`}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-tight">
+                    {simResult.difficulty === 'Impossible' 
+                      ? "Even with 100% on Finals, target cannot be met. Select a reachable benchmark like 2.00 or 2.25."
+                      : "Realistic target with focused revision and consistent assignment scores."}
+                  </p>
+                </div>
+
+              </div>
+            </div>
+
+            {/* 5. 3-Pillar Actionable AI Prescriptions */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Compass className="h-4 w-4 text-sage-600" />
+                <h3 className="text-sm font-bold text-slate-900">3-Pillar Actionable Prescription</h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                
+                {/* Pillar 1: Priority Course Focus */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-2.5 shadow-2xs">
+                  <div className="flex items-center gap-2 text-sage-700">
+                    <Target className="h-4 w-4 text-sage-600" />
+                    <h4 className="text-xs font-bold uppercase tracking-wider">1. Priority Subject Focus</h4>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-extrabold text-slate-900">
+                      {studentStats.prioritySubject ? `${studentStats.prioritySubject.code} (${studentStats.prioritySubject.name})` : 'ITC113 - Web Systems'}
+                    </p>
+                    <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                      Currently standing at GWA <strong>{studentStats.prioritySubject?.runningGwa || '2.50'}</strong>. Bringing this course to 1.75 will significantly improve your overall honors eligibility.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Pillar 2: Component Strategy */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-2.5 shadow-2xs">
+                  <div className="flex items-center gap-2 text-amber-700">
+                    <Sliders className="h-4 w-4 text-amber-600" />
+                    <h4 className="text-xs font-bold uppercase tracking-wider">2. Component Strategy</h4>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-extrabold text-slate-900">
+                      Test Prep & Timed Quizzes
+                    </p>
+                    <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                      Your class standing is robust ({studentStats.diagnostics.csAvg}%), but exam averages ({studentStats.diagnostics.examAvg}%) show an opportunity for growth. Practice active recall before major tests.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Pillar 3: Faculty Consultation */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-2.5 shadow-2xs">
+                  <div className="flex items-center gap-2 text-indigo-700">
+                    <UserCheck className="h-4 w-4 text-indigo-600" />
+                    <h4 className="text-xs font-bold uppercase tracking-wider">3. Instructor Consultation</h4>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-extrabold text-slate-900">
+                      {studentStats.prioritySubject?.instructor || 'Prof. Rivera'} (Office Hours)
+                    </p>
+                    <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                      Schedule a 15-minute consultation to review challenging topics from earlier exams prior to the upcoming term assessment.
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* 6. Active Courses Running Standing Table */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 sm:p-6 space-y-3">
+              <h3 className="text-sm font-bold text-slate-900">Active Course Standing & Progress</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                      <th className="py-2.5 px-3">Subject Code & Name</th>
+                      <th className="py-2.5 px-3">Instructor</th>
+                      <th className="py-2.5 px-3 text-center">Units</th>
+                      <th className="py-2.5 px-3 text-center">Class Standing</th>
+                      <th className="py-2.5 px-3 text-center">Running GWA</th>
+                      <th className="py-2.5 px-3 text-right">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                    {subjectsList.map((sub) => (
+                      <tr key={sub.code} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-3">
+                          <span className="font-bold text-slate-900 block">{sub.code}</span>
+                          <span className="text-[11px] text-slate-400">{sub.name}</span>
+                        </td>
+                        <td className="py-3 px-3 text-slate-600">{sub.instructor}</td>
+                        <td className="py-3 px-3 text-center font-mono">{sub.credits}</td>
+                        <td className="py-3 px-3 text-center font-mono">{sub.diagnostics?.csAvg || 85}%</td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="font-extrabold font-mono text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md">
+                            {sub.runningGwa}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <span className={cn(
+                            "text-[10px] font-bold px-2 py-0.5 rounded-full",
+                            parseFloat(sub.runningGwa) <= 1.75 ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-amber-50 text-amber-700 border border-amber-100"
+                          )}>
+                            {parseFloat(sub.runningGwa) <= 1.75 ? 'Honors Tier' : 'Passing Range'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
 
           </div>
         ) : (
-          /* SUBJECT-SPECIFIC DRILLDOWN PANEL */
-          <div className="space-y-4 sm:space-y-6 animate-fade-in">
+          /* ================= SUBJECT & MILESTONE BREAKDOWN ================= */
+          <div className="space-y-5 sm:space-y-6 animate-fade-in">
             
-            {/* Top row filter selectors */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:p-4 shadow-sm flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Course</label>
-                <select
-                  value={selectedSubjectCode}
-                  onChange={(e) => setSelectedSubjectCode(e.target.value)}
-                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 hover:border-slate-300 outline-none cursor-pointer"
+            {/* Subject Selector Tabs */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+              {subjectsList.map(sub => (
+                <button
+                  key={sub.code}
+                  onClick={() => setSelectedSubjectCode(sub.code)}
+                  className={cn(
+                    "px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all border cursor-pointer",
+                    selectedSubjectCode === sub.code
+                      ? "bg-sage-900 text-white border-sage-900 shadow-xs font-bold"
+                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                  )}
                 >
-                  {subjectsList.map(sub => (
-                    <option key={sub.code} value={sub.code}>{sub.code}: {sub.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:p-4 shadow-sm flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Grading Period</label>
-                <select
-                  value={selectedPeriod}
-                  onChange={(e) => setSelectedPeriod(e.target.value)}
-                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 hover:border-slate-300 outline-none cursor-pointer"
-                >
-                  {Object.entries(periodsMapping).map(([key, label]) => (
-                    <option key={key} value={key}>{label}</option>
-                  ))}
-                </select>
-              </div>
+                  {sub.code} - {sub.name}
+                </button>
+              ))}
             </div>
 
-            {/* Drilldown details card */}
             {currentSubject && (
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden space-y-4">
-                <div className="bg-slate-50 p-4 sm:p-6 border-b border-slate-200/80">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <span className="text-[10px] font-extrabold font-mono text-sage-800 uppercase tracking-wider bg-sage-50 border border-sage-200 px-2.5 py-0.5 rounded-full">
-                        {currentSubject.code}
-                      </span>
-                      <h2 className="text-base sm:text-lg font-bold text-slate-900 mt-2">{currentSubject.name}</h2>
-                      <span className="text-xs text-slate-500 font-semibold block mt-0.5">Instructor: {currentSubject.instructor}</span>
-                    </div>
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 sm:p-7 space-y-6">
+                
+                {/* Course Header Banner */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-sage-700 uppercase tracking-wider bg-sage-50 px-2 py-0.5 rounded border border-sage-200">
+                      {currentSubject.credits} Academic Credits
+                    </span>
+                    <h3 className="text-lg sm:text-xl font-extrabold text-slate-900">
+                      {currentSubject.code} — {currentSubject.name}
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">Instructor: {currentSubject.instructor}</p>
+                  </div>
 
-                    <div className="bg-white border border-slate-200 px-3.5 py-2 rounded-xl shadow-xs self-start sm:self-center">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Running Period</span>
-                      <span className="text-xs font-extrabold text-slate-800 uppercase font-mono mt-0.5 block">
-                        {periodsMapping[selectedPeriod]}
-                      </span>
-                    </div>
+                  <div className="text-left sm:text-right">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Running Course Grade</span>
+                    <span className="text-2xl sm:text-3xl font-extrabold font-mono text-sage-800">{currentSubject.runningGwa}</span>
                   </div>
                 </div>
 
-                {/* Period details grid */}
-                {currentSubject.periods?.[selectedPeriod] ? (
-                  <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-                      
-                      {/* Metric 1: Rating */}
-                      <div className="bg-slate-50/50 border border-slate-200/70 rounded-xl p-3 sm:p-4 flex flex-col justify-between min-h-[72px]">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Milestone Rating</span>
-                        <h4 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
-                          {currentSubject.periods[selectedPeriod].rating > 0 
-                            ? `${currentSubject.periods[selectedPeriod].rating}%` 
-                            : '—'}
-                          <span className={cn(
-                            "inline-flex px-2 py-0.5 rounded-full text-[9px] font-bold ml-1.5",
-                            currentSubject.periods[selectedPeriod].status === 'Posted' ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' : 'bg-amber-50 text-amber-800 border border-amber-200'
-                          )}>
-                            {currentSubject.periods[selectedPeriod].status}
+                {/* Milestone Progression Selector */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Select Grading Milestone:</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-1.5">
+                    {Object.entries(periodsMapping).map(([key, label]) => {
+                      const periodData = currentSubject.periods?.[key];
+                      const isAvailable = periodData && periodData.gwa !== '—';
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => setSelectedPeriod(key)}
+                          className={cn(
+                            "p-2 rounded-xl text-center border transition-all cursor-pointer flex flex-col items-center justify-center",
+                            selectedPeriod === key
+                              ? "bg-sage-600 text-white border-sage-600 shadow-xs font-bold"
+                              : "bg-slate-50 text-slate-700 border-slate-200/70 hover:bg-slate-100"
+                          )}
+                        >
+                          <span className="text-[11px] font-bold truncate max-w-full">
+                            {key === 'midtermRating' ? 'MR' : key === 'tentativeFinalRating' ? 'TFR' : key === 'semestralGrade' ? 'SG' : key.charAt(0).toUpperCase() + key.slice(1)}
                           </span>
-                        </h4>
+                          <span className={cn(
+                            "text-[10px] font-mono mt-0.5",
+                            selectedPeriod === key ? "text-sage-100 font-bold" : isAvailable ? "text-slate-900 font-bold" : "text-slate-400"
+                          )}>
+                            {periodData?.gwa || '—'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Selected Period Metrics & AI Guidance */}
+                {currentSubject.periods?.[selectedPeriod] && currentSubject.periods[selectedPeriod].gwa !== '—' ? (
+                  <div className="space-y-4 pt-2">
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-slate-50 border border-slate-200/70 rounded-xl p-3.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Numerical Rating</span>
+                        <span className="text-xl font-extrabold font-mono text-slate-800 mt-1 block">
+                          {currentSubject.periods[selectedPeriod].rating}%
+                        </span>
                       </div>
 
-                      {/* Metric 2: GWA */}
-                      <div className="bg-slate-50/50 border border-slate-200/70 rounded-xl p-3 sm:p-4 flex flex-col justify-between min-h-[72px]">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Equivalent GWA</span>
-                        <h4 className="text-sm sm:text-base font-extrabold text-slate-900 font-mono mt-1">
+                      <div className="bg-slate-50 border border-slate-200/70 rounded-xl p-3.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Transmuted GWA</span>
+                        <span className="text-xl font-extrabold font-mono text-sage-700 mt-1 block">
                           {currentSubject.periods[selectedPeriod].gwa}
-                        </h4>
+                        </span>
                       </div>
 
-                      {/* Metric 3: Credits */}
-                      <div className="col-span-2 sm:col-span-1 bg-slate-50/50 border border-slate-200/70 rounded-xl p-3 sm:p-4 flex flex-col justify-between min-h-[72px]">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Academic Weight</span>
-                        <h4 className="text-sm sm:text-base font-extrabold text-slate-900 mt-1">
-                          {currentSubject.credits.toFixed(1)} Units
-                        </h4>
+                      <div className="bg-slate-50 border border-slate-200/70 rounded-xl p-3.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Posting Status</span>
+                        <span className={cn(
+                          "text-xs font-bold px-2 py-0.5 rounded-full inline-block mt-1",
+                          currentSubject.periods[selectedPeriod].status === 'Posted' 
+                            ? "bg-emerald-100 text-emerald-800" 
+                            : "bg-amber-100 text-amber-800"
+                        )}>
+                          {currentSubject.periods[selectedPeriod].status}
+                        </span>
                       </div>
-
                     </div>
 
-                    {/* Milestone specific insight text */}
-                    <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 space-y-2.5 shadow-xs">
-                      <div className="flex items-center gap-2 text-sage-700">
-                        <BrainCircuit className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
-                        <h4 className="text-xs font-bold uppercase tracking-wider">Period Summary & Insight</h4>
+                    {/* Milestone AI Counselor Insight */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-sage-700">
+                          <BrainCircuit className="h-4 w-4" />
+                          <h4 className="text-xs font-bold uppercase tracking-wider">Milestone Diagnostic Insight</h4>
+                        </div>
+                        <button
+                          onClick={handleRegenerateCurrentInsight}
+                          disabled={aiLoading}
+                          className="text-[11px] font-semibold text-slate-500 hover:text-sage-600 flex items-center gap-1 transition-colors px-2 py-0.5 rounded-md hover:bg-slate-100 cursor-pointer disabled:opacity-50"
+                        >
+                          <RefreshCw className={cn("h-3 w-3", aiLoading && "animate-spin text-sage-600")} />
+                          <span>{aiLoading ? "Consulting..." : "Regenerate"}</span>
+                        </button>
                       </div>
-                      <div className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed italic">
+
+                      <div className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed italic bg-slate-50 p-3.5 rounded-lg border border-slate-200/60">
                         {aiLoading && !aiCache[`${currentSubject.code}_${selectedPeriod}`] ? (
                           <div className="flex items-center gap-2 text-xs text-slate-400 not-italic">
-                            <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-sage-600"></div>
+                            <div className="animate-spin rounded-full h-3.5 w-3.5 border-t-2 border-sage-600"></div>
                             Analyzing subject performance via AI...
                           </div>
                         ) : (
@@ -951,21 +1289,15 @@ export default function AcademicInsights() {
                       </div>
                     </div>
 
-                    {/* Running period comparison block */}
-                    <div className="bg-amber-50/20 border border-amber-200 rounded-xl p-3.5 sm:p-4 flex items-center gap-3">
-                      <AlertCircle className="h-4.5 w-4.5 text-amber-600 flex-shrink-0" />
-                      <div className="text-xs text-slate-650 font-medium leading-relaxed">
-                        <strong>Period Note:</strong> The running GPA for all subjects under {periodsMapping[selectedPeriod]} is <strong>{calculateRunningGwaForPeriod(selectedPeriod)}</strong>.
-                      </div>
-                    </div>
-
                   </div>
                 ) : (
-                  <div className="p-8 sm:p-12 text-center text-slate-400 text-xs sm:text-sm space-y-2">
-                    <AlertCircle className="h-7 w-7 text-slate-300 mx-auto" />
-                    <p>No evaluation data encoded for this period.</p>
+                  <div className="p-8 text-center text-slate-400 text-xs space-y-1 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    <AlertCircle className="h-6 w-6 text-slate-300 mx-auto" />
+                    <p className="font-semibold text-slate-600">No evaluation data encoded for {periodsMapping[selectedPeriod]}</p>
+                    <p className="text-[11px]">Milestone scores will appear once graded by your instructor.</p>
                   </div>
                 )}
+
               </div>
             )}
 

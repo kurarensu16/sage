@@ -3,62 +3,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Search, AlertCircle, Filter, Sparkles, Building2, Loader2, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
-import { mockDeanAtRiskStudents } from '../../lib/mockdb';
-
-// ── Risk classification ───────────────────────────────────────────────────────
-function classifyRisk(avgGwa, failingCount) {
-  if (failingCount > 0 || avgGwa > 3.00) {
-    return {
-      severity: 'high',
-      advisory: 'Immediate academic counselor intervention advised. Failing marks recorded.',
-    };
-  }
-  if (avgGwa >= 2.75 && avgGwa <= 3.00) {
-    return {
-      severity: 'medium',
-      advisory: 'Provide tutoring support. Running GWA is border-lining the passing scale.',
-    };
-  }
-  return {
-    severity: 'low',
-    advisory: 'Good academic standing. Maintain current study patterns.',
-  };
-}
-
-function SeverityBadge({ severity }) {
-  if (severity === 'high') return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-      <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-pulse" />
-      High Risk
-    </span>
-  );
-  if (severity === 'medium') return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-      <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
-      Medium Risk
-    </span>
-  );
-  return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-      Low Risk
-    </span>
-  );
-}
-
-// Helper to transmute raw scores to GWA
-function getTransmutedGrade(score) {
-  if (score >= 98) return 1.00;
-  if (score >= 95) return 1.25;
-  if (score >= 92) return 1.50;
-  if (score >= 89) return 1.75;
-  if (score >= 86) return 2.00;
-  if (score >= 83) return 2.25;
-  if (score >= 80) return 2.50;
-  if (score >= 77) return 2.75;
-  if (score >= 75) return 3.00;
-  return 5.00;
-}
+import { getTransmutedGrade } from '../../lib/gradingMath';
 
 // Compute tentative GWA for a class record from its scores
 function computeTentativeGrade(classRecordScores, classRecordCols) {
@@ -104,6 +49,39 @@ function computeTentativeGrade(classRecordScores, classRecordCols) {
   return getTransmutedGrade(finalSG);
 }
 
+
+// Risk classifier helper
+function classifyRisk(gwa, failingCount) {
+  if (failingCount >= 2 || (gwa !== null && gwa >= 3.0)) {
+    return { severity: 'high', advisory: `Critical risk: ${failingCount} failing subject(s), GWA ${gwa ? gwa.toFixed(2) : 'N/A'}.` };
+  }
+  if (failingCount === 1 || (gwa !== null && gwa >= 2.5)) {
+    return { severity: 'medium', advisory: `Moderate risk: ${failingCount} failing subject(s), GWA ${gwa ? gwa.toFixed(2) : 'N/A'}.` };
+  }
+  return { severity: 'low', advisory: `Low risk: GWA ${gwa ? gwa.toFixed(2) : 'N/A'}.` };
+}
+
+function SeverityBadge({ severity }) {
+  if (severity === 'high') {
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+        Critical
+      </span>
+    );
+  }
+  if (severity === 'medium') {
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+        Moderate
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+      Low Risk
+    </span>
+  );
+}
 
 export default function AtRiskStudents() {
   const { profile } = useAuth();
@@ -307,24 +285,9 @@ export default function AtRiskStudents() {
           setError(null);
         }
       } catch (err) {
-        console.warn('Database query failed, falling back to mock dataset:', err);
+        console.error('Database query failed:', err);
         if (!cancelled) {
-          setStudents(mockDeanAtRiskStudents.map(s => ({
-            id: s.student_id,
-            firstName: s.first_name,
-            lastName: s.last_name,
-            email: s.email,
-            section: s.section,
-            programCode: s.programPrefix,
-            runningGwa: s.avgGwa,
-            isTentative: false,
-            failingCount: s.failingCount,
-            severity: s.risk.severity,
-            advisory: s.risk.advisory,
-            hasGrades: true,
-            hasAi: false,
-          })));
-          setError(null);
+          setError('Failed to load at-risk students data from database.');
         }
       } finally {
         if (!cancelled) setLoading(false);

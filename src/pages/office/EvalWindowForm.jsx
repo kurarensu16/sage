@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronRight, ChevronDown, Search, Save, Calendar, Clock, AlertCircle } from 'lucide-react';
+import { ChevronRight, ChevronDown, Search, Save, Calendar, Clock, AlertCircle, Lock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import SuccessModal from '../../components/SuccessModal';
@@ -13,6 +13,10 @@ export default function EvalWindowForm() {
   const { user, profile } = useAuth();
   const params = new URLSearchParams(location.search);
   const windowId = params.get('id');
+
+  // Department Scoping
+  const userDepartmentId = profile?.department_id;
+  const userDepartmentName = profile?.departments?.name || 'College of Computer Studies';
 
   const [templates, setTemplates] = useState([]);
   const [facultyUsers, setFacultyUsers] = useState([]);
@@ -32,9 +36,7 @@ export default function EvalWindowForm() {
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
   const [successModalMessage, setSuccessModalMessage] = useState('');
 
-  const [departments, setDepartments] = useState([]);
-  const [selectedCollege, setSelectedCollege] = useState('');
-  const [schedulingMode, setSchedulingMode] = useState('single');
+  const [schedulingMode, setSchedulingMode] = useState('single'); // single | batch
 
   const [isFacultyDropdownOpen, setIsFacultyDropdownOpen] = useState(false);
   const [facultySearchQuery, setFacultySearchQuery] = useState('');
@@ -55,52 +57,66 @@ export default function EvalWindowForm() {
   useEffect(() => {
     async function loadData() {
       try {
+        // 1. Fetch Form Templates
         const { data: tmpls } = await supabase.from('evaluation_forms').select('form_id, title');
         setTemplates(tmpls?.map(t => ({ id: t.form_id, title: t.title })) || []);
 
-        const { data: depts } = await supabase
-          .from('departments')
-          .select('department_id, name')
-          .order('name', { ascending: true });
-        setDepartments(depts || []);
-
-        const { data: facs } = await supabase
+        // 2. Fetch Faculty Users (Filtered strictly to Department)
+        let facQuery = supabase
           .from('users')
           .select('user_id, first_name, last_name, email, department_id, departments(name)')
-          .eq('role', 'faculty');
+          .eq('role', 'faculty')
+          .eq('status', 'active');
+        
+        if (userDepartmentId) {
+          facQuery = facQuery.eq('department_id', userDepartmentId);
+        }
+
+        const { data: facs } = await facQuery;
         setFacultyUsers(facs?.map(f => ({ 
           id: f.user_id, 
           firstName: f.first_name, 
           lastName: f.last_name,
           email: f.email,
-          department: f.departments?.name || '',
-          departmentId: f.department_id || ''
+          department: f.departments?.name || userDepartmentName,
+          departmentId: f.department_id || userDepartmentId
         })) || []);
 
+        // 3. Fetch Class Records (Filtered strictly to Department)
         const { data: classRecords } = await supabase
           .from('class_records')
           .select(`
             class_record_id,
             faculty_id,
             section_id,
-            sections (name, department_id, departments(name)),
-            subjects (code, name, department_id, departments(name))
+            sections (section_id, name, department_id, departments(name)),
+            subjects (subject_id, code, name, department_id, departments(name))
           `)
           .eq('status', 'active');
 
-        setClassrooms(classRecords?.map(c => ({
-          id: c.class_record_id,
-          facultyId: c.faculty_id,
-          sectionId: c.section_id,
-          section: c.sections?.name || '',
-          sectionDept: c.sections?.departments?.name || '',
-          sectionDeptId: c.sections?.department_id || '',
-          subjectCode: c.subjects?.code || '',
-          subjectName: c.subjects?.name || '',
-          subjectDept: c.subjects?.departments?.name || '',
-          subjectDeptId: c.subjects?.department_id || ''
-        })) || []);
+        const scopedClassrooms = (classRecords || [])
+          .filter(c => {
+            if (!userDepartmentId) return true;
+            const secDept = c.sections?.department_id;
+            const subDept = c.subjects?.department_id;
+            return secDept === userDepartmentId || subDept === userDepartmentId;
+          })
+          .map(c => ({
+            id: c.class_record_id,
+            facultyId: c.faculty_id,
+            sectionId: c.section_id,
+            section: c.sections?.name || '',
+            sectionDept: c.sections?.departments?.name || userDepartmentName,
+            sectionDeptId: c.sections?.department_id || userDepartmentId,
+            subjectCode: c.subjects?.code || '',
+            subjectName: c.subjects?.name || '',
+            subjectDept: c.subjects?.departments?.name || userDepartmentName,
+            subjectDeptId: c.subjects?.department_id || userDepartmentId
+          }));
 
+        setClassrooms(scopedClassrooms);
+
+        // 4. If in Edit Mode, fetch existing window
         if (windowId) {
           setIsEditMode(true);
           const { data: existing, error } = await supabase
@@ -115,8 +131,8 @@ export default function EvalWindowForm() {
               templateId: existing.form_id,
               facultyId: existing.faculty_id,
               sectionId: existing.section_id,
-              openAt: existing.open_at.slice(0, 16),
-              closeAt: existing.close_at.slice(0, 16)
+              openAt: existing.open_at ? existing.open_at.slice(0, 16) : '',
+              closeAt: existing.close_at ? existing.close_at.slice(0, 16) : ''
             });
           }
         }
@@ -126,8 +142,7 @@ export default function EvalWindowForm() {
       }
     }
     loadData();
-  }, [windowId]);
-
+  }, [windowId, userDepartmentId, userDepartmentName]);
 
   const getFacultyName = (facId) => {
     const fac = facultyUsers.find(f => f.id === facId);
@@ -147,15 +162,44 @@ export default function EvalWindowForm() {
     }));
   };
 
-  const handleCollegeChange = (collegeId) => {
-    setSelectedCollege(collegeId);
-    if (collegeId) {
-      const currentFac = facultyUsers.find(f => f.id === formData.facultyId);
-      if (currentFac && currentFac.departmentId !== collegeId) {
-        setFormData(prev => ({ ...prev, facultyId: '', sectionId: '' }));
+  const selectedFaculty = facultyUsers.find(f => f.id === formData.facultyId);
+  const facultyClassesCount = classrooms.filter(c => c.facultyId === formData.facultyId).length;
+  
+  const filteredClassrooms = classrooms.filter(c => {
+    if (formData.facultyId && c.facultyId !== formData.facultyId) {
+      return false;
+    }
+    return true;
+  });
+
+  const filteredFaculty = facultyUsers.filter(fac => {
+    const search = facultySearchQuery.toLowerCase();
+    return (
+      `${fac.firstName} ${fac.lastName}`.toLowerCase().includes(search) ||
+      (fac.email && fac.email.toLowerCase().includes(search))
+    );
+  });
+
+  // Unique (faculty_id, section_id) pairs in Department for batch scheduling
+  const uniqueBatchPairs = [];
+  const seenPairs = new Set();
+  classrooms.forEach(c => {
+    if (c.facultyId && c.sectionId) {
+      const key = `${c.facultyId}_${c.sectionId}`;
+      if (!seenPairs.has(key)) {
+        seenPairs.add(key);
+        uniqueBatchPairs.push({
+          facultyId: c.facultyId,
+          sectionId: c.sectionId,
+          section: c.section,
+          subjectCode: c.subjectCode,
+          subjectName: c.subjectName,
+          sectionDept: c.sectionDept,
+          subjectDept: c.subjectDept
+        });
       }
     }
-  };
+  });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -167,12 +211,12 @@ export default function EvalWindowForm() {
         return;
       }
     } else {
-      if (!formData.templateId || !selectedCollege || !formData.openAt || !formData.closeAt) {
+      if (!formData.templateId || !formData.openAt || !formData.closeAt) {
         setErrorMsg('Please complete all batch form fields.');
         return;
       }
       if (uniqueBatchPairs.length === 0) {
-        setErrorMsg('No active classrooms found in this college/department to schedule evaluations for.');
+        setErrorMsg(`No active classrooms found in ${userDepartmentName} to schedule evaluations for.`);
         return;
       }
     }
@@ -208,7 +252,7 @@ export default function EvalWindowForm() {
           const facultyName = faculty ? `${faculty.firstName} ${faculty.lastName}` : 'Unknown';
           await logActivity(
             'Eval Window Update',
-            `Updated evaluation window for ${facultyName} (opens: ${new Date(formData.openAt).toLocaleString()}, closes: ${new Date(formData.closeAt).toLocaleString()}).`,
+            `Updated evaluation window for ${facultyName} in ${userDepartmentName} (opens: ${new Date(formData.openAt).toLocaleString()}, closes: ${new Date(formData.closeAt).toLocaleString()}).`,
             resolveActorName(profile, user)
           );
         } else {
@@ -223,13 +267,13 @@ export default function EvalWindowForm() {
           const templateTitle = template ? template.title : 'Unknown Template';
           await logActivity(
             'Eval Window Creation',
-            `Scheduled evaluation window for ${facultyName} using template "${templateTitle}" (opens: ${new Date(formData.openAt).toLocaleString()}, closes: ${new Date(formData.closeAt).toLocaleString()}).`,
+            `Scheduled evaluation window for ${facultyName} in ${userDepartmentName} using template "${templateTitle}" (opens: ${new Date(formData.openAt).toLocaleString()}, closes: ${new Date(formData.closeAt).toLocaleString()}).`,
             resolveActorName(profile, user)
           );
         }
         setSuccessModalMessage(isEditMode ? "Evaluation window updated successfully!" : "Evaluation window scheduled successfully!");
       } else {
-        // Batch Mode scheduling
+        // Batch Mode scheduling for Department
         const insertData = uniqueBatchPairs.map(pair => ({
           form_id: formData.templateId,
           faculty_id: pair.facultyId,
@@ -245,18 +289,16 @@ export default function EvalWindowForm() {
           .insert(insertData);
         if (error) throw error;
 
-        const collegeObj = departments.find(d => d.department_id === selectedCollege);
-        const collegeName = collegeObj ? collegeObj.name : 'Unknown';
         const template = templates.find(t => t.id === formData.templateId);
         const templateTitle = template ? template.title : 'Unknown Template';
 
         await logActivity(
           'Eval Window Batch Creation',
-          `Scheduled batch evaluations for ${collegeName} (Total: ${uniqueBatchPairs.length} classes) using template "${templateTitle}" (opens: ${new Date(formData.openAt).toLocaleString()}, closes: ${new Date(formData.closeAt).toLocaleString()}).`,
+          `Scheduled batch evaluations for ${userDepartmentName} (Total: ${uniqueBatchPairs.length} classes) using template "${templateTitle}" (opens: ${new Date(formData.openAt).toLocaleString()}, closes: ${new Date(formData.closeAt).toLocaleString()}).`,
           resolveActorName(profile, user)
         );
 
-        setSuccessModalMessage(`Successfully scheduled evaluations for ${uniqueBatchPairs.length} active classes in ${collegeName}!`);
+        setSuccessModalMessage(`Successfully scheduled evaluations for ${uniqueBatchPairs.length} active classes in ${userDepartmentName}!`);
       }
       setIsSuccessModalOpen(true);
     } catch (err) {
@@ -265,53 +307,6 @@ export default function EvalWindowForm() {
     }
   };
 
-  const selectedFaculty = facultyUsers.find(f => f.id === formData.facultyId);
-  const facultyClassesCount = classrooms.filter(c => c.facultyId === formData.facultyId).length;
-  
-  const filteredClassrooms = classrooms.filter(c => {
-    if (formData.facultyId && c.facultyId !== formData.facultyId) {
-      return false;
-    }
-    if (selectedCollege && c.sectionDeptId !== selectedCollege && c.subjectDeptId !== selectedCollege) {
-      return false;
-    }
-    return true;
-  });
-
-  const filteredFaculty = facultyUsers.filter(fac => {
-    if (selectedCollege && fac.departmentId !== selectedCollege) {
-      return false;
-    }
-    const search = facultySearchQuery.toLowerCase();
-    return (
-      `${fac.firstName} ${fac.lastName}`.toLowerCase().includes(search) ||
-      (fac.email && fac.email.toLowerCase().includes(search)) ||
-      (fac.department && fac.department.toLowerCase().includes(search))
-    );
-  });
-
-  // Unique (faculty_id, section_id) pairs in selected college for batch scheduling
-  const batchClassrooms = classrooms.filter(c => 
-    selectedCollege && (c.sectionDeptId === selectedCollege || c.subjectDeptId === selectedCollege)
-  );
-  const uniqueBatchPairs = [];
-  const seenPairs = new Set();
-  batchClassrooms.forEach(c => {
-    const key = `${c.facultyId}_${c.sectionId}`;
-    if (!seenPairs.has(key)) {
-      seenPairs.add(key);
-      uniqueBatchPairs.push({
-        facultyId: c.facultyId,
-        sectionId: c.sectionId,
-        section: c.section,
-        subjectCode: c.subjectCode,
-        subjectName: c.subjectName,
-        sectionDept: c.sectionDept,
-        subjectDept: c.subjectDept
-      });
-    }
-  });
-
   return (
     <>
       <PageHeader 
@@ -319,7 +314,7 @@ export default function EvalWindowForm() {
         breadcrumb="College Office Portal" 
       />
 
-      <div className="p-8 overflow-y-auto flex-1 max-w-2xl mx-auto w-full space-y-6">
+      <div className="p-8 overflow-y-auto flex-1 max-w-4xl mx-auto w-full space-y-6">
         
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -350,6 +345,16 @@ export default function EvalWindowForm() {
           </div>
 
           <div className="space-y-4">
+            
+            {/* Department Locked Scope */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Department Scope:</span>
+              <span className="font-semibold text-sage-800 bg-sage-50 px-2.5 py-1 rounded-md border border-sage-200 flex items-center gap-1.5">
+                <Lock className="h-3 w-3 text-sage-600" />
+                {userDepartmentName}
+              </span>
+            </div>
+
             {/* Mode Toggle Switch */}
             {!isEditMode && (
               <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
@@ -379,7 +384,7 @@ export default function EvalWindowForm() {
                       : 'text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  Batch Schedule College
+                  Batch Schedule Department
                 </button>
               </div>
             )}
@@ -396,26 +401,6 @@ export default function EvalWindowForm() {
                 <option value="">Select evaluation template...</option>
                 {templates.map((tmpl) => (
                   <option key={tmpl.id} value={tmpl.id}>{tmpl.title}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Filter by College */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                {schedulingMode === 'batch' ? 'Target College/Department' : 'Filter by College/Department'} {schedulingMode === 'batch' && <span className="text-rose-500">*</span>}
-              </label>
-              <select
-                required={schedulingMode === 'batch'}
-                value={selectedCollege}
-                onChange={(e) => handleCollegeChange(e.target.value)}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer font-sans"
-              >
-                <option value="">{schedulingMode === 'batch' ? 'Select college/department...' : 'All Colleges / Departments'}</option>
-                {departments.map((dept) => (
-                  <option key={dept.department_id} value={dept.department_id}>
-                    {dept.name}
-                  </option>
                 ))}
               </select>
             </div>
@@ -450,7 +435,7 @@ export default function EvalWindowForm() {
                               type="text"
                               value={facultySearchQuery}
                               onChange={(e) => setFacultySearchQuery(e.target.value)}
-                              placeholder="Search by name, email, or department..."
+                              placeholder="Search department faculty..."
                               className="w-full bg-transparent border-none text-xs outline-none focus:ring-0 placeholder-slate-400 text-slate-700 font-sans"
                               autoFocus
                             />
@@ -495,7 +480,7 @@ export default function EvalWindowForm() {
                                         Prof. {fac.firstName} {fac.lastName}
                                       </p>
                                       <p className="text-[10px] text-slate-400 truncate mt-0.5 font-sans">
-                                        {fac.email} {fac.department ? `• ${fac.department}` : ''}
+                                        {fac.email}
                                       </p>
                                     </div>
                                   </button>
@@ -503,7 +488,7 @@ export default function EvalWindowForm() {
                               })
                             ) : (
                               <div className="p-4 text-center text-xs text-slate-400 font-sans">
-                                No instructors found
+                                No instructors found in {userDepartmentName}
                               </div>
                             )}
                           </div>
@@ -512,110 +497,103 @@ export default function EvalWindowForm() {
                     </div>
                   </div>
 
-                {/* Select Section */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Class Section <span className="text-rose-500">*</span></label>
-                  <select
-                    required
-                    value={formData.sectionId && formData.facultyId ? `${formData.sectionId}_${formData.facultyId}` : ''}
-                    onChange={(e) => handleClassSectionChange(e.target.value)}
-                    className="block w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer font-sans"
-                  >
-                    <option value="">Select section...</option>
-                    {filteredClassrooms.map((cls) => {
-                      const deptLabel = cls.subjectDept || cls.sectionDept;
-                      return (
-                        <option key={cls.id} value={`${cls.sectionId}_${cls.facultyId}`}>
-                          {deptLabel ? `[${deptLabel}] ` : ''}{cls.section} - {cls.subjectCode} ({cls.subjectName}){!formData.facultyId ? ` — Prof. ${getFacultyName(cls.facultyId)}` : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-              </div>
-
-              {/* Selected Instructor Details Card */}
-              {selectedFaculty && (
-                <div className="bg-sage-50/50 border border-sage-100 rounded-xl p-4 flex items-center justify-between gap-4 animate-fade-in transition-all">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="h-10 w-10 rounded-full bg-sage-600 text-white flex items-center justify-center font-bold font-display text-sm flex-shrink-0">
-                      {`${selectedFaculty.firstName?.[0] || ''}${selectedFaculty.lastName?.[0] || ''}`.toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-xs font-bold text-slate-850 truncate">Prof. {selectedFaculty.firstName} {selectedFaculty.lastName}</h4>
-                      <p className="text-[10px] text-slate-500 truncate mt-0.5 font-sans">{selectedFaculty.email}</p>
-                      {selectedFaculty.department && (
-                        <p className="text-[10px] text-sage-600 font-semibold mt-1 font-sans">{selectedFaculty.department}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <div className="bg-white border border-slate-150 rounded-lg px-3 py-1.5 shadow-sm text-center">
-                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wide font-sans">Assigned Classes</span>
-                      <span className="block text-sm font-extrabold font-mono text-slate-700">{facultyClassesCount}</span>
-                    </div>
-                    <button 
-                      type="button" 
-                      onClick={() => {
-                        setFormData(prev => ({ ...prev, facultyId: '', sectionId: '' }));
-                      }}
-                      className="text-xs text-slate-400 hover:text-rose-600 font-medium px-2 py-1 rounded border border-slate-200 hover:border-rose-200 hover:bg-rose-50/50 transition-colors font-sans"
+                  {/* Select Section */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Class Section <span className="text-rose-500">*</span></label>
+                    <select
+                      required
+                      value={formData.sectionId && formData.facultyId ? `${formData.sectionId}_${formData.facultyId}` : ''}
+                      onChange={(e) => handleClassSectionChange(e.target.value)}
+                      className="block w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer font-sans"
                     >
-                      Clear Choice
-                    </button>
+                      <option value="">Select department class section...</option>
+                      {filteredClassrooms.map((cls) => (
+                        <option key={cls.id} value={`${cls.sectionId}_${cls.facultyId}`}>
+                          {cls.section} - {cls.subjectCode} ({cls.subjectName}){!formData.facultyId ? ` — Prof. ${getFacultyName(cls.facultyId)}` : ''}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
-              )}
-            </>
-          ) : (
-            /* Batch Roster Preview */
-            selectedCollege && (
+
+                {/* Selected Instructor Details Card */}
+                {selectedFaculty && (
+                  <div className="bg-sage-50/50 border border-sage-100 rounded-xl p-4 flex items-center justify-between gap-4 animate-fade-in transition-all">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-10 w-10 rounded-full bg-sage-600 text-white flex items-center justify-center font-bold font-display text-sm flex-shrink-0">
+                        {`${selectedFaculty.firstName?.[0] || ''}${selectedFaculty.lastName?.[0] || ''}`.toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-slate-850 truncate">Prof. {selectedFaculty.firstName} {selectedFaculty.lastName}</h4>
+                        <p className="text-[10px] text-slate-500 truncate mt-0.5 font-sans">{selectedFaculty.email}</p>
+                        <p className="text-[10px] text-sage-600 font-semibold mt-1 font-sans">{userDepartmentName}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <div className="bg-white border border-slate-150 rounded-lg px-3 py-1.5 shadow-sm text-center">
+                        <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wide font-sans">Assigned Classes</span>
+                        <span className="block text-sm font-extrabold font-mono text-slate-700">{facultyClassesCount}</span>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setFormData(prev => ({ ...prev, facultyId: '', sectionId: '' }));
+                        }}
+                        className="text-xs text-slate-400 hover:text-rose-600 font-medium px-2 py-1 rounded border border-slate-200 hover:border-rose-200 hover:bg-rose-50/50 transition-colors font-sans"
+                      >
+                        Clear Choice
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              /* Batch Roster Preview for the Department */
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                    Target Classes Preview ({uniqueBatchPairs.length})
+                    {userDepartmentName} Target Classes ({uniqueBatchPairs.length})
                   </h4>
                   <span className="text-[10px] bg-sage-50 text-sage-600 font-semibold px-2.5 py-0.5 rounded-full font-sans">
-                    Active Roster
+                    Department Active Roster
                   </span>
                 </div>
 
-                <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50">
-                  <div className="max-h-48 overflow-y-auto divide-y divide-slate-150 table-container">
+                <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50 p-3">
+                  <div className="max-h-64 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-2.5 p-0.5">
                     {uniqueBatchPairs.length > 0 ? (
                       uniqueBatchPairs.map((pair, idx) => {
                         const rawName = getFacultyName(pair.facultyId);
                         const cleanName = rawName.replace('Prof. ', '');
                         const previewInitials = `${cleanName?.[0] || ''}${cleanName.split(' ')[1]?.[0] || ''}`.toUpperCase();
                         return (
-                          <div key={idx} className="flex items-center justify-between px-4 py-3 text-xs bg-white">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="h-8 w-8 rounded-full bg-slate-105 text-slate-600 flex items-center justify-center font-bold font-sans text-xs flex-shrink-0">
+                          <div key={idx} className="flex items-center justify-between p-3 text-xs bg-white rounded-xl border border-slate-200 shadow-xs">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="h-8 w-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold font-sans text-xs flex-shrink-0">
                                 {previewInitials}
                               </div>
                               <div className="min-w-0">
-                                <p className="font-semibold text-slate-800 truncate">{rawName}</p>
+                                <p className="font-semibold text-slate-800 truncate">Prof. {cleanName}</p>
                                 <p className="text-[10px] text-slate-500 truncate mt-0.5 font-sans">
-                                  {pair.section} • {pair.subjectCode} ({pair.subjectName})
+                                  <span className="font-mono font-semibold text-slate-700">{pair.section}</span> • {pair.subjectCode} ({pair.subjectName})
                                 </p>
                               </div>
                             </div>
-                            <span className="text-[10px] text-sage-600 font-bold whitespace-nowrap bg-sage-50 border border-sage-150 px-2 py-0.5 rounded font-sans">
+                            <span className="text-[10px] text-sage-700 font-bold whitespace-nowrap bg-sage-50 border border-sage-200 px-2 py-0.5 rounded font-sans shrink-0 ml-2">
                               To schedule
                             </span>
                           </div>
                         );
                       })
                     ) : (
-                      <div className="p-6 text-center text-xs text-slate-400 font-sans">
-                        No active classes found for this college.
+                      <div className="col-span-2 p-6 text-center text-xs text-slate-400 font-sans">
+                        No active classes found in {userDepartmentName}.
                       </div>
                     )}
                   </div>
                 </div>
               </div>
-            )
-          )}
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Open Time */}
@@ -651,7 +629,7 @@ export default function EvalWindowForm() {
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-3 text-xs text-slate-500 leading-normal">
             <AlertCircle className="h-5 w-5 text-sage-600 flex-shrink-0 mt-0.5" />
             <div>
-              <strong>Scheduler Notice:</strong> Re-scheduling an active window will immediately modify access rules for enrolled students. Notifications will be dispatched to students informing them of changed timelines.
+              <strong>Scheduler Notice:</strong> Re-scheduling an active window will immediately modify access rules for enrolled students in {userDepartmentName}. Notifications will be dispatched to students informing them of changed timelines.
             </div>
           </div>
 

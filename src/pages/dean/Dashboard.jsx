@@ -1,4 +1,3 @@
-import { getTransmutedGrade } from '../../lib/gradingMath';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
@@ -12,10 +11,16 @@ import {
   GraduationCap, 
   TrendingUp,
   CheckCircle2,
-  BrainCircuit
+  BrainCircuit,
+  BarChart3,
+  PieChart,
+  Clock,
+  Sparkles,
+  ShieldAlert
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { getTransmutedGrade } from '../../lib/gradingMath';
 
 // ── Risk classification ───────────────────────────────────────────────────────
 function classifyRisk(avgGwa, failingCount) {
@@ -36,9 +41,6 @@ function classifyRisk(avgGwa, failingCount) {
     advisory: 'Good academic standing. Maintain current study patterns.',
   };
 }
-
-// Helper to transmute raw scores to GWA
-
 
 // Compute tentative GWA for a class record from its scores
 function computeTentativeGrade(classRecordScores, classRecordCols) {
@@ -86,6 +88,7 @@ function computeTentativeGrade(classRecordScores, classRecordCols) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
   
   const [stats, setStats] = useState({
     facultyCount: 0,
@@ -94,11 +97,27 @@ export default function Dashboard() {
     pendingPosts: 0
   });
 
+  const [analytics, setAnalytics] = useState({
+    collegeAvgGwa: '—',
+    totalStudents: 0,
+    gwaDistribution: {
+      excellent: 0, // 1.00 - 1.75
+      good: 0,      // 2.00 - 2.50
+      passing: 0,   // 2.75 - 3.00
+      failing: 0,   // > 3.00
+      total: 0
+    },
+    submissionRate: 0,
+    postedCount: 0,
+    expectedCount: 0,
+    evalResponseRate: 0,
+    totalEvalResponses: 0,
+    totalEvalSeats: 0
+  });
+
   const [warnings, setWarnings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  const { profile } = useAuth();
 
   useEffect(() => {
     if (!profile?.department_id) return;
@@ -126,6 +145,7 @@ export default function Dashboard() {
           }
           return;
         }
+
         // Fetch all required data in parallel
         const [
           { data: termData },
@@ -157,7 +177,7 @@ export default function Dashboard() {
 
         const activeTerm = termData;
 
-        // Perform dynamic data calculations & aggregations
+        // Filter classrooms by active academic term if defined
         let classroomsFiltered = classrooms || [];
         if (activeTerm) {
           classroomsFiltered = (classrooms || []).filter(c => 
@@ -212,6 +232,15 @@ export default function Dashboard() {
         let moderateRiskCount = 0;
         let lowRiskCount = 0;
 
+        const gwaDist = {
+          excellent: 0,
+          good: 0,
+          passing: 0,
+          failing: 0,
+          total: 0
+        };
+        const allStudentGwas = [];
+
         deptStudents.forEach(s => {
           const myGrades = gradesByStudent[s.user_id] || [];
           const postedClassRecordIds = new Set(myGrades.map(g => g.class_record_id));
@@ -246,6 +275,19 @@ export default function Dashboard() {
           const failingCount = gradeValues.filter(v => v > 3.00).length;
 
           if (avgGwa !== null) {
+            allStudentGwas.push(avgGwa);
+            gwaDist.total++;
+
+            if (avgGwa <= 1.75) {
+              gwaDist.excellent++;
+            } else if (avgGwa <= 2.50) {
+              gwaDist.good++;
+            } else if (avgGwa <= 3.00) {
+              gwaDist.passing++;
+            } else {
+              gwaDist.failing++;
+            }
+
             const { severity } = classifyRisk(avgGwa, failingCount);
             if (severity === 'high') {
               highRiskCount++;
@@ -257,8 +299,11 @@ export default function Dashboard() {
           }
         });
 
-        // 3. Pending Grade Posts
-        // Calculated per classroom: outstanding periods of ['prelim', 'midterm', 'final']
+        const collegeAvg = allStudentGwas.length > 0 
+          ? (allStudentGwas.reduce((a, b) => a + b, 0) / allStudentGwas.length).toFixed(2)
+          : '—';
+
+        // 3. Pending Grade Posts & Submission Progress
         let pendingPosts = 0;
         const targetPeriods = ['prelim', 'midterm', 'final'];
         classroomsFiltered.forEach(c => {
@@ -267,10 +312,13 @@ export default function Dashboard() {
             .map(g => g.grade_period);
           const uniquePeriods = [...new Set(postedPeriodsForClass)];
           
-          // Count how many of ['prelim', 'midterm', 'final'] are missing
           const postedTargetPeriods = uniquePeriods.filter(p => targetPeriods.includes(p));
           pendingPosts += (3 - postedTargetPeriods.length);
         });
+
+        const totalExpectedPosts = classroomsFiltered.length * 3;
+        const totalPostedPeriods = Math.max(0, totalExpectedPosts - pendingPosts);
+        const submissionRate = totalExpectedPosts > 0 ? Math.round((totalPostedPeriods / totalExpectedPosts) * 100) : 0;
 
         setStats({
           facultyCount,
@@ -280,7 +328,6 @@ export default function Dashboard() {
         });
 
         // 4. Evaluation metrics engagement
-        // Compute unique students per section in the enrollments table
         const studentsPerSection = {};
         (enrollments || []).forEach(e => {
           if (!studentsPerSection[e.section_id]) {
@@ -294,10 +341,14 @@ export default function Dashboard() {
 
         let lowEvalEngagementCount = 0;
         let highEvalEngagementCount = 0;
+        let totalSeats = 0;
+        let totalResponses = 0;
 
         winDataFiltered.forEach(w => {
           const totalStudents = studentsPerSection[w.section_id] ? studentsPerSection[w.section_id].size : 0;
           const responsesCount = w.evaluation_responses ? w.evaluation_responses.length : 0;
+          totalSeats += totalStudents;
+          totalResponses += responsesCount;
 
           if (totalStudents > 0) {
             const rate = responsesCount / totalStudents;
@@ -309,10 +360,24 @@ export default function Dashboard() {
           }
         });
 
+        const evalResponseRate = totalSeats > 0 ? Math.round((totalResponses / totalSeats) * 100) : 0;
+
+        setAnalytics({
+          collegeAvgGwa: collegeAvg,
+          totalStudents: deptStudents.length,
+          gwaDistribution: gwaDist,
+          submissionRate,
+          postedCount: totalPostedPeriods,
+          expectedCount: totalExpectedPosts,
+          evalResponseRate,
+          totalEvalResponses: totalResponses,
+          totalEvalSeats: totalSeats
+        });
+
         // Generate dynamic aggregated SAGE diagnostics warnings
         const diagnostics = [];
 
-        // A. High Academic Risk Detected (Red Alert 🔴 - Order 0)
+        // A. High Academic Risk Detected (Red Alert 🔴)
         if (highRiskCount > 0) {
           diagnostics.push({
             id: 'diag-high-academic-risk',
@@ -324,7 +389,7 @@ export default function Dashboard() {
           });
         }
 
-        // B. Moderate Academic Risk Detected (Yellow Alert 🟡 - Order 1)
+        // B. Moderate Academic Risk Detected (Yellow Alert 🟡)
         if (moderateRiskCount > 0) {
           diagnostics.push({
             id: 'diag-moderate-academic-risk',
@@ -336,7 +401,7 @@ export default function Dashboard() {
           });
         }
 
-        // C. Low Evaluation Engagement (Yellow Alert 🟡 - Order 2)
+        // C. Low Evaluation Engagement (Yellow Alert 🟡)
         if (lowEvalEngagementCount > 0) {
           diagnostics.push({
             id: 'diag-low-evaluation-engagement',
@@ -348,7 +413,7 @@ export default function Dashboard() {
           });
         }
 
-        // D. Low Academic Risk Detected (Green Success 🟢 - Order 3)
+        // D. Low Academic Risk Detected (Green Success 🟢)
         if (lowRiskCount > 0) {
           diagnostics.push({
             id: 'diag-low-academic-risk',
@@ -360,7 +425,7 @@ export default function Dashboard() {
           });
         }
 
-        // E. High Evaluation Engagement (Green Success 🟢 - Order 4)
+        // E. High Evaluation Engagement (Green Success 🟢)
         if (highEvalEngagementCount > 0) {
           diagnostics.push({
             id: 'diag-high-evaluation-engagement',
@@ -372,7 +437,7 @@ export default function Dashboard() {
           });
         }
 
-        // F. Pending Class Grade Postings (Blue Notice 🔵 - Order 5)
+        // F. Pending Class Grade Postings (Blue Notice 🔵)
         if (pendingPosts > 0) {
           diagnostics.push({
             id: 'diag-pending-posts',
@@ -384,9 +449,7 @@ export default function Dashboard() {
           });
         }
 
-        // Sort by priority order hierarchy (Order 0 -> 5)
         diagnostics.sort((a, b) => a.order - b.order);
-
         setWarnings(diagnostics);
         setLoading(false);
       } catch (err) {
@@ -405,11 +468,19 @@ export default function Dashboard() {
     };
   }, [navigate, profile]);
 
+  const { gwaDistribution } = analytics;
+  const distTotal = gwaDistribution.total || 1;
+
+  const pctExcellent = Math.round((gwaDistribution.excellent / distTotal) * 100);
+  const pctGood = Math.round((gwaDistribution.good / distTotal) * 100);
+  const pctPassing = Math.round((gwaDistribution.passing / distTotal) * 100);
+  const pctFailing = Math.round((gwaDistribution.failing / distTotal) * 100);
+
   return (
     <>
       <PageHeader title="Academic Oversight" breadcrumb="Dean Portal" />
       
-      <div className="p-8 overflow-y-auto flex-1 space-y-8">
+      <div className="p-8 overflow-y-auto flex-1 space-y-8 max-w-7xl mx-auto w-full">
         {error && (
           <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs">
             {error}
@@ -431,7 +502,7 @@ export default function Dashboard() {
           ) : (
             <>
               {/* Card 1: Faculty */}
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center gap-4">
+              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center gap-4 hover:border-sage-300 transition-colors">
                 <div className="p-3 bg-sage-50 text-sage-700 rounded-lg">
                   <GraduationCap className="h-6 w-6" />
                 </div>
@@ -444,7 +515,7 @@ export default function Dashboard() {
               </div>
 
               {/* Card 2: Active Classrooms */}
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center gap-4">
+              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center gap-4 hover:border-indigo-300 transition-colors">
                 <div className="p-3 bg-indigo-50 text-indigo-700 rounded-lg">
                   <BookOpen className="h-6 w-6" />
                 </div>
@@ -457,8 +528,11 @@ export default function Dashboard() {
               </div>
 
               {/* Card 3: At-Risk Students */}
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center gap-4">
-                <div className="p-3 bg-rose-50 text-rose-700 rounded-lg">
+              <div 
+                onClick={() => navigate('/dean/atriskstudents')}
+                className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center gap-4 cursor-pointer hover:border-rose-300 transition-colors group"
+              >
+                <div className="p-3 bg-rose-50 text-rose-700 rounded-lg group-hover:scale-105 transition-transform">
                   <AlertCircle className="h-6 w-6 animate-pulse" />
                 </div>
                 <div>
@@ -470,8 +544,11 @@ export default function Dashboard() {
               </div>
 
               {/* Card 4: Pending Posts */}
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center gap-4">
-                <div className="p-3 bg-amber-50 text-amber-700 rounded-lg">
+              <div 
+                onClick={() => navigate('/dean/gradepostingstatus')}
+                className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center gap-4 cursor-pointer hover:border-amber-300 transition-colors group"
+              >
+                <div className="p-3 bg-amber-50 text-amber-700 rounded-lg group-hover:scale-105 transition-transform">
                   <ClipboardCheck className="h-6 w-6" />
                 </div>
                 <div>
@@ -485,7 +562,202 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Middle grid split */}
+        {/* ── NEW VISUAL ANALYTICS INTELLIGENCE ROW (CHARTS) ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          
+          {/* Chart 1: College-Wide Academic Health & GWA Distribution (8 Cols) */}
+          <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
+              <div>
+                <h3 className="text-sm font-bold font-display text-slate-900 uppercase tracking-wide flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-sage-600" /> College Academic Performance &amp; GWA Distribution
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Real-time academic standing breakdown across {analytics.totalStudents} evaluated college students.
+                </p>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <span className="block text-[10px] uppercase font-bold text-slate-400">College Avg GWA</span>
+                  <span className="text-lg font-bold font-mono text-sage-800">{analytics.collegeAvgGwa}</span>
+                </div>
+                <button
+                  onClick={() => navigate('/dean/gradedistribution')}
+                  className="px-3 py-1.5 bg-sage-50 hover:bg-sage-100 text-sage-700 text-xs font-semibold rounded-lg border border-sage-200 transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  Deep Dive <ArrowRight className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+
+            {/* Segmented Performance Progress Bar */}
+            <div className="py-6 space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold">
+                <span className="text-slate-600">Performance Bracket Composition</span>
+                <span className="text-slate-400 font-mono font-medium">{gwaDistribution.total} Graded Students</span>
+              </div>
+              
+              {/* Multi-segment Progress Bar */}
+              <div className="h-5 w-full bg-slate-100 rounded-full overflow-hidden flex p-0.5 shadow-inner">
+                {pctExcellent > 0 && (
+                  <div 
+                    style={{ width: `${pctExcellent}%` }} 
+                    className="bg-emerald-500 h-full rounded-l-full transition-all duration-500 hover:opacity-90"
+                    title={`Dean's List / Excellent: ${gwaDistribution.excellent} (${pctExcellent}%)`}
+                  />
+                )}
+                {pctGood > 0 && (
+                  <div 
+                    style={{ width: `${pctGood}%` }} 
+                    className="bg-sage-600 h-full transition-all duration-500 hover:opacity-90"
+                    title={`Good Standing: ${gwaDistribution.good} (${pctGood}%)`}
+                  />
+                )}
+                {pctPassing > 0 && (
+                  <div 
+                    style={{ width: `${pctPassing}%` }} 
+                    className="bg-amber-400 h-full transition-all duration-500 hover:opacity-90"
+                    title={`Borderline Passing: ${gwaDistribution.passing} (${pctPassing}%)`}
+                  />
+                )}
+                {pctFailing > 0 && (
+                  <div 
+                    style={{ width: `${pctFailing}%` }} 
+                    className="bg-rose-500 h-full rounded-r-full transition-all duration-500 hover:opacity-90"
+                    title={`High Risk / Failing: ${gwaDistribution.failing} (${pctFailing}%)`}
+                  />
+                )}
+              </div>
+
+              {/* Bracket Details Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3">
+                <div className="p-3 bg-emerald-50/60 border border-emerald-100 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="text-[10px] font-bold text-emerald-900 uppercase">1.00 – 1.75</span>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-base font-bold font-mono text-emerald-900">{gwaDistribution.excellent}</span>
+                    <span className="text-[10px] font-semibold text-emerald-700">{pctExcellent}%</span>
+                  </div>
+                  <span className="text-[9px] text-emerald-700 block truncate">Dean's Honors</span>
+                </div>
+
+                <div className="p-3 bg-sage-50/60 border border-sage-200/60 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-sage-600" />
+                    <span className="text-[10px] font-bold text-sage-900 uppercase">2.00 – 2.50</span>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-base font-bold font-mono text-sage-900">{gwaDistribution.good}</span>
+                    <span className="text-[10px] font-semibold text-sage-700">{pctGood}%</span>
+                  </div>
+                  <span className="text-[9px] text-sage-700 block truncate">Good Standing</span>
+                </div>
+
+                <div className="p-3 bg-amber-50/60 border border-amber-100 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    <span className="text-[10px] font-bold text-amber-900 uppercase">2.75 – 3.00</span>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-base font-bold font-mono text-amber-900">{gwaDistribution.passing}</span>
+                    <span className="text-[10px] font-semibold text-amber-700">{pctPassing}%</span>
+                  </div>
+                  <span className="text-[9px] text-amber-700 block truncate">Borderline</span>
+                </div>
+
+                <div className="p-3 bg-rose-50/60 border border-rose-100 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                    <span className="text-[10px] font-bold text-rose-900 uppercase">&gt; 3.00 / FDA</span>
+                  </div>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-base font-bold font-mono text-rose-900">{gwaDistribution.failing}</span>
+                    <span className="text-[10px] font-semibold text-rose-700">{pctFailing}%</span>
+                  </div>
+                  <span className="text-[9px] text-rose-700 block truncate">At Risk</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 pt-3 flex items-center justify-between text-[11px] text-slate-500">
+              <span className="flex items-center gap-1 text-emerald-700 font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> {pctExcellent + pctGood}% of students are in good academic standing.
+              </span>
+              <span className="font-mono text-slate-400">Scale: 1.00 Max → 5.00 Fail</span>
+            </div>
+          </div>
+
+          {/* Chart 2: Department Compliance & Engagement Hub (4 Cols) */}
+          <div className="lg:col-span-4 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-6">
+            <div>
+              <h3 className="text-sm font-bold font-display text-slate-900 uppercase tracking-wide flex items-center gap-2 border-b border-slate-100 pb-3">
+                <PieChart className="h-4 w-4 text-sage-600" /> Department Compliance
+              </h3>
+            </div>
+
+            {/* Metric A: Grade Submission Compliance */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                  <ClipboardCheck className="h-3.5 w-3.5 text-indigo-600" /> Grade Submission Pipeline
+                </span>
+                <span className="font-mono font-bold text-indigo-900">{analytics.submissionRate}%</span>
+              </div>
+              
+              <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div 
+                  style={{ width: `${analytics.submissionRate}%` }}
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    analytics.submissionRate >= 80 ? 'bg-emerald-500' : analytics.submissionRate >= 50 ? 'bg-amber-400' : 'bg-rose-500'
+                  }`}
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-[10px] text-slate-500">
+                <span>{analytics.postedCount} periods submitted</span>
+                <span>{stats.pendingPosts} pending</span>
+              </div>
+            </div>
+
+            {/* Metric B: Student Evaluation Participation */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-sage-600" /> Evaluation Response Rate
+                </span>
+                <span className="font-mono font-bold text-sage-900">{analytics.evalResponseRate}%</span>
+              </div>
+              
+              <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div 
+                  style={{ width: `${analytics.evalResponseRate}%` }}
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    analytics.evalResponseRate >= 80 ? 'bg-emerald-500' : analytics.evalResponseRate >= 50 ? 'bg-sage-600' : 'bg-amber-500'
+                  }`}
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-[10px] text-slate-500">
+                <span>{analytics.totalEvalResponses} responses submitted</span>
+                <span>{analytics.totalEvalSeats} total seats</span>
+              </div>
+            </div>
+
+            {/* Compliance Footer Link */}
+            <button
+              onClick={() => navigate('/dean/evalresultsoverview')}
+              className="w-full py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              Faculty Evaluation Rankings <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+
+        </div>
+
+        {/* ── LOWER SPLIT: SHORTCUTS & DIAGNOSTICS ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* Quick links & navigation */}
@@ -521,7 +793,7 @@ export default function Dashboard() {
                   className="w-full p-3 bg-slate-50 hover:bg-sage-50 border border-slate-200/60 rounded-xl text-left text-xs font-semibold text-slate-700 hover:text-sage-900 transition-all flex items-center justify-between cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-sage-600" /> Faculty Evaluation ratings
+                    <Users className="h-4 w-4 text-sage-600" /> Faculty Evaluation Ratings
                   </span>
                   <ArrowRight className="h-3.5 w-3.5" />
                 </button>
@@ -554,7 +826,7 @@ export default function Dashboard() {
             <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="text-sm font-bold font-display text-slate-950 uppercase tracking-wide flex items-center gap-1.5">
-                  <BrainCircuit className="h-4 w-4 text-sage-600" /> Performance Predictions & Warnings
+                  <BrainCircuit className="h-4 w-4 text-sage-600" /> Performance Predictions &amp; Warnings
                 </h3>
                 <span className="text-[10px] bg-sage-50 border border-sage-100 text-sage-700 px-2 py-0.5 rounded-full font-mono font-medium">
                   Diagnostics Monitor
@@ -580,7 +852,7 @@ export default function Dashboard() {
                         warn.type === 'error' 
                           ? 'bg-rose-50 border-rose-200 text-rose-800' 
                           : warn.type === 'warning'
-                          ? 'bg-amber-50 border-amber-250 text-amber-800'
+                          ? 'bg-amber-50 border-amber-200 text-amber-800'
                           : warn.type === 'success'
                           ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                           : 'bg-sky-50 border-sky-200 text-sky-800'
@@ -599,29 +871,22 @@ export default function Dashboard() {
                           )}
                           {warn.title}
                         </h4>
-                        <p className="text-xs leading-relaxed max-w-xl font-sans mt-0.5">
+                        <p className="text-xs opacity-90 leading-relaxed font-normal">
                           {warn.message}
                         </p>
                       </div>
-                      <button
+                      
+                      <button 
                         onClick={warn.action}
-                        className={`text-xs font-bold flex items-center gap-1 cursor-pointer self-start sm:self-auto transition-opacity hover:opacity-85 shrink-0 ${
-                          warn.type === 'error' 
-                            ? 'text-rose-700' 
-                            : warn.type === 'warning'
-                            ? 'text-amber-700'
-                            : warn.type === 'success'
-                            ? 'text-emerald-700'
-                            : 'text-sky-700'
-                        }`}
+                        className="px-3 py-1.5 bg-white border border-current text-xs font-semibold rounded-lg hover:bg-slate-50 transition-colors shrink-0 self-start sm:self-center cursor-pointer"
                       >
-                        Inspect <ArrowRight className="h-3 w-3" />
+                        Inspect
                       </button>
                     </div>
                   ))
                 ) : (
                   <div className="text-center py-10 text-slate-400 text-xs">
-                    No active performance alerts or anomalies detected.
+                    No active warnings. All academic metrics are operating within normal parameters.
                   </div>
                 )}
               </div>
@@ -629,7 +894,6 @@ export default function Dashboard() {
           </div>
 
         </div>
-
       </div>
     </>
   );

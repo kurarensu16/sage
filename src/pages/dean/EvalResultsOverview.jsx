@@ -4,7 +4,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Search, Star, ArrowRight, Filter, Users, AlertTriangle, Building2, Lock, Unlock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
-import { mockDeanFacultyData } from '../../lib/mockdb';
+
 export default function EvalResultsOverview() {
   const navigate = useNavigate();
   const { profile } = useAuth();
@@ -109,10 +109,9 @@ export default function EvalResultsOverview() {
           setError(null);
         }
       } catch (err) {
-        console.warn('Database query failed, falling back to mock dataset:', err);
+        console.error('Database query failed:', err);
         if (!cancelled) {
-          setFacultyList(mockDeanFacultyData);
-          setError(null); // Clear error since we have fallback data
+          setError('Failed to load evaluation overview data from database.');
         }
       } finally {
         if (!cancelled) setLoading(false);

@@ -13,6 +13,7 @@ import {
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { getTransmutedGrade, calculateSemestralGrade } from '../../lib/gradingMath';
 
 export default function MyGradesDetail() {
   const navigate = useNavigate();
@@ -50,19 +51,6 @@ export default function MyGradesDetail() {
     finalGwa: '—',
     remarks: '—'
   });
-
-  const getTransmutedGrade = (score) => {
-    if (score >= 98) return '1.00';
-    if (score >= 95) return '1.25';
-    if (score >= 92) return '1.50';
-    if (score >= 89) return '1.75';
-    if (score >= 86) return '2.00';
-    if (score >= 83) return '2.25';
-    if (score >= 80) return '2.50';
-    if (score >= 77) return '2.75';
-    if (score >= 75) return '3.00';
-    return '5.00';
-  };
 
   useEffect(() => {
     async function loadGradeBreakdown() {
@@ -137,6 +125,32 @@ export default function MyGradesDetail() {
           .eq('class_record_id', targetClassRecordId)
           .eq('student_id', user.id);
 
+        // 4. Fetch dynamic custom activities & individual student scores from Supabase
+        let dynamicActivities = [];
+        let studentScoresByActivity = {};
+        try {
+          const { data: acts } = await supabase
+            .from('class_activities')
+            .select('*')
+            .eq('class_record_id', targetClassRecordId)
+            .order('created_at', { ascending: true });
+
+          if (acts && acts.length > 0) {
+            dynamicActivities = acts;
+            const { data: actScores } = await supabase
+              .from('student_activity_scores')
+              .select('*')
+              .eq('student_id', user.id)
+              .in('activity_id', acts.map(a => a.activity_id));
+
+            (actScores || []).forEach(sc => {
+              studentScoresByActivity[sc.activity_id] = parseFloat(sc.score);
+            });
+          }
+        } catch (actErr) {
+          console.warn('Could not load dynamic activities, fallback to term scores:', actErr);
+        }
+
         // Construct maps
         const defaultMax = { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
         const colsMap = {};
@@ -179,7 +193,8 @@ export default function MyGradesDetail() {
         // Compute results for each term
         const newTermData = {};
         const newSpreadsheet = {};
-        const terms = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+        const isSummer = crInfo?.semester === 'Summer' || crInfo?.semester?.toLowerCase().includes('summer');
+        const terms = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
 
         terms.forEach(term => {
           const max = colsMap[term] || defaultMax;
@@ -194,9 +209,35 @@ export default function MyGradesDetail() {
           const char = studScores.char !== null ? studScores.char : 0;
           const exam = studScores.exam !== null ? studScores.exam : 0;
 
-          // CS
-          const csSum = act1 + act2 + act3 + act4 + act5 + act6;
-          const csMax = max.act1 + max.act2 + max.act3 + max.act4 + max.act5 + max.act6;
+          // Check if custom dynamic activities exist for this term
+          const termActs = dynamicActivities.filter(a => a.term === term);
+          let csSum = 0;
+          let csMax = 0;
+
+          const csBreakdown = termActs.length > 0 
+            ? termActs.map(act => {
+                const score = studentScoresByActivity[act.activity_id] ?? 0;
+                csSum += score;
+                csMax += (parseFloat(act.max_score) || 20);
+                return {
+                  name: act.name,
+                  obtained: score,
+                  max: parseFloat(act.max_score) || 20
+                };
+              })
+            : (() => {
+                csSum = act1 + act2 + act3 + act4 + act5 + act6;
+                csMax = max.act1 + max.act2 + max.act3 + max.act4 + max.act5 + max.act6;
+                return [
+                  { name: 'Formative Assessment 1', obtained: act1, max: max.act1 },
+                  { name: 'Formative Assessment 2', obtained: act2, max: max.act2 },
+                  { name: 'Formative Assessment 3', obtained: act3, max: max.act3 },
+                  { name: 'Formative Assessment 4', obtained: act4, max: max.act4 },
+                  { name: 'Formative Assessment 5', obtained: act5, max: max.act5 },
+                  { name: 'Formative Assessment 6', obtained: act6, max: max.act6 }
+                ];
+              })();
+
           const csPct = csMax > 0 ? (csSum / csMax) * 50 : 0;
 
           // Char
@@ -221,14 +262,15 @@ export default function MyGradesDetail() {
             (studScores.act5 !== undefined && studScores.act5 !== null && studScores.act5 > 0) ||
             (studScores.act6 !== undefined && studScores.act6 !== null && studScores.act6 > 0) ||
             (studScores.char !== undefined && studScores.char !== null && studScores.char > 0) ||
-            (studScores.exam !== undefined && studScores.exam !== null && studScores.exam > 0);
+            (studScores.exam !== undefined && studScores.exam !== null && studScores.exam > 0) ||
+            csSum > 0;
 
           const finalRating = isPosted 
             ? parseFloat(postedRow.computed_grade) 
             : (hasScores ? calculatedRating : null);
 
           const finalGrade = finalRating !== null 
-            ? (isPosted && postedRow.effective_grade !== null ? postedRow.effective_grade.toFixed(2) : getTransmutedGrade(finalRating))
+            ? (isPosted && postedRow.effective_grade !== null ? postedRow.effective_grade.toFixed(2) : getTransmutedGrade(finalRating).toFixed(2))
             : '—';
           
           const status = isPosted ? 'Posted' : 'Draft';
@@ -241,14 +283,7 @@ export default function MyGradesDetail() {
               obtained: csSum,
               max: csMax,
               contribution: csPct,
-              breakdown: [
-                { name: 'Formative Assessment 1', obtained: act1, max: max.act1 },
-                { name: 'Formative Assessment 2', obtained: act2, max: max.act2 },
-                { name: 'Formative Assessment 3', obtained: act3, max: max.act3 },
-                { name: 'Formative Assessment 4', obtained: act4, max: max.act4 },
-                { name: 'Formative Assessment 5', obtained: act5, max: max.act5 },
-                { name: 'Formative Assessment 6', obtained: act6, max: max.act6 }
-              ]
+              breakdown: csBreakdown
             },
             { name: 'Character Rating', weight: 10, obtained: char, max: 100, contribution: charPct },
             { name: 'Examination', weight: 40, obtained: exam, max: examMax, contribution: examPct }
@@ -256,12 +291,14 @@ export default function MyGradesDetail() {
 
           // Check missing scores
           const missingScores = [];
-          if (studScores.act1 === null) missingScores.push('Formative Assessment 1');
-          if (studScores.act2 === null) missingScores.push('Formative Assessment 2');
-          if (studScores.act3 === null) missingScores.push('Formative Assessment 3');
-          if (studScores.act4 === null) missingScores.push('Formative Assessment 4');
-          if (studScores.act5 === null) missingScores.push('Formative Assessment 5');
-          if (studScores.act6 === null) missingScores.push('Formative Assessment 6');
+          if (termActs.length === 0) {
+            if (studScores.act1 === null) missingScores.push('Formative Assessment 1');
+            if (studScores.act2 === null) missingScores.push('Formative Assessment 2');
+            if (studScores.act3 === null) missingScores.push('Formative Assessment 3');
+            if (studScores.act4 === null) missingScores.push('Formative Assessment 4');
+            if (studScores.act5 === null) missingScores.push('Formative Assessment 5');
+            if (studScores.act6 === null) missingScores.push('Formative Assessment 6');
+          }
           if (studScores.exam === null) missingScores.push(`${term} Exam`);
 
           newTermData[term] = {
@@ -284,42 +321,31 @@ export default function MyGradesDetail() {
         setSpreadsheetRow(newSpreadsheet);
 
         // Final Calculations (MR, TFR, SG, GWA, Remarks)
-        const prelimRating = newTermData['Prelim'].rating;
-        const midtermRating = newTermData['Midterm'].rating;
-        
-        const hasPrelim = prelimRating !== null && newTermData['Prelim'].grade !== '—';
-        const hasMidterm = midtermRating !== null && newTermData['Midterm'].grade !== '—';
-        const mr = (hasPrelim && hasMidterm) ? Math.round((prelimRating + midtermRating) / 2) : null;
+        const calcResult = calculateSemestralGrade({
+          prelim: newTermData['Prelim']?.rating,
+          midterm: newTermData['Midterm']?.rating,
+          semiFinal: newTermData['Semi-Final']?.rating,
+          final: newTermData['Final']?.rating,
+          isSummer
+        });
 
-        const sfRating = newTermData['Semi-Final'].rating;
-        const finalRatingVal = newTermData['Final'].rating;
-        const hasSemifinal = sfRating !== null && newTermData['Semi-Final'].grade !== '—';
-        const hasFinal = finalRatingVal !== null && newTermData['Final'].grade !== '—';
-        const tfr = (hasSemifinal && hasFinal) ? Math.round((sfRating + finalRatingVal) / 2) : null;
-
-        const sg = (mr !== null && tfr !== null) ? Math.round((mr + tfr) / 2) : null;
-        const finalGwa = sg !== null ? getTransmutedGrade(sg) : '—';
-
-        // Remarks
-        let remarks = '—';
-        if (sg !== null) {
-          remarks = parseFloat(finalGwa) <= 3.00 ? 'Passed' : 'Failed';
-          if (postedMap['Final']) {
-            const finalPosted = postedMap['Final'];
-            if (finalPosted.remarks) {
-              remarks = finalPosted.remarks.charAt(0).toUpperCase() + finalPosted.remarks.slice(1);
-            }
-          }
+        let remarks = calcResult.remarks;
+        if (postedMap['Final'] && postedMap['Final'].remarks) {
+          const finalPosted = postedMap['Final'];
+          remarks = finalPosted.remarks.charAt(0).toUpperCase() + finalPosted.remarks.slice(1);
         }
 
         setFinalCalculations({
-          mr, tfr, sg, finalGwa, remarks
+          mr: calcResult.mr,
+          tfr: calcResult.tfr,
+          sg: calcResult.sg,
+          finalGwa: calcResult.gwa,
+          remarks
         });
 
         // Determine latest active term tab (has posted grades or entered draft scores)
-        let latestActive = 'Prelim';
-        const termOrder = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
-        for (const t of termOrder) {
+        let latestActive = isSummer ? 'Midterm' : 'Prelim';
+        for (const t of terms) {
           if (newTermData[t] && newTermData[t].grade !== '—') {
             latestActive = t;
           }
