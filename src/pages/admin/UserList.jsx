@@ -615,6 +615,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
       dean: users.filter(u => u.role === 'dean').length,
       faculty: users.filter(u => u.role === 'faculty').length,
       student: users.filter(u => u.role === 'student').length,
+      office: users.filter(u => u.role === 'office').length,
     };
 
     for (let i = 0; i < lines.length; i++) {
@@ -697,9 +698,9 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
         break;
       }
 
-      const validRoles = ['admin', 'dean', 'faculty', 'student'];
+      const validRoles = ['admin', 'dean', 'faculty', 'student', 'office'];
       if (!validRoles.includes(role.toLowerCase())) {
-        setImportError(`Row ${i + 1} has an invalid role: "${role}". Valid values: admin, dean, faculty, student`);
+        setImportError(`Row ${i + 1} has an invalid role: "${role}". Valid values: admin, dean, faculty, student, office`);
         hasError = true;
         break;
       }
@@ -707,7 +708,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
       // Handle user number generation or validation
       let finalUserNumber = userNumber;
       if (!finalUserNumber) {
-        const prefix = role.toLowerCase() === 'student' ? '' : role.toLowerCase() === 'admin' ? 'ADM-' : role.toLowerCase() === 'faculty' ? 'FAC-' : 'DN-';
+        const prefix = role.toLowerCase() === 'student' ? '' : role.toLowerCase() === 'admin' ? 'ADM-' : role.toLowerCase() === 'faculty' ? 'FAC-' : role.toLowerCase() === 'office' ? 'OFC-' : 'DN-';
         const year = new Date().getFullYear();
         let generated = '';
         do {
@@ -725,9 +726,9 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
             break;
           }
         } else {
-          const employeeIdRegex = /^(ADM|FAC|DN)-\d{4}-\d{5}$/;
+          const employeeIdRegex = /^(ADM|FAC|DN|OFC)-\d{4}-\d{5}$/;
           if (!employeeIdRegex.test(finalUserNumber)) {
-            setImportError(`Row ${i + 1} has an invalid Employee ID format: "${finalUserNumber}". Must be ADM-YYYY-XXXXX, FAC-YYYY-XXXXX, or DN-YYYY-XXXXX.`);
+            setImportError(`Row ${i + 1} has an invalid Employee ID format: "${finalUserNumber}". Must be ADM-YYYY-XXXXX, FAC-YYYY-XXXXX, DN-YYYY-XXXXX, or OFC-YYYY-XXXXX.`);
             hasError = true;
             break;
           }
@@ -886,6 +887,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
         return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 uppercase font-mono">Faculty</span>;
       case 'student':
         return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 uppercase font-mono">Student</span>;
+      case 'office':
+        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 uppercase font-mono">Office</span>;
       default:
         return null;
     }
@@ -1033,6 +1036,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
               <option value="dean">Dean</option>
               <option value="faculty">Faculty</option>
               <option value="student">Student</option>
+              <option value="office">Office</option>
             </select>
           </div>
 
