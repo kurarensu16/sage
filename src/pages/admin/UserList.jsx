@@ -886,6 +886,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
         return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 uppercase font-mono">Faculty</span>;
       case 'student':
         return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 uppercase font-mono">Student</span>;
+      case 'office':
+        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 uppercase font-mono">Office</span>;
       default:
         return null;
     }
@@ -1032,6 +1034,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
               <option value="admin">Admin</option>
               <option value="dean">Dean</option>
               <option value="faculty">Faculty</option>
+              <option value="office">Office</option>
               <option value="student">Student</option>
             </select>
           </div>

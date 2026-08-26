@@ -259,7 +259,7 @@ export default function UserForm() {
         );
       } else {
         // Generate user number
-        const prefix = formData.role === 'student' ? '' : formData.role === 'admin' ? 'ADM-' : formData.role === 'faculty' ? 'FAC-' : 'DN-';
+        const prefix = formData.role === 'student' ? '' : formData.role === 'admin' ? 'ADM-' : formData.role === 'faculty' ? 'FAC-' : formData.role === 'office' ? 'OFC-' : 'DN-';
         const year = new Date().getFullYear();
         
         // Fetch count to get sequence number
@@ -427,6 +427,7 @@ export default function UserForm() {
               >
                 <option value="student">Student</option>
                 <option value="faculty">Faculty</option>
+                <option value="office">Office</option>
                 <option value="dean">Dean</option>
                 <option value="admin">Administrator</option>
               </select>
@@ -480,6 +481,21 @@ export default function UserForm() {
               </div>
             </div>
           </div>
+
+          {!isEditMode && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Default Password</label>
+                <input 
+                  type="text" 
+                  readOnly
+                  value="SagePassword123!"
+                  className="block w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-500 font-mono outline-none cursor-not-allowed"
+                />
+                <span className="text-[10px] text-slate-400 mt-0.5">This temporary password will be assigned automatically.</span>
+              </div>
+            </div>
+          )}
 
           {/* Dynamic Degree Program & Section Selection for Student/Faculty */}
           {(formData.role === 'student' || formData.role === 'faculty') && (
