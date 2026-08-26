@@ -116,6 +116,7 @@ export default function Dashboard() {
   });
 
   const [warnings, setWarnings] = useState([]);
+  const [activeTerm, setActiveTerm] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -176,6 +177,7 @@ export default function Dashboard() {
         if (!active) return;
 
         const activeTerm = termData;
+        setActiveTerm(termData || null);
 
         // Filter classrooms by active academic term if defined
         let classroomsFiltered = classrooms || [];
@@ -486,6 +488,19 @@ export default function Dashboard() {
             {error}
           </div>
         )}
+
+        {/* Hero Welcome & Active Term Banner */}
+        <div className="bg-gradient-to-r from-sage-900 via-sage-800 to-sage-900 rounded-2xl p-6 md:p-8 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-sage-700/50 text-sage-100 border border-sage-600/30">
+              Active Term: AY {activeTerm?.school_year || '2025-2026'} • {activeTerm?.semester === '1st' ? 'First' : activeTerm?.semester === '2nd' ? 'Second' : activeTerm?.semester || 'Second'} Semester
+            </span>
+            <h1 className="text-3xl font-extrabold tracking-tight font-display">Academic Oversight & Analytics</h1>
+            <p className="text-sm text-sage-200/90 max-w-xl">
+              College performance metrics, grade distribution diagnostics, and early warning risk monitoring.
+            </p>
+          </div>
+        </div>
         
         {/* KPI Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">

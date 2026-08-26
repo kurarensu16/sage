@@ -23,6 +23,7 @@ export default function Dashboard() {
     pendingPosts: 0,
     archivedClasses: 0
   });
+  const [activeTerm, setActiveTerm] = useState(null);
   const [recentLogs, setRecentLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -30,6 +31,15 @@ export default function Dashboard() {
     async function fetchDashboardData() {
       try {
         setLoading(true);
+
+        // Fetch active academic term
+        const { data: termData } = await supabase
+          .from('academic_terms')
+          .select('term_id, school_year, semester')
+          .eq('is_active', true)
+          .maybeSingle();
+
+        setActiveTerm(termData || null);
 
         // Fetch counts directly
         const { count: usersCount } = await supabase
@@ -119,6 +129,27 @@ export default function Dashboard() {
       
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
         
+        {/* Welcome & Active Academic Term Hero Banner */}
+        <div className="bg-gradient-to-r from-sage-900 via-sage-800 to-sage-900 rounded-2xl p-6 md:p-8 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2">
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-sage-700/50 text-sage-100 border border-sage-600/30">
+              Active Term: AY {activeTerm?.school_year || '2025-2026'} • {activeTerm?.semester === '1st' ? 'First' : activeTerm?.semester === '2nd' ? 'Second' : activeTerm?.semester || 'Second'} Semester
+            </span>
+            <h1 className="text-3xl font-extrabold tracking-tight font-display">System Administration & Controls</h1>
+            <p className="text-sm text-sage-200/90 max-w-xl">
+              Manage institution-wide academic terms, grading templates, user authorizations, and operational audit logs.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Link
+              to="/admin/terms"
+              className="px-4 py-2.5 text-xs font-semibold bg-white text-sage-900 hover:bg-sage-50 rounded-xl transition-all shadow-md flex items-center gap-2 whitespace-nowrap"
+            >
+              <Calendar className="h-4 w-4" /> Manage Terms
+            </Link>
+          </div>
+        </div>
+
         {/* Stat Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {statCards.map((card, idx) => (
