@@ -816,7 +816,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
           const { data, error: invokeErr } = await supabase.functions.invoke('create-admin-user', {
             body: {
               email: u.email.trim().toLowerCase(),
-              password: 'DemoPassword123!',
+              password: 'SagePassword123!',
               firstName: u.firstName.trim(),
               lastName: u.lastName.trim(),
               middleName: u.middleName.trim(),
@@ -1035,6 +1035,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
               <option value="admin">Admin</option>
               <option value="dean">Dean</option>
               <option value="faculty">Faculty</option>
+              <option value="office">Office</option>
               <option value="student">Student</option>
               <option value="office">Office</option>
             </select>
