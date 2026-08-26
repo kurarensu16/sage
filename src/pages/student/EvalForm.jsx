@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronRight, ShieldAlert, Send, Check, Heart, HelpCircle } from 'lucide-react';
+import { ChevronRight, ShieldAlert, Send, Check, Heart, HelpCircle, AlertCircle } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -68,6 +68,7 @@ export default function EvalForm() {
             faculty_id,
             section_id,
             close_at,
+            is_closed,
             faculty:users!evaluation_windows_faculty_id_fkey ( first_name, last_name )
           `)
           .eq('window_id', windowId)
@@ -336,6 +337,25 @@ export default function EvalForm() {
           <span className="font-medium text-slate-900 font-sans">Evaluation Form</span>
         </div>
 
+        {/* Closed Window Warning Barrier */}
+        {windowInfo?.is_closed && (
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-5 text-rose-900 flex items-start gap-3 shadow-xs">
+            <AlertCircle className="h-5 w-5 text-rose-600 mt-0.5 shrink-0" />
+            <div className="space-y-1 text-left">
+              <h4 className="font-bold text-sm text-rose-950">Evaluation Window Closed & Archived</h4>
+              <p className="text-xs text-rose-700 leading-relaxed">
+                This faculty evaluation period has ended and is permanently closed. Responses for past academic semesters can no longer be submitted.
+              </p>
+              <button
+                onClick={() => navigate('/student/evallist')}
+                className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-semibold hover:bg-rose-700 transition-colors shadow-2xs"
+              >
+                Back to Evaluations Overview <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Privacy Alert Box */}
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-3">
           <ShieldAlert className="h-5 w-5 text-sage-600 mt-0.5 flex-shrink-0" />
@@ -498,10 +518,10 @@ export default function EvalForm() {
             </button>
             <button
               type="submit"
-              disabled={!isFormComplete || submitting}
+              disabled={!isFormComplete || submitting || windowInfo?.is_closed}
               className="px-6 py-2.5 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-40 disabled:hover:bg-sage-600 disabled:cursor-not-allowed"
             >
-              {submitting ? 'Submitting...' : 'Submit Evaluation'} <Send className="h-4 w-4" />
+              {submitting ? 'Submitting...' : windowInfo?.is_closed ? 'Window Closed' : 'Submit Evaluation'} <Send className="h-4 w-4" />
             </button>
           </div>
 
