@@ -254,7 +254,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,Bachelor of Science in Informa
           const { data, error: invokeErr } = await supabase.functions.invoke('create-admin-user', {
             body: {
               email: u.email.trim().toLowerCase(),
-              password: 'DemoPassword123!',
+              password: 'SagePassword123!',
               firstName: u.firstName.trim(),
               lastName: u.lastName.trim(),
               middleName: u.middleName.trim(),

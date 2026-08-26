@@ -274,7 +274,7 @@ export default function UserForm() {
         const { data: invokeData, error: invokeErr } = await supabase.functions.invoke('create-admin-user', {
           body: {
             email: formData.email.trim().toLowerCase(),
-            password: 'DemoPassword123!',
+            password: 'SagePassword123!',
             firstName: formData.firstName.trim(),
             lastName: formData.lastName.trim(),
             middleName: formData.middleName.trim(),
