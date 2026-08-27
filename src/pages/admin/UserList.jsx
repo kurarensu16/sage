@@ -1852,7 +1852,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
                           {log.action}
                         </span>
                         <span className="text-[10px] font-mono text-slate-450 font-medium">
-                          {log.timestamp ? new Date(log.timestamp).toLocaleString() : ''}
+                          {log.timestamp ? new Date(log.timestamp).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : ''}
                         </span>
                       </div>
                       <p className="text-xs text-slate-700 leading-relaxed font-sans font-medium">

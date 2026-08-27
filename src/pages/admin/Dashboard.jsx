@@ -89,7 +89,7 @@ export default function Dashboard() {
   const formatTimestamp = (isoString) => {
     if (!isoString) return '';
     const date = new Date(isoString);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' - ' + date.toLocaleDateString();
+    return date.toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) + ' - ' + date.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' });
   };
 
   const statCards = [

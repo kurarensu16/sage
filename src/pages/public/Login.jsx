@@ -60,10 +60,8 @@ export default function Login() {
         return;
       }
 
-      // Resolve role (with office mapping)
-      const userRole = (profile.role === 'office' || email.trim().toLowerCase() === 'office@sage.edu.ph' || profile.email === 'office@sage.edu.ph' || profile.user_number?.startsWith('OFC-'))
-        ? 'office'
-        : profile.role;
+      // Resolve role
+      const userRole = profile.role;
 
       // Log login activity
       const actorName = `${profile.first_name} ${profile.last_name}`;

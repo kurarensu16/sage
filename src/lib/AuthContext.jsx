@@ -25,10 +25,6 @@ export const AuthProvider = ({ children }) => {
           await supabase.auth.signOut();
           setUserProfile(null);
         } else {
-          // Workaround for office role enum constraint
-          if (data?.email === 'office@sage.edu.ph' || data?.user_number?.startsWith('OFC-') || data?.role === 'office') {
-            data.role = 'office';
-          }
           setUserProfile(data);
         }
       }
