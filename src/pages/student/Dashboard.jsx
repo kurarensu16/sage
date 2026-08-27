@@ -45,6 +45,7 @@ export default function Dashboard() {
   const { user, profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [section, setSection] = useState(null);
+  const [activeTerm, setActiveTerm] = useState(null);
   const [enrolledSubjects, setEnrolledSubjects] = useState([]);
   const [currentGwa, setCurrentGwa] = useState('—');
   const [gwaStanding, setGwaStanding] = useState('No grades posted yet');
@@ -57,58 +58,54 @@ export default function Dashboard() {
       if (!user || !profile) return;
       setLoading(true);
       try {
-        // 1. Fetch enrollments for the student
+        // 1. Fetch active academic term
+        const { data: termData } = await supabase
+          .from('academic_terms')
+          .select('term_id, school_year, semester')
+          .eq('is_active', true)
+          .maybeSingle();
+
+        setActiveTerm(termData || null);
+
+        // 2. Fetch student's enrollments
         const { data: enrolls } = await supabase
           .from('enrollments')
-          .select('subject_id, section_id, subjects(*)')
+          .select('subject_id, section_id, status, subjects(*), sections(*)')
           .eq('student_id', user.id);
 
-        // Determine activeSectionId (fallback to enrolls if profile.section_id is missing/null)
+        // Determine activeSectionId
         const activeSectionId = profile.section_id || (enrolls && enrolls.length > 0 ? enrolls[0].section_id : null);
 
-        // 2. Fetch section details
+        // 3. Fetch section details
         if (activeSectionId) {
           const { data: secData } = await supabase
             .from('sections')
             .select('*')
             .eq('section_id', activeSectionId)
-            .single();
-          setSection(secData);
+            .maybeSingle();
+          setSection(secData || null);
         }
 
-        // 3. Fetch active class records
-        const subjectIds = enrolls?.map(e => e.subject_id) || [];
-        let classRecs = [];
-        if (activeSectionId && subjectIds.length > 0) {
-          const { data: records } = await supabase
-            .from('class_records')
-            .select(`
-              class_record_id,
-              subject_id,
-              faculty:users!faculty_id ( first_name, last_name )
-            `)
-            .eq('section_id', activeSectionId)
-            .in('subject_id', subjectIds)
-            .eq('status', 'active');
-          classRecs = records || [];
-        }
+        // 4. Fetch all active class records to pair with enrollments
+        const { data: allClassRecs } = await supabase
+          .from('class_records')
+          .select(`
+            class_record_id,
+            subject_id,
+            section_id,
+            status,
+            faculty:users!faculty_id ( first_name, last_name )
+          `)
+          .eq('status', 'active');
 
-        // Map enrollments to active class records
-        const subjMap = {};
-        enrolls?.forEach(e => {
-          if (e.subjects) {
-            subjMap[e.subject_id] = e.subjects;
-          }
-        });
-
-        // 4. Fetch Posted Grades
+        // 5. Fetch Posted Grades
         const { data: posted } = await supabase
           .from('posted_grades')
           .select('*')
           .eq('student_id', user.id);
 
         const postedMap = {};
-        posted?.forEach(p => {
+        (posted || []).forEach(p => {
           const periods = { prelim: 1, midterm: 2, semi_final: 3, final: 4 };
           const current = postedMap[p.class_record_id];
           const currentWeight = current ? (periods[current.grade_period] || 0) : 0;
@@ -118,26 +115,32 @@ export default function Dashboard() {
           }
         });
 
-        const activeEnrolled = classRecs
-          .filter(cr => subjMap[cr.subject_id])
-          .map(cr => {
-            const subj = subjMap[cr.subject_id];
-            const pGrade = postedMap[cr.class_record_id];
-            const hasFinal = posted?.some(p => p.class_record_id === cr.class_record_id && p.grade_period === 'final');
-            return {
-              class_record_id: cr.class_record_id,
-              code: subj.code,
-              name: subj.name,
-              credits: subj.units,
-              professor: cr.faculty ? `Prof. ${cr.faculty.first_name} ${cr.faculty.last_name}` : 'TBA',
-              status: hasFinal ? 'Grades Posted' : 'Ongoing',
-              grade: pGrade ? pGrade.effective_grade : '—'
-            };
-          });
+        // 6. Map all student enrollments to their class records
+        const activeEnrolled = (enrolls || []).map(e => {
+          const matchingClass = (allClassRecs || []).find(
+            cr => cr.subject_id === e.subject_id && cr.section_id === e.section_id
+          );
+          const classRecId = matchingClass?.class_record_id;
+          const pGrade = classRecId ? postedMap[classRecId] : null;
+          const hasFinal = (posted || []).some(p => p.class_record_id === classRecId && p.grade_period === 'final');
+
+          return {
+            class_record_id: classRecId,
+            subject_id: e.subject_id,
+            section_id: e.section_id,
+            code: e.subjects?.code || 'N/A',
+            name: e.subjects?.name || 'Untitled Subject',
+            credits: Number(e.subjects?.units) || 3,
+            sectionName: e.sections?.name || 'Irregular',
+            professor: matchingClass?.faculty ? `Prof. ${matchingClass.faculty.first_name} ${matchingClass.faculty.last_name}` : 'TBA',
+            status: hasFinal ? 'Grades Posted' : 'Ongoing',
+            grade: pGrade ? pGrade.effective_grade : '—'
+          };
+        });
 
         setEnrolledSubjects(activeEnrolled);
 
-        // Calculate running GWA from posted grades
+        // 7. Calculate running GWA from posted grades
         let totalUnits = 0;
         let weightedGradesSum = 0;
         activeEnrolled.forEach(sub => {
@@ -164,13 +167,14 @@ export default function Dashboard() {
           setGwaStanding('No grades posted yet');
         }
 
-        // 5. Pending Evaluations
-        if (activeSectionId) {
-          const count = await checkPendingEvals(user.id, activeSectionId);
+        // 8. Pending Evaluations (check across enrolled sections)
+        const targetSectionId = activeSectionId || (enrolls && enrolls.length > 0 ? enrolls[0].section_id : null);
+        if (targetSectionId) {
+          const count = await checkPendingEvals(user.id, targetSectionId);
           setPendingEvals(count);
         }
 
-        // 6. Academic Insights
+        // 9. Academic Insights
         const { data: insightData } = await supabase
           .from('student_academic_insights')
           .select('*')
@@ -209,9 +213,11 @@ export default function Dashboard() {
     );
   }
 
-  const termLabel = section 
-    ? `AY ${section.school_year} • ${section.semester === '1st' ? 'First' : section.semester === '2nd' ? 'Second' : section.semester} Sem`
-    : 'AY — • — Sem';
+  const termLabel = activeTerm
+    ? `AY ${activeTerm.school_year} • ${activeTerm.semester === '1st' ? 'First' : activeTerm.semester === '2nd' ? 'Second' : activeTerm.semester} Sem`
+    : section 
+      ? `AY ${section.school_year} • ${section.semester === '1st' ? 'First' : section.semester === '2nd' ? 'Second' : section.semester} Sem`
+      : 'AY 2025–2026 • Second Sem';
 
   const totalCredits = enrolledSubjects.reduce((sum, sub) => sum + sub.credits, 0);
 

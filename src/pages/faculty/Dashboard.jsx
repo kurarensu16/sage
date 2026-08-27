@@ -18,6 +18,7 @@ export default function Dashboard() {
   const { user, profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [classes, setClasses] = useState([]);
+  const [activeTerm, setActiveTerm] = useState(null);
   const [stats, setStats] = useState({
     handledClassesCount: 0,
     pendingGradesCount: 0,
@@ -35,7 +36,16 @@ export default function Dashboard() {
       if (!user) return;
       setLoading(true);
       try {
-        // 1. Fetch Classes
+        // 1. Fetch Active Academic Term
+        const { data: termData } = await supabase
+          .from('academic_terms')
+          .select('term_id, school_year, semester')
+          .eq('is_active', true)
+          .maybeSingle();
+
+        setActiveTerm(termData || null);
+
+        // 2. Fetch Classes
         const { data: classesData, error: classesError } = await supabase
           .from('class_records')
           .select(`
@@ -256,7 +266,7 @@ export default function Dashboard() {
         <div className="bg-gradient-to-r from-sage-900 via-sage-800 to-sage-900 rounded-2xl p-6 md:p-8 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-sage-700/50 text-sage-100 border border-sage-600/30">
-              Active Term: AY 2025-2026 • First Semester
+              Active Term: AY {activeTerm?.school_year || '2025-2026'} • {activeTerm?.semester === '1st' ? 'First' : activeTerm?.semester === '2nd' ? 'Second' : activeTerm?.semester || 'Second'} Semester
             </span>
             <h1 className="text-3xl font-extrabold tracking-tight font-display">Welcome Back, {profile?.first_name || 'Instructor'}!</h1>
             <p className="text-sm text-sage-200/90 max-w-xl">

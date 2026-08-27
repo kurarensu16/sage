@@ -50,6 +50,7 @@ export default function StudentRow({
   });
 
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
+  const [showNoteInput, setShowNoteInput] = useState(Boolean(scores.remarksNote));
   const debounceRef = useRef(null);
   const isFirstRender = useRef(true);
 
@@ -93,6 +94,33 @@ export default function StudentRow({
           .upsert(upsertRows, { onConflict: 'class_record_id,student_id,term' });
 
         if (error) throw error;
+
+        // Also sync dynamic activities to student_activity_scores table if UUIDs exist
+        const dynamicScoreUpserts = [];
+        periods.forEach(term => {
+          const tScores = scores[term] || {};
+          const tActs = activities[term] || [];
+          tActs.forEach(act => {
+            if (act.id && typeof act.id === 'string' && act.id.length > 20) {
+              dynamicScoreUpserts.push({
+                student_id: student.id,
+                activity_id: act.id,
+                score: Number(tScores[act.id]) || 0
+              });
+            }
+          });
+        });
+
+        if (dynamicScoreUpserts.length > 0) {
+          try {
+            await supabase
+              .from('student_activity_scores')
+              .upsert(dynamicScoreUpserts, { onConflict: 'student_id,activity_id' });
+          } catch(scoreErr) {
+            console.warn('Could not sync to student_activity_scores:', scoreErr);
+          }
+        }
+
         setSaveStatus('saved');
       } catch (err) {
         console.error('Failed to sync scores draft:', err);

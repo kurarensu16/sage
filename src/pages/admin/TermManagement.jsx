@@ -4,6 +4,7 @@ import { Calendar, RefreshCw, AlertTriangle, CheckCircle, ShieldAlert, Database,
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { supabase } from '../../lib/supabase';
+import { cn } from '../../lib/utils';
 import SuccessModal from '../../components/SuccessModal';
 import ErrorModal from '../../components/ErrorModal';
 import ConfirmModal from '../../components/ConfirmModal';
@@ -298,7 +299,17 @@ export default function TermManagement() {
 
       if (transitionErr) throw transitionErr;
 
-      // 3. Write transition records to the activity_logs table
+      // 3. Auto-close all active evaluation windows upon semester transition
+      try {
+        await supabase
+          .from('evaluation_windows')
+          .update({ is_closed: true })
+          .eq('is_closed', false);
+      } catch (winCloseErr) {
+        console.warn('Evaluation windows auto-close warning:', winCloseErr);
+      }
+
+      // 4. Write transition records to the activity_logs table
       const actorName = resolveActorName(userProfile, user);
       await supabase.from('activity_logs').insert({
         action: 'Semester Transition',
@@ -307,7 +318,7 @@ export default function TermManagement() {
       });
 
       // Write to audit log helper if present
-      logActivity('Semester Transition', `Transitioned academic term from AY ${activeTerm.schoolYear} (${activeTerm.semester} Sem) to AY ${targetSy} (${targetSem} Sem). All old classrooms archived.`, actorName);
+      logActivity('Semester Transition', `Transitioned academic term from AY ${activeTerm.schoolYear} (${activeTerm.semester} Sem) to AY ${targetSy} (${targetSem} Sem). All old classrooms archived and evaluation windows sealed.`, actorName);
 
       setWizardStep(3);
     } catch (err) {
@@ -557,10 +568,65 @@ export default function TermManagement() {
 
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Target Destination Semester</label>
-                  <div className="bg-slate-50 border border-slate-200 px-4 py-3 rounded-lg text-sm font-bold text-slate-800 flex items-center justify-between font-sans">
-                    <span>AY {nextSemester.schoolYear} &mdash; {nextSemester.semester} Semester</span>
-                    <span className="text-[10px] font-bold text-sage-650 bg-sage-50 px-2 py-0.5 rounded border border-sage-200 uppercase tracking-wider font-mono">Auto-Calculated</span>
-                  </div>
+                  
+                  {activeTerm.semester === '2nd' ? (
+                    <div className="space-y-2">
+                      <label 
+                        onClick={() => setNextSemester({ schoolYear: activeTerm.schoolYear, semester: 'Summer' })}
+                        className={cn(
+                          "p-3 rounded-lg border flex items-center justify-between cursor-pointer transition-all text-xs",
+                          nextSemester.semester === 'Summer'
+                            ? "bg-sage-50 border-sage-500 font-bold text-sage-900 shadow-2xs"
+                            : "bg-white border-slate-200 text-slate-700 hover:border-slate-300"
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="radio" 
+                            name="targetSemChoice" 
+                            checked={nextSemester.semester === 'Summer'} 
+                            onChange={() => setNextSemester({ schoolYear: activeTerm.schoolYear, semester: 'Summer' })}
+                            className="text-sage-600 focus:ring-sage-500" 
+                          />
+                          <span>AY {activeTerm.schoolYear} &mdash; Summer Term (Mid-Year / OJT / Remedials)</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-mono font-normal">Same School Year</span>
+                      </label>
+
+                      {(() => {
+                        const parts = (activeTerm.schoolYear || '2025-2026').split('-');
+                        const nextSyStr = parts.length === 2 ? `${parseInt(parts[0], 10) + 1}-${parseInt(parts[1], 10) + 1}` : '2026-2027';
+                        return (
+                          <label 
+                            onClick={() => setNextSemester({ schoolYear: nextSyStr, semester: '1st' })}
+                            className={cn(
+                              "p-3 rounded-lg border flex items-center justify-between cursor-pointer transition-all text-xs",
+                              nextSemester.semester === '1st'
+                                ? "bg-sage-50 border-sage-500 font-bold text-sage-900 shadow-2xs"
+                                : "bg-white border-slate-200 text-slate-700 hover:border-slate-300"
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="radio" 
+                                name="targetSemChoice" 
+                                checked={nextSemester.semester === '1st'} 
+                                onChange={() => setNextSemester({ schoolYear: nextSyStr, semester: '1st' })}
+                                className="text-sage-600 focus:ring-sage-500" 
+                              />
+                              <span>AY {nextSyStr} &mdash; 1st Semester (New School Year & Cohort Promotion)</span>
+                            </div>
+                            <span className="text-[10px] text-emerald-700 font-mono font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">+1 Year Level</span>
+                          </label>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <div className="bg-slate-50 border border-slate-200 px-4 py-3 rounded-lg text-sm font-bold text-slate-800 flex items-center justify-between font-sans">
+                      <span>AY {nextSemester.schoolYear} &mdash; {nextSemester.semester} Semester</span>
+                      <span className="text-[10px] font-bold text-sage-650 bg-sage-50 px-2 py-0.5 rounded border border-sage-200 uppercase tracking-wider font-mono">Auto-Calculated</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">

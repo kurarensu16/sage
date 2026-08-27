@@ -11,6 +11,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { cn } from '../../lib/utils';
 
 export default function GradeComponentsSetup() {
   const navigate = useNavigate();
@@ -19,6 +20,8 @@ export default function GradeComponentsSetup() {
   const classRecordId = new URLSearchParams(location.search).get('id');
 
   const [classInfo, setClassInfo] = useState(null);
+  const [adminTemplates, setAdminTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTerm, setActiveTerm] = useState('Prelim');
   const [showSuccess, setShowSuccess] = useState(false);
@@ -38,7 +41,7 @@ export default function GradeComponentsSetup() {
       if (!classRecordId || !user) return;
       setLoading(true);
       try {
-        // Fetch class record info
+        // 1. Fetch class record info
         const { data: cr, error: crErr } = await supabase
           .from('class_records')
           .select(`
@@ -54,7 +57,16 @@ export default function GradeComponentsSetup() {
         if (crErr) throw crErr;
         setClassInfo(cr);
 
-        // Fetch configured grading columns
+        // 2. Fetch live Admin Grade Computation Templates
+        const { data: templatesData, error: tempErr } = await supabase
+          .from('grade_computations')
+          .select('*, grade_computation_components(*)');
+
+        if (!tempErr && templatesData) {
+          setAdminTemplates(templatesData);
+        }
+
+        // 3. Fetch configured grading columns for this class
         const { data: cols, error: colsErr } = await supabase
           .from('class_grading_columns')
           .select('*')
@@ -99,7 +111,38 @@ export default function GradeComponentsSetup() {
     }));
   };
 
+  const applyAdminTemplate = (template) => {
+    setSelectedTemplateId(template.computation_id);
+    const comps = template.grade_computation_components || [];
+    
+    // Find formative/class standing & exam components
+    const csComp = comps.find(c => (c.name || '').toLowerCase().includes('class standing') || (c.name || '').toLowerCase().includes('formative')) || comps[0];
+    const examComp = comps.find(c => (c.name || '').toLowerCase().includes('exam') || (c.name || '').toLowerCase().includes('major')) || comps[1];
+
+    const faMax = csComp?.max_score ? parseFloat(csComp.max_score) : 20;
+    const examMax = examComp?.max_score ? parseFloat(examComp.max_score) : 40;
+
+    const preset = {
+      act1_max: faMax,
+      act2_max: faMax,
+      act3_max: faMax,
+      act4_max: faMax,
+      act5_max: faMax,
+      act6_max: Math.round(faMax / 2) || 10,
+      exam_max: examMax
+    };
+
+    setColumnsData(prev => {
+      const updated = { ...prev };
+      termsList.forEach(t => {
+        updated[t] = { ...preset };
+      });
+      return updated;
+    });
+  };
+
   const applyPreset = (presetType) => {
+    setSelectedTemplateId(null);
     let preset = {};
     if (presetType === 'DYCI-STD') {
       preset = { act1_max: 20, act2_max: 20, act3_max: 20, act4_max: 20, act5_max: 20, act6_max: 10, exam_max: 40 };
@@ -197,33 +240,97 @@ export default function GradeComponentsSetup() {
           </div>
         </div>
 
-        {/* Preset Pickers */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3">
-          <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5 font-sans">
-            <RefreshCw className="h-3.5 w-3.5 text-sage-500" /> Apply Preset to All Terms
-          </h4>
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => applyPreset('DYCI-STD')}
-              type="button"
-              className="px-3.5 py-2 text-xs font-semibold bg-sage-50 hover:bg-sage-100 border border-sage-200 text-sage-800 rounded-lg transition-colors font-sans"
-            >
-              DYCI Standard (20pt FAs / 40pt Exam)
-            </button>
-            <button
-              onClick={() => applyPreset('QUIZ-HEAVY')}
-              type="button"
-              className="px-3.5 py-2 text-xs font-semibold bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-colors font-sans"
-            >
-              High Capacity (50pt FAs / 100pt Exam)
-            </button>
-            <button
-              onClick={() => applyPreset('SHORT-QUIZ')}
-              type="button"
-              className="px-3.5 py-2 text-xs font-semibold bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-colors font-sans"
-            >
-              Short Quizzes (10pt FAs / 30pt Exam)
-            </button>
+        {/* Institutional Admin Templates & Preset Pickers */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4">
+          <div>
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide flex items-center gap-1.5 font-sans">
+              <RefreshCw className="h-3.5 w-3.5 text-sage-600" /> Apply Grade Computation Template
+            </h4>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Select an official institutional template configured by the Academic Administrator to automatically standardize your column weights and maximum points across all terms.
+            </p>
+          </div>
+
+          {/* Dynamic Admin Templates */}
+          {adminTemplates.length > 0 && (
+            <div className="space-y-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Official Institutional Templates (Admin Configured):
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {adminTemplates.map((template) => {
+                  const isSelected = selectedTemplateId === template.computation_id;
+                  const comps = template.grade_computation_components || [];
+                  const csComp = comps.find(c => (c.name || '').toLowerCase().includes('class standing') || (c.name || '').toLowerCase().includes('formative')) || comps[0];
+                  const examComp = comps.find(c => (c.name || '').toLowerCase().includes('exam') || (c.name || '').toLowerCase().includes('major')) || comps[1];
+
+                  return (
+                    <div
+                      key={template.computation_id}
+                      onClick={() => applyAdminTemplate(template)}
+                      className={cn(
+                        "p-3.5 rounded-xl border text-left transition-all cursor-pointer space-y-1.5",
+                        isSelected
+                          ? "bg-sage-50/70 border-sage-500 ring-1 ring-sage-500/30 shadow-xs"
+                          : "bg-slate-50/60 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                          {template.name}
+                        </span>
+                        {isSelected && (
+                          <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-sage-600 text-white uppercase">
+                            Applied
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 line-clamp-1">
+                        {template.description ? template.description.replace(/[`*]/g, '') : 'Standard institutional grading template'}
+                      </p>
+                      <div className="flex items-center gap-2 pt-0.5 text-[10px] font-mono text-slate-600">
+                        <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                          CS: {csComp?.max_score || 20} pts max
+                        </span>
+                        <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                          Exam: {examComp?.max_score || 40} pts max
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Quick Fallback Presets */}
+          <div className="space-y-2 pt-1 border-t border-slate-100">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              Quick Point Presets:
+            </span>
+            <div className="flex flex-wrap gap-2.5">
+              <button
+                onClick={() => applyPreset('DYCI-STD')}
+                type="button"
+                className="px-3 py-1.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg transition-colors font-sans"
+              >
+                Standard (20pt FAs / 40pt Exam)
+              </button>
+              <button
+                onClick={() => applyPreset('QUIZ-HEAVY')}
+                type="button"
+                className="px-3 py-1.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-colors font-sans"
+              >
+                High Capacity (50pt FAs / 100pt Exam)
+              </button>
+              <button
+                onClick={() => applyPreset('SHORT-QUIZ')}
+                type="button"
+                className="px-3 py-1.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-colors font-sans"
+              >
+                Short Quizzes (10pt FAs / 30pt Exam)
+              </button>
+            </div>
           </div>
         </div>
 

@@ -28,7 +28,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
     ],
     office: [
       { to: '/office/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/office/rosterimport', icon: Users, label: 'Roster Import' },
+      { to: '/office/rosterimport', icon: Users, label: 'Department Roster' },
       { to: '/office/complianceaudit', icon: ClipboardList, label: 'Clearance Audit' },
       { to: '/office/subjectassignmentlist', icon: BookOpen, label: 'Subject Assignments' },
       { to: '/office/evalformslist', icon: FileText, label: 'Evaluation Forms' },
@@ -40,7 +40,6 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
       { to: '/faculty/classrecordslist', icon: BookOpen, label: 'Class Records' },
       { to: '/faculty/scoreinput', icon: FileText, label: 'Score Input' },
       { to: '/faculty/classattendance', icon: Calendar, label: 'Class Attendance' },
-      { to: '/faculty/verificationqueue', icon: ClipboardList, label: 'Verification Queue' },
       { to: '/faculty/evalresultsmy', icon: FileText, label: 'Eval Results' },
     ],
     dean: [

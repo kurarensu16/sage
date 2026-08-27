@@ -192,24 +192,9 @@ export default function EvalResultsFaculty() {
         }
 
       } catch (err) {
-        console.warn('Database query failed, falling back to mock dataset:', err);
+        console.error('Database query failed:', err);
         if (!cancelled) {
-          setFacultyName('Amanda Rivera (Mock Fallback)');
-          setFacultyDept('College of Computer Studies');
-          setTotalResponses(45);
-          
-          setCriteriaRatings([
-            { id: '1', label: 'Mastery of Subject Matter', rating: 4.8, max: 5 },
-            { id: '2', label: 'Teaching Methodology', rating: 4.5, max: 5 },
-            { id: '3', label: 'Classroom Management', rating: 4.2, max: 5 },
-            { id: '4', label: 'Student Engagement', rating: 4.9, max: 5 }
-          ]);
-          
-          setComments([
-            { id: 'c1', text: 'Great professor! Explains concepts very clearly.', timestamp: new Date().toISOString() },
-            { id: 'c2', text: 'Fair grading but exams are quite difficult.', timestamp: new Date().toISOString() }
-          ]);
-          setError(null);
+          setError('Failed to load faculty evaluation details from database.');
         }
       } finally {
         if (!cancelled) setLoading(false);

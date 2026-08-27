@@ -30,6 +30,7 @@ import OfficeEvalFormsList from './pages/office/EvalFormsList';
 import OfficeEvalWindowList from './pages/office/EvalWindowList';
 import OfficeEvalWindowForm from './pages/office/EvalWindowForm';
 import OfficeStudentSections from './pages/office/StudentSections';
+import OfficeNotifications from './pages/office/Notifications';
 import DeanDashboard from './pages/dean/Dashboard';
 import DeanGradePostingStatus from './pages/dean/GradePostingStatus';
 import DeanGradeDistribution from './pages/dean/GradeDistribution';
@@ -57,7 +58,6 @@ import StudentAcademicInsights from './pages/student/AcademicInsights';
 import StudentNotifications from './pages/student/Notifications';
 import AdminGradeComputationsList from './pages/admin/GradeComputationsList';
 import AdminDepartmentsList from './pages/admin/DepartmentsList';
-import FacultyVerificationQueue from './pages/faculty/VerificationQueue';
 import StudentAttendance from './pages/student/Attendance';
 import Settings from './pages/shared/Settings';
 
@@ -97,6 +97,7 @@ function App() {
             {/* Office Routes */}
             <Route element={<RoleGuard allowedRoles={['office']} />}>
               <Route path="/office/dashboard" element={<OfficeDashboard />} />
+              <Route path="/office/roster" element={<OfficeRosterImport />} />
               <Route path="/office/rosterimport" element={<OfficeRosterImport />} />
               <Route path="/office/complianceaudit" element={<OfficeComplianceAudit />} />
               <Route path="/office/subjectassignmentlist" element={<OfficeSubjectAssignmentList />} />
@@ -106,6 +107,7 @@ function App() {
               <Route path="/office/evalwindowlist" element={<OfficeEvalWindowList />} />
               <Route path="/office/evalwindowform" element={<OfficeEvalWindowForm />} />
               <Route path="/office/studentsections" element={<OfficeStudentSections />} />
+              <Route path="/office/notifications" element={<OfficeNotifications />} />
               <Route path="/office/settings" element={<Settings />} />
             </Route>
 
@@ -134,7 +136,6 @@ function App() {
               <Route path="/faculty/classattendance" element={<FacultyClassAttendance />} />
               <Route path="/faculty/evalresultsmy" element={<FacultyEvalResultsMy />} />
               <Route path="/faculty/notifications" element={<FacultyNotifications />} />
-              <Route path="/faculty/verificationqueue" element={<FacultyVerificationQueue />} />
               <Route path="/faculty/settings" element={<Settings />} />
             </Route>
 

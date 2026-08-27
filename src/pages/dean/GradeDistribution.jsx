@@ -280,43 +280,16 @@ export default function GradeDistribution() {
           });
         }
       } catch (e) {
-        console.warn('Failed to load posted grades, falling back to mock data:', e);
-        const mockData = [
-          { computed_grade: 96, effective_grade: null },
-          { computed_grade: 92, effective_grade: null },
-          { computed_grade: 88, effective_grade: null },
-          { computed_grade: 85, effective_grade: null },
-          { computed_grade: 82, effective_grade: null },
-          { computed_grade: 79, effective_grade: null },
-          { computed_grade: 74, effective_grade: null },
-        ];
-        setGradesList(mockData);
-        
-        const grades = mockData.map(effectiveGWA).filter(g => g !== null);
-        const total = grades.length;
-        const sum = grades.reduce((acc, g) => acc + g, 0);
-        const average = sum / total;
-
-        let passedCount = 0, failedCount = 0;
-        let b = { excellent: 0, good: 0, passing: 0, failing: 0 };
-
-        grades.forEach(g => {
-          if (g <= 3.0) passedCount++;
-          else failedCount++;
-
-          if (g >= 1.0 && g <= 1.5) b.excellent++;
-          else if (g > 1.5 && g <= 2.25) b.good++;
-          else if (g > 2.25 && g <= 3.0) b.passing++;
-          else b.failing++;
-        });
-
+        console.error('Failed to load posted grades from database:', e);
+        setError('Failed to load grade records for the selected class.');
+        setGradesList([]);
         setStats({
-          total, average, passedCount, failedCount,
+          total: 0, average: 0, passedCount: 0, failedCount: 0,
           brackets: {
-            excellent: { count: b.excellent, pct: (b.excellent / total) * 100 },
-            good: { count: b.good, pct: (b.good / total) * 100 },
-            passing: { count: b.passing, pct: (b.passing / total) * 100 },
-            failing: { count: b.failing, pct: (b.failing / total) * 100 }
+            excellent: { count: 0, pct: 0 },
+            good:      { count: 0, pct: 0 },
+            passing:   { count: 0, pct: 0 },
+            failing:   { count: 0, pct: 0 }
           }
         });
       } finally {

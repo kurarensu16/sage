@@ -116,15 +116,10 @@ export default function RemarkOverrideRequests() {
 
         if (!cancelled) setRequests(mapped);
       } catch (err) {
-        console.warn('Could not fetch from DB, using localStorage fallback:', err.message);
-        const ls = JSON.parse(localStorage.getItem('remark_override_requests') || '[]');
+        console.error('Could not fetch remark override requests from database:', err.message);
         if (!cancelled) {
-          setRequests(ls.map(r => ({
-            ...r,
-            currentRemark: r.currentRemark || displayRemark(r.current_remark),
-            requestedRemark: r.requestedRemark || displayRemark(r.requested_remark),
-          })));
-          setError('Live database unavailable. Showing cached data.');
+          setError('Failed to load remark override requests from database.');
+          setRequests([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -172,11 +167,6 @@ export default function RemarkOverrideRequests() {
         actorName
       );
 
-      // 5. Mirror to localStorage
-      const all = JSON.parse(localStorage.getItem('remark_override_requests') || '[]');
-      const updated = all.map(r => r.id === req.id ? { ...r, status: 'approved', resolvedAt } : r);
-      localStorage.setItem('remark_override_requests', JSON.stringify(updated));
-
       setRefreshKey(k => k + 1);
     } catch (err) {
       console.error('Error approving request:', err);
@@ -215,11 +205,6 @@ export default function RemarkOverrideRequests() {
         `Dean rejected remark override for student ${req.studentName} (${req.currentRemark} → ${req.requestedRemark}) in ${req.subjectName}. Reason: ${dNote || 'None'}`,
         actorName
       );
-
-      // 4. Mirror to localStorage
-      const all = JSON.parse(localStorage.getItem('remark_override_requests') || '[]');
-      const updated = all.map(r => r.id === req.id ? { ...r, status: 'rejected', resolvedAt, deanNote: dNote } : r);
-      localStorage.setItem('remark_override_requests', JSON.stringify(updated));
 
       setRefreshKey(k => k + 1);
     } catch (err) {

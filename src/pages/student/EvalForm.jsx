@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronRight, ShieldAlert, Send, Check, Heart, HelpCircle } from 'lucide-react';
+import { ChevronRight, ShieldAlert, Send, Check, Heart, HelpCircle, AlertCircle } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -54,7 +54,7 @@ export default function EvalForm() {
 
   useEffect(() => {
     async function loadFormSetup() {
-      if (!user || !windowId || !profile?.section_id) {
+      if (!user || !windowId) {
         setLoading(false);
         return;
       }
@@ -66,7 +66,9 @@ export default function EvalForm() {
             window_id,
             form_id,
             faculty_id,
+            section_id,
             close_at,
+            is_closed,
             faculty:users!evaluation_windows_faculty_id_fkey ( first_name, last_name )
           `)
           .eq('window_id', windowId)
@@ -79,7 +81,7 @@ export default function EvalForm() {
         const { data: classRec } = await supabase
           .from('class_records')
           .select('*, subjects(*)')
-          .eq('section_id', profile.section_id)
+          .eq('section_id', win.section_id)
           .eq('faculty_id', win.faculty_id)
           .eq('status', 'active')
           .limit(1)
@@ -156,37 +158,85 @@ export default function EvalForm() {
     try {
       // 1. Generate anonymous token to ensure response privacy (FR25)
       const token = await sha256(user.id + "_" + windowId);
-      const isOnTime = windowInfo?.close_at ? new Date() <= new Date(windowInfo.close_at) : true;
 
-      // 2. Insert evaluation response row
-      const { data: resp, error: respErr } = await supabase
+      // 2. Insert or retrieve evaluation response row
+      let responseId = null;
+
+      const { data: existingResp } = await supabase
         .from('evaluation_responses')
-        .insert({
-          window_id: windowId,
-          anonymous_token: token,
-          student_id: user.id,
-          is_on_time: isOnTime
-        })
         .select('response_id')
-        .single();
+        .eq('anonymous_token', token)
+        .maybeSingle();
 
-      if (respErr) throw respErr;
-      const responseId = resp.response_id;
+      if (existingResp?.response_id) {
+        responseId = existingResp.response_id;
+        try {
+          await supabase
+            .from('evaluation_responses')
+            .update({
+              student_id: user.id
+            })
+            .eq('response_id', responseId);
+        } catch {
+          // Ignore if student_id update not supported
+        }
+      } else {
+        const { data: newResp, error: respErr } = await supabase
+          .from('evaluation_responses')
+          .insert({
+            window_id: windowId,
+            anonymous_token: token,
+            student_id: user.id
+          })
+          .select('response_id')
+          .single();
 
-      // 3. Insert ratings mapped to criteria
-      const ratingsPayload = Object.entries(ratings).map(([critId, val]) => ({
-        response_id: responseId,
-        criteria_id: critId,
-        rating: val
-      }));
+        if (respErr) {
+          console.warn('Response insert with student_id failed, trying fallback without student_id:', respErr);
+          const { data: fallbackResp, error: fallbackErr } = await supabase
+            .from('evaluation_responses')
+            .insert({
+              window_id: windowId,
+              anonymous_token: token
+            })
+            .select('response_id')
+            .single();
 
-      const { error: ratingsErr } = await supabase
+          if (fallbackErr) throw fallbackErr;
+          responseId = fallbackResp.response_id;
+        } else {
+          responseId = newResp.response_id;
+        }
+      }
+
+      // 3. Clear any existing ratings for this response and insert fresh ratings
+      await supabase
         .from('evaluation_ratings')
-        .insert(ratingsPayload);
+        .delete()
+        .eq('response_id', responseId);
 
-      if (ratingsErr) throw ratingsErr;
+      const ratingsPayload = Object.entries(ratings)
+        .filter(([critId, val]) => critId && val !== null && val !== undefined)
+        .map(([critId, val]) => ({
+          response_id: responseId,
+          criteria_id: critId,
+          rating: Math.max(1, Math.min(4, parseInt(val, 10) || 3))
+        }));
 
-      // 4. Insert qualitative feedback if provided
+      if (ratingsPayload.length > 0) {
+        const { error: ratingsErr } = await supabase
+          .from('evaluation_ratings')
+          .insert(ratingsPayload);
+
+        if (ratingsErr) throw ratingsErr;
+      }
+
+      // 4. Clear any existing comments and insert fresh qualitative feedback if provided
+      await supabase
+        .from('evaluation_comments')
+        .delete()
+        .eq('response_id', responseId);
+
       if (strengths.trim() || improvements.trim()) {
         const commentParts = [];
         if (strengths.trim()) commentParts.push(`Strengths:\n${strengths.trim()}`);
@@ -208,7 +258,7 @@ export default function EvalForm() {
     } catch (err) {
       console.error('Error submitting evaluation:', err);
       setSubmitting(false);
-      alert('Failed to submit evaluation. Please try again.');
+      alert('Failed to submit evaluation: ' + (err.message || 'Please try again.'));
     }
   };
 
@@ -253,8 +303,8 @@ export default function EvalForm() {
 
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8 relative">
         
-        {/* Sticky Context Banner & Progress Bar */}
-        <div className="sticky top-0 bg-white/95 backdrop-blur-md z-35 border border-slate-200 shadow-sm rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4 transition-all duration-300">
+        {/* Instructor Context Banner & Progress Bar */}
+        <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="text-center sm:text-left">
             <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Evaluating Instructor</span>
             <h3 className="text-sm font-extrabold text-slate-900 mt-0.5 font-display">Prof. {facultyName}</h3>
@@ -286,6 +336,25 @@ export default function EvalForm() {
           <ChevronRight className="h-3 w-3" />
           <span className="font-medium text-slate-900 font-sans">Evaluation Form</span>
         </div>
+
+        {/* Closed Window Warning Barrier */}
+        {windowInfo?.is_closed && (
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-5 text-rose-900 flex items-start gap-3 shadow-xs">
+            <AlertCircle className="h-5 w-5 text-rose-600 mt-0.5 shrink-0" />
+            <div className="space-y-1 text-left">
+              <h4 className="font-bold text-sm text-rose-950">Evaluation Window Closed & Archived</h4>
+              <p className="text-xs text-rose-700 leading-relaxed">
+                This faculty evaluation period has ended and is permanently closed. Responses for past academic semesters can no longer be submitted.
+              </p>
+              <button
+                onClick={() => navigate('/student/evallist')}
+                className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-semibold hover:bg-rose-700 transition-colors shadow-2xs"
+              >
+                Back to Evaluations Overview <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Privacy Alert Box */}
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-3">
@@ -449,10 +518,10 @@ export default function EvalForm() {
             </button>
             <button
               type="submit"
-              disabled={!isFormComplete || submitting}
+              disabled={!isFormComplete || submitting || windowInfo?.is_closed}
               className="px-6 py-2.5 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-40 disabled:hover:bg-sage-600 disabled:cursor-not-allowed"
             >
-              {submitting ? 'Submitting...' : 'Submit Evaluation'} <Send className="h-4 w-4" />
+              {submitting ? 'Submitting...' : windowInfo?.is_closed ? 'Window Closed' : 'Submit Evaluation'} <Send className="h-4 w-4" />
             </button>
           </div>
 

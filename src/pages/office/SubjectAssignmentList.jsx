@@ -1,7 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, Filter, Plus, UserCheck, Archive, X, Check, AlertTriangle, BookOpen, Users, UserPlus, UserMinus } from 'lucide-react';
+import { 
+  Search, Plus, UserCheck, Archive, X, Check, AlertTriangle, 
+  BookOpen, Users, UserPlus, UserMinus, MoreVertical, RotateCcw,
+  Filter, CheckCircle2
+} from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
@@ -13,6 +17,16 @@ export default function SubjectAssignmentList() {
   const [subjects, setSubjects] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusTab, setStatusTab] = useState('active'); // active | archived
+  const [activeDropdownId, setActiveDropdownId] = useState(null);
+  const [confirmModalConfig, setConfirmModalConfig] = useState(null);
+
+  // Advanced Filters State
+  const [selectedSchoolYear, setSelectedSchoolYear] = useState('all');
+  const [selectedSemester, setSelectedSemester] = useState('all');
+  const [selectedYearLevel, setSelectedYearLevel] = useState('all');
+  const [selectedSection, setSelectedSection] = useState('all');
+  const [selectedFacultyFilter, setSelectedFacultyFilter] = useState('all');
+  const [selectedEnrollmentFilter, setSelectedEnrollmentFilter] = useState('all');
 
   // Reassignment Modal State
   const [isReassignOpen, setIsReassignOpen] = useState(false);
@@ -24,7 +38,7 @@ export default function SubjectAssignmentList() {
   const [selectedClassForStudents, setSelectedClassForStudents] = useState(null);
   const [studentSearchTerm, setStudentSearchTerm] = useState('');
   const [allStudents, setAllStudents] = useState([]);
-  const [enrollments, setEnrollments] = useState([]);
+  const [_enrollments, setEnrollments] = useState([]);
   const [selectedStudentIdsToEnroll, setSelectedStudentIdsToEnroll] = useState([]);
 
   // Load classrooms and faculty list from Supabase
@@ -115,8 +129,8 @@ export default function SubjectAssignmentList() {
           facultyId: c.faculty?.user_id || '',
           enrolledCount: regularCount + irregularCount,
           status: c.status || 'active',
-          schoolYear: c.school_year,
-          semester: c.semester,
+          schoolYear: c.school_year || '',
+          semester: c.semester || '',
           manualStudentIds: (dbEnrollments || [])
             .filter(e => e.subject_id === c.subject_id && e.section_id === c.section_id)
             .map(e => e.student_id)
@@ -133,13 +147,24 @@ export default function SubjectAssignmentList() {
     loadData();
   }, []);
 
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (activeDropdownId && !e.target.closest('.dropdown-trigger') && !e.target.closest('.dropdown-menu')) {
+        setActiveDropdownId(null);
+      }
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => document.removeEventListener('click', handleOutsideClick);
+  }, [activeDropdownId]);
+
   const handleOpenReassign = (cls) => {
     setSelectedClass(cls);
     setTargetFacultyId(cls.facultyId || '');
     setIsReassignOpen(true);
   };
 
-  const handleSaveReassignment = async () => {
+  const executeSaveReassignment = async () => {
     if (!selectedClass || !targetFacultyId) return;
     
     try {
@@ -165,32 +190,106 @@ export default function SubjectAssignmentList() {
     }
   };
 
-  const handleArchiveClass = async (cls) => {
-    const message = `Are you sure you want to archive ${cls.subjectCode} - ${cls.section}?\n\nWARNING: Archiving will prevent new enrollments and lock all grades for this section from further edits.`;
+  const triggerReassignConfirm = () => {
+    if (!selectedClass || !targetFacultyId) return;
+    const targetFac = facultyUsers.find(f => f.id === targetFacultyId);
     
-    if (confirm(message)) {
-      try {
-        const { error } = await supabase
-          .from('class_records')
-          .update({ status: 'archived' })
-          .eq('class_record_id', cls.id);
-        if (error) throw error;
-
-        const actorName = resolveActorName(profile, user);
-        await logActivity(
-          'Class Archival',
-          `Archived classroom record ${cls.subjectCode} (${cls.section}).`,
-          actorName
-        );
-        loadData();
-      } catch (err) {
-        console.error('Failed to archive class:', err);
-        alert('Failed to archive class: ' + err.message);
+    setConfirmModalConfig({
+      title: 'Confirm Faculty Reassignment',
+      message: (
+        <span>
+          Are you sure you want to reassign{' '}
+          <strong className="text-slate-800 font-semibold">Prof. {targetFac?.firstName} {targetFac?.lastName}</strong> to teach{' '}
+          <strong className="text-slate-800 font-semibold">{selectedClass.subjectCode} ({selectedClass.section})</strong>?
+        </span>
+      ),
+      confirmText: 'Confirm Assignment',
+      confirmBg: 'bg-sage-600 hover:bg-sage-700 focus:ring-sage-500',
+      icon: <UserCheck className="h-6 w-6 text-sage-600" />,
+      iconBg: 'bg-sage-50',
+      onConfirm: async () => {
+        setConfirmModalConfig(null);
+        await executeSaveReassignment();
       }
-    }
+    });
   };
 
-  // Manage Students Handlers
+  const triggerArchiveConfirm = (cls) => {
+    setConfirmModalConfig({
+      title: 'Archive Classroom',
+      message: (
+        <span>
+          Are you sure you want to archive{' '}
+          <strong className="text-slate-800 font-semibold">{cls.subjectCode} &mdash; {cls.section}</strong>? It will no longer appear on active teacher dashboards.
+        </span>
+      ),
+      confirmText: 'Archive Class',
+      confirmBg: 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500',
+      icon: <Archive className="h-6 w-6 text-rose-600" />,
+      iconBg: 'bg-rose-50',
+      onConfirm: async () => {
+        setConfirmModalConfig(null);
+        try {
+          const { error } = await supabase
+            .from('class_records')
+            .update({ status: 'archived' })
+            .eq('class_record_id', cls.id);
+          if (error) throw error;
+
+          const actorName = resolveActorName(profile, user);
+          await logActivity(
+            'Classroom Archived',
+            `Archived classroom ${cls.subjectCode} (${cls.section}).`,
+            actorName
+          );
+
+          loadData();
+        } catch (err) {
+          console.error('Failed to archive class:', err);
+          alert('Failed to archive classroom: ' + err.message);
+        }
+      }
+    });
+  };
+
+  const triggerRestoreConfirm = (cls) => {
+    setConfirmModalConfig({
+      title: 'Restore Classroom',
+      message: (
+        <span>
+          Restore <strong className="text-slate-800 font-semibold">{cls.subjectCode} &mdash; {cls.section}</strong> to active status?
+        </span>
+      ),
+      confirmText: 'Restore Class',
+      confirmBg: 'bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500',
+      icon: <RotateCcw className="h-6 w-6 text-emerald-600" />,
+      iconBg: 'bg-emerald-50',
+      onConfirm: async () => {
+        setConfirmModalConfig(null);
+        try {
+          const { error } = await supabase
+            .from('class_records')
+            .update({ status: 'active' })
+            .eq('class_record_id', cls.id);
+          if (error) throw error;
+
+          const actorName = resolveActorName(profile, user);
+          await logActivity(
+            'Classroom Restored',
+            `Restored classroom ${cls.subjectCode} (${cls.section}) to active status.`,
+            actorName
+          );
+
+          loadData();
+        } catch (err) {
+          console.error('Failed to restore class:', err);
+          alert('Failed to restore classroom: ' + err.message);
+        }
+      }
+    });
+  };
+
+  // Manage Students Modal Handlers
   const handleOpenManageStudents = (cls) => {
     setSelectedClassForStudents(cls);
     setStudentSearchTerm('');
@@ -198,32 +297,36 @@ export default function SubjectAssignmentList() {
     setIsManageStudentsOpen(true);
   };
 
-  // Helper to determine if a student is enrolled in the selected class
   const isStudentEnrolled = (student, cls) => {
     if (!cls) return false;
-    const manualIds = cls.manualStudentIds || [];
-    if (manualIds.includes(student.id)) return true;
-    return student.sectionId === cls.sectionId;
+    // 1. Regular block student: section matches class section
+    if (student.sectionId && student.sectionId === cls.sectionId) return true;
+    if (student.section && student.section === cls.section && student.section !== 'Irregular') return true;
+    // 2. Manual subject enrollment
+    if (cls.manualStudentIds && cls.manualStudentIds.includes(student.id)) return true;
+    return false;
   };
 
-  const handleEnrollSelected = async () => {
+  const executeEnrollSelected = async () => {
     if (!selectedClassForStudents || selectedStudentIdsToEnroll.length === 0) return;
 
     try {
-      const inserts = selectedStudentIdsToEnroll.map(id => ({
-        student_id: id,
+      // Create enrollments rows
+      const rows = selectedStudentIdsToEnroll.map(studId => ({
+        student_id: studId,
         subject_id: selectedClassForStudents.subjectId,
-        section_id: selectedClassForStudents.sectionId
+        section_id: selectedClassForStudents.sectionId,
+        enrollment_date: new Date().toISOString()
       }));
 
       const { error } = await supabase
         .from('enrollments')
-        .insert(inserts);
+        .upsert(rows, { onConflict: 'student_id,subject_id,section_id' });
       if (error) throw error;
 
       const actorName = resolveActorName(profile, user);
-      for (const id of selectedStudentIdsToEnroll) {
-        const stud = allStudents.find(s => s.id === id);
+      for (const studId of selectedStudentIdsToEnroll) {
+        const stud = allStudents.find(s => s.id === studId);
         if (stud) {
           await logActivity(
             'Manual Student Enrollment',
@@ -233,23 +336,37 @@ export default function SubjectAssignmentList() {
         }
       }
 
-      // Update local classroom object in modal
-      const newManualIds = [...new Set([...(selectedClassForStudents.manualStudentIds || []), ...selectedStudentIdsToEnroll])];
-      setSelectedClassForStudents(prev => ({
-        ...prev,
-        manualStudentIds: newManualIds,
-        enrolledCount: prev.enrolledCount + selectedStudentIdsToEnroll.length
-      }));
-
       setSelectedStudentIdsToEnroll([]);
       loadData();
+      setIsManageStudentsOpen(false);
     } catch (err) {
       console.error('Failed to enroll students:', err);
       alert('Failed to enroll students: ' + err.message);
     }
   };
 
-  const handleRemoveStudent = async (studentId) => {
+  const triggerEnrollSelectedConfirm = () => {
+    if (!selectedClassForStudents || selectedStudentIdsToEnroll.length === 0) return;
+    setConfirmModalConfig({
+      title: 'Enroll Students to Classroom',
+      message: (
+        <span>
+          Are you sure you want to enroll the <strong className="text-slate-800 font-semibold">{selectedStudentIdsToEnroll.length} selected student(s)</strong> into{' '}
+          <strong className="text-slate-800 font-semibold">{selectedClassForStudents.subjectCode} ({selectedClassForStudents.section})</strong>?
+        </span>
+      ),
+      confirmText: 'Confirm Enrollment',
+      confirmBg: 'bg-sage-600 hover:bg-sage-700 focus:ring-sage-500',
+      icon: <UserPlus className="h-6 w-6 text-sage-600" />,
+      iconBg: 'bg-sage-50',
+      onConfirm: async () => {
+        setConfirmModalConfig(null);
+        await executeEnrollSelected();
+      }
+    });
+  };
+
+  const executeRemoveStudent = async (studentId) => {
     if (!selectedClassForStudents) return;
 
     try {
@@ -271,18 +388,35 @@ export default function SubjectAssignmentList() {
         );
       }
 
-      const newManualIds = (selectedClassForStudents.manualStudentIds || []).filter(id => id !== studentId);
-      setSelectedClassForStudents(prev => ({
-        ...prev,
-        manualStudentIds: newManualIds,
-        enrolledCount: prev.enrolledCount - 1
-      }));
-
       loadData();
     } catch (err) {
       console.error('Failed to remove student:', err);
       alert('Failed to remove student: ' + err.message);
     }
+  };
+
+  const triggerRemoveStudentConfirm = (studentId) => {
+    if (!selectedClassForStudents) return;
+    const stud = allStudents.find(s => s.id === studentId);
+    
+    setConfirmModalConfig({
+      title: 'Remove Student from Classroom',
+      message: (
+        <span>
+          Are you sure you want to drop{' '}
+          <strong className="text-slate-800 font-semibold">{stud?.firstName} {stud?.lastName}</strong> from{' '}
+          <strong className="text-slate-800 font-semibold">{selectedClassForStudents.subjectCode} ({selectedClassForStudents.section})</strong>?
+        </span>
+      ),
+      confirmText: 'Remove Student',
+      confirmBg: 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500',
+      icon: <UserMinus className="h-6 w-6 text-rose-600" />,
+      iconBg: 'bg-rose-50',
+      onConfirm: async () => {
+        setConfirmModalConfig(null);
+        await executeRemoveStudent(studentId);
+      }
+    });
   };
 
   const toggleStudentSelection = (studentId) => {
@@ -291,18 +425,149 @@ export default function SubjectAssignmentList() {
     );
   };
 
-  // Filter classrooms
-  const filteredClassrooms = classrooms.filter(cls => {
-    const matchesSearch = 
-      cls.subjectCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cls.subjectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cls.section.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cls.facultyName.toLowerCase().includes(searchTerm.toLowerCase());
-      
-    const matchesTab = cls.status === statusTab;
-    
-    return matchesSearch && matchesTab;
-  });
+  // Helper to extract year level from section name (e.g. BSIT-1A -> 1st Year)
+  const getYearLevelFromSection = (sectionName) => {
+    if (!sectionName) return null;
+    const match = sectionName.match(/[1-4]/);
+    if (match) {
+      const digit = match[0];
+      const suffix = digit === '1' ? 'st' : digit === '2' ? 'nd' : digit === '3' ? 'rd' : 'th';
+      return `${digit}${suffix} Year`;
+    }
+    return null;
+  };
+
+  // Dynamic filter options derived from loaded classrooms
+  const availableSchoolYears = useMemo(() => {
+    const years = [...new Set(classrooms.map(c => c.schoolYear).filter(Boolean))];
+    return years.sort().reverse();
+  }, [classrooms]);
+
+  const availableSections = useMemo(() => {
+    const secs = [...new Set(classrooms.map(c => c.section).filter(Boolean))];
+    return secs.sort();
+  }, [classrooms]);
+
+  const availableFaculty = useMemo(() => {
+    const map = new Map();
+    classrooms.forEach(c => {
+      if (c.facultyId && c.facultyName && c.facultyName !== 'Unassigned') {
+        map.set(c.facultyId, c.facultyName);
+      }
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [classrooms]);
+
+  // Filter classrooms multi-criteria
+  const filteredClassrooms = useMemo(() => {
+    return classrooms.filter(cls => {
+      // 1. Status Tab (Active vs Archived)
+      if (cls.status !== statusTab) return false;
+
+      // 2. Search Term
+      if (searchTerm.trim()) {
+        const query = searchTerm.toLowerCase();
+        const matchesSearch = 
+          cls.subjectCode.toLowerCase().includes(query) ||
+          cls.subjectName.toLowerCase().includes(query) ||
+          cls.section.toLowerCase().includes(query) ||
+          cls.facultyName.toLowerCase().includes(query);
+        if (!matchesSearch) return false;
+      }
+
+      // 3. School Year
+      if (selectedSchoolYear !== 'all' && cls.schoolYear !== selectedSchoolYear) {
+        return false;
+      }
+
+      // 4. Semester
+      if (selectedSemester !== 'all' && cls.semester !== selectedSemester) {
+        return false;
+      }
+
+      // 5. Year Level
+      if (selectedYearLevel !== 'all') {
+        const yl = getYearLevelFromSection(cls.section);
+        if (yl !== selectedYearLevel) return false;
+      }
+
+      // 6. Section
+      if (selectedSection !== 'all' && cls.section !== selectedSection) {
+        return false;
+      }
+
+      // 7. Faculty Filter
+      if (selectedFacultyFilter === 'unassigned' && cls.facultyName !== 'Unassigned') {
+        return false;
+      }
+      if (selectedFacultyFilter === 'assigned' && cls.facultyName === 'Unassigned') {
+        return false;
+      }
+      if (selectedFacultyFilter !== 'all' && selectedFacultyFilter !== 'assigned' && selectedFacultyFilter !== 'unassigned') {
+        if (cls.facultyId !== selectedFacultyFilter) return false;
+      }
+
+      // 8. Enrollment Filter
+      if (selectedEnrollmentFilter === 'with_students' && cls.enrolledCount === 0) {
+        return false;
+      }
+      if (selectedEnrollmentFilter === 'empty' && cls.enrolledCount > 0) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [
+    classrooms,
+    statusTab,
+    searchTerm,
+    selectedSchoolYear,
+    selectedSemester,
+    selectedYearLevel,
+    selectedSection,
+    selectedFacultyFilter,
+    selectedEnrollmentFilter
+  ]);
+
+  // Has any active filter check
+  const hasActiveFilters = useMemo(() => {
+    return (
+      searchTerm.trim() !== '' ||
+      selectedSchoolYear !== 'all' ||
+      selectedSemester !== 'all' ||
+      selectedYearLevel !== 'all' ||
+      selectedSection !== 'all' ||
+      selectedFacultyFilter !== 'all' ||
+      selectedEnrollmentFilter !== 'all'
+    );
+  }, [
+    searchTerm,
+    selectedSchoolYear,
+    selectedSemester,
+    selectedYearLevel,
+    selectedSection,
+    selectedFacultyFilter,
+    selectedEnrollmentFilter
+  ]);
+
+  const resetAllFilters = () => {
+    setSearchTerm('');
+    setSelectedSchoolYear('all');
+    setSelectedSemester('all');
+    setSelectedYearLevel('all');
+    setSelectedSection('all');
+    setSelectedFacultyFilter('all');
+    setSelectedEnrollmentFilter('all');
+  };
+
+  // Metrics summary for the currently filtered view
+  const metrics = useMemo(() => {
+    const total = filteredClassrooms.length;
+    const assigned = filteredClassrooms.filter(c => c.facultyName !== 'Unassigned').length;
+    const unassigned = total - assigned;
+    const totalEnrolled = filteredClassrooms.reduce((sum, c) => sum + (c.enrolledCount || 0), 0);
+    return { total, assigned, unassigned, totalEnrolled };
+  }, [filteredClassrooms]);
 
   // Derived lists for Manage Students Modal
   const currentlyEnrolledList = allStudents
@@ -348,9 +613,9 @@ export default function SubjectAssignmentList() {
         </Link>
       </PageHeader>
 
-      <div className="p-8 overflow-y-auto flex-1 space-y-6">
+      <div className="p-4 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-6">
         
-        {/* Toolbar & Tabs */}
+        {/* Top Control Bar: Search & Status Tabs */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="relative max-w-md w-full">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -360,28 +625,210 @@ export default function SubjectAssignmentList() {
               type="text" 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors" 
-              placeholder="Search subjects, sections, or teachers..." 
+              className="block w-full pl-10 pr-9 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors shadow-2xs" 
+              placeholder="Search code, subject, section, or teacher..." 
             />
+            {searchTerm && (
+              <button 
+                onClick={() => setSearchTerm('')}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-1">
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-1 shadow-2xs">
             <button 
               onClick={() => setStatusTab('active')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                statusTab === 'active' ? 'bg-sage-50 text-sage-700' : 'text-slate-500 hover:text-slate-700'
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                statusTab === 'active' ? 'bg-sage-50 text-sage-800 border border-sage-200' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Active Classes
             </button>
             <button 
               onClick={() => setStatusTab('archived')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                statusTab === 'archived' ? 'bg-sage-50 text-sage-700' : 'text-slate-500 hover:text-slate-700'
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                statusTab === 'archived' ? 'bg-sage-50 text-sage-800 border border-sage-200' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Archived Records
             </button>
+          </div>
+        </div>
+
+        {/* ── ADVANCED FILTERS PANEL ── */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs space-y-3.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-sage-600" />
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider font-mono">
+                Classroom Filters
+              </span>
+              {hasActiveFilters && (
+                <span className="text-[10px] font-bold text-sage-700 bg-sage-50 border border-sage-200 px-2 py-0.5 rounded-full font-mono">
+                  Filtered
+                </span>
+              )}
+            </div>
+
+            {hasActiveFilters && (
+              <button
+                onClick={resetAllFilters}
+                className="text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1 transition-colors"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reset All Filters
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            
+            {/* Filter 1: School Year */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-500 block uppercase tracking-wide">
+                School Year
+              </label>
+              <select
+                value={selectedSchoolYear}
+                onChange={(e) => setSelectedSchoolYear(e.target.value)}
+                className="w-full text-xs bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-lg px-2.5 py-2 font-medium text-slate-800 outline-none focus:border-sage-500 transition-colors"
+              >
+                <option value="all">All School Years</option>
+                {availableSchoolYears.map(sy => (
+                  <option key={sy} value={sy}>AY {sy}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filter 2: Semester */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-500 block uppercase tracking-wide">
+                Semester
+              </label>
+              <select
+                value={selectedSemester}
+                onChange={(e) => setSelectedSemester(e.target.value)}
+                className="w-full text-xs bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-lg px-2.5 py-2 font-medium text-slate-800 outline-none focus:border-sage-500 transition-colors"
+              >
+                <option value="all">All Semesters</option>
+                <option value="1st">1st Semester</option>
+                <option value="2nd">2nd Semester</option>
+                <option value="Summer">Summer Term</option>
+              </select>
+            </div>
+
+            {/* Filter 3: Year Level */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-500 block uppercase tracking-wide">
+                Year Level
+              </label>
+              <select
+                value={selectedYearLevel}
+                onChange={(e) => setSelectedYearLevel(e.target.value)}
+                className="w-full text-xs bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-lg px-2.5 py-2 font-medium text-slate-800 outline-none focus:border-sage-500 transition-colors"
+              >
+                <option value="all">All Year Levels</option>
+                <option value="1st Year">1st Year</option>
+                <option value="2nd Year">2nd Year</option>
+                <option value="3rd Year">3rd Year</option>
+                <option value="4th Year">4th Year</option>
+              </select>
+            </div>
+
+            {/* Filter 4: Section */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-500 block uppercase tracking-wide">
+                Section
+              </label>
+              <select
+                value={selectedSection}
+                onChange={(e) => setSelectedSection(e.target.value)}
+                className="w-full text-xs bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-lg px-2.5 py-2 font-medium text-slate-800 outline-none focus:border-sage-500 transition-colors"
+              >
+                <option value="all">All Sections</option>
+                {availableSections.map(sec => (
+                  <option key={sec} value={sec}>{sec}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filter 5: Faculty Assignment */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-500 block uppercase tracking-wide">
+                Faculty Assignment
+              </label>
+              <select
+                value={selectedFacultyFilter}
+                onChange={(e) => setSelectedFacultyFilter(e.target.value)}
+                className="w-full text-xs bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-lg px-2.5 py-2 font-medium text-slate-800 outline-none focus:border-sage-500 transition-colors"
+              >
+                <option value="all">All Faculty</option>
+                <option value="assigned">✓ Assigned Faculty Only</option>
+                <option value="unassigned">⚠️ Unassigned Only (Needs Teacher)</option>
+                <optgroup label="Specific Instructors">
+                  {availableFaculty.map(f => (
+                    <option key={f.id} value={f.id}>Prof. {f.name}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+
+            {/* Filter 6: Enrolled Students */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-slate-500 block uppercase tracking-wide">
+                Roster Load
+              </label>
+              <select
+                value={selectedEnrollmentFilter}
+                onChange={(e) => setSelectedEnrollmentFilter(e.target.value)}
+                className="w-full text-xs bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-lg px-2.5 py-2 font-medium text-slate-800 outline-none focus:border-sage-500 transition-colors"
+              >
+                <option value="all">All Class Sizes</option>
+                <option value="with_students">With Enrolled Students (&gt; 0)</option>
+                <option value="empty">Empty Roster (0 Enrolled)</option>
+              </select>
+            </div>
+
+          </div>
+        </div>
+
+        {/* ── QUICK METRICS COUNTER BAR ── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div className="bg-white border border-slate-200 rounded-xl p-3.5 flex items-center justify-between shadow-2xs">
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Matching Classes</span>
+              <span className="text-base font-bold font-mono text-slate-900">{metrics.total}</span>
+            </div>
+            <BookOpen className="h-5 w-5 text-slate-400" />
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-3.5 flex items-center justify-between shadow-2xs">
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Assigned Faculty</span>
+              <span className="text-base font-bold font-mono text-emerald-700">{metrics.assigned}</span>
+            </div>
+            <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-3.5 flex items-center justify-between shadow-2xs">
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Unassigned (Alert)</span>
+              <span className={`text-base font-bold font-mono ${metrics.unassigned > 0 ? 'text-amber-600' : 'text-slate-500'}`}>
+                {metrics.unassigned}
+              </span>
+            </div>
+            <AlertTriangle className={`h-5 w-5 ${metrics.unassigned > 0 ? 'text-amber-500' : 'text-slate-300'}`} />
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-xl p-3.5 flex items-center justify-between shadow-2xs">
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Enrolled</span>
+              <span className="text-base font-bold font-mono text-indigo-700">{metrics.totalEnrolled}</span>
+            </div>
+            <Users className="h-5 w-5 text-indigo-400" />
           </div>
         </div>
 
@@ -394,6 +841,7 @@ export default function SubjectAssignmentList() {
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Course Code</th>
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Subject Description</th>
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Section</th>
+                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Term</th>
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Assigned Faculty</th>
                   <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Enrolled</th>
                   <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
@@ -411,15 +859,26 @@ export default function SubjectAssignmentList() {
                         {cls.subjectName}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
                           {cls.section}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900 font-medium flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-sage-50 border border-sage-200 text-sage-700 font-bold text-[10px] flex items-center justify-center font-mono">
-                          {cls.facultyName.split(' ').map(n => n[0]).join('')}
-                        </div>
-                        <span>Prof. {cls.facultyName}</span>
+                      <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-500 font-mono">
+                        {cls.schoolYear ? `AY ${cls.schoolYear} (${cls.semester} Sem)` : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {cls.facultyName === 'Unassigned' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                            <AlertTriangle className="h-3 w-3 text-amber-500" /> Unassigned
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-2 font-medium text-slate-900">
+                            <div className="w-6 h-6 rounded-full bg-sage-50 border border-sage-200 text-sage-700 font-bold text-[10px] flex items-center justify-center font-mono shrink-0">
+                              {cls.facultyName.split(' ').map(n => n[0]).filter(Boolean).slice(0, 2).join('')}
+                            </div>
+                            <span className="truncate">Prof. {cls.facultyName}</span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-mono font-medium text-slate-900">
                         {cls.enrolledCount}
@@ -433,36 +892,65 @@ export default function SubjectAssignmentList() {
                           {cls.status === 'active' ? 'Active' : 'Archived'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex justify-end gap-2">
-                          {cls.status === 'active' ? (
-                            <>
-                              <button 
-                                onClick={() => handleOpenManageStudents(cls)}
-                                title="Manage Students"
-                                className="p-1.5 text-blue-600 hover:bg-blue-50 border border-blue-100 rounded-md transition-colors flex items-center gap-1"
-                              >
-                                <Users className="h-4 w-4" />
-                              </button>
-                              
-                              <button 
-                                onClick={() => handleOpenReassign(cls)}
-                                title="Reassign Faculty"
-                                className="p-1.5 text-sage-600 hover:bg-sage-50 border border-sage-100 rounded-md transition-colors flex items-center gap-1"
-                              >
-                                <UserCheck className="h-4 w-4" />
-                              </button>
-                              
-                              <button 
-                                onClick={() => handleArchiveClass(cls)}
-                                title="Archive Classroom"
-                                className="p-1.5 text-rose-600 hover:bg-rose-50 border border-rose-100 rounded-md transition-colors flex items-center gap-1"
-                              >
-                                <Archive className="h-4 w-4" />
-                              </button>
-                            </>
-                          ) : (
-                            <span className="text-xs text-slate-400 font-mono italic pr-2">Read Only</span>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative">
+                        <div className="inline-block text-left">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveDropdownId(activeDropdownId === cls.id ? null : cls.id);
+                            }}
+                            className="dropdown-trigger p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+                            aria-label="Actions"
+                          >
+                            <MoreVertical className="h-5 w-5" />
+                          </button>
+
+                          {activeDropdownId === cls.id && (
+                            <div className="dropdown-menu absolute right-6 mt-1 w-52 rounded-lg bg-white border border-slate-200 shadow-lg py-1 z-40 text-left">
+                              {cls.status === 'active' ? (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      setActiveDropdownId(null);
+                                      handleOpenManageStudents(cls);
+                                    }}
+                                    className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                  >
+                                    <Users className="h-3.5 w-3.5 text-blue-500" />
+                                    Manage Students ({cls.enrolledCount})
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      setActiveDropdownId(null);
+                                      handleOpenReassign(cls);
+                                    }}
+                                    className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                  >
+                                    <UserCheck className="h-3.5 w-3.5 text-sage-600" />
+                                    Reassign Faculty
+                                  </button>
+
+                                  <div className="border-t border-slate-100 my-1"></div>
+
+                                  <button
+                                    onClick={() => triggerArchiveConfirm(cls)}
+                                    className="w-full text-left px-4 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50/50 flex items-center gap-2"
+                                  >
+                                    <Archive className="h-3.5 w-3.5 text-rose-500" />
+                                    Archive Classroom
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={() => triggerRestoreConfirm(cls)}
+                                  className="w-full text-left px-4 py-2 text-xs font-medium text-emerald-600 hover:bg-emerald-50/50 flex items-center gap-2"
+                                >
+                                  <RotateCcw className="h-3.5 w-3.5 text-emerald-500" />
+                                  Restore Classroom
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       </td>
@@ -470,8 +958,18 @@ export default function SubjectAssignmentList() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="7" className="px-6 py-10 text-center text-slate-400 text-sm">
-                      No classrooms found.
+                    <td colSpan="8" className="px-6 py-12 text-center text-slate-500">
+                      <BookOpen className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-sm font-semibold text-slate-700">No classrooms found matching your filters</p>
+                      <p className="text-xs text-slate-400 mt-1">Try adjusting your search criteria or resetting filters.</p>
+                      {hasActiveFilters && (
+                        <button
+                          onClick={resetAllFilters}
+                          className="mt-3 px-3 py-1.5 text-xs font-semibold bg-sage-50 text-sage-700 border border-sage-200 rounded-lg hover:bg-sage-100 transition-colors inline-flex items-center gap-1.5"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" /> Reset Filters
+                        </button>
+                      )}
                     </td>
                   </tr>
                 )}
@@ -540,7 +1038,7 @@ export default function SubjectAssignmentList() {
                                 <span className="text-[10px] text-slate-400 italic">Block Section</span>
                               ) : (
                                 <button 
-                                  onClick={() => handleRemoveStudent(stud.id)}
+                                  onClick={() => triggerRemoveStudentConfirm(stud.id)}
                                   className="text-rose-600 hover:text-rose-800 text-xs font-bold flex items-center gap-0.5 ml-auto hover:underline"
                                   title="Unenroll student"
                                 >
@@ -636,7 +1134,7 @@ export default function SubjectAssignmentList() {
                   Close
                 </button>
                 <button 
-                  onClick={handleEnrollSelected}
+                  onClick={triggerEnrollSelectedConfirm}
                   disabled={selectedStudentIdsToEnroll.length === 0}
                   className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
                 >
@@ -721,7 +1219,7 @@ export default function SubjectAssignmentList() {
                 Cancel
               </button>
               <button 
-                onClick={handleSaveReassignment}
+                onClick={triggerReassignConfirm}
                 disabled={!targetFacultyId}
                 className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
               >
@@ -729,6 +1227,39 @@ export default function SubjectAssignmentList() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Action Confirmation Modal */}
+      {confirmModalConfig && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 space-y-5 text-center animate-in zoom-in-95 duration-200 max-w-sm w-full">
+            <div className={`mx-auto w-14 h-14 rounded-full ${confirmModalConfig.iconBg} flex items-center justify-center shadow-xs animate-pulse duration-[2000ms]`}>
+              {confirmModalConfig.icon}
+            </div>
+            <div className="space-y-1.5 text-center">
+              <h3 className="text-base font-bold text-slate-900 font-display">{confirmModalConfig.title}</h3>
+              <div className="text-xs text-slate-500 leading-relaxed font-sans font-medium">
+                {confirmModalConfig.message}
+              </div>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmModalConfig(null)}
+                className="flex-1 px-4 py-2.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl transition-all duration-150 outline-none cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmModalConfig.onConfirm}
+                className={`flex-1 px-4 py-2.5 text-xs font-semibold text-white ${confirmModalConfig.confirmBg} rounded-xl shadow-xs transition-all duration-150 transform hover:scale-[1.02] active:scale-[0.98] outline-none cursor-pointer`}
+              >
+                {confirmModalConfig.confirmText}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -6,7 +6,7 @@ import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Min
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { mockClassInfo, mockStudents, mockActivities, mockDraftScores } from '../../lib/mockdb';
+import { getTransmutedGrade } from '../../lib/gradingMath';
 import { triggerExcelExport } from '../../lib/excelExport';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
@@ -369,12 +369,8 @@ export default function ScoreInput() {
               code, 
               name, 
               units, 
-              departments ( name ),
-              grade_computations (
-                name,
-                description,
-                grade_computation_components ( * )
-              )
+              computation_id,
+              departments ( name )
             ),
             sections ( name )
           `)
@@ -382,6 +378,24 @@ export default function ScoreInput() {
           .single();
 
         if (crErr) throw crErr;
+
+        // Fetch computation template separately if subject has computation_id
+        if (cr?.subjects?.computation_id) {
+          try {
+            const { data: compData } = await supabase
+              .from('grade_computations')
+              .select('name, description, grade_computation_components ( * )')
+              .eq('computation_id', cr.subjects.computation_id)
+              .maybeSingle();
+
+            if (compData && cr.subjects) {
+              cr.subjects.grade_computations = compData;
+            }
+          } catch (compErr) {
+            console.warn('Could not fetch grade_computations for subject:', compErr);
+          }
+        }
+
         setClassInfo(cr);
 
         // 2. Fetch all students enrolled in this subject and section from the enrollments table
@@ -461,34 +475,54 @@ export default function ScoreInput() {
           setActivities(loadedActivities);
         }
         
-        // Restore custom activities from LocalStorage
-        const localActs = localStorage.getItem(`sage_activities_${classRecordId}`);
-        if (localActs) {
-          try {
-            setActivities(JSON.parse(localActs));
-          } catch(e) {}
-        } else if (classRecordId === '35d248d1-ef72-4569-8f40-ca0dfe141941') {
-          // Fallback to visualization mock data for INP113
-          const loadedActivities = {
-            Prelim: mockDatabase.class_activities.map((act, index) => ({
-              id: `act${index + 1}`,
-              name: act.name,
-              max: act.max_score
-            })),
-            Midterm: [
-              { id: 'act1', name: 'FA 1', max: 20 },
-              { id: 'act2', name: 'FA 2', max: 20 },
-              { id: 'act3', name: 'FA 3', max: 20 }
-            ],
-            'Semi-Final': [
-              { id: 'act1', name: 'FA 1', max: 20 },
-              { id: 'act2', name: 'FA 2', max: 20 }
-            ],
-            Final: [
-              { id: 'act1', name: 'FA 1', max: 20 }
-            ]
-          };
-          setActivities(loadedActivities);
+        // Fetch dynamic custom activities from Supabase class_activities table
+        try {
+          const { data: dbActs } = await supabase
+            .from('class_activities')
+            .select('*')
+            .eq('class_record_id', classRecordId)
+            .order('created_at', { ascending: true });
+
+          if (dbActs && dbActs.length > 0) {
+            const loadedActivities = { Prelim: [], Midterm: [], 'Semi-Final': [], Final: [] };
+            periodsList.forEach(t => {
+              const termActs = dbActs.filter(a => a.term === t);
+              if (termActs.length > 0) {
+                loadedActivities[t] = termActs.map(a => ({
+                  id: a.activity_id,
+                  name: a.name,
+                  max: parseFloat(a.max_score) || 20
+                }));
+              } else if (dynamicComps.length > 0) {
+                loadedActivities[t] = dynamicComps.map((c, index) => ({
+                  id: `act${index + 1}`,
+                  name: c.name,
+                  max: parseFloat(c.max_score) || 20
+                }));
+              }
+            });
+            setActivities(loadedActivities);
+          } else {
+            // Restore custom activities from LocalStorage if not in DB
+            const localActs = localStorage.getItem(`sage_activities_${classRecordId}`);
+            if (localActs) {
+              try {
+                setActivities(JSON.parse(localActs));
+              } catch {
+                console.debug('Failed to parse cached activities');
+              }
+            }
+          }
+        } catch (actErr) {
+          console.warn('Could not query class_activities, fallback to cache:', actErr);
+          const localActs = localStorage.getItem(`sage_activities_${classRecordId}`);
+          if (localActs) {
+            try {
+              setActivities(JSON.parse(localActs));
+            } catch {
+              console.debug('Failed to parse cached activities');
+            }
+          }
         }
 
         // Fetch actual absences count from Supabase to sync with StudentRow
@@ -665,22 +699,7 @@ export default function ScoreInput() {
         });
 
       } catch (err) {
-        console.warn('Database query failed, falling back to mock dataset:', err);
-        setClassInfo(mockClassInfo);
-        setStudents(mockStudents);
-        setActivities(mockActivities);
-        // Seed draft scores cache in localStorage
-        mockStudents.forEach(stud => {
-          const STORAGE_KEY = `sage_scores_${classRecordId}_${stud.id}`;
-          const mockKey = `mock-class-rec-001_${stud.id}`;
-          const scoresPayload = mockDraftScores[mockKey] || {
-            Prelim: {}, Midterm: {}, 'Semi-Final': {}, Final: {}
-          };
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({
-            ...scoresPayload,
-            savedAt: new Date().toISOString()
-          }));
-        });
+        console.error('Failed to load class data from database:', err);
       } finally {
         setLoading(false);
       }
@@ -834,19 +853,6 @@ export default function ScoreInput() {
     } finally {
       setSavingDrafts(false);
     }
-  };
-
-  const getTransmutedGrade = (score) => {
-    if (score >= 98) return 1.00;
-    if (score >= 95) return 1.25;
-    if (score >= 92) return 1.50;
-    if (score >= 89) return 1.75;
-    if (score >= 86) return 2.00;
-    if (score >= 83) return 2.25;
-    if (score >= 80) return 2.50;
-    if (score >= 77) return 2.75;
-    if (score >= 75) return 3.00;
-    return 5.00;
   };
 
   const handlePostGrades = async () => {

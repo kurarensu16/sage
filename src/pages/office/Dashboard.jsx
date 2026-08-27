@@ -342,26 +342,26 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Roster Import Card */}
+            {/* Department Roster Card */}
             <div 
               onClick={() => navigate('/office/rosterimport')}
               className="bg-white rounded-xl border border-slate-200 hover:border-sage-400 p-5 shadow-xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
             >
               <div className="space-y-3">
                 <div className="w-10 h-10 rounded-xl bg-sage-50 text-sage-700 flex items-center justify-center group-hover:scale-105 transition-transform">
-                  <FileSpreadsheet className="h-5 w-5" />
+                  <Users className="h-5 w-5" />
                 </div>
                 <div>
                   <h4 className="text-base font-bold text-slate-900 group-hover:text-sage-700 transition-colors">
-                    Roster Import
+                    Department Roster
                   </h4>
                   <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    Batch upload Excel (.xlsx) or CSV rosters to automatically register students and faculty scoped to {userDepartmentName}.
+                    View department students & faculty directory, register single late enrollees, or batch import Excel/CSV class rosters.
                   </p>
                 </div>
               </div>
               <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-sage-600 group-hover:text-sage-800">
-                <span>Import CSV Roster</span>
+                <span>Manage Department Roster</span>
                 <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
               </div>
             </div>
