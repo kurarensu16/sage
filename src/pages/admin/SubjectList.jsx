@@ -149,6 +149,11 @@ CS202,Object Oriented Programming,3,College of Computer Studies`;
       const line = lines[i].trim();
       if (!line) continue;
 
+      // Skip CSV header row if present
+      if (i === 0 && (line.toLowerCase().includes('code') || line.toLowerCase().includes('units'))) {
+        continue;
+      }
+
       const parts = line.split(',');
       if (parts.length < 4) {
         setImportError(`Row ${i + 1} has insufficient columns. Required format: Code,Name,Units,Department`);

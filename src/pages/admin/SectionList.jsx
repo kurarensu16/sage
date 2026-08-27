@@ -181,6 +181,11 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
       const line = lines[i].trim();
       if (!line) continue;
 
+      // Skip CSV header row if present
+      if (i === 0 && (line.toLowerCase().includes('semester') || line.toLowerCase().includes('schoolyear') || line.toLowerCase().includes('school_year'))) {
+        continue;
+      }
+
       const parts = line.split(',');
       if (parts.length < 4) {
         setImportError(`Row ${i + 1} has insufficient columns. Required format: Name,SchoolYear,Semester,College,Program`);
