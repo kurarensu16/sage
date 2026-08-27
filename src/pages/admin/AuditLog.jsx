@@ -33,6 +33,12 @@ export default function AuditLog() {
   const [dateFilter, setDateFilter] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, actionFilter, dateFilter]);
 
   const loadLogs = async () => {
     setErrorMsg('');
@@ -60,14 +66,18 @@ export default function AuditLog() {
   const formatTimestamp = (isoString) => {
     if (!isoString) return '';
     const date = new Date(isoString);
-    return date.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
+    return date.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: 'numeric' })
       + ' • '
-      + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      + date.toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
 
   const formatDateKey = (isoString) => {
     if (!isoString) return '';
-    return new Date(isoString).toISOString().slice(0, 10);
+    const date = new Date(isoString);
+    const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' });
+    const parts = formatter.formatToParts(date);
+    const getPart = (type) => parts.find(p => p.type === type).value;
+    return `${getPart('year')}-${getPart('month')}-${getPart('day')}`;
   };
 
   // Get unique action types for filter dropdown (sorted alphabetically)
@@ -83,6 +93,9 @@ export default function AuditLog() {
     const matchesDate = dateFilter ? formatDateKey(log.timestamp) === dateFilter : true;
     return matchesSearch && matchesAction && matchesDate;
   });
+
+  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
+  const paginatedLogs = filteredLogs.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // Summary stats
   const todayKey = formatDateKey(new Date().toISOString());
@@ -218,8 +231,8 @@ export default function AuditLog() {
           </div>
 
           <div className="divide-y divide-slate-100 overflow-y-auto" style={{ maxHeight: '560px' }}>
-            {filteredLogs.length > 0 ? (
-              filteredLogs.map((log) => (
+            {paginatedLogs.length > 0 ? (
+              paginatedLogs.map((log) => (
                 <div
                   key={log.log_id}
                   className="px-6 py-4 hover:bg-slate-50/60 transition-colors flex flex-col md:flex-row md:items-start justify-between gap-4"
@@ -252,6 +265,29 @@ export default function AuditLog() {
               </div>
             )}
           </div>
+          {totalPages > 1 && (
+            <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-500">
+                Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredLogs.length)} of {filteredLogs.length} entries
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1.5 border border-slate-200 rounded bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1.5 border border-slate-200 rounded bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
       </div>
