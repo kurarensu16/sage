@@ -80,6 +80,8 @@ export default function UserList() {
   const [importSuccess, setImportSuccess] = useState('');
   const [importProgress, setImportProgress] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [allowOverwrite, setAllowOverwrite] = useState(false);
+  const [importReport, setImportReport] = useState(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const fileInputRef = React.useRef(null);
 
@@ -104,9 +106,9 @@ export default function UserList() {
   const [userLogs, setUserLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
 
-  const sampleCSV = `Smith,Jane,A.,jane.smith@student.sage.edu,student,College of Computer Studies,Bachelor of Science in Information Technology,BSIT-1A,1st Year,2026-00005
-Cruz,Patricia,N.,p.cruz@sage.edu.ph,dean,College of Computer Studies,,,,DN-2026-00002
-Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Bachelor of Science in Information Technology,,,FAC-2026-00003`;
+  const sampleCSV = `Smith,Jane,A.,jane.smith@student.sage.edu,student,College of Accountancy,Bachelor of Science in Accountancy,BSA-1A,1st Year,2026-00005
+Cruz,Patricia,N.,p.cruz@sage.edu.ph,dean,College of Accountancy,,,,DN-2026-00002
+Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelor of Science in Accountancy,,,FAC-2026-00003`;
 
   // Load users, departments and sections from Supabase
   const loadUsers = async () => {
@@ -609,6 +611,14 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
     const list = [];
     let hasError = false;
 
+    let startIndex = 0;
+    if (lines.length > 0) {
+      const firstLineLower = lines[0].toLowerCase();
+      if (firstLineLower.includes('lastname') || firstLineLower.includes('first_name') || firstLineLower.includes('email')) {
+        startIndex = 1;
+      }
+    }
+
     // Track sequential role counts dynamically for auto-generation
     const roleCounts = {
       admin: users.filter(u => u.role === 'admin').length,
@@ -618,129 +628,134 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
       office: users.filter(u => u.role === 'office').length,
     };
 
-    for (let i = 0; i < lines.length; i++) {
+    for (let i = startIndex; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
 
+      let importStatus = 'ready';
+      let importMessage = '';
+
       const parts = line.split(',');
       if (parts.length < 6) {
-        setImportError(`Row ${i + 1} has insufficient columns. Required format: LastName,FirstName,MiddleName,Email,Role,College,Program[,Section,YearLevel,IDNumber]`);
-        hasError = true;
-        break;
+        importStatus = 'error';
+        importMessage = `Insufficient columns. Required: LastName,FirstName,MiddleName,Email,Role,College,Program[,Section,YearLevel,IDNumber]`;
       }
 
       let [lastName, firstName, middleName, email, role, department, program, section, yearLevel, userNumber] = parts.map(p => p?.trim() || '');
 
-      // Backwards compatibility for 6 columns
-      if (parts.length === 6) {
-        department = parts[5].trim();
-        if (department === 'College of IT' || department === 'College of CS' || department === 'College of Computer Studies') {
-          department = 'College of Computer Studies';
-          program = role === 'student' || role === 'faculty'
-            ? 'Bachelor of Science in Information Technology'
-            : '';
-        } else {
-          program = '';
-        }
-        section = '';
-        yearLevel = '';
-        userNumber = '';
-      } else {
-        if (department === 'College of IT' || department === 'College of CS') {
-          department = 'College of Computer Studies';
-          program = program || (role === 'student' || role === 'faculty'
-            ? 'Bachelor of Science in Information Technology'
-            : '');
-        }
-      }
-
-      // Automatically derive Year Level and assign first matching active section if student lacks section/yearLevel
-      if (role.toLowerCase() === 'student') {
-        if (!yearLevel) {
-          // If section is provided, try to extract year level from section name (e.g. BSIT-1A -> 1st Year)
-          if (section) {
-            if (section.includes('1')) yearLevel = '1st Year';
-            else if (section.includes('2')) yearLevel = '2nd Year';
-            else if (section.includes('3')) yearLevel = '3rd Year';
-            else if (section.includes('4')) yearLevel = '4th Year';
-          }
-          if (!yearLevel) {
-            yearLevel = '1st Year'; // Default fallback
-          }
-        }
-
-        if (!section) {
-          const matchesDigit = yearLevel.charAt(0); // '1', '2', '3', '4'
-          const matchedSec = dbSections.find(
-            s => s.department === department && 
-                 (s.name.includes(`-${matchesDigit}`) || s.name.includes(matchesDigit))
-          );
-          section = matchedSec ? matchedSec.name : '';
-        }
-      }
-
-      if (!email.includes('@')) {
-        setImportError(`Row ${i + 1} has an invalid email format: ${email}`);
-        hasError = true;
-        break;
-      }
-
-      const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-      if (existingUser && existingUser.status !== 'archived') {
-        setImportError(`Row ${i + 1}: Email "${email}" is already registered.`);
-        hasError = true;
-        break;
-      }
-
-      if (list.some(u => u.email.toLowerCase() === email.toLowerCase())) {
-        setImportError(`Row ${i + 1}: Duplicate email "${email}" found inside the CSV.`);
-        hasError = true;
-        break;
-      }
-
-      const validRoles = ['admin', 'dean', 'faculty', 'student', 'office'];
-      if (!validRoles.includes(role.toLowerCase())) {
-        setImportError(`Row ${i + 1} has an invalid role: "${role}". Valid values: admin, dean, faculty, student, office`);
-        hasError = true;
-        break;
-      }
-
-      // Handle user number generation or validation
       let finalUserNumber = userNumber;
-      if (!finalUserNumber) {
-        const prefix = role.toLowerCase() === 'student' ? '' : role.toLowerCase() === 'admin' ? 'ADM-' : role.toLowerCase() === 'faculty' ? 'FAC-' : role.toLowerCase() === 'office' ? 'OFC-' : 'DN-';
-        const year = new Date().getFullYear();
-        let generated = '';
-        do {
-          roleCounts[role.toLowerCase()] = (roleCounts[role.toLowerCase()] || 0) + 1;
-          const nextSeq = String(roleCounts[role.toLowerCase()]).padStart(5, '0');
-          generated = `${prefix}${year}-${nextSeq}`;
-        } while (users.some(u => u.userNumber === generated) || list.some(u => u.userNumber === generated));
-        finalUserNumber = generated;
-      } else {
-        if (role.toLowerCase() === 'student') {
-          const studentIdRegex = /^\d{4}-\d{5}$/;
-          if (!studentIdRegex.test(finalUserNumber)) {
-            setImportError(`Row ${i + 1} has an invalid Student Number format: "${finalUserNumber}". Must be YYYY-XXXXX.`);
-            hasError = true;
-            break;
+      if (importStatus !== 'error') {
+        // Backwards compatibility for 6 columns
+        if (parts.length === 6) {
+          department = parts[5].trim();
+          if (department === 'College of IT' || department === 'College of CS' || department === 'College of Computer Studies') {
+            department = 'College of Computer Studies';
+            program = role === 'student' || role === 'faculty'
+              ? 'Bachelor of Science in Information Technology'
+              : '';
+          } else {
+            program = '';
           }
+          section = '';
+          yearLevel = '';
+          userNumber = '';
         } else {
-          const employeeIdRegex = /^(ADM|FAC|DN|OFC)-\d{4}-\d{5}$/;
-          if (!employeeIdRegex.test(finalUserNumber)) {
-            setImportError(`Row ${i + 1} has an invalid Employee ID format: "${finalUserNumber}". Must be ADM-YYYY-XXXXX, FAC-YYYY-XXXXX, DN-YYYY-XXXXX, or OFC-YYYY-XXXXX.`);
-            hasError = true;
-            break;
+          if (department === 'College of IT' || department === 'College of CS') {
+            department = 'College of Computer Studies';
+            program = program || (role === 'student' || role === 'faculty'
+              ? 'Bachelor of Science in Information Technology'
+              : '');
           }
         }
-        if (users.some(u => u.userNumber === finalUserNumber) || list.some(u => u.userNumber === finalUserNumber)) {
-          setImportError(`Row ${i + 1} has a duplicate ID Number: "${finalUserNumber}".`);
-          hasError = true;
-          break;
+
+        // Automatically derive Year Level and assign first matching active section if student lacks section/yearLevel
+        if (role.toLowerCase() === 'student') {
+          if (!yearLevel) {
+            if (section) {
+              if (section.includes('1')) yearLevel = '1st Year';
+              else if (section.includes('2')) yearLevel = '2nd Year';
+              else if (section.includes('3')) yearLevel = '3rd Year';
+              else if (section.includes('4')) yearLevel = '4th Year';
+            }
+            if (!yearLevel) {
+              yearLevel = '1st Year'; // Default fallback
+            }
+          }
+
+          if (!section) {
+            const matchesDigit = yearLevel.charAt(0); // '1', '2', '3', '4'
+            const matchedSec = dbSections.find(
+              s => s.department === department && 
+                   (s.name.includes(`-${matchesDigit}`) || s.name.includes(matchesDigit))
+            );
+            section = matchedSec ? matchedSec.name : '';
+          }
+        }
+
+        if (!email.includes('@')) {
+          importStatus = 'error';
+          importMessage = `Invalid email format: ${email}`;
+        } else if (list.some(u => u.email.toLowerCase() === email.toLowerCase())) {
+          importStatus = 'error';
+          importMessage = `Duplicate email "${email}" found inside the CSV.`;
+        } else {
+          const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+          if (existingUser) {
+            importStatus = 'conflict';
+            importMessage = 'User already exists (will update if overwrite enabled)';
+          }
+        }
+
+        if (importStatus !== 'error') {
+          const validRoles = ['admin', 'dean', 'faculty', 'student', 'office'];
+          if (!validRoles.includes(role.toLowerCase())) {
+            importStatus = 'error';
+            importMessage = `Invalid role: "${role}". Valid values: admin, dean, faculty, student, office`;
+          }
+        }
+
+        // Handle user number generation or validation
+        if (importStatus !== 'error') {
+          finalUserNumber = userNumber;
+          if (!finalUserNumber) {
+            const prefix = role.toLowerCase() === 'student' ? '' : role.toLowerCase() === 'admin' ? 'ADM-' : role.toLowerCase() === 'faculty' ? 'FAC-' : role.toLowerCase() === 'office' ? 'OFC-' : 'DN-';
+            const year = new Date().getFullYear();
+            let generated = '';
+            do {
+              roleCounts[role.toLowerCase()] = (roleCounts[role.toLowerCase()] || 0) + 1;
+              const nextSeq = String(roleCounts[role.toLowerCase()]).padStart(5, '0');
+              generated = `${prefix}${year}-${nextSeq}`;
+            } while (users.some(u => u.userNumber === generated) || list.some(u => u.userNumber === generated));
+            finalUserNumber = generated;
+          } else {
+            if (role.toLowerCase() === 'student') {
+              const studentIdRegex = /^\d{4}-\d{5}$/;
+              if (!studentIdRegex.test(finalUserNumber)) {
+                importStatus = 'error';
+                importMessage = `Invalid Student Number format: "${finalUserNumber}". Must be YYYY-XXXXX.`;
+              }
+            } else {
+              const employeeIdRegex = /^((ADM|FAC|DN|OFC)-)?\d{4}-\d{5}$/;
+              if (!employeeIdRegex.test(finalUserNumber)) {
+                importStatus = 'error';
+                importMessage = `Invalid Employee ID format: "${finalUserNumber}". Must be YYYY-XXXXX or with prefix like ADM-YYYY-XXXXX.`;
+              }
+            }
+            
+            if (importStatus !== 'error') {
+              const duplicateInDb = users.find(u => u.userNumber === finalUserNumber && u.email.toLowerCase() !== email.toLowerCase());
+              const duplicateInList = list.find(u => u.userNumber === finalUserNumber && u.email.toLowerCase() !== email.toLowerCase());
+              if (duplicateInDb || duplicateInList) {
+                importStatus = 'error';
+                importMessage = `Duplicate ID Number: "${finalUserNumber}" which belongs to another user.`;
+              }
+            }
+          }
         }
       }
 
       list.push({
+        rowNum: i + 1,
         lastName,
         firstName,
         middleName,
@@ -751,16 +766,15 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
         section,
         yearLevel,
         status: 'active',
-        userNumber: finalUserNumber
+        userNumber: finalUserNumber,
+        importStatus,
+        importMessage
       });
     }
 
-    if (!hasError) {
-      setParsedUsers(list);
-      setImportSuccess(`Successfully parsed ${list.length} user records.`);
-    } else {
-      setParsedUsers([]);
-    }
+    setParsedUsers(list);
+    setImportError('');
+    setImportSuccess('');
   };
 
   const executeSaveImport = async () => {
@@ -770,22 +784,33 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
     setImportProgress('Starting import process...');
 
     try {
-      let successCount = 0;
-      let failCount = 0;
+      const added = [];
+      const updated = [];
+      const skipped = [];
+      const failed = [];
 
       for (let i = 0; i < parsedUsers.length; i++) {
         const u = parsedUsers[i];
-        setImportProgress(`Registering user ${i + 1} of ${parsedUsers.length}: ${u.firstName} ${u.lastName}...`);
+        
+        if (u.importStatus === 'error') {
+          failed.push(u);
+          continue;
+        }
+
+        if (u.importStatus === 'conflict' && !allowOverwrite) {
+          skipped.push({ ...u, importMessage: 'Skipped - User already exists' });
+          continue;
+        }
+
+        setImportProgress(`Processing row ${i + 1} of ${parsedUsers.length}: ${u.firstName} ${u.lastName}...`);
 
         const deptObj = departments.find(d => d.name === u.department);
         if (!deptObj) {
-          console.warn(`Department "${u.department}" not found for user ${u.email}`);
-          failCount++;
+          failed.push({ ...u, importMessage: `Department "${u.department}" not found.` });
           continue;
         }
 
         const secObj = dbSections.find(s => s.name === u.section);
-
         const existingUserObj = users.find(oldU => oldU.email.toLowerCase() === u.email.toLowerCase());
 
         if (existingUserObj) {
@@ -806,10 +831,9 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
             .eq('user_id', existingUserObj.id);
 
           if (updateErr) {
-            console.error(`Failed to restore ${u.email}:`, updateErr);
-            failCount++;
+            failed.push({ ...u, importMessage: updateErr.message });
           } else {
-            successCount++;
+            updated.push(u);
           }
         } else {
           // Create new user via Edge Function
@@ -829,8 +853,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
           });
 
           if (invokeErr || data?.error) {
-            console.error(`Failed to register ${u.email}:`, invokeErr || data?.error);
-            failCount++;
+            failed.push({ ...u, importMessage: (invokeErr || data?.error)?.message || 'Failed to create user' });
           } else {
             // Client-side fallback update to ensure user_number is persisted in public.users
             if (data?.user?.id) {
@@ -842,7 +865,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
                 console.error(`Failed to set user number client-side for ${u.email}:`, updateErr);
               }
             }
-            successCount++;
+            added.push(u);
           }
         }
       }
@@ -850,26 +873,20 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
       const actorName = resolveActorName(profile, user);
       await logActivity(
         'Batch User Import',
-        `Batch CSV import completed: ${successCount} user(s) registered successfully, ${failCount} failed out of ${parsedUsers.length} total records.`,
+        `Batch CSV import completed: ${added.length} added, ${updated.length} updated, ${skipped.length} skipped, ${failed.length} failed out of ${parsedUsers.length} total records.`,
         actorName
       );
 
-      setImportSuccess(`Import completed! Successfully registered ${successCount} users. Failed: ${failCount}`);
-      loadUsers();
-      
-      setTimeout(() => {
-        setIsImportOpen(false);
-        setParsedUsers([]);
-        setCsvText('');
-        setImportSuccess('');
-        setImportProgress('');
-        setIsImporting(false);
-      }, 3000);
-
-    } catch (err) {
-      console.error('Import failed:', err);
-      setImportError('Import failed: ' + err.message);
+      setImportReport({ added, updated, skipped, failed });
       setIsImporting(false);
+      setImportProgress('');
+      setImportSuccess('');
+      loadUsers();
+    } catch (err) {
+      console.error('Import process failed:', err);
+      setImportError('Critical error during import: ' + err.message);
+      setIsImporting(false);
+      setImportProgress('');
     }
   };
 
@@ -1037,7 +1054,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
               <option value="faculty">Faculty</option>
               <option value="office">Office</option>
               <option value="student">Student</option>
-              <option value="office">Office</option>
             </select>
           </div>
 
@@ -1183,13 +1199,13 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-slate-600">
+                      <td className="px-6 py-4 text-sm font-mono text-slate-600 truncate max-w-[200px]" title={user.email}>
                         {user.email}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {getRoleBadge(user.role)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-650 font-medium">
+                      <td className="px-6 py-4 text-sm text-slate-650 font-medium whitespace-normal">
                         <div>{user.department === 'College of IT' || user.department === 'College of CS' ? 'College of Computer Studies' : user.department}</div>
                         {user.program && <div className="text-[10px] text-slate-400 font-normal">{user.program}</div>}
                         {user.role === 'student' && (
@@ -1457,136 +1473,220 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Computer Studies,Ba
             <div className="flex flex-col gap-4">
               
               {/* Drag and Drop Upload Zone */}
-              <div 
-                onClick={() => !isImporting && fileInputRef.current?.click()}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (isImporting) return;
-                  const file = e.dataTransfer.files[0];
-                  if (file) handleFileUpload(file);
-                }}
-                className={cn(
-                  "border-2 border-dashed border-slate-200 rounded-xl p-6 text-center transition-all flex flex-col items-center justify-center gap-2 group relative",
-                  isImporting ? "bg-slate-100 cursor-not-allowed" : "hover:border-sage-400 bg-slate-50/50 hover:bg-sage-50/20 cursor-pointer"
-                )}
-              >
-                <input 
-                  ref={fileInputRef}
-                  type="file" 
-                  disabled={isImporting}
-                  accept=".xlsx,.xls,.csv" 
-                  onChange={(e) => {
-                    const file = e.target.files[0];
+              {!importReport && (
+                <div 
+                  onClick={() => !isImporting && fileInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (isImporting) return;
+                    const file = e.dataTransfer.files[0];
                     if (file) handleFileUpload(file);
                   }}
-                  className="hidden"
-                />
-                <Upload className="h-8 w-8 text-slate-400 group-hover:text-sage-600 transition-colors" />
-                <div className="text-xs font-bold text-slate-700 group-hover:text-sage-700">Drag & drop your Excel (.xlsx) or CSV (.csv) file here</div>
-                <div className="text-[10px] text-slate-400">Or click to select a file from your computer</div>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                    Or Paste Raw Data (Format: <code className="font-mono text-sage-700 bg-sage-50 px-1 py-0.5 rounded border border-sage-200">LastName,FirstName,MiddleName,Email,Role,College,Program,Section,YearLevel[,IDNumber]</code>)
-                  </label>
-                  <button
-                    disabled={isImporting}
-                    onClick={handleLoadSample}
-                    className="px-2.5 py-1 text-[11px] font-bold border border-sage-200 text-sage-700 hover:bg-sage-50 rounded disabled:opacity-50"
-                  >
-                    Load Sample Template
-                  </button>
-                </div>
-
-                <textarea
-                  disabled={isImporting}
-                  value={csvText}
-                  onChange={(e) => {
-                    setCsvText(e.target.value);
-                    setParsedUsers([]);
-                  }}
-                  onBlur={() => handleParseCSV()}
-                  rows="6"
-                  placeholder="Smith,Jane,A.,jane.smith@student.sage.edu,student,College of Computer Studies,Bachelor of Science in Information Technology,BSIT-1A,1st Year,2026-00001"
-                  className="block w-full p-3 border border-slate-200 rounded-lg text-xs font-mono focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400"
-                />
-
-              <div className="text-right">
-                <button
-                  disabled={isImporting}
-                  onClick={() => handleParseCSV()}
-                  className="px-3.5 py-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                  className={cn(
+                    "border-2 border-dashed border-slate-200 rounded-xl p-6 text-center transition-all flex flex-col items-center justify-center gap-2 group relative",
+                    isImporting ? "bg-slate-100 cursor-not-allowed" : "hover:border-sage-400 bg-slate-50/50 hover:bg-sage-50/20 cursor-pointer"
+                  )}
                 >
-                  Validate & Parse CSV
-                </button>
-              </div>
+                  <input 
+                    ref={fileInputRef}
+                    type="file" 
+                    disabled={isImporting}
+                    accept=".xlsx,.xls,.csv" 
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file) handleFileUpload(file);
+                    }}
+                    className="hidden"
+                  />
+                  <Upload className="h-8 w-8 text-slate-400 group-hover:text-sage-600 transition-colors" />
+                  <div className="text-xs font-bold text-slate-700 group-hover:text-sage-700">Drag & drop your Excel (.xlsx) or CSV (.csv) file here</div>
+                  <div className="text-[10px] text-slate-400">Or click to select a file from your computer</div>
+                </div>
+              )}
 
-              {parsedUsers.length > 0 && (
-                <div className="border border-slate-200 rounded-lg overflow-hidden">
-                  <div className="bg-slate-50 px-4 py-2 text-[10px] font-bold text-slate-650 uppercase border-b border-slate-200 font-display">
-                    Parsed Registry Preview ({parsedUsers.length} Records)
+              {!importReport && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                      Or Paste Raw Data (Format: <code className="font-mono text-sage-700 bg-sage-50 px-1 py-0.5 rounded border border-sage-200">LastName,FirstName,MiddleName,Email,Role,College,Program,Section,YearLevel[,IDNumber]</code>)
+                    </label>
+                    <button
+                      disabled={isImporting}
+                      onClick={handleLoadSample}
+                      className="px-2.5 py-1 text-[11px] font-bold border border-sage-200 text-sage-700 hover:bg-sage-50 rounded disabled:opacity-50"
+                    >
+                      Load Sample Template
+                    </button>
                   </div>
-                  <div className="max-h-40 overflow-y-auto">
-                    <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-                      <thead className="bg-slate-50">
+
+                  <textarea
+                    disabled={isImporting}
+                    value={csvText}
+                    onChange={(e) => {
+                      setCsvText(e.target.value);
+                      setParsedUsers([]);
+                    }}
+                    onBlur={() => handleParseCSV()}
+                    rows="6"
+                    placeholder="Smith,Jane,A.,jane.smith@student.sage.edu,student,College of Computer Studies,Bachelor of Science in Information Technology,BSIT-1A,1st Year,2026-00001"
+                    className="block w-full p-3 border border-slate-200 rounded-lg text-xs font-mono focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400"
+                  />
+
+                  <div className="text-right">
+                    <button
+                      disabled={isImporting}
+                      onClick={() => handleParseCSV()}
+                      className="px-3.5 py-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-bold transition-all disabled:opacity-50"
+                    >
+                      Validate & Parse CSV
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {parsedUsers.length > 0 && !importReport && (
+                <div className="border border-slate-200 rounded-lg overflow-hidden flex flex-col">
+                  <div className="bg-slate-50 px-4 py-3 text-[11px] font-bold uppercase border-b border-slate-200 font-display flex items-center justify-between shrink-0">
+                    <span className="text-slate-700">Parsed Registry Preview ({parsedUsers.length} Records)</span>
+                    <div className="flex items-center gap-4">
+                      <span className="text-emerald-600 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> {parsedUsers.filter(u => u.importStatus === 'ready').length} Ready</span>
+                      <span className="text-amber-600 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500"></span> {parsedUsers.filter(u => u.importStatus === 'conflict').length} Existing</span>
+                      <span className="text-rose-600 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500"></span> {parsedUsers.filter(u => u.importStatus === 'error').length} Errors</span>
+                    </div>
+                  </div>
+                  <div className="max-h-[50vh] overflow-y-auto">
+                    <table className="min-w-full divide-y divide-slate-200 text-left text-xs relative">
+                      <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
                         <tr>
+                          <th className="px-4 py-2 font-bold text-slate-500">Status</th>
                           <th className="px-4 py-2 font-bold text-slate-500">Name</th>
                           <th className="px-4 py-2 font-bold text-slate-500">Email</th>
                           <th className="px-4 py-2 font-bold text-slate-500">Role</th>
                           <th className="px-4 py-2 font-bold text-slate-500">College / Program</th>
-                          <th className="px-4 py-2 font-bold text-slate-500">Year Level</th>
-                          <th className="px-4 py-2 font-bold text-slate-500">Section</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-slate-100">
                         {parsedUsers.map((u, index) => (
                           <tr key={index}>
-                            <td className="px-4 py-2 font-bold text-slate-800">{u.lastName}, {u.firstName}</td>
+                            <td className="px-4 py-2 min-w-[200px] align-top">
+                              {u.importStatus === 'ready' && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-800">Ready</span>}
+                              {u.importStatus === 'conflict' && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">Existing</span>}
+                              {u.importStatus === 'error' && <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-rose-100 text-rose-800">Error</span>}
+                              {u.importMessage && <div className="text-[10px] text-slate-500 mt-1.5 leading-tight whitespace-normal break-words">{u.importMessage}</div>}
+                            </td>
+                            <td className="px-4 py-2 font-bold text-slate-800 align-top whitespace-nowrap">{u.lastName}, {u.firstName}</td>
                             <td className="px-4 py-2 font-mono text-slate-600">{u.email}</td>
                             <td className="px-4 py-2 font-semibold text-slate-750 uppercase font-mono">{u.role}</td>
                             <td className="px-4 py-2 text-slate-600 text-xs">
                               <div>{u.department}</div>
                               {u.program && <div className="text-[10px] text-slate-400 font-mono">{u.program}</div>}
                             </td>
-                            <td className="px-4 py-2 text-slate-650 text-xs font-medium">{u.yearLevel || '-'}</td>
-                            <td className="px-4 py-2 text-slate-600 text-xs font-mono font-bold">{u.section || '-'}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                      <CustomCheckbox checked={allowOverwrite} onChange={(e) => setAllowOverwrite(e.target.checked)} />
+                      Overwrite existing users with new data from this CSV
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {importReport && (
+                <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                  <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                    <span className="text-sm font-bold text-slate-800 font-display flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-emerald-600" />
+                      Import Complete
+                    </span>
+                  </div>
+                  <div className="p-4 space-y-4 max-h-[50vh] overflow-y-auto">
+                    {/* Summary Counters */}
+                    <div className="grid grid-cols-4 gap-4">
+                      <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-lg text-center">
+                        <div className="text-2xl font-bold text-emerald-600">{importReport.added.length}</div>
+                        <div className="text-[10px] uppercase font-bold text-emerald-800">Added</div>
+                      </div>
+                      <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg text-center">
+                        <div className="text-2xl font-bold text-blue-600">{importReport.updated.length}</div>
+                        <div className="text-[10px] uppercase font-bold text-blue-800">Updated</div>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg text-center">
+                        <div className="text-2xl font-bold text-slate-600">{importReport.skipped.length}</div>
+                        <div className="text-[10px] uppercase font-bold text-slate-800">Skipped</div>
+                      </div>
+                      <div className="bg-rose-50 border border-rose-100 p-3 rounded-lg text-center">
+                        <div className="text-2xl font-bold text-rose-600">{importReport.failed.length}</div>
+                        <div className="text-[10px] uppercase font-bold text-rose-800">Failed</div>
+                      </div>
+                    </div>
+
+                    {/* Failed List */}
+                    {importReport.failed.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-700 uppercase mb-2">Failed Rows</h4>
+                        <ul className="space-y-1">
+                          {importReport.failed.map((u, idx) => (
+                            <li key={idx} className="text-xs text-rose-700 bg-rose-50 p-2 rounded flex flex-col md:flex-row md:justify-between gap-1">
+                              <span><strong className="text-rose-900">Row {u.rowNum}:</strong> {u.lastName}, {u.firstName} ({u.email})</span>
+                              <span className="truncate md:text-right">{u.importMessage}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {/* Skipped List */}
+                    {importReport.skipped.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-700 uppercase mb-2">Skipped Rows</h4>
+                        <ul className="space-y-1">
+                          {importReport.skipped.map((u, idx) => (
+                            <li key={idx} className="text-xs text-slate-600 bg-slate-50 p-2 rounded flex justify-between">
+                              <span><strong>Row {u.rowNum}:</strong> {u.lastName}, {u.firstName}</span>
+                              <span className="truncate ml-4">{u.importMessage}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
             </div>
           </div>
 
-            {/* Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+          {/* Footer */}
+          <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+            <button 
+              disabled={isImporting}
+              onClick={() => {
+                setIsImportOpen(false);
+                setCsvText('');
+                setParsedUsers([]);
+                setImportError('');
+                setImportSuccess('');
+                setImportProgress('');
+                setImportReport(null);
+              }}
+              className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {importReport ? 'Close' : 'Cancel'}
+            </button>
+            
+            {!importReport && (
               <button 
-                disabled={isImporting}
-                onClick={() => {
-                  setIsImportOpen(false);
-                  setCsvText('');
-                  setParsedUsers([]);
-                  setImportError('');
-                  setImportSuccess('');
-                  setImportProgress('');
-                }}
-                className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleSaveImport}
-                disabled={parsedUsers.length === 0 || isImporting}
+                onClick={() => setShowConfirmModal(true)}
+                disabled={parsedUsers.length === 0 || isImporting || parsedUsers.filter(u => u.importStatus === 'ready' || (u.importStatus === 'conflict' && allowOverwrite)).length === 0}
                 className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
               >
                 <Check className="h-4 w-4" /> {isImporting ? 'Saving...' : 'Save Imported Users'}
               </button>
-            </div>
+            )}
           </div>
         </div>
       </div>

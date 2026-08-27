@@ -462,6 +462,11 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,Bachelor of Science in Informa
       const line = lines[i].trim();
       if (!line) continue;
 
+      // Skip CSV header row if present
+      if (i === 0 && (line.toLowerCase().includes('email') || line.toLowerCase().includes('role'))) {
+        continue;
+      }
+
       const parts = line.split(',');
       if (parts.length < 5) {
         setImportError(`Row ${i + 1} has insufficient columns. Required format: LastName,FirstName,MiddleName,Email,Role,Program[,Section,YearLevel,IDNumber]`);
