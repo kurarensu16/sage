@@ -118,6 +118,13 @@ export default function SubjectAssignmentForm() {
     loadData();
   }, []);
 
+  // Pre-select department filter on load for office staff
+  useEffect(() => {
+    if (profile?.department_id) {
+      setSelectedCollege(profile.department_id);
+    }
+  }, [profile]);
+
   const getYearLevelFromSectionName = (name) => {
     const match = name.match(/-(\d)/);
     if (match) {
@@ -445,11 +452,11 @@ export default function SubjectAssignmentForm() {
                   <Filter className="h-4 w-4 text-sage-600" />
                   Filter Options
                 </div>
-                {(selectedCollege || selectedProgram || selectedYearLevel) && (
+                 {(selectedCollege || selectedProgram || selectedYearLevel) && (
                   <button
                     type="button"
                     onClick={() => {
-                      setSelectedCollege('');
+                      setSelectedCollege(profile?.department_id || '');
                       setSelectedProgram('');
                       setSelectedYearLevel('');
                     }}
@@ -463,16 +470,22 @@ export default function SubjectAssignmentForm() {
                 {/* College / Department Filter */}
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">College / Department</span>
-                  <select
-                    value={selectedCollege}
-                    onChange={(e) => setSelectedCollege(e.target.value)}
-                    className="block w-full bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
-                  >
-                    <option value="">All Colleges</option>
-                    {departments.map((dept) => (
-                      <option key={dept.department_id} value={dept.department_id}>{dept.name}</option>
-                    ))}
-                  </select>
+                  {profile?.department_id ? (
+                    <div className="block w-full bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg text-xs text-slate-500 cursor-not-allowed font-medium">
+                      {departments.find(d => d.department_id === selectedCollege)?.name || 'Loading department...'}
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedCollege}
+                      onChange={(e) => setSelectedCollege(e.target.value)}
+                      className="block w-full bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
+                    >
+                      <option value="">All Colleges</option>
+                      {departments.map((dept) => (
+                        <option key={dept.department_id} value={dept.department_id}>{dept.name}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 {/* Academic Program Filter */}

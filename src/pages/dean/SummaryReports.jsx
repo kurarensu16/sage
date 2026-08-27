@@ -4,8 +4,10 @@ import { Printer, Filter, Download } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import html2pdf from 'html2pdf.js';
 import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
+import { useAuth } from '../../lib/AuthContext';
 
 export default function SummaryReports() {
+  const { profile } = useAuth();
   const [reportType, setReportType] = useState('grade-distribution');
   const [deptFilter, setDeptFilter] = useState('College of Computer Studies');
   const [semFilter, setSemFilter] = useState('1st');
@@ -13,6 +15,13 @@ export default function SummaryReports() {
 
   const [reportData, setReportData] = useState([]);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  // Pre-select department filter on load for deans
+  useEffect(() => {
+    if (profile?.departments?.name) {
+      setDeptFilter(profile.departments.name);
+    }
+  }, [profile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -415,15 +424,21 @@ export default function SummaryReports() {
             {/* Department */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">College / School</label>
-              <select
-                value={deptFilter}
-                onChange={(e) => setDeptFilter(e.target.value)}
-                className="block w-full border border-slate-200 px-3 py-2.5 rounded-lg text-xs bg-white outline-none cursor-pointer"
-              >
-                {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
-                  <option key={college} value={college}>{college}</option>
-                ))}
-              </select>
+              {profile?.departments?.name ? (
+                <div className="block w-full border border-slate-200 px-3 py-2.5 rounded-lg text-xs bg-slate-50 text-slate-500 cursor-not-allowed font-medium">
+                  {profile.departments.name}
+                </div>
+              ) : (
+                <select
+                  value={deptFilter}
+                  onChange={(e) => setDeptFilter(e.target.value)}
+                  className="block w-full border border-slate-200 px-3 py-2.5 rounded-lg text-xs bg-white outline-none cursor-pointer"
+                >
+                  {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
+                    <option key={college} value={college}>{college}</option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {/* Semester */}
