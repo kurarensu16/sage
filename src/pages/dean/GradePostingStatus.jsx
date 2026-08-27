@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
 export default function GradePostingStatus() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   
   // Data state
   const [classrooms, setClassrooms] = useState([]);
@@ -20,6 +20,13 @@ export default function GradePostingStatus() {
   const [syFilter, setSyFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOverrideClass, setSelectedOverrideClass] = useState('');
+
+  // Pre-select dean's department on load
+  useEffect(() => {
+    if (profile?.departments?.name) {
+      setDeptFilter(profile.departments.name);
+    }
+  }, [profile]);
 
   // Fetch data from Supabase
   const loadPostingData = async () => {
@@ -229,10 +236,10 @@ export default function GradePostingStatus() {
                 onChange={(e) => setSelectedOverrideClass(e.target.value)}
                 className="bg-white border border-slate-200 hover:border-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all cursor-pointer text-slate-700 shadow-sm max-w-xs truncate"
               >
-                {classrooms.length === 0 ? (
+                {filteredClasses.length === 0 ? (
                   <option value="">No active classes</option>
                 ) : (
-                  classrooms.map(c => (
+                  filteredClasses.map(c => (
                     <option key={c.id} value={c.id}>
                       {c.subjectCode} - {c.section} ({c.facultyName})
                     </option>
@@ -305,16 +312,22 @@ export default function GradePostingStatus() {
 
             {/* Department */}
             <div className="flex flex-col gap-1">
-              <select
-                value={deptFilter}
-                onChange={(e) => setDeptFilter(e.target.value)}
-                className="block w-full border border-slate-200 px-3 py-2 rounded-lg text-xs bg-white outline-none cursor-pointer"
-              >
-                <option value="">All Departments</option>
-                {departments.map(d => (
-                  <option key={d.department_id} value={d.name}>{d.name}</option>
-                ))}
-              </select>
+              {profile?.departments?.name ? (
+                <div className="block w-full border border-slate-200 px-3 py-2 rounded-lg text-xs bg-slate-50 text-slate-500 cursor-not-allowed font-medium">
+                  {profile.departments.name}
+                </div>
+              ) : (
+                <select
+                  value={deptFilter}
+                  onChange={(e) => setDeptFilter(e.target.value)}
+                  className="block w-full border border-slate-200 px-3 py-2 rounded-lg text-xs bg-white outline-none cursor-pointer"
+                >
+                  <option value="">All Departments</option>
+                  {departments.map(d => (
+                    <option key={d.department_id} value={d.name}>{d.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {/* Semester */}

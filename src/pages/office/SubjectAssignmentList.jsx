@@ -68,13 +68,17 @@ export default function SubjectAssignmentList() {
         .eq('status', 'active');
       if (facErr) throw facErr;
 
-      const mappedFaculties = (dbFaculty || []).map(u => ({
-        id: u.user_id,
-        firstName: u.first_name,
-        lastName: u.last_name,
-        department: u.departments?.name || '',
-        departmentId: u.department_id
-      }));
+      const userDeptId = profile?.department_id;
+
+      const mappedFaculties = (dbFaculty || [])
+        .filter(u => !userDeptId || u.department_id === userDeptId || u.departments?.name === 'Department of General Education')
+        .map(u => ({
+          id: u.user_id,
+          firstName: u.first_name,
+          lastName: u.last_name,
+          department: u.departments?.name || '',
+          departmentId: u.department_id
+        }));
       setFacultyUsers(mappedFaculties);
 
       // 3. Fetch subjects
@@ -82,17 +86,25 @@ export default function SubjectAssignmentList() {
         .from('subjects')
         .select('subject_id, code, name, department_id, departments(name)');
       if (subErr) throw subErr;
-      setSubjects(dbSubjects || []);
+      
+      const filteredSubjects = (dbSubjects || []).filter(s => 
+        !userDeptId || 
+        s.department_id === userDeptId || 
+        s.departments?.name === 'Department of General Education'
+      );
+      setSubjects(filteredSubjects);
 
       // 4. Fetch students
       const { data: dbStudents, error: studErr } = await supabase
         .from('users')
-        .select('user_id, user_number, first_name, last_name, email, role, section_id, sections(name), status')
+        .select('user_id, user_number, first_name, last_name, email, role, section_id, sections(name), status, department_id')
         .eq('role', 'student')
         .eq('status', 'active');
       if (studErr) throw studErr;
 
-      const mappedStudents = (dbStudents || []).map(u => ({
+      const filteredStudents = (dbStudents || []).filter(u => !userDeptId || u.department_id === userDeptId);
+
+      const mappedStudents = filteredStudents.map(u => ({
         id: u.user_id,
         userNumber: u.user_number || '',
         firstName: u.first_name,
@@ -112,8 +124,15 @@ export default function SubjectAssignmentList() {
       if (enrollErr) throw enrollErr;
       setEnrollments(dbEnrollments || []);
 
+      const filteredClassrooms = (dbClassrooms || []).filter(c => 
+        !userDeptId || 
+        c.subjects?.department_id === userDeptId || 
+        c.sections?.department_id === userDeptId ||
+        c.subjects?.departments?.name === 'Department of General Education'
+      );
+
       // 6. Map classrooms with dynamic enrollment count
-      const mappedClassrooms = (dbClassrooms || []).map(c => {
+      const mappedClassrooms = filteredClassrooms.map(c => {
         // Enrolled count is regular block students + manual subject/section enrollments
         const regularCount = mappedStudents.filter(s => s.sectionId === c.section_id).length;
         const irregularCount = (dbEnrollments || []).filter(e => e.subject_id === c.subject_id && e.section_id === c.section_id).length;
@@ -144,8 +163,10 @@ export default function SubjectAssignmentList() {
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (profile?.department_id) {
+      loadData();
+    }
+  }, [profile?.department_id]);
 
   // Close dropdown on outside click
   useEffect(() => {

@@ -83,6 +83,7 @@ export default function UserList() {
   const [allowOverwrite, setAllowOverwrite] = useState(false);
   const [importReport, setImportReport] = useState(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isEditingImport, setIsEditingImport] = useState(false);
   const fileInputRef = React.useRef(null);
 
   const [departments, setDepartments] = useState([]);
@@ -775,6 +776,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
     setParsedUsers(list);
     setImportError('');
     setImportSuccess('');
+    setIsEditingImport(false);
   };
 
   const executeSaveImport = async () => {
@@ -1442,6 +1444,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                   setParsedUsers([]);
                   setImportError('');
                   setImportSuccess('');
+                  setIsEditingImport(false);
                 }}
                 className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-900 transition-colors"
               >
@@ -1472,8 +1475,40 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
             <div className="flex flex-col gap-4">
               
+              {parsedUsers.length > 0 && !importReport && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-center justify-between shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4.5 w-4.5 text-emerald-600 flex-shrink-0" />
+                    <span className="text-xs font-medium text-slate-700">
+                      <strong>CSV Data Loaded:</strong> {parsedUsers.length} records parsed successfully.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      disabled={isImporting}
+                      onClick={() => setIsEditingImport(!isEditingImport)}
+                      className="text-xs font-bold text-sage-600 hover:text-sage-700 hover:underline transition-colors disabled:opacity-50"
+                    >
+                      {isEditingImport ? 'Hide Editor' : 'Edit Data'}
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      disabled={isImporting}
+                      onClick={() => {
+                        setParsedUsers([]);
+                        setCsvText('');
+                        setIsEditingImport(false);
+                      }}
+                      className="text-xs font-bold text-sage-600 hover:text-sage-700 hover:underline transition-colors disabled:opacity-50"
+                    >
+                      Upload New
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Drag and Drop Upload Zone */}
-              {!importReport && (
+              {parsedUsers.length === 0 && !importReport && (
                 <div 
                   onClick={() => !isImporting && fileInputRef.current?.click()}
                   onDragOver={(e) => e.preventDefault()}
@@ -1505,7 +1540,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 </div>
               )}
 
-              {!importReport && (
+              {(parsedUsers.length === 0 || isEditingImport) && !importReport && (
                 <div className="flex flex-col gap-2">
                   <div className="flex justify-between items-center">
                     <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
@@ -1545,7 +1580,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 </div>
               )}
 
-              {parsedUsers.length > 0 && !importReport && (
+              {parsedUsers.length > 0 && !isEditingImport && !importReport && (
                 <div className="border border-slate-200 rounded-lg overflow-hidden flex flex-col">
                   <div className="bg-slate-50 px-4 py-3 text-[11px] font-bold uppercase border-b border-slate-200 font-display flex items-center justify-between shrink-0">
                     <span className="text-slate-700">Parsed Registry Preview ({parsedUsers.length} Records)</span>
@@ -1672,6 +1707,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 setImportSuccess('');
                 setImportProgress('');
                 setImportReport(null);
+                setIsEditingImport(false);
               }}
               className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
