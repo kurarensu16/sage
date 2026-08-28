@@ -257,13 +257,22 @@ export default function StudentRow({
       </td>
       
       {/* PRELIM */}
-      {((!periodsList || periodsList.includes('Prelim')) && (viewMode === 'All' || viewMode === 'Prelim')) && (
+      {((!periodsList || periodsList.includes('Prelim')) && (viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch')) && (
         <>
-          {(activities.Prelim || []).map(act => (
-            <td key={act.id} className="p-1 border-r border-slate-100 w-12">
-              {renderInputCell('Prelim', act.id, act.max, isLocked)}
-            </td>
-          ))}
+          {(activities.Prelim || []).map(act => {
+            const isConfigured = !!act.name;
+            const cellLocked = isLocked || !isConfigured;
+            return (
+              <td key={act.id} className="p-1 border-r border-slate-100 w-12 relative">
+                {renderInputCell('Prelim', act.id, act.max, cellLocked)}
+                {!isConfigured && !isLocked && (
+                  <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
+                    <span className="text-[9px] text-slate-400 select-none">🔒</span>
+                  </div>
+                )}
+              </td>
+            );
+          })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{prelimResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.csPercent.toFixed(1)}</td>
           <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Prelim', 'char', 100, isLocked, "w-16")}</td>
@@ -272,15 +281,24 @@ export default function StudentRow({
           <td className="px-2 py-3 font-mono font-bold bg-sky-50 border-r border-slate-200 text-sky-850 w-14 text-center">{prelimResult.rating}</td>
         </>
       )}
-
+ 
       {/* MIDTERM */}
-      {(viewMode === 'All' || viewMode === 'Midterm') && (
+      {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch') && (
         <>
-          {(activities.Midterm || []).map(act => (
-            <td key={act.id} className="p-1 border-r border-slate-100 w-12">
-              {renderInputCell('Midterm', act.id, act.max, isLocked)}
-            </td>
-          ))}
+          {(activities.Midterm || []).map(act => {
+            const isConfigured = !!act.name;
+            const cellLocked = isLocked || !isConfigured;
+            return (
+              <td key={act.id} className="p-1 border-r border-slate-100 w-12 relative">
+                {renderInputCell('Midterm', act.id, act.max, cellLocked)}
+                {!isConfigured && !isLocked && (
+                  <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
+                    <span className="text-[9px] text-slate-400 select-none">🔒</span>
+                  </div>
+                )}
+              </td>
+            );
+          })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{midtermResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.csPercent.toFixed(1)}</td>
           <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Midterm', 'char', 100, isLocked, "w-16")}</td>
@@ -289,19 +307,28 @@ export default function StudentRow({
           <td className="px-2 py-3 font-mono font-bold bg-indigo-50 border-r border-slate-200 text-indigo-800 w-14 text-center">{midtermResult.rating}</td>
         </>
       )}
-
-      {(viewMode === 'All' || viewMode === 'Midterm') && (
-        <td className="px-3 py-3 font-mono font-extrabold bg-indigo-100 border-r border-slate-200 text-indigo-950 w-16 text-center text-sm">{mr}</td>
+ 
+      {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch' || viewMode === 'Summary') && (
+        <td className="px-3 py-3 font-mono font-extrabold bg-indigo-100 border-r border-slate-200 text-indigo-955 w-16 text-center text-sm">{mr}</td>
       )}
-
+ 
       {/* SEMI-FINAL */}
-      {((!periodsList || periodsList.includes('Semi-Final')) && (viewMode === 'All' || viewMode === 'Semi-Final')) && (
+      {((!periodsList || periodsList.includes('Semi-Final')) && (viewMode === 'All' || viewMode === 'Semi-Final' || viewMode === 'FinalBatch')) && (
         <>
-          {(activities['Semi-Final'] || []).map(act => (
-            <td key={act.id} className="p-1 border-r border-slate-100 w-12">
-              {renderInputCell('Semi-Final', act.id, act.max, isLocked)}
-            </td>
-          ))}
+          {(activities['Semi-Final'] || []).map(act => {
+            const isConfigured = !!act.name;
+            const cellLocked = isLocked || !isConfigured;
+            return (
+              <td key={act.id} className="p-1 border-r border-slate-100 w-12 relative">
+                {renderInputCell('Semi-Final', act.id, act.max, cellLocked)}
+                {!isConfigured && !isLocked && (
+                  <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
+                    <span className="text-[9px] text-slate-400 select-none">🔒</span>
+                  </div>
+                )}
+              </td>
+            );
+          })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{semiFinalResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.csPercent.toFixed(1)}</td>
           <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Semi-Final', 'char', 100, isLocked, "w-16")}</td>
@@ -310,15 +337,24 @@ export default function StudentRow({
           <td className="px-2 py-3 font-mono font-bold bg-amber-50 border-r border-slate-200 text-amber-800 w-14 text-center">{semiFinalResult.rating}</td>
         </>
       )}
-
+ 
       {/* FINAL */}
-      {(viewMode === 'All' || viewMode === 'Final') && (
+      {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch') && (
         <>
-          {(activities.Final || []).map(act => (
-            <td key={act.id} className="p-1 border-r border-slate-100 w-12">
-              {renderInputCell('Final', act.id, act.max, isLocked)}
-            </td>
-          ))}
+          {(activities.Final || []).map(act => {
+            const isConfigured = !!act.name;
+            const cellLocked = isLocked || !isConfigured;
+            return (
+              <td key={act.id} className="p-1 border-r border-slate-100 w-12 relative">
+                {renderInputCell('Final', act.id, act.max, cellLocked)}
+                {!isConfigured && !isLocked && (
+                  <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
+                    <span className="text-[9px] text-slate-400 select-none">🔒</span>
+                  </div>
+                )}
+              </td>
+            );
+          })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{finalResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.csPercent.toFixed(1)}</td>
           <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Final', 'char', 100, isLocked, "w-16")}</td>
@@ -328,13 +364,13 @@ export default function StudentRow({
         </>
       )}
 
-      {(viewMode === 'All' || viewMode === 'Final') && (
-        <td className="px-3 py-3 font-mono font-extrabold bg-orange-100 border-r border-slate-200 text-orange-950 w-16 text-center text-sm">{tfr}</td>
+      {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch' || viewMode === 'Summary') && (
+        <td className="px-3 py-3 font-mono font-extrabold bg-orange-100 border-r border-slate-200 text-orange-955 w-16 text-center text-sm">{tfr}</td>
       )}
-      {(viewMode === 'All' || viewMode === 'Final') && (
+      {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'Summary') && (
         <td className="px-3 py-3 font-mono font-extrabold bg-emerald-50 border-r border-slate-200 text-emerald-800 w-16 text-center text-sm">{sg}</td>
       )}
-      {(viewMode === 'All' || viewMode === 'Final') && (
+      {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'Summary') && (
         <td className="px-3 py-3 border-r border-slate-200 bg-emerald-100/50 w-16 text-center">
           <span className={cn(
             "px-2 py-0.5 rounded font-mono font-bold text-xs border bg-white shadow-sm",
@@ -345,7 +381,7 @@ export default function StudentRow({
         </td>
       )}
 
-      {(viewMode === 'All' || viewMode === 'Final') && (
+      {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'Summary') && (
         <td className="px-4 py-3 border-r border-slate-200 bg-emerald-100/30 w-36 text-center font-bold text-xs">
           {readOnly ? (
             <span className={cn(

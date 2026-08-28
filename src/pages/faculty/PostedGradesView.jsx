@@ -4,6 +4,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import StudentRow from '../../components/StudentRow';
 import { 
   ChevronRight, 
+  ChevronDown,
   Lock, 
   Search, 
   Download, 
@@ -39,6 +40,45 @@ export default function PostedGradesView() {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lockedMilestones, setLockedMilestones] = useState([]);
   const [unlockRequests, setUnlockRequests] = useState([]);
+  const [viewMode, setViewMode] = useState('All');
+  
+  const isSummer = classInfo?.semester === 'Summer';
+  const periodsList = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+
+  const [activities, setActivities] = useState({
+    Prelim: [
+      { id: 'act1', name: 'FA 1', max: 20 },
+      { id: 'act2', name: 'FA 2', max: 20 },
+      { id: 'act3', name: 'FA 3', max: 20 },
+      { id: 'act4', name: 'FA 4', max: 20 },
+      { id: 'act5', name: 'FA 5', max: 20 },
+      { id: 'act6', name: 'FA 6', max: 10 }
+    ],
+    Midterm: [
+      { id: 'act1', name: 'FA 1', max: 20 },
+      { id: 'act2', name: 'FA 2', max: 20 },
+      { id: 'act3', name: 'FA 3', max: 20 },
+      { id: 'act4', name: 'FA 4', max: 20 },
+      { id: 'act5', name: 'FA 5', max: 20 },
+      { id: 'act6', name: 'FA 6', max: 10 }
+    ],
+    'Semi-Final': [
+      { id: 'act1', name: 'FA 1', max: 20 },
+      { id: 'act2', name: 'FA 2', max: 20 },
+      { id: 'act3', name: 'FA 3', max: 20 },
+      { id: 'act4', name: 'FA 4', max: 20 },
+      { id: 'act5', name: 'FA 5', max: 20 },
+      { id: 'act6', name: 'FA 6', max: 10 }
+    ],
+    Final: [
+      { id: 'act1', name: 'FA 1', max: 20 },
+      { id: 'act2', name: 'FA 2', max: 20 },
+      { id: 'act3', name: 'FA 3', max: 20 },
+      { id: 'act4', name: 'FA 4', max: 20 },
+      { id: 'act5', name: 'FA 5', max: 20 },
+      { id: 'act6', name: 'FA 6', max: 10 }
+    ]
+  });
 
   // Success modals
   const [showPopup, setShowPopup] = useState(false);
@@ -323,13 +363,37 @@ export default function PostedGradesView() {
             semester,
             subject_id,
             section_id,
-            subjects ( code, name, units, departments ( name ) ),
+            subjects ( 
+              code, 
+              name, 
+              units, 
+              computation_id,
+              departments ( name ) 
+            ),
             sections ( name )
           `)
           .eq('class_record_id', classRecordId)
           .single();
 
         if (crErr) throw crErr;
+
+        // Fetch computation template separately if subject has computation_id
+        if (cr?.subjects?.computation_id) {
+          try {
+            const { data: compData } = await supabase
+              .from('grade_computations')
+              .select('name, description, grade_computation_components ( * )')
+              .eq('computation_id', cr.subjects.computation_id)
+              .maybeSingle();
+
+            if (compData && cr.subjects) {
+              cr.subjects.grade_computations = compData;
+            }
+          } catch (compErr) {
+            console.warn('Could not fetch grade_computations for subject:', compErr);
+          }
+        }
+
         setClassInfo(cr);
 
         // 2. Fetch all students enrolled in this subject and section from the enrollments table
@@ -391,6 +455,76 @@ export default function PostedGradesView() {
           });
         }
         setMaxItems(newMax);
+
+        // Seed activities state from grade computations components if exists
+        const compList = cr.subjects?.grade_computations?.grade_computation_components || [];
+        const dynamicComps = compList.filter(c => c.is_multiple);
+        
+        if (dynamicComps.length > 0) {
+          const loadedActivities = {};
+          const isSummer = cr.semester === 'Summer';
+          const periodsList = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+          periodsList.forEach(t => {
+            loadedActivities[t] = dynamicComps.map((c, index) => ({
+              id: `act${index + 1}`,
+              name: c.name,
+              max: parseFloat(c.max_score) || 20
+            }));
+          });
+          setActivities(loadedActivities);
+        }
+        
+        // Fetch dynamic custom activities from Supabase class_activities table
+        try {
+          const { data: dbActs } = await supabase
+            .from('class_activities')
+            .select('*')
+            .eq('class_record_id', classRecordId)
+            .order('created_at', { ascending: true });
+
+          if (dbActs && dbActs.length > 0) {
+            const loadedActivities = { Prelim: [], Midterm: [], 'Semi-Final': [], Final: [] };
+            const isSummer = cr.semester === 'Summer';
+            const periodsList = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+            periodsList.forEach(t => {
+              const termActs = dbActs.filter(a => a.term === t);
+              if (termActs.length > 0) {
+                loadedActivities[t] = termActs.map(a => ({
+                  id: a.activity_id,
+                  name: a.name,
+                  max: parseFloat(a.max_score) || 20
+                }));
+              } else if (dynamicComps.length > 0) {
+                loadedActivities[t] = dynamicComps.map((c, index) => ({
+                  id: `act${index + 1}`,
+                  name: c.name,
+                  max: parseFloat(c.max_score) || 20
+                }));
+              }
+            });
+            setActivities(loadedActivities);
+          } else {
+            // Restore custom activities from LocalStorage if not in DB
+            const localActs = localStorage.getItem(`sage_activities_${classRecordId}`);
+            if (localActs) {
+              try {
+                setActivities(JSON.parse(localActs));
+              } catch {
+                console.debug('Failed to parse cached activities');
+              }
+            }
+          }
+        } catch (actErr) {
+          console.warn('Could not query class_activities, fallback to cache:', actErr);
+          const localActs = localStorage.getItem(`sage_activities_${classRecordId}`);
+          if (localActs) {
+            try {
+              setActivities(JSON.parse(localActs));
+            } catch {
+              console.debug('Failed to parse cached activities');
+            }
+          }
+        }
 
         // 4. Fetch saved term scores from db
         const { data: savedScores } = await supabase
@@ -813,6 +947,30 @@ export default function PostedGradesView() {
 
           <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
 
+          {/* View Mode Selector */}
+          <div className="flex flex-col gap-1 min-w-[200px]">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">View Period</label>
+            <div className="relative">
+              <select
+                value={viewMode}
+                onChange={(e) => setViewMode(e.target.value)}
+                className="appearance-none w-full bg-white border border-slate-200 hover:border-sage-300 px-3 py-2 pr-8 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer text-slate-700"
+              >
+                <option value="All">All Terms (Side-by-Side)</option>
+                {periodsList.includes('Prelim') && <option value="Prelim">Preliminary Grade (Only)</option>}
+                {periodsList.includes('Midterm') && <option value="Midterm">Midterm Grade (Only)</option>}
+                {periodsList.includes('Semi-Final') && <option value="Semi-Final">Semi-Final Grade (Only)</option>}
+                {periodsList.includes('Final') && <option value="Final">Final Grade (Only)</option>}
+                <option value="MidtermBatch">Midterm Evaluation (Prelim & Midterm)</option>
+                <option value="FinalBatch">Final Evaluation (Semis & Finals)</option>
+                <option value="Summary">Semestral Grade Summary</option>
+              </select>
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            </div>
+          </div>
+
+          <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
+
           {/* Verification lock badge */}
           <div className="text-xs text-slate-400 font-medium flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-400/45"></span> Verified Registry Lock Active
@@ -848,73 +1006,116 @@ export default function PostedGradesView() {
                             <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-10 sticky left-0 bg-slate-50 z-30">No.</th>
                             <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24 sticky left-[40px] bg-slate-50 z-30">Student No.</th>
                             <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-[136px] bg-slate-50 border-r border-slate-200 z-30 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
-                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
-                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">MIDTERM GRADE</th>
-                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-indigo-100 text-indigo-950 font-bold uppercase tracking-wider w-16">Midterm Rating (MR)</th>
-                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-amber-50 text-amber-850">SEMI-FINAL GRADE</th>
-                            <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-orange-50 text-orange-850">FINAL GRADE</th>
-                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-orange-100 text-orange-950 font-bold uppercase tracking-wider w-16">Tentative Final Rating (TFR)</th>
-                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-50 text-emerald-800 font-extrabold uppercase tracking-wider w-16">Semestral Grade (SG)</th>
-                            <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-16">Equivalent GWA</th>
-                            <th rowSpan={2} className="px-4 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-20">Remarks</th>
+                            {/* Prelim Period */}
+                            {(viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch') && (
+                              <th colSpan={(activities.Prelim?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
+                            )}
+                            
+                            {/* Midterm Period */}
+                            {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch') && (
+                              <th colSpan={(activities.Midterm?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">MIDTERM GRADE</th>
+                            )}
+                            
+                            {/* Midterm Rating */}
+                            {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch' || viewMode === 'Summary') && (
+                              <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-indigo-100 text-indigo-950 font-bold uppercase tracking-wider w-16">Midterm Rating (MR)</th>
+                            )}
+                            
+                            {/* Semi-Final Period */}
+                            {(viewMode === 'All' || viewMode === 'Semi-Final' || viewMode === 'FinalBatch') && (
+                              <th colSpan={(activities['Semi-Final']?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-amber-50 text-amber-850">SEMI-FINAL GRADE</th>
+                            )}
+                            
+                            {/* Final Period */}
+                            {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch') && (
+                              <th colSpan={(activities.Final?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-orange-50 text-orange-850">FINAL GRADE</th>
+                            )}
+                            
+                            {/* Tentative Final Rating */}
+                            {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch' || viewMode === 'Summary') && (
+                              <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-orange-100 text-orange-955 font-bold uppercase tracking-wider w-16">Tentative Final Rating (TFR)</th>
+                            )}
+                            
+                            {/* Semestral Grade */}
+                            {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'Summary') && (
+                              <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-50 text-emerald-800 font-extrabold uppercase tracking-wider w-16">Semestral Grade (SG)</th>
+                            )}
+                            
+                            {/* Equivalent (GWA) */}
+                            {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'Summary') && (
+                              <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-955 font-extrabold uppercase tracking-wider w-16">Equivalent GWA</th>
+                            )}
+                            
+                            {/* Remarks */}
+                            {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'Summary') && (
+                              <th rowSpan={2} className="px-4 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-20">Remarks</th>
+                            )}
                         </tr>
                         
-                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
-                          {/* Prelim sub-headers */}
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">4</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">5</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">6</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Raw</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                          <th className="px-2 py-1.5 border-r border-slate-200 bg-sky-100/30 font-bold w-14 text-slate-800">Rating</th>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
+                            {/* Prelim sub-headers */}
+                            {(periodsList.includes('Prelim') && (viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch')) && (
+                              <>
+                                {(activities.Prelim || []).map((act, index) => (
+                                  <th key={act.id} className="px-1 py-1.5 border-r border-slate-100 w-12" title={act.name}>{index + 1}</th>
+                                ))}
 
-                          {/* Midterm sub-headers */}
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">4</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">5</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">6</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Raw</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                          <th className="px-2 py-1.5 border-r border-slate-200 bg-indigo-100/30 font-bold w-14 text-slate-800">Rating</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-2 py-1.5 border-r border-slate-200 bg-sky-100/30 font-bold w-14 text-slate-800">Rating</th>
+                              </>
+                            )}
 
-                          {/* Semi-Final sub-headers */}
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">4</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">5</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">6</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Raw</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                          <th className="px-2 py-1.5 border-r border-slate-200 bg-amber-100/30 font-bold w-14 text-slate-800">Rating</th>
+                            {/* Midterm sub-headers */}
+                            {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch') && (
+                              <>
+                                {(activities.Midterm || []).map((act, index) => (
+                                  <th key={act.id} className="px-1 py-1.5 border-r border-slate-100 w-12" title={act.name}>{index + 1}</th>
+                                ))}
 
-                          {/* Final sub-headers */}
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">4</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">5</th>
-                          <th className="px-1 py-1.5 border-r border-slate-100 w-12">6</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Raw</th>
-                          <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                          <th className="px-2 py-1.5 border-r border-slate-200 bg-orange-100/30 font-bold w-14 text-slate-800">Rating</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-2 py-1.5 border-r border-slate-200 bg-indigo-100/30 font-bold w-14 text-slate-800">Rating</th>
+                              </>
+                            )}
+
+                            {/* Semi-Final sub-headers */}
+                            {(periodsList.includes('Semi-Final') && (viewMode === 'All' || viewMode === 'Semi-Final' || viewMode === 'FinalBatch')) && (
+                              <>
+                                {(activities['Semi-Final'] || []).map((act, index) => (
+                                  <th key={act.id} className="px-1 py-1.5 border-r border-slate-100 w-12" title={act.name}>{index + 1}</th>
+                                ))}
+
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-2 py-1.5 border-r border-slate-200 bg-amber-100/30 font-bold w-14 text-slate-800">Rating</th>
+                              </>
+                            )}
+
+                            {/* Final sub-headers */}
+                            {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch') && (
+                              <>
+                                {(activities.Final || []).map((act, index) => (
+                                  <th key={act.id} className="px-1 py-1.5 border-r border-slate-100 w-12" title={act.name}>{index + 1}</th>
+                                ))}
+
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-2 py-1.5 border-r border-slate-200 bg-orange-100/30 font-bold w-14 text-slate-800">Rating</th>
+                              </>
+                            )}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -933,6 +1134,9 @@ export default function PostedGradesView() {
                               readOnly={true}
                               classCode={classRecordId}
                               maxItems={maxItems}
+                              activities={activities}
+                              viewMode={viewMode}
+                              periodsList={periodsList}
                               lockedMilestones={lockedMilestones}
                             />
                           ))

@@ -10,6 +10,7 @@ import { getTransmutedGrade } from '../../lib/gradingMath';
 import { triggerExcelExport } from '../../lib/excelExport';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
+import { cn } from '../../lib/utils';
 
 export default function ScoreInput() {
   const navigate = useNavigate();
@@ -76,10 +77,21 @@ export default function ScoreInput() {
     ]
   });
 
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  const [configTerm, setConfigTerm] = useState('');
+  const [configSlotIndex, setConfigSlotIndex] = useState(-1);
+  const [configActivityId, setConfigActivityId] = useState('');
+  const [configTitle, setConfigTitle] = useState('');
+  const [configDescription, setConfigDescription] = useState('');
+  const [configMaxScore, setConfigMaxScore] = useState(20);
+  const [savingConfig, setSavingConfig] = useState(false);
+
   const [isAddActivityModalOpen, setIsAddActivityModalOpen] = useState(false);
   const [newActivityTerm, setNewActivityTerm] = useState('Prelim');
   const [newActivityName, setNewActivityName] = useState('');
   const [newActivityMax, setNewActivityMax] = useState(20);
+  const [newActivityDescription, setNewActivityDescription] = useState('');
+
 
 
   const [editingColumn, setEditingColumn] = useState(null); // { period, key, label, value }
@@ -463,18 +475,6 @@ export default function ScoreInput() {
         const compList = cr.subjects?.grade_computations?.grade_computation_components || [];
         const dynamicComps = compList.filter(c => c.is_multiple);
         
-        if (dynamicComps.length > 0) {
-          const loadedActivities = {};
-          periodsList.forEach(t => {
-            loadedActivities[t] = dynamicComps.map((c, index) => ({
-              id: `act${index + 1}`,
-              name: c.name,
-              max: parseFloat(c.max_score) || 20
-            }));
-          });
-          setActivities(loadedActivities);
-        }
-        
         // Fetch dynamic custom activities from Supabase class_activities table
         try {
           const { data: dbActs } = await supabase
@@ -483,46 +483,40 @@ export default function ScoreInput() {
             .eq('class_record_id', classRecordId)
             .order('created_at', { ascending: true });
 
-          if (dbActs && dbActs.length > 0) {
-            const loadedActivities = { Prelim: [], Midterm: [], 'Semi-Final': [], Final: [] };
-            periodsList.forEach(t => {
-              const termActs = dbActs.filter(a => a.term === t);
-              if (termActs.length > 0) {
-                loadedActivities[t] = termActs.map(a => ({
-                  id: a.activity_id,
-                  name: a.name,
-                  max: parseFloat(a.max_score) || 20
-                }));
-              } else if (dynamicComps.length > 0) {
-                loadedActivities[t] = dynamicComps.map((c, index) => ({
-                  id: `act${index + 1}`,
-                  name: c.name,
-                  max: parseFloat(c.max_score) || 20
-                }));
-              }
-            });
-            setActivities(loadedActivities);
-          } else {
-            // Restore custom activities from LocalStorage if not in DB
-            const localActs = localStorage.getItem(`sage_activities_${classRecordId}`);
-            if (localActs) {
-              try {
-                setActivities(JSON.parse(localActs));
-              } catch {
-                console.debug('Failed to parse cached activities');
-              }
+          const loadedActivities = { Prelim: [], Midterm: [], 'Semi-Final': [], Final: [] };
+          periodsList.forEach(t => {
+            const termActs = dbActs ? dbActs.filter(a => a.term === t) : [];
+            if (termActs.length > 0) {
+              loadedActivities[t] = termActs.map(a => ({
+                id: a.activity_id,
+                name: a.name,
+                max: parseFloat(a.max_score) || 20,
+                description: a.description || ''
+              }));
+            } else {
+              loadedActivities[t] = [{
+                id: 'act1',
+                name: '', // Empty means unconfigured
+                max: 20,
+                description: '',
+                placeholder: 'Activity 1'
+              }];
             }
-          }
+          });
+          setActivities(loadedActivities);
         } catch (actErr) {
-          console.warn('Could not query class_activities, fallback to cache:', actErr);
-          const localActs = localStorage.getItem(`sage_activities_${classRecordId}`);
-          if (localActs) {
-            try {
-              setActivities(JSON.parse(localActs));
-            } catch {
-              console.debug('Failed to parse cached activities');
-            }
-          }
+          console.warn('Could not query class_activities:', actErr);
+          const loadedActivities = { Prelim: [], Midterm: [], 'Semi-Final': [], Final: [] };
+          periodsList.forEach(t => {
+            loadedActivities[t] = [{
+              id: 'act1',
+              name: '',
+              max: 20,
+              description: '',
+              placeholder: 'Activity 1'
+            }];
+          });
+          setActivities(loadedActivities);
         }
 
         // Fetch actual absences count from Supabase to sync with StudentRow
@@ -763,10 +757,122 @@ export default function ScoreInput() {
   };
 
 
-  const handleAddActivitySubmit = () => {
+  const openConfigModal = (term, slotIndex, act) => {
+    setConfigTerm(term);
+    setConfigSlotIndex(slotIndex);
+    setConfigActivityId(act.id);
+    setConfigTitle(act.name || '');
+    setConfigDescription(act.description || '');
+    setConfigMaxScore(act.max || 20);
+    setIsConfigModalOpen(true);
+  };
+
+  const handleSaveConfig = async () => {
+    const trimmedTitle = configTitle.trim();
+    if (!trimmedTitle) {
+      alert('⚠️ Activity Title/Name is required.');
+      return;
+    }
+    if (configMaxScore <= 0) {
+      alert('⚠️ Maximum Score must be greater than 0.');
+      return;
+    }
+
+    setSavingConfig(true);
+    try {
+      const isNew = !configActivityId || configActivityId.length <= 10;
+      
+      const payload = {
+        class_record_id: classRecordId,
+        term: configTerm,
+        name: trimmedTitle,
+        max_score: configMaxScore,
+        description: configDescription.trim() || null
+      };
+
+      if (!isNew) {
+        payload.activity_id = configActivityId;
+      }
+
+      const { data: savedAct, error: saveErr } = await supabase
+        .from('class_activities')
+        .upsert(payload, { onConflict: 'activity_id' })
+        .select()
+        .single();
+
+      if (saveErr) throw saveErr;
+
+      // Update state
+      const updatedList = [...(activities[configTerm] || [])];
+      updatedList[configSlotIndex] = {
+        id: savedAct.activity_id,
+        name: savedAct.name,
+        max: parseFloat(savedAct.max_score),
+        description: savedAct.description || ''
+      };
+
+      const updatedActivities = {
+        ...activities,
+        [configTerm]: updatedList
+      };
+
+      setActivities(updatedActivities);
+      localStorage.setItem(`sage_activities_${classRecordId}`, JSON.stringify(updatedActivities));
+      
+      // Update max items columns count map to match the new score
+      const key = `act${configSlotIndex + 1}`;
+      const newMax = { ...maxItems };
+      if (!newMax[configTerm]) newMax[configTerm] = {};
+      newMax[configTerm][key] = parseFloat(savedAct.max_score);
+      setMaxItems(newMax);
+
+      // Trigger update of max score columns in class_record_columns
+      const { data: existingCol } = await supabase
+        .from('class_record_columns')
+        .select('column_id')
+        .eq('class_record_id', classRecordId)
+        .eq('term', configTerm)
+        .maybeSingle();
+
+      const colPayload = {
+        class_record_id: classRecordId,
+        term: configTerm,
+        [`${key}_max`]: parseFloat(savedAct.max_score)
+      };
+      if (existingCol) {
+        colPayload.column_id = existingCol.column_id;
+      }
+
+      await supabase
+        .from('class_record_columns')
+        .upsert(colPayload, { onConflict: 'class_record_id,term' });
+
+      setIsConfigModalOpen(false);
+      
+      // Show success
+      setPopupTitle('Activity Configured!');
+      setPopupDesc(`"${trimmedTitle}" is now configured for ${configTerm} term with max points of ${configMaxScore}. Column grading is now unlocked.`);
+      setShowPopup(true);
+    } catch (err) {
+      console.error('Error saving activity config:', err);
+      alert('Failed to configure activity: ' + (err.message || err));
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+
+  const handleAddActivitySubmit = async () => {
     const trimmedName = newActivityName.trim();
     if (!trimmedName) return;
-    
+
+    const term = newActivityTerm;
+    const list = activities[term] || [];
+    if (list.length >= 6) {
+      alert('⚠️ Maximum of 6 formative assessments/activities is allowed per term.');
+      return;
+    }
+
     // Prevent duplicating fixed structural components dynamically checking is_multiple === false
     const compList = classInfo?.subjects?.grade_computations?.grade_computation_components || [];
     const isSingleColumnComponent = compList.some(c => 
@@ -778,22 +884,82 @@ export default function ScoreInput() {
       return;
     }
 
-    const term = newActivityTerm;
-    const list = activities[term] || [];
-    const nextIndex = list.length + 1;
-    const newAct = {
-      id: `act${nextIndex}`,
-      name: newActivityName.trim(),
-      max: Number(newActivityMax) || 20
-    };
-    const updated = {
-      ...activities,
-      [term]: [...list, newAct]
-    };
-    setActivities(updated);
-    localStorage.setItem(`sage_activities_${classRecordId}`, JSON.stringify(updated));
-    setIsAddActivityModalOpen(false);
-    setNewActivityName('');
+    try {
+      const { data: savedAct, error } = await supabase
+        .from('class_activities')
+        .insert({
+          class_record_id: classRecordId,
+          term: term,
+          name: trimmedName,
+          max_score: Number(newActivityMax) || 20,
+          description: newActivityDescription.trim() || null
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const newAct = {
+        id: savedAct.activity_id,
+        name: savedAct.name,
+        max: parseFloat(savedAct.max_score),
+        description: savedAct.description || ''
+      };
+
+      // If the first activity was completely unconfigured placeholder, overwrite it!
+      let updatedList = [];
+      if (list.length === 1 && !list[0].name) {
+        updatedList = [newAct];
+      } else {
+        updatedList = [...list, newAct];
+      }
+
+      const updated = {
+        ...activities,
+        [term]: updatedList
+      };
+      setActivities(updated);
+      localStorage.setItem(`sage_activities_${classRecordId}`, JSON.stringify(updated));
+
+      // Trigger update of max score columns in class_record_columns
+      const nextIndex = updatedList.length;
+      const key = `act${nextIndex}`;
+      const newMax = { ...maxItems };
+      if (!newMax[term]) newMax[term] = {};
+      newMax[term][key] = parseFloat(savedAct.max_score);
+      setMaxItems(newMax);
+
+      const { data: existingCol } = await supabase
+        .from('class_record_columns')
+        .select('column_id')
+        .eq('class_record_id', classRecordId)
+        .eq('term', term)
+        .maybeSingle();
+
+      const colPayload = {
+        class_record_id: classRecordId,
+        term: term,
+        [`${key}_max`]: parseFloat(savedAct.max_score)
+      };
+      if (existingCol) {
+        colPayload.column_id = existingCol.column_id;
+      }
+
+      await supabase
+        .from('class_record_columns')
+        .upsert(colPayload, { onConflict: 'class_record_id,term' });
+
+      setIsAddActivityModalOpen(false);
+      setNewActivityName('');
+      setNewActivityDescription('');
+      
+      setPopupTitle('Activity Added!');
+      setPopupDesc(`"${trimmedName}" has been successfully added under ${term} period.`);
+      setShowPopup(true);
+    } catch (err) {
+      console.error('Error adding activity:', err);
+      alert('Failed to add activity: ' + (err.message || err));
+    }
   };
 
   const handleBulkSave = async () => {
@@ -1158,10 +1324,13 @@ export default function ScoreInput() {
                 className="appearance-none w-full bg-white border border-slate-200 hover:border-sage-300 px-3 py-2 pr-8 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer text-slate-700"
               >
                 <option value="All">All Terms (Side-by-Side)</option>
-                {periodsList.includes('Prelim') && <option value="Prelim">Preliminary Grade</option>}
-                {periodsList.includes('Midterm') && <option value="Midterm">Midterm Grade</option>}
-                {periodsList.includes('Semi-Final') && <option value="Semi-Final">Semi-Final Grade</option>}
-                {periodsList.includes('Final') && <option value="Final">Final Grade</option>}
+                {periodsList.includes('Prelim') && <option value="Prelim">Preliminary Grade (Only)</option>}
+                {periodsList.includes('Midterm') && <option value="Midterm">Midterm Grade (Only)</option>}
+                {periodsList.includes('Semi-Final') && <option value="Semi-Final">Semi-Final Grade (Only)</option>}
+                {periodsList.includes('Final') && <option value="Final">Final Grade (Only)</option>}
+                <option value="MidtermBatch">Midterm Evaluation (Prelim & Midterm)</option>
+                <option value="FinalBatch">Final Evaluation (Semis & Finals)</option>
+                <option value="Summary">Semestral Grade Summary</option>
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
             </div>
@@ -1228,114 +1397,182 @@ export default function ScoreInput() {
                             <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24 sticky left-[40px] bg-slate-50 z-30">Student No.</th>
                             <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-[136px] bg-slate-50 border-r border-slate-200 z-30 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
                             {/* Prelim Period */}
-                            {(viewMode === 'All' || viewMode === 'Prelim') && (
+                            {(viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch') && (
                               <th colSpan={(activities.Prelim?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
                             )}
                             
                             {/* Midterm Period */}
-                            {(viewMode === 'All' || viewMode === 'Midterm') && (
+                            {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch') && (
                               <th colSpan={(activities.Midterm?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">MIDTERM GRADE</th>
                             )}
                             
                             {/* Midterm Rating */}
-                            {(viewMode === 'All' || viewMode === 'Midterm') && (
+                            {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch' || viewMode === 'Summary') && (
                               <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-indigo-100 text-indigo-950 font-bold uppercase tracking-wider w-16">Midterm Rating (MR)</th>
                             )}
                             
                             {/* Semi-Final Period */}
-                            {(viewMode === 'All' || viewMode === 'Semi-Final') && (
+                            {(viewMode === 'All' || viewMode === 'Semi-Final' || viewMode === 'FinalBatch') && (
                               <th colSpan={(activities['Semi-Final']?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-amber-50 text-amber-850">SEMI-FINAL GRADE</th>
                             )}
                             
                             {/* Final Period */}
-                            {(viewMode === 'All' || viewMode === 'Final') && (
+                            {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch') && (
                               <th colSpan={(activities.Final?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-orange-50 text-orange-850">FINAL GRADE</th>
                             )}
                             
                             {/* Tentative Final Rating */}
-                            {(viewMode === 'All' || viewMode === 'Final') && (
+                            {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch' || viewMode === 'Summary') && (
                               <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-orange-100 text-orange-950 font-bold uppercase tracking-wider w-16">Tentative Final Rating (TFR)</th>
                             )}
                             
                             {/* Semestral Grade */}
-                            {(viewMode === 'All' || viewMode === 'Final') && (
+                            {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'Summary') && (
                               <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-50 text-emerald-800 font-extrabold uppercase tracking-wider w-16">Semestral Grade (SG)</th>
                             )}
                             
                             {/* Equivalent (GWA) */}
-                            {(viewMode === 'All' || viewMode === 'Final') && (
+                            {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'Summary') && (
                               <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-16">Equivalent GWA</th>
                             )}
                             
                             {/* Remarks */}
-                            {(viewMode === 'All' || viewMode === 'Final') && (
+                            {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'Summary') && (
                               <th rowSpan={2} className="px-4 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-20">Remarks</th>
                             )}
                         </tr>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
-                           {/* Prelim sub-headers */}
-                           {(periodsList.includes('Prelim') && (viewMode === 'All' || viewMode === 'Prelim')) && (
-                             <>
-                               {(activities.Prelim || []).map((act, index) => (
-                                 <th key={act.id} className="px-1 py-1.5 border-r border-slate-100 w-12" title={act.name}>{index + 1}</th>
-                               ))}
+                            {/* Prelim sub-headers */}
+                            {(periodsList.includes('Prelim') && (viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch')) && (
+                              <>
+                                {(activities.Prelim || []).map((act, index) => {
+                                  const isConfigured = !!act.name;
+                                  return (
+                                    <th 
+                                      key={act.id} 
+                                      className={cn(
+                                        "px-1 py-1.5 border-r border-slate-100 w-12 cursor-pointer transition-colors select-none",
+                                        isConfigured ? "bg-sky-50/50 hover:bg-sky-100 text-sky-900" : "bg-slate-100 hover:bg-slate-200 text-slate-400"
+                                      )}
+                                      title={isConfigured ? `${act.name}${act.description ? ` - ${act.description}` : ''} (Click to edit)` : 'Configure this activity (Click to setup)'}
+                                      onClick={() => openConfigModal('Prelim', index, act)}
+                                    >
+                                      <div className="flex flex-col items-center justify-center gap-0.5">
+                                        <span>{index + 1}</span>
+                                        {!isConfigured && <span className="text-[7px] text-slate-400">⚙️</span>}
+                                        {isConfigured && <span className="text-[7px] text-sky-750 font-sans block max-w-[40px] truncate" title={act.name}>{act.name}</span>}
+                                      </div>
+                                    </th>
+                                  );
+                                })}
 
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                               <th className="px-2 py-1.5 border-r border-slate-200 bg-sky-100/30 font-bold w-14 text-slate-800">Rating</th>
-                             </>
-                           )}
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-2 py-1.5 border-r border-slate-200 bg-sky-100/30 font-bold w-14 text-slate-800">Rating</th>
+                              </>
+                            )}
 
-                           {/* Midterm sub-headers */}
-                           {(viewMode === 'All' || viewMode === 'Midterm') && (
-                             <>
-                               {(activities.Midterm || []).map((act, index) => (
-                                 <th key={act.id} className="px-1 py-1.5 border-r border-slate-100 w-12" title={act.name}>{index + 1}</th>
-                               ))}
+                            {/* Midterm sub-headers */}
+                            {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch') && (
+                              <>
+                                {(activities.Midterm || []).map((act, index) => {
+                                  const isConfigured = !!act.name;
+                                  return (
+                                    <th 
+                                      key={act.id} 
+                                      className={cn(
+                                        "px-1 py-1.5 border-r border-slate-100 w-12 cursor-pointer transition-colors select-none",
+                                        isConfigured ? "bg-indigo-50/50 hover:bg-indigo-100 text-indigo-900" : "bg-slate-100 hover:bg-slate-200 text-slate-400"
+                                      )}
+                                      title={isConfigured ? `${act.name}${act.description ? ` - ${act.description}` : ''} (Click to edit)` : 'Configure this activity (Click to setup)'}
+                                      onClick={() => openConfigModal('Midterm', index, act)}
+                                    >
+                                      <div className="flex flex-col items-center justify-center gap-0.5">
+                                        <span>{index + 1}</span>
+                                        {!isConfigured && <span className="text-[7px] text-slate-400">⚙️</span>}
+                                        {isConfigured && <span className="text-[7px] text-indigo-755 font-sans block max-w-[40px] truncate" title={act.name}>{act.name}</span>}
+                                      </div>
+                                    </th>
+                                  );
+                                })}
 
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                               <th className="px-2 py-1.5 border-r border-slate-200 bg-indigo-100/30 font-bold w-14 text-slate-800">Rating</th>
-                             </>
-                           )}
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-2 py-1.5 border-r border-slate-200 bg-indigo-100/30 font-bold w-14 text-slate-800">Rating</th>
+                              </>
+                            )}
 
-                           {/* Semi-Final sub-headers */}
-                           {(periodsList.includes('Semi-Final') && (viewMode === 'All' || viewMode === 'Semi-Final')) && (
-                             <>
-                               {(activities['Semi-Final'] || []).map((act, index) => (
-                                 <th key={act.id} className="px-1 py-1.5 border-r border-slate-100 w-12" title={act.name}>{index + 1}</th>
-                               ))}
+                            {/* Semi-Final sub-headers */}
+                            {(periodsList.includes('Semi-Final') && (viewMode === 'All' || viewMode === 'Semi-Final' || viewMode === 'FinalBatch')) && (
+                              <>
+                                {(activities['Semi-Final'] || []).map((act, index) => {
+                                  const isConfigured = !!act.name;
+                                  return (
+                                    <th 
+                                      key={act.id} 
+                                      className={cn(
+                                        "px-1 py-1.5 border-r border-slate-100 w-12 cursor-pointer transition-colors select-none",
+                                        isConfigured ? "bg-amber-50/50 hover:bg-amber-100 text-amber-900" : "bg-slate-100 hover:bg-slate-200 text-slate-400"
+                                      )}
+                                      title={isConfigured ? `${act.name}${act.description ? ` - ${act.description}` : ''} (Click to edit)` : 'Configure this activity (Click to setup)'}
+                                      onClick={() => openConfigModal('Semi-Final', index, act)}
+                                    >
+                                      <div className="flex flex-col items-center justify-center gap-0.5">
+                                        <span>{index + 1}</span>
+                                        {!isConfigured && <span className="text-[7px] text-slate-400">⚙️</span>}
+                                        {isConfigured && <span className="text-[7px] text-amber-755 font-sans block max-w-[40px] truncate" title={act.name}>{act.name}</span>}
+                                      </div>
+                                    </th>
+                                  );
+                                })}
 
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                               <th className="px-2 py-1.5 border-r border-slate-200 bg-amber-100/30 font-bold w-14 text-slate-800">Rating</th>
-                             </>
-                           )}
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-2 py-1.5 border-r border-slate-200 bg-amber-100/30 font-bold w-14 text-slate-800">Rating</th>
+                              </>
+                            )}
 
-                           {/* Final sub-headers */}
-                           {(viewMode === 'All' || viewMode === 'Final') && (
-                             <>
-                               {(activities.Final || []).map((act, index) => (
-                                 <th key={act.id} className="px-1 py-1.5 border-r border-slate-100 w-12" title={act.name}>{index + 1}</th>
-                               ))}
+                            {/* Final sub-headers */}
+                            {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch') && (
+                              <>
+                                {(activities.Final || []).map((act, index) => {
+                                  const isConfigured = !!act.name;
+                                  return (
+                                    <th 
+                                      key={act.id} 
+                                      className={cn(
+                                        "px-1 py-1.5 border-r border-slate-100 w-12 cursor-pointer transition-colors select-none",
+                                        isConfigured ? "bg-orange-50/50 hover:bg-orange-100 text-orange-900" : "bg-slate-100 hover:bg-slate-200 text-slate-400"
+                                      )}
+                                      title={isConfigured ? `${act.name}${act.description ? ` - ${act.description}` : ''} (Click to edit)` : 'Configure this activity (Click to setup)'}
+                                      onClick={() => openConfigModal('Final', index, act)}
+                                    >
+                                      <div className="flex flex-col items-center justify-center gap-0.5">
+                                        <span>{index + 1}</span>
+                                        {!isConfigured && <span className="text-[7px] text-slate-400">⚙️</span>}
+                                        {isConfigured && <span className="text-[7px] text-orange-755 font-sans block max-w-[40px] truncate" title={act.name}>{act.name}</span>}
+                                      </div>
+                                    </th>
+                                  );
+                                })}
 
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
-                               <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                               <th className="px-2 py-1.5 border-r border-slate-200 bg-orange-100/30 font-bold w-14 text-slate-800">Rating</th>
-                             </>
-                           )}
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
+                                <th className="px-2 py-1.5 border-r border-slate-200 bg-orange-100/30 font-bold w-14 text-slate-800">Rating</th>
+                              </>
+                            )}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -1348,7 +1585,7 @@ export default function ScoreInput() {
                             </div>
                           </td>
                           {/* Prelim Period */}
-                          {(viewMode === 'All' || viewMode === 'Prelim') && (
+                          {(viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch') && (
                             <>
                               {(activities.Prelim || []).map(act => (
                                 <td 
@@ -1364,56 +1601,6 @@ export default function ScoreInput() {
                                 </td>
                               ))}
 
-                              <td 
-                                onClick={isPrelimLocked ? undefined : () => setEditingColumn({ period: 'Prelim', key: 'act2', label: 'Formative Assessment 2', value: maxItems.Prelim.act2 })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
-                                  isPrelimLocked 
-                                    ? 'bg-slate-100/50 text-slate-400' 
-                                    : 'bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-900 cursor-pointer text-slate-800'
-                                }`}
-                              >
-                                {maxItems.Prelim.act2}
-                              </td>
-                              <td 
-                                onClick={isPrelimLocked ? undefined : () => setEditingColumn({ period: 'Prelim', key: 'act3', label: 'Formative Assessment 3', value: maxItems.Prelim.act3 })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
-                                  isPrelimLocked 
-                                    ? 'bg-slate-100/50 text-slate-400' 
-                                    : 'bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-900 cursor-pointer text-slate-800'
-                                }`}
-                              >
-                                {maxItems.Prelim.act3}
-                              </td>
-                              <td 
-                                onClick={isPrelimLocked ? undefined : () => setEditingColumn({ period: 'Prelim', key: 'act4', label: 'Formative Assessment 4', value: maxItems.Prelim.act4 })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
-                                  isPrelimLocked 
-                                    ? 'bg-slate-100/50 text-slate-400' 
-                                    : 'bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-955 cursor-pointer text-slate-800'
-                                }`}
-                              >
-                                {maxItems.Prelim.act4}
-                              </td>
-                              <td 
-                                onClick={isPrelimLocked ? undefined : () => setEditingColumn({ period: 'Prelim', key: 'act5', label: 'Formative Assessment 5', value: maxItems.Prelim.act5 })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
-                                  isPrelimLocked 
-                                    ? 'bg-slate-100/50 text-slate-400' 
-                                    : 'bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-900 cursor-pointer text-slate-800'
-                                }`}
-                              >
-                                {maxItems.Prelim.act5}
-                              </td>
-                              <td 
-                                onClick={isPrelimLocked ? undefined : () => setEditingColumn({ period: 'Prelim', key: 'act6', label: 'Formative Assessment 6', value: maxItems.Prelim.act6 })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
-                                  isPrelimLocked 
-                                    ? 'bg-slate-100/50 text-slate-400' 
-                                    : 'bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-900 cursor-pointer text-slate-800'
-                                }`}
-                              >
-                                {maxItems.Prelim.act6}
-                              </td>
                               <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
                                 {(activities.Prelim || []).reduce((acc, c) => acc + (c.max || 0), 0)}
                               </td>
@@ -1437,68 +1624,21 @@ export default function ScoreInput() {
                           )}
 
                           {/* Midterm Period */}
-                          {(viewMode === 'All' || viewMode === 'Midterm') && (
+                          {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch') && (
                             <>
-                              <td 
-                                onClick={isMidtermLocked ? undefined : () => setEditingColumn({ period: 'Midterm', key: 'act1', label: 'Formative Assessment 1', value: maxItems.Midterm.act1 })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
-                                  isMidtermLocked 
-                                    ? 'bg-slate-100/50 text-slate-400' 
-                                    : 'bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-slate-800'
-                                }`}
-                              >
-                                {maxItems.Midterm.act1}
-                              </td>
-                              <td 
-                                onClick={isMidtermLocked ? undefined : () => setEditingColumn({ period: 'Midterm', key: 'act2', label: 'Formative Assessment 2', value: maxItems.Midterm.act2 })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
-                                  isMidtermLocked 
-                                    ? 'bg-slate-100/50 text-slate-400' 
-                                    : 'bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-slate-800'
-                                }`}
-                              >
-                                {maxItems.Midterm.act2}
-                              </td>
-                              <td 
-                                onClick={isMidtermLocked ? undefined : () => setEditingColumn({ period: 'Midterm', key: 'act3', label: 'Formative Assessment 3', value: maxItems.Midterm.act3 })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
-                                  isMidtermLocked 
-                                    ? 'bg-slate-100/50 text-slate-400' 
-                                    : 'bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-slate-800'
-                                }`}
-                              >
-                                {maxItems.Midterm.act3}
-                              </td>
-                              <td 
-                                onClick={isMidtermLocked ? undefined : () => setEditingColumn({ period: 'Midterm', key: 'act4', label: 'Formative Assessment 4', value: maxItems.Midterm.act4 })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
-                                  isMidtermLocked 
-                                    ? 'bg-slate-100/50 text-slate-400' 
-                                    : 'bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-slate-800'
-                                }`}
-                              >
-                                {maxItems.Midterm.act4}
-                              </td>
-                              <td 
-                                onClick={isMidtermLocked ? undefined : () => setEditingColumn({ period: 'Midterm', key: 'act5', label: 'Formative Assessment 5', value: maxItems.Midterm.act5 })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
-                                  isMidtermLocked 
-                                    ? 'bg-slate-100/50 text-slate-400' 
-                                    : 'bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-slate-800'
-                                }`}
-                              >
-                                {maxItems.Midterm.act5}
-                              </td>
-                              <td 
-                                onClick={isMidtermLocked ? undefined : () => setEditingColumn({ period: 'Midterm', key: 'act6', label: 'Formative Assessment 6', value: maxItems.Midterm.act6 })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
-                                  isMidtermLocked 
-                                    ? 'bg-slate-100/50 text-slate-400' 
-                                    : 'bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-slate-800'
-                                }`}
-                              >
-                                {maxItems.Midterm.act6}
-                              </td>
+                              {(activities.Midterm || []).map(act => (
+                                <td 
+                                  key={act.id}
+                                  onClick={isMidtermLocked ? undefined : () => setEditingColumn({ period: 'Midterm', key: act.id, label: act.name, value: act.max })} 
+                                  className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
+                                    isMidtermLocked 
+                                      ? 'bg-slate-100/50 text-slate-400' 
+                                      : 'bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-slate-800'
+                                  }`}
+                                >
+                                  {act.max}
+                                </td>
+                              ))}
                               <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
                                 {(activities.Midterm || []).reduce((acc, c) => acc + (c.max || 0), 0)}
                               </td>
@@ -1522,12 +1662,12 @@ export default function ScoreInput() {
                           )}
 
                           {/* Midterm Rating (MR) */}
-                          {(viewMode === 'All' || viewMode === 'Midterm') && (
+                          {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch' || viewMode === 'Summary') && (
                             <td className="px-3 py-3 border-r border-slate-200 bg-indigo-100/40 text-center"></td>
                           )}
 
                           {/* Semi-Final Period */}
-                          {(viewMode === 'All' || viewMode === 'Semi-Final') && (
+                          {(viewMode === 'All' || viewMode === 'Semi-Final' || viewMode === 'FinalBatch') && (
                             <>
                               {(activities['Semi-Final'] || []).map(act => (
                                 <td 
@@ -1567,7 +1707,7 @@ export default function ScoreInput() {
                           )}
 
                           {/* Final Period */}
-                          {(viewMode === 'All' || viewMode === 'Final') && (
+                          {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch') && (
                             <>
                               {(activities.Final || []).map(act => (
                                 <td 
@@ -1606,14 +1746,24 @@ export default function ScoreInput() {
                             </>
                           )}
 
-                          {/* Final calculations placeholders */}
-                          {(viewMode === 'All' || viewMode === 'Final') && (
-                            <>
-                              <td className="px-3 py-3 border-r border-slate-200 bg-orange-100/40 text-center"></td>
-                              <td className="px-3 py-3 border-r border-slate-200 bg-emerald-50/40 text-center"></td>
-                              <td className="px-3 py-3 border-r border-slate-200 bg-emerald-100/40 text-center"></td>
-                              <td className="px-4 py-3 border-r border-slate-200 bg-emerald-100/40 text-center"></td>
-                            </>
+                          {/* Tentative Final Rating (TFR) */}
+                          {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch' || viewMode === 'Summary') && (
+                            <td className="px-3 py-3 border-r border-slate-200 bg-orange-100/40 text-center"></td>
+                          )}
+
+                          {/* Semestral Grade (SG) */}
+                          {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'Summary') && (
+                            <td className="px-3 py-3 border-r border-slate-200 bg-emerald-50/40 text-center"></td>
+                          )}
+
+                          {/* Equivalent GWA */}
+                          {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'Summary') && (
+                            <td className="px-3 py-3 border-r border-slate-200 bg-emerald-100/40 text-center"></td>
+                          )}
+
+                          {/* Remarks */}
+                          {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'Summary') && (
+                            <td className="px-4 py-3 border-r border-slate-200 bg-emerald-100/40 text-center"></td>
                           )}
                         </tr>
 
@@ -1735,45 +1885,47 @@ export default function ScoreInput() {
       />
       
       
-      {/* ➕ Add Activity Modal */}
-      {isAddActivityModalOpen && (
+      {/* ⚙️ Configure Activity Modal */}
+      {isConfigModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm text-left">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 font-sans">
-                <span>➕ Add Activity Column</span>
+                <span>⚙️ Configure Activity: {configTerm} Slot {configSlotIndex + 1}</span>
               </h3>
               <button 
-                onClick={() => setIsAddActivityModalOpen(false)}
-                className="text-slate-400 hover:text-slate-650 transition-colors text-lg font-semibold"
+                onClick={() => setIsConfigModalOpen(false)}
+                className="text-slate-400 hover:text-slate-650 transition-colors text-lg font-semibold cursor-pointer"
               >
                 &times;
               </button>
             </div>
             
             <div className="p-6 space-y-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Target Term Period</label>
-                <select
-                  value={newActivityTerm}
-                  onChange={(e) => setNewActivityTerm(e.target.value)}
-                  className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
-                >
-                  {periodsList.includes('Prelim') && <option value="Prelim">Prelim</option>}
-                  {periodsList.includes('Midterm') && <option value="Midterm">Midterm</option>}
-                  {periodsList.includes('Semi-Final') && <option value="Semi-Final">Semi-Final</option>}
-                  {periodsList.includes('Final') && <option value="Final">Final</option>}
-                </select>
+              <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3.5 text-xs leading-relaxed">
+                <strong>💡 Important Notice:</strong> Before you can enter scores for this column, you must assign an official activity Title and Description. This will instantly update the Student Portal so students can track their specific assessment items.
               </div>
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Activity Title / Name</label>
                 <input
                   type="text"
-                  value={newActivityName}
-                  onChange={(e) => setNewActivityName(e.target.value)}
-                  placeholder="e.g. Quizzes, Written Work 1, Nursing Care Plan"
+                  required
+                  value={configTitle}
+                  onChange={(e) => setConfigTitle(e.target.value)}
+                  placeholder="e.g. Quiz 1, Laboratory Exercise 2, Group Presentation"
                   className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Description (Optional)</label>
+                <textarea
+                  value={configDescription}
+                  onChange={(e) => setConfigDescription(e.target.value)}
+                  placeholder="Provide details about the coverage, instructions, or rubric of this activity..."
+                  rows={3}
+                  className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all resize-none font-sans"
                 />
               </div>
 
@@ -1783,8 +1935,9 @@ export default function ScoreInput() {
                   type="number"
                   min="1"
                   max="1000"
-                  value={newActivityMax}
-                  onChange={(e) => setNewActivityMax(Number(e.target.value))}
+                  required
+                  value={configMaxScore}
+                  onChange={(e) => setConfigMaxScore(Number(e.target.value))}
                   className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all font-mono"
                 />
               </div>
@@ -1793,22 +1946,126 @@ export default function ScoreInput() {
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
               <button 
                 type="button"
-                onClick={() => setIsAddActivityModalOpen(false)}
-                className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-semibold transition-colors"
+                onClick={() => setIsConfigModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button 
                 type="button"
-                onClick={handleAddActivitySubmit}
-                className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm"
+                onClick={handleSaveConfig}
+                disabled={savingConfig}
+                className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-sage-400 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm flex items-center gap-1 cursor-pointer"
               >
-                Add Column
+                {savingConfig ? 'Saving...' : '🔒 Save & Unlock'}
               </button>
             </div>
           </div>
         </div>
       )}
+      
+      {/* ➕ Add Activity Modal */}
+      {(() => {
+        const isTermFull = (activities[newActivityTerm] || []).length >= 6;
+        return isAddActivityModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm text-left">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden">
+              <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 font-sans">
+                  <span>➕ Add Activity Column</span>
+                </h3>
+                <button 
+                  onClick={() => setIsAddActivityModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-650 transition-colors text-lg font-semibold cursor-pointer"
+                >
+                  &times;
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-4">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-[11px] text-slate-500 leading-relaxed">
+                  <strong>ℹ️ Grading Information:</strong> A maximum of 6 formative assessment slots can be created per term period to align with student grade report cards, offline template bounds, and official grade computation templates.
+                </div>
+
+                {isTermFull && (
+                  <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3.5 text-xs leading-relaxed font-sans">
+                    <strong>🚫 Limit Reached:</strong> You have already added the maximum limit of 6 formative assessments for the <strong>{newActivityTerm}</strong> period. You cannot add any more.
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Target Term Period</label>
+                  <select
+                    value={newActivityTerm}
+                    onChange={(e) => setNewActivityTerm(e.target.value)}
+                    className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
+                  >
+                    {periodsList.includes('Prelim') && <option value="Prelim">Prelim</option>}
+                    {periodsList.includes('Midterm') && <option value="Midterm">Midterm</option>}
+                    {periodsList.includes('Semi-Final') && <option value="Semi-Final">Semi-Final</option>}
+                    {periodsList.includes('Final') && <option value="Final">Final</option>}
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Activity Title / Name</label>
+                  <input
+                    type="text"
+                    disabled={isTermFull}
+                    value={newActivityName}
+                    onChange={(e) => setNewActivityName(e.target.value)}
+                    placeholder="e.g. Quizzes, Written Work 1, Nursing Care Plan"
+                    className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all disabled:bg-slate-50 disabled:text-slate-450"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Description (Optional)</label>
+                  <textarea
+                    disabled={isTermFull}
+                    value={newActivityDescription}
+                    onChange={(e) => setNewActivityDescription(e.target.value)}
+                    placeholder="Provide details about the coverage, instructions, or rubric of this activity..."
+                    rows={2}
+                    className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all resize-none font-sans disabled:bg-slate-50 disabled:text-slate-450"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Maximum Points / Score</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1000"
+                    disabled={isTermFull}
+                    value={newActivityMax}
+                    onChange={(e) => setNewActivityMax(Number(e.target.value))}
+                    className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all font-mono disabled:bg-slate-50 disabled:text-slate-450"
+                  />
+                </div>
+              </div>
+
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsAddActivityModalOpen(false)}
+                  className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button"
+                  disabled={isTermFull}
+                  onClick={handleAddActivitySubmit}
+                  className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:text-slate-450 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm cursor-pointer"
+                >
+                  Add Column
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
 
       {/* 🔒 Post Grades Term Picker and Confirmation Modal */}

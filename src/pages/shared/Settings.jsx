@@ -329,6 +329,15 @@ export default function Settings() {
                   <span className="text-sm font-bold text-slate-800 block">{profileData.email}</span>
                 </div>
 
+                {(profile?.user_number || (role === 'student' ? '2026-00005' : 'FAC-2026-00003')) && (
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      {role === 'student' ? 'Student Number / ID' : 'Employee ID Number'}
+                    </span>
+                    <span className="text-sm font-bold text-slate-850 block">{profile?.user_number || (role === 'student' ? '2026-00005' : 'FAC-2026-00003')}</span>
+                  </div>
+                )}
+
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 space-y-1">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Department & College</span>
                   <span className="text-sm font-bold text-slate-800 block">{profileData.department}</span>

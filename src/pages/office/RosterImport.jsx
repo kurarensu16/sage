@@ -469,12 +469,12 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,Bachelor of Science in Informa
 
       const parts = line.split(',');
       if (parts.length < 5) {
-        setImportError(`Row ${i + 1} has insufficient columns. Required format: LastName,FirstName,MiddleName,Email,Role,Program[,Section,YearLevel,IDNumber]`);
+        setImportError(`Row ${i + 1} has insufficient columns. Required format: LastName,FirstName,MiddleName,Email,Role,College,Program[,Section,YearLevel,IDNumber]`);
         hasError = true;
         break;
       }
 
-      let [lastName, firstName, middleName, email, role, program, section, yearLevel, userNumber] = parts.map(p => p?.trim() || '');
+      let [lastName, firstName, middleName, email, role, college, program, section, yearLevel, userNumber] = parts.map(p => p?.trim() || '');
       const department = userDepartmentName;
 
       if (role.toLowerCase() === 'student') {
