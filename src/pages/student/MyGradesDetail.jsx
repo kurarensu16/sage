@@ -25,6 +25,7 @@ export default function MyGradesDetail() {
   const [isCsExpanded, setIsCsExpanded] = useState(true);
   const [isSpreadsheetFullScreen, setIsSpreadsheetFullScreen] = useState(false);
   const [spreadsheetViewMode, setSpreadsheetViewMode] = useState('All');
+  const [selectedActivity, setSelectedActivity] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [classInfo, setClassInfo] = useState(null);
@@ -96,13 +97,31 @@ export default function MyGradesDetail() {
             status,
             school_year,
             semester,
-            subjects ( code, name, units ),
+            subject_id,
+            subjects ( code, name, units, computation_id ),
             faculty:users!faculty_id ( first_name, last_name )
           `)
           .eq('class_record_id', targetClassRecordId)
           .single();
 
         if (crErr) throw crErr;
+
+        if (crInfo?.subjects?.computation_id) {
+          try {
+            const { data: compData } = await supabase
+              .from('grade_computations')
+              .select('name, description, grade_computation_components ( * )')
+              .eq('computation_id', crInfo.subjects.computation_id)
+              .maybeSingle();
+
+            if (compData && crInfo.subjects) {
+              crInfo.subjects.grade_computations = compData;
+            }
+          } catch (compErr) {
+            console.warn('Could not fetch grade_computations for student view:', compErr);
+          }
+        }
+
         setClassInfo(crInfo);
 
         // 2. Fetch Columns Max Score Setup
@@ -214,6 +233,9 @@ export default function MyGradesDetail() {
           let csSum = 0;
           let csMax = 0;
 
+          const compList = crInfo?.subjects?.grade_computations?.grade_computation_components || [];
+          const templateActs = compList.filter(c => c.is_multiple);
+
           const csBreakdown = termActs.length > 0 
             ? termActs.map(act => {
                 const score = studentScoresByActivity[act.activity_id] ?? 0;
@@ -222,20 +244,13 @@ export default function MyGradesDetail() {
                 return {
                   name: act.name,
                   obtained: score,
-                  max: parseFloat(act.max_score) || 20
+                  max: parseFloat(act.max_score) || 20,
+                  description: act.description || ''
                 };
               })
             : (() => {
-                csSum = act1 + act2 + act3 + act4 + act5 + act6;
-                csMax = max.act1 + max.act2 + max.act3 + max.act4 + max.act5 + max.act6;
-                return [
-                  { name: 'Formative Assessment 1', obtained: act1, max: max.act1 },
-                  { name: 'Formative Assessment 2', obtained: act2, max: max.act2 },
-                  { name: 'Formative Assessment 3', obtained: act3, max: max.act3 },
-                  { name: 'Formative Assessment 4', obtained: act4, max: max.act4 },
-                  { name: 'Formative Assessment 5', obtained: act5, max: max.act5 },
-                  { name: 'Formative Assessment 6', obtained: act6, max: max.act6 }
-                ];
+                // Keep formative list blank unless the instructor has officially configured custom activities in DB
+                return [];
               })();
 
           const csPct = csMax > 0 ? (csSum / csMax) * 50 : 0;
@@ -490,17 +505,30 @@ export default function MyGradesDetail() {
                               <div className="px-8 py-3 border-b border-slate-100/80 space-y-2">
                                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Individual Formative Assessments Breakdown</div>
                                 <div className="bg-white border border-slate-250 rounded-xl divide-y divide-slate-100 overflow-hidden shadow-xs">
-                                  {item.breakdown.map((act, aIdx) => (
-                                    <div key={aIdx} className="px-4 py-3 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
-                                      <div className="flex flex-col">
-                                        <span className="text-xs font-bold text-slate-800 font-sans">{act.name}</span>
-                                        <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wide mt-0.5">Formative Assessment Item</span>
-                                      </div>
-                                      <span className="text-sm font-bold font-mono text-slate-850">
-                                        {act.obtained} <span className="text-xs font-normal text-slate-400">/ {act.max}</span>
-                                      </span>
+                                  {item.breakdown.length === 0 ? (
+                                    <div className="px-4 py-6 text-center text-xs text-slate-400 font-medium">
+                                      No formative assessments have been configured or assigned for this period yet.
                                     </div>
-                                  ))}
+                                  ) : (
+                                    item.breakdown.map((act, aIdx) => (
+                                      <div 
+                                        key={aIdx} 
+                                        onClick={() => setSelectedActivity(act)}
+                                        className="px-4 py-3 flex items-center justify-between hover:bg-slate-50/70 transition-colors cursor-pointer"
+                                        title="Click to view details"
+                                      >
+                                        <div className="flex flex-col">
+                                          <span className="text-xs font-bold text-slate-800 font-sans hover:text-sage-700">{act.name}</span>
+                                          <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wide mt-0.5">
+                                            {act.description ? '📝 Click to view description' : 'Formative Assessment Item'}
+                                          </span>
+                                        </div>
+                                        <span className="text-sm font-bold font-mono text-slate-850">
+                                          {act.obtained} <span className="text-xs font-normal text-slate-400">/ {act.max}</span>
+                                        </span>
+                                      </div>
+                                    ))
+                                  )}
                                 </div>
                               </div>
                             </td>
@@ -881,6 +909,60 @@ export default function MyGradesDetail() {
             <span className="flex items-center gap-1.5"><HelpCircle className="h-3.5 w-3.5" /> Formula: CS % (50%) + Char % (10%) + Exam % (40%) = Rating. Semestral Grade (SG) = (MR + TFR) / 2.</span>
           </div>
         </div>
+
+      {/* 📋 Activity Details Modal */}
+      {selectedActivity && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm text-left">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 font-sans">
+                <span>📋 Assessment Details</span>
+              </h3>
+              <button 
+                onClick={() => setSelectedActivity(null)}
+                className="text-slate-400 hover:text-slate-650 transition-colors text-lg font-semibold cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Activity Name</span>
+                <span className="text-sm font-bold text-slate-850 block mt-0.5">{selectedActivity.name}</span>
+              </div>
+
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Coverage / Description</span>
+                <span className="text-xs text-slate-600 block mt-1 leading-relaxed whitespace-pre-wrap">
+                  {selectedActivity.description || 'No description provided for this activity.'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Your Score</span>
+                  <span className="text-sm font-extrabold text-slate-850 block mt-0.5">{selectedActivity.obtained}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Maximum Points</span>
+                  <span className="text-sm font-bold text-slate-500 block mt-0.5">{selectedActivity.max}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
+              <button 
+                type="button"
+                onClick={() => setSelectedActivity(null)}
+                className="px-4 py-2 bg-sage-800 hover:bg-sage-900 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Close View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       </div>
     </>

@@ -6,7 +6,8 @@ import {
   Info,
   ChevronRight,
   RefreshCw,
-  Save
+  Save,
+  AlertCircle
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -48,7 +49,7 @@ export default function GradeComponentsSetup() {
             class_record_id,
             school_year,
             semester,
-            subjects ( code, name ),
+            subjects ( code, name, computation_id ),
             sections ( name )
           `)
           .eq('class_record_id', classRecordId)
@@ -64,6 +65,17 @@ export default function GradeComponentsSetup() {
 
         if (!tempErr && templatesData) {
           setAdminTemplates(templatesData);
+          if (cr?.subjects?.computation_id) {
+            const matchedTemplate = templatesData.find(t => t.computation_id === cr.subjects.computation_id);
+            if (matchedTemplate) {
+              setSelectedTemplateId(matchedTemplate.computation_id);
+            }
+          } else {
+            const fallbackTemplate = templatesData.find(t => t.name === 'General / Professional Education Scale');
+            if (fallbackTemplate) {
+              setSelectedTemplateId(fallbackTemplate.computation_id);
+            }
+          }
         }
 
         // 3. Fetch configured grading columns for this class
@@ -229,108 +241,15 @@ export default function GradeComponentsSetup() {
           </span>
         </div>
 
-        {/* Info Box */}
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-3">
-          <Info className="h-5 w-5 text-sage-600 mt-0.5 flex-shrink-0" />
+        {/* Locked Weights Notice Banner */}
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
+          <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
           <div>
-            <h4 className="font-bold text-sm text-slate-900">DYCI Grading Standard Setup</h4>
-            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-              Configure the maximum points for each of the 6 Formative Assessments (representing 50% Class Standing) and the Term Examination (40% Term Exam). The remaining 10% is allocated to student Character rating (scored out of 100).
+            <h4 className="font-bold text-sm text-amber-900 font-display">Standardized Grading Weights Locked</h4>
+            <p className="text-xs text-amber-700 mt-0.5 leading-relaxed font-medium">
+              This class is bound to the official template: <strong className="text-amber-950 font-bold">"{adminTemplates.find(t => t.computation_id === selectedTemplateId)?.name || 'General / Professional Education Scale'}"</strong>.
+              Manual adjustments and template customizations have been standardly configured by the Academic Administrator to maintain grading integrity across sections.
             </p>
-          </div>
-        </div>
-
-        {/* Institutional Admin Templates & Preset Pickers */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4">
-          <div>
-            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide flex items-center gap-1.5 font-sans">
-              <RefreshCw className="h-3.5 w-3.5 text-sage-600" /> Apply Grade Computation Template
-            </h4>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Select an official institutional template configured by the Academic Administrator to automatically standardize your column weights and maximum points across all terms.
-            </p>
-          </div>
-
-          {/* Dynamic Admin Templates */}
-          {adminTemplates.length > 0 && (
-            <div className="space-y-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                Official Institutional Templates (Admin Configured):
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {adminTemplates.map((template) => {
-                  const isSelected = selectedTemplateId === template.computation_id;
-                  const comps = template.grade_computation_components || [];
-                  const csComp = comps.find(c => (c.name || '').toLowerCase().includes('class standing') || (c.name || '').toLowerCase().includes('formative')) || comps[0];
-                  const examComp = comps.find(c => (c.name || '').toLowerCase().includes('exam') || (c.name || '').toLowerCase().includes('major')) || comps[1];
-
-                  return (
-                    <div
-                      key={template.computation_id}
-                      onClick={() => applyAdminTemplate(template)}
-                      className={cn(
-                        "p-3.5 rounded-xl border text-left transition-all cursor-pointer space-y-1.5",
-                        isSelected
-                          ? "bg-sage-50/70 border-sage-500 ring-1 ring-sage-500/30 shadow-xs"
-                          : "bg-slate-50/60 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                      )}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
-                          {template.name}
-                        </span>
-                        {isSelected && (
-                          <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-sage-600 text-white uppercase">
-                            Applied
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-500 line-clamp-1">
-                        {template.description ? template.description.replace(/[`*]/g, '') : 'Standard institutional grading template'}
-                      </p>
-                      <div className="flex items-center gap-2 pt-0.5 text-[10px] font-mono text-slate-600">
-                        <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                          CS: {csComp?.max_score || 20} pts max
-                        </span>
-                        <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                          Exam: {examComp?.max_score || 40} pts max
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Quick Fallback Presets */}
-          <div className="space-y-2 pt-1 border-t border-slate-100">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Quick Point Presets:
-            </span>
-            <div className="flex flex-wrap gap-2.5">
-              <button
-                onClick={() => applyPreset('DYCI-STD')}
-                type="button"
-                className="px-3 py-1.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg transition-colors font-sans"
-              >
-                Standard (20pt FAs / 40pt Exam)
-              </button>
-              <button
-                onClick={() => applyPreset('QUIZ-HEAVY')}
-                type="button"
-                className="px-3 py-1.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-colors font-sans"
-              >
-                High Capacity (50pt FAs / 100pt Exam)
-              </button>
-              <button
-                onClick={() => applyPreset('SHORT-QUIZ')}
-                type="button"
-                className="px-3 py-1.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-700 transition-colors font-sans"
-              >
-                Short Quizzes (10pt FAs / 30pt Exam)
-              </button>
-            </div>
           </div>
         </div>
 
@@ -370,9 +289,9 @@ export default function GradeComponentsSetup() {
                     required
                     min="1"
                     max="500"
+                    disabled
                     value={columnsData[activeTerm][`act${num}_max`]}
-                    onChange={(e) => handleMaxChange(activeTerm, `act${num}_max`, e.target.value)}
-                    className="block w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono text-center focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none bg-slate-50/50"
+                    className="block w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono text-center bg-slate-100 text-slate-500 outline-none"
                   />
                 </div>
               ))}
@@ -386,9 +305,9 @@ export default function GradeComponentsSetup() {
                   required
                   min="5"
                   max="1000"
+                  disabled
                   value={columnsData[activeTerm].exam_max}
-                  onChange={(e) => handleMaxChange(activeTerm, 'exam_max', e.target.value)}
-                  className="block w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono text-center focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none bg-slate-50/50 font-bold"
+                  className="block w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono text-center bg-slate-100 text-slate-500 outline-none font-bold"
                 />
               </div>
 
@@ -398,7 +317,7 @@ export default function GradeComponentsSetup() {
                   type="text"
                   disabled
                   value="100"
-                  className="block w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono text-center bg-slate-100 text-slate-400 outline-none"
+                  className="block w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono text-center bg-slate-100 text-slate-450 outline-none"
                 />
               </div>
             </div>
@@ -411,13 +330,14 @@ export default function GradeComponentsSetup() {
               onClick={() => navigate('/faculty/classrecordslist')}
               className="px-5 py-2.5 text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg transition-colors"
             >
-              Cancel
+              Back to Class Records
             </button>
             <button
-              type="submit"
+              type="button"
+              onClick={() => navigate(`/faculty/scoreinput?id=${classRecordId}`)}
               className="px-5 py-2.5 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm flex items-center gap-1.5"
             >
-              <Save className="h-4 w-4" /> Save Configurations
+              Proceed to Score Input
             </button>
           </div>
 

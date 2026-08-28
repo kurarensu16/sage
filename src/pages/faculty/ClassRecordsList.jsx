@@ -26,7 +26,7 @@ export default function ClassRecordsList() {
             semester,
             subject_id,
             section_id,
-            subjects ( subject_id, code, name, units ),
+            subjects ( subject_id, code, name, units, computation_id ),
             sections ( section_id, name, school_year, semester )
           `)
           .eq('faculty_id', user.id)
@@ -42,12 +42,74 @@ export default function ClassRecordsList() {
 
         const classIds = classesData.map(c => c.class_record_id);
 
-        const { data: gradingCols, error: colsError } = await supabase
+        let { data: gradingCols, error: colsError } = await supabase
           .from('class_grading_columns')
           .select('class_record_id, term')
           .in('class_record_id', classIds);
 
         if (colsError) throw colsError;
+
+        // Auto-initialize missing class_grading_columns
+        const unconfiguredClasses = classesData.filter(cls => {
+          const matchingCols = (gradingCols || []).filter(col => col.class_record_id === cls.class_record_id);
+          return matchingCols.length === 0;
+        });
+
+        if (unconfiguredClasses.length > 0) {
+          for (const cls of unconfiguredClasses) {
+            let templateToApply = null;
+            if (cls.subjects?.computation_id) {
+              const { data: temp } = await supabase
+                .from('grade_computations')
+                .select('*, grade_computation_components(*)')
+                .eq('computation_id', cls.subjects.computation_id)
+                .single();
+              if (temp) templateToApply = temp;
+            }
+
+            if (!templateToApply) {
+              const { data: fallbackTemp } = await supabase
+                .from('grade_computations')
+                .select('*, grade_computation_components(*)')
+                .eq('name', 'General / Professional Education Scale')
+                .single();
+              if (fallbackTemp) templateToApply = fallbackTemp;
+            }
+
+            if (templateToApply) {
+              const comps = templateToApply.grade_computation_components || [];
+              const csComp = comps.find(c => (c.name || '').toLowerCase().includes('class standing') || (c.name || '').toLowerCase().includes('formative')) || comps[0];
+              const examComp = comps.find(c => (c.name || '').toLowerCase().includes('exam') || (c.name || '').toLowerCase().includes('major')) || comps[1];
+
+              const faMax = csComp?.max_score ? parseFloat(csComp.max_score) : 20;
+              const examMax = examComp?.max_score ? parseFloat(examComp.max_score) : 100;
+
+              const termsList = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+              const upsertRows = termsList.map(term => ({
+                class_record_id: cls.class_record_id,
+                term,
+                act1_max: faMax,
+                act2_max: faMax,
+                act3_max: faMax,
+                act4_max: faMax,
+                act5_max: faMax,
+                act6_max: Math.round(faMax / 2) || 10,
+                exam_max: examMax
+              }));
+
+              await supabase
+                .from('class_grading_columns')
+                .insert(upsertRows);
+            }
+          }
+
+          // Refetch grading columns
+          const { data: refetchedCols } = await supabase
+            .from('class_grading_columns')
+            .select('class_record_id, term')
+            .in('class_record_id', classIds);
+          if (refetchedCols) gradingCols = refetchedCols;
+        }
 
         const { data: postedGrades, error: gradesError } = await supabase
           .from('posted_grades')

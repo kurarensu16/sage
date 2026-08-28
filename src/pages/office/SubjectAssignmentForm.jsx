@@ -92,7 +92,7 @@ export default function SubjectAssignmentForm() {
 
       const { data: dbSubjects } = await supabase
         .from('subjects')
-        .select('subject_id, code, name, department_id, departments(name)')
+        .select('subject_id, code, name, department_id, departments(name), computation_id')
         .order('code');
 
       const { data: dbSections } = await supabase
@@ -350,16 +350,67 @@ export default function SubjectAssignmentForm() {
       }
 
       // Insert classroom record
-      const { error: insertError } = await supabase.from('class_records').insert({
-        subject_id: selectedSubject.subject_id,
-        section_id: selectedSection.section_id,
-        faculty_id: formData.facultyId,
-        school_year: selectedSection.school_year,
-        semester: selectedSection.semester,
-        status: 'active'
-      });
+      const { data: newClassRecord, error: insertError } = await supabase
+        .from('class_records')
+        .insert({
+          subject_id: selectedSubject.subject_id,
+          section_id: selectedSection.section_id,
+          faculty_id: formData.facultyId,
+          school_year: selectedSection.school_year,
+          semester: selectedSection.semester,
+          status: 'active'
+        })
+        .select()
+        .single();
 
       if (insertError) throw insertError;
+
+      // Auto-assign template components to class_grading_columns
+      let templateToApply = null;
+      if (selectedSubject.computation_id) {
+        const { data: temp } = await supabase
+          .from('grade_computations')
+          .select('*, grade_computation_components(*)')
+          .eq('computation_id', selectedSubject.computation_id)
+          .single();
+        if (temp) templateToApply = temp;
+      }
+
+      // Fallback to General / Professional Education Scale
+      if (!templateToApply) {
+        const { data: fallbackTemp } = await supabase
+          .from('grade_computations')
+          .select('*, grade_computation_components(*)')
+          .eq('name', 'General / Professional Education Scale')
+          .single();
+        if (fallbackTemp) templateToApply = fallbackTemp;
+      }
+
+      if (templateToApply) {
+        const comps = templateToApply.grade_computation_components || [];
+        const csComp = comps.find(c => (c.name || '').toLowerCase().includes('class standing') || (c.name || '').toLowerCase().includes('formative')) || comps[0];
+        const examComp = comps.find(c => (c.name || '').toLowerCase().includes('exam') || (c.name || '').toLowerCase().includes('major')) || comps[1];
+
+        const faMax = csComp?.max_score ? parseFloat(csComp.max_score) : 20;
+        const examMax = examComp?.max_score ? parseFloat(examComp.max_score) : 100;
+
+        const termsList = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+        const upsertRows = termsList.map(term => ({
+          class_record_id: newClassRecord.class_record_id,
+          term,
+          act1_max: faMax,
+          act2_max: faMax,
+          act3_max: faMax,
+          act4_max: faMax,
+          act5_max: faMax,
+          act6_max: Math.round(faMax / 2) || 10,
+          exam_max: examMax
+        }));
+
+        await supabase
+          .from('class_grading_columns')
+          .insert(upsertRows);
+      }
 
       // Get currently logged-in administrator ID
       const { data: { user: currentUser } } = await supabase.auth.getUser();
