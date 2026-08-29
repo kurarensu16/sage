@@ -57,13 +57,41 @@ import StudentEvalForm from './pages/student/EvalForm';
 import StudentAcademicInsights from './pages/student/AcademicInsights';
 import StudentNotifications from './pages/student/Notifications';
 import AdminGradeComputationsList from './pages/admin/GradeComputationsList';
+import React, { useEffect } from 'react';
 import AdminDepartmentsList from './pages/admin/DepartmentsList';
 import StudentAttendance from './pages/student/Attendance';
 import Settings from './pages/shared/Settings';
+import NetworkBanner from './components/layout/NetworkBanner';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 
 function App() {
+  useEffect(() => {
+    let backListener;
+    if (Capacitor.isNativePlatform()) {
+      const listenerPromise = CapApp.addListener('backButton', ({ canGoBack }) => {
+        if (canGoBack) {
+          window.history.back();
+        } else {
+          CapApp.minimizeApp();
+        }
+      });
+
+      listenerPromise.then((h) => {
+        backListener = h;
+      });
+    }
+
+    return () => {
+      if (backListener) {
+        backListener.remove();
+      }
+    };
+  }, []);
+
   return (
     <AuthProvider>
+      <NetworkBanner />
       <BrowserRouter>
         <Routes>
           {/* Public Routes */}
