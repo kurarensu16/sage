@@ -181,33 +181,33 @@ export default function Attendance() {
                 ) : null}
 
                 {/* Summaries Panels */}
-                <div className="grid grid-cols-4 gap-3">
-                  <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs text-left">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+                  <div className="bg-white border border-slate-200/90 p-3.5 sm:p-4 rounded-2xl shadow-2xs text-left">
                     <div className="flex items-center gap-1.5 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                       <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> Present
                     </div>
-                    <div className="font-mono text-2xl font-bold text-slate-800 mt-2">{selectedClass.presents}</div>
+                    <div className="font-mono text-xl sm:text-2xl font-bold text-slate-800 mt-1.5">{selectedClass.presents}</div>
                   </div>
 
-                  <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs text-left">
+                  <div className="bg-white border border-slate-200/90 p-3.5 sm:p-4 rounded-2xl shadow-2xs text-left">
                     <div className="flex items-center gap-1.5 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                       <Clock className="h-3.5 w-3.5 text-amber-500" /> Late
                     </div>
-                    <div className="font-mono text-2xl font-bold text-slate-800 mt-2">{selectedClass.lates}</div>
+                    <div className="font-mono text-xl sm:text-2xl font-bold text-slate-800 mt-1.5">{selectedClass.lates}</div>
                   </div>
 
-                  <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs text-left">
+                  <div className="bg-white border border-slate-200/90 p-3.5 sm:p-4 rounded-2xl shadow-2xs text-left">
                     <div className="flex items-center gap-1.5 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                       <AlertTriangle className={`h-3.5 w-3.5 ${selectedClass.isFDA ? 'text-rose-500' : 'text-slate-400'}`} /> Absent
                     </div>
-                    <div className={`font-mono text-2xl font-bold mt-2 ${selectedClass.isFDA ? 'text-rose-600' : 'text-slate-800'}`}>{selectedClass.absents}</div>
+                    <div className={`font-mono text-xl sm:text-2xl font-bold mt-1.5 ${selectedClass.isFDA ? 'text-rose-600' : 'text-slate-800'}`}>{selectedClass.absents}</div>
                   </div>
 
-                  <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs text-left">
+                  <div className="bg-white border border-slate-200/90 p-3.5 sm:p-4 rounded-2xl shadow-2xs text-left">
                     <div className="flex items-center gap-1.5 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                       <span className="h-2 w-2 rounded-full bg-blue-500 inline-block"></span> Excused
                     </div>
-                    <div className="font-mono text-2xl font-bold text-slate-800 mt-2">{selectedClass.excused}</div>
+                    <div className="font-mono text-xl sm:text-2xl font-bold text-slate-800 mt-1.5">{selectedClass.excused}</div>
                   </div>
                 </div>
 

@@ -727,7 +727,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,Bachelor of Science in Informa
         </div>
       </PageHeader>
 
-      <div className="p-8 overflow-y-auto flex-1 space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6">
         
         {/* Toast Notification */}
         {toastMessage && (
@@ -740,61 +740,61 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,Bachelor of Science in Informa
           </div>
         )}
 
-        {/* 4 Summary Metric Cards (Matching the image) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 4 Summary Metric Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
           
           {/* Card 1: TOTAL ROSTER */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex items-center justify-between">
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 sm:p-5 shadow-2xs flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">TOTAL ROSTER</p>
-              <h3 className="text-2xl font-bold text-slate-900 mt-1 font-mono">{stats.total}</h3>
-              <p className="text-xs text-slate-400 mt-0.5">{userDepartmentName}</p>
+              <p className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">TOTAL ROSTER</p>
+              <h3 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1 font-mono">{stats.total}</h3>
+              <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 truncate max-w-[100px] sm:max-w-none">{userDepartmentName}</p>
             </div>
-            <div className="w-12 h-12 bg-emerald-50/70 text-emerald-700 rounded-xl flex items-center justify-center">
-              <Users className="h-6 w-6" />
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-emerald-50/70 text-emerald-700 rounded-xl flex items-center justify-center shrink-0">
+              <Users className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </div>
 
           {/* Card 2: ENROLLED STUDENTS */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex items-center justify-between">
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 sm:p-5 shadow-2xs flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">ENROLLED STUDENTS</p>
-              <h3 className="text-2xl font-bold text-slate-900 mt-1 font-mono">{stats.students}</h3>
-              <p className="text-xs text-emerald-600 font-medium mt-0.5">Active Academic Load</p>
+              <p className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">STUDENTS</p>
+              <h3 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1 font-mono">{stats.students}</h3>
+              <p className="text-[10px] sm:text-xs text-emerald-600 font-medium mt-0.5 truncate">Academic Load</p>
             </div>
-            <div className="w-12 h-12 bg-blue-50 text-blue-700 rounded-xl flex items-center justify-center">
-              <GraduationCap className="h-6 w-6" />
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-50 text-blue-700 rounded-xl flex items-center justify-center shrink-0">
+              <GraduationCap className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </div>
 
           {/* Card 3: DEPARTMENT FACULTY */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex items-center justify-between">
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 sm:p-5 shadow-2xs flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">DEPARTMENT FACULTY</p>
-              <h3 className="text-2xl font-bold text-slate-900 mt-1 font-mono">{stats.faculty}</h3>
-              <p className="text-xs text-slate-400 mt-0.5">Teaching Instructors</p>
+              <p className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">FACULTY</p>
+              <h3 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1 font-mono">{stats.faculty}</h3>
+              <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 truncate">Instructors</p>
             </div>
-            <div className="w-12 h-12 bg-amber-50 text-amber-700 rounded-xl flex items-center justify-center">
-              <Briefcase className="h-6 w-6" />
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-amber-50 text-amber-700 rounded-xl flex items-center justify-center shrink-0">
+              <Briefcase className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </div>
 
           {/* Card 4: ACTIVE SECTIONS */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex items-center justify-between">
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 sm:p-5 shadow-2xs flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">ACTIVE SECTIONS</p>
-              <h3 className="text-2xl font-bold text-slate-900 mt-1 font-mono">{stats.sections}</h3>
-              <p className="text-xs text-slate-400 mt-0.5">Curriculum Cohorts</p>
+              <p className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">SECTIONS</p>
+              <h3 className="text-xl sm:text-2xl font-bold text-slate-900 mt-1 font-mono">{stats.sections}</h3>
+              <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 truncate">Cohorts</p>
             </div>
-            <div className="w-12 h-12 bg-purple-50 text-purple-700 rounded-xl flex items-center justify-center">
-              <Layers className="h-6 w-6" />
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-50 text-purple-700 rounded-xl flex items-center justify-center shrink-0">
+              <Layers className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
           </div>
 
         </div>
 
         {/* Toolbar & Filters (Matching User Management) */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           <div className="relative max-w-md w-full">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search className="h-4 w-4 text-slate-400" />
@@ -806,7 +806,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,Bachelor of Science in Informa
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-              className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors" 
+              className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors" 
               placeholder="Search by name, email, or ID number..." 
             />
             {searchTerm && (
@@ -824,14 +824,14 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,Bachelor of Science in Informa
 
           {/* Right Action Controls: Status Toggle */}
           <div className="flex items-center gap-2">
-            <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
               <button
                 onClick={() => {
                   setShowArchived(false);
                   setCurrentPage(1);
                 }}
                 className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-all",
+                  "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all",
                   !showArchived 
                     ? "bg-white text-slate-900 shadow-xs" 
                     : "text-slate-500 hover:text-slate-900"
@@ -845,7 +845,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,Bachelor of Science in Informa
                   setCurrentPage(1);
                 }}
                 className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5",
+                  "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5",
                   showArchived 
                     ? "bg-white text-rose-600 shadow-xs" 
                     : "text-slate-500 hover:text-slate-900"
@@ -926,8 +926,107 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,Bachelor of Science in Informa
           </div>
         </div>
 
-        {/* User Table Grid (Matching User Management) */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* User Feed (Mobile Cards + Desktop Table) */}
+        
+        {/* Mobile View Card Feed */}
+        <div className="md:hidden space-y-3">
+          {currentPageUsers.length > 0 ? (
+            currentPageUsers.map((u) => (
+              <div key={u.id} className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-2xs space-y-3 text-left">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <button
+                      onClick={() => setSelectedUser(u)}
+                      className="font-bold text-slate-900 font-display text-sm hover:text-sage-600 hover:underline truncate block"
+                    >
+                      {u.lastName}, {u.firstName} {u.middleName && u.middleName[0] + '.'}
+                    </button>
+                    <p className="text-[11px] font-mono text-slate-400 mt-0.5 truncate">{u.email}</p>
+                    {u.userNumber && (
+                      <span className="text-[10px] font-mono text-slate-500">{u.userNumber}</span>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    {getRoleBadge(u.role)}
+                    {u.isAdminLocked ? (
+                      <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        <Lock className="h-2.5 w-2.5 text-rose-500" /> Locked
+                      </span>
+                    ) : (
+                      <span className={cn(
+                        "inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold border",
+                        u.status === 'active' 
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                          : "bg-rose-50 text-rose-700 border-rose-200"
+                      )}>
+                        {u.status === 'active' ? 'Active' : 'Inactive'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <div className="text-slate-600">
+                    {u.role === 'student' ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sage-700 font-bold text-[11px]">{u.yearLevel || '1st Year'}</span>
+                        {u.section && (
+                          <span className="bg-slate-100 text-slate-700 rounded px-1.5 py-0.5 text-[10px] font-bold font-mono">
+                            {u.section}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-slate-500">Faculty Instructor</span>
+                    )}
+                  </div>
+
+                  {/* Mobile Actions */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setSelectedUser(u)}
+                      className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                      title="View Profile"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingUser(u);
+                        setEditForm({
+                          sectionId: u.sectionId || '',
+                          yearLevel: u.yearLevel || '1st Year',
+                          status: u.status
+                        });
+                        setEditError('');
+                      }}
+                      className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                      title="Edit Details"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    {u.role === 'student' && (
+                      <button
+                        onClick={() => navigate(`/office/studentsections?studentId=${u.id}`)}
+                        className="p-1.5 text-sage-600 hover:bg-sage-50 rounded-lg transition-colors cursor-pointer"
+                        title="Manage Subject Load"
+                      >
+                        <BookOpen className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="p-8 text-center bg-white border border-slate-200 rounded-2xl text-xs text-slate-400">
+              No matching users found in this department.
+            </div>
+          )}
+        </div>
+
+        {/* User Table Grid (Desktop) */}
+        <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="table-container overflow-x-auto min-h-[320px]">
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">

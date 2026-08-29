@@ -912,24 +912,25 @@ export default function MyGradesDetail() {
 
       {/* 📋 Activity Details Modal */}
       {selectedActivity && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm text-left">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs text-left">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-150">
+            <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
+            <div className="px-5 sm:px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 font-sans">
                 <span>📋 Assessment Details</span>
               </h3>
               <button 
                 onClick={() => setSelectedActivity(null)}
-                className="text-slate-400 hover:text-slate-650 transition-colors text-lg font-semibold cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 transition-colors text-lg font-semibold cursor-pointer p-1"
               >
                 &times;
               </button>
             </div>
             
-            <div className="p-6 space-y-4">
+            <div className="p-5 sm:p-6 space-y-4">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Activity Name</span>
-                <span className="text-sm font-bold text-slate-850 block mt-0.5">{selectedActivity.name}</span>
+                <span className="text-sm font-bold text-slate-900 block mt-0.5">{selectedActivity.name}</span>
               </div>
 
               <div>
@@ -942,7 +943,7 @@ export default function MyGradesDetail() {
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Your Score</span>
-                  <span className="text-sm font-extrabold text-slate-850 block mt-0.5">{selectedActivity.obtained}</span>
+                  <span className="text-sm font-extrabold text-slate-900 block mt-0.5">{selectedActivity.obtained}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Maximum Points</span>
@@ -951,11 +952,11 @@ export default function MyGradesDetail() {
               </div>
             </div>
 
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
+            <div className="px-5 sm:px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
               <button 
                 type="button"
                 onClick={() => setSelectedActivity(null)}
-                className="px-4 py-2 bg-sage-800 hover:bg-sage-900 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                className="w-full sm:w-auto px-5 py-2.5 bg-sage-800 hover:bg-sage-900 text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
               >
                 Close View
               </button>

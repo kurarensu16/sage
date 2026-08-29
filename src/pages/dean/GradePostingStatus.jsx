@@ -360,8 +360,53 @@ export default function GradePostingStatus() {
           </div>
         </div>
 
-        {/* Status Table */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* Status Feed (Mobile Card List + Desktop Table) */}
+        
+        {/* Mobile View Card Feed */}
+        <div className="md:hidden space-y-3">
+          {loading ? (
+            <div className="p-8 text-center bg-white border border-slate-200 rounded-2xl">
+              <Loader2 className="h-6 w-6 text-sage-600 animate-spin mx-auto mb-2" />
+              <span className="text-xs text-slate-500 font-medium">Loading status...</span>
+            </div>
+          ) : filteredClasses.length > 0 ? (
+            filteredClasses.map((c) => (
+              <div key={c.id} className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-2xs space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-slate-900">{c.subjectCode}</span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                        {c.section}
+                      </span>
+                    </div>
+                    <h4 className="text-xs text-slate-600 truncate">{c.subjectName}</h4>
+                  </div>
+                  <div>
+                    {getStatusBadge(c.id)}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 text-slate-700 font-medium">
+                    <div className="w-5 h-5 rounded-full bg-sage-50 border border-sage-200 text-sage-700 font-bold text-[9px] flex items-center justify-center font-mono shrink-0">
+                      {c.facultyName.split(' ').map(n => n[0]).join('')}
+                    </div>
+                    <span className="text-[11px] truncate">Prof. {c.facultyName}</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono">AY {c.schoolYear}</span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="p-8 text-center bg-white border border-slate-200 rounded-2xl text-xs text-slate-400">
+              No matching class posting status reports found.
+            </div>
+          )}
+        </div>
+
+        {/* Desktop Table View */}
+        <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="table-container overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">

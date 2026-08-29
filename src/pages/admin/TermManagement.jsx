@@ -440,8 +440,40 @@ export default function TermManagement() {
           </div>
         )}
 
-        {/* List of Registered Terms */}
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+        {/* ── Mobile Academic Term History Cards (md:hidden) ── */}
+        <div className="md:hidden space-y-3">
+          <div className="flex items-center gap-2 px-1">
+            <Calendar className="h-4 w-4 text-sage-600" />
+            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider font-display">Academic Term History</h3>
+          </div>
+          {terms.map((t) => (
+            <div key={t.id} className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex items-center justify-between gap-3">
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold font-display text-slate-900">
+                  AY {t.schoolYear} — {t.semester} Sem
+                </h4>
+                <p className="text-[11px] text-slate-400 font-mono">
+                  Created {new Date(t.created_at).toLocaleDateString()}
+                </p>
+              </div>
+
+              <div>
+                {t.isActive ? (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Active Term
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                    Archived
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Desktop List of Registered Terms (hidden md:block) ── */}
+        <div className="hidden md:block bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
           <div className="p-4 border-b border-slate-100 flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-955 flex items-center gap-2 font-display">
               <Calendar className="h-4 w-4 text-sage-600" /> Academic Term History
@@ -485,17 +517,22 @@ export default function TermManagement() {
 
       {/* Rollover Wizard Modal */}
       {isWizardOpen && (
-        <div className="fixed inset-0 z-55 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl border border-slate-200 max-w-xl w-full shadow-lg flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-55 bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 max-w-xl w-full shadow-2xl flex flex-col overflow-hidden max-h-[90vh] animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
             
+            {/* Mobile grab handle */}
+            <div className="sm:hidden pt-3 pb-1 flex justify-center">
+              <div className="w-10 h-1.25 bg-slate-300 rounded-full" />
+            </div>
+
             {/* Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-base font-bold font-display text-slate-900 flex items-center gap-2">
-                <RefreshCw className="h-5 w-5 text-sage-600 animate-spin" /> New Semester Setup Assistant
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm sm:text-base font-bold font-display text-slate-900 flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 sm:h-5 sm:w-5 text-sage-600" /> New Semester Setup Assistant
               </h3>
               <button 
                 onClick={() => setIsWizardOpen(false)}
-                className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-900 transition-colors"
+                className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-900 transition-colors cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>

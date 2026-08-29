@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, Plus, Edit2, Power, CheckCircle, AlertCircle, Upload, X, Check, FileSpreadsheet, MoreVertical, Archive, RotateCcw, FileText, Eye, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, SlidersHorizontal } from 'lucide-react';
@@ -96,6 +96,7 @@ export default function UserList() {
   const [currentPage, setCurrentPage] = useState(1);
   const [activeDropdownId, setActiveDropdownId] = useState(null);
   const [confirmModalConfig, setConfirmModalConfig] = useState(null);
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
 
   // Quick profile drawer state
   const [selectedUserProfile, setSelectedUserProfile] = useState(null);
@@ -171,33 +172,49 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
     return () => document.removeEventListener('click', handleOutsideClick);
   }, [activeDropdownId]);
 
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = 
-      `${user.firstName} ${user.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.userNumber.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredUsers = useMemo(() => {
+    const searchLower = (searchTerm || '').toLowerCase().trim();
+    return users.filter(user => {
+      if (!user) return false;
+      const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
+      const email = (user.email || '').toLowerCase();
+      const userNum = (user.userNumber || '').toLowerCase();
+
+      const matchesSearch = !searchLower || fullName.includes(searchLower) || email.includes(searchLower) || userNum.includes(searchLower);
+      const matchesRole = roleFilter ? user.role === roleFilter : true;
       
-    const matchesRole = roleFilter ? user.role === roleFilter : true;
-    
-    // Normalise department comparison for legacy data
-    let userDept = user.department;
-    if (userDept === 'College of IT' || userDept === 'College of CS') {
-      userDept = 'College of Computer Studies';
-    }
-    
-    let filterDept = deptFilter;
-    if (filterDept === 'College of IT' || filterDept === 'College of CS') {
-      filterDept = 'College of Computer Studies';
-    }
-    
-    const matchesDept = filterDept ? userDept === filterDept : true;
-    const matchesProgram = programFilter ? user.program === programFilter : true;
-    const matchesYear = yearFilter ? user.yearLevel === yearFilter : true;
-    const matchesSection = sectionFilter ? user.section === sectionFilter : true;
-    const matchesStatus = showArchived ? user.status === 'archived' : user.status !== 'archived';
-    
-    return matchesSearch && matchesRole && matchesDept && matchesProgram && matchesYear && matchesSection && matchesStatus;
-  });
+      // Normalise department comparison for legacy data
+      let userDept = user.department;
+      if (userDept === 'College of IT' || userDept === 'College of CS') {
+        userDept = 'College of Computer Studies';
+      }
+      
+      let filterDept = deptFilter;
+      if (filterDept === 'College of IT' || filterDept === 'College of CS') {
+        filterDept = 'College of Computer Studies';
+      }
+      
+      const matchesDept = filterDept ? userDept === filterDept : true;
+      const matchesProgram = programFilter ? user.program === programFilter : true;
+      const matchesYear = yearFilter ? user.yearLevel === yearFilter : true;
+      const matchesSection = sectionFilter ? user.section === sectionFilter : true;
+      const matchesStatus = showArchived ? user.status === 'archived' : user.status !== 'archived';
+      
+      return matchesSearch && matchesRole && matchesDept && matchesProgram && matchesYear && matchesSection && matchesStatus;
+    });
+  }, [users, searchTerm, roleFilter, deptFilter, programFilter, yearFilter, sectionFilter, showArchived]);
+
+  const roleCounts = useMemo(() => {
+    const baseList = users.filter(u => showArchived ? u.status === 'archived' : u.status !== 'archived');
+    return {
+      all: baseList.length,
+      student: baseList.filter(u => u.role === 'student').length,
+      faculty: baseList.filter(u => u.role === 'faculty').length,
+      dean: baseList.filter(u => u.role === 'dean').length,
+      office: baseList.filter(u => u.role === 'office').length,
+      admin: baseList.filter(u => u.role === 'admin').length,
+    };
+  }, [users, showArchived]);
 
   // Toggle User Active/Inactive Status (Disable)
   const handleToggleStatus = async (userId) => {
@@ -936,28 +953,32 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
   return (
     <>
       <PageHeader title="User Management" breadcrumb="Admin Portal">
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <button 
             onClick={() => setIsImportOpen(true)}
-            className="px-4 py-2 text-sm font-medium border border-slate-200 hover:border-sage-350 text-slate-700 bg-white hover:bg-slate-50 rounded-lg transition-all shadow-sm flex items-center gap-2"
+            className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border border-slate-200 hover:border-sage-350 text-slate-700 bg-white hover:bg-slate-50 rounded-xl transition-all shadow-xs flex items-center gap-1.5 sm:gap-2 cursor-pointer"
           >
-            <Upload className="h-4 w-4" /> Import CSV
+            <Upload className="h-4 w-4 text-slate-500" />
+            <span className="hidden sm:inline">Import CSV</span>
+            <span className="sm:hidden">Import</span>
           </button>
           <Link 
             to="/admin/userform" 
-            className="px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm flex items-center gap-2"
+            className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all shadow-xs flex items-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap"
           >
-            <Plus className="h-4 w-4" /> Add New User
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">Add New User</span>
+            <span className="sm:hidden">Add User</span>
           </Link>
         </div>
       </PageHeader>
 
-      <div className="p-8 overflow-y-auto flex-1 space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-3 sm:space-y-6">
         
-        {/* Toolbar & Actions */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        {/* ── Search & Actions Bar ────────────────────────────────────────── */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
           <div className="relative max-w-md w-full">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
               <Search className="h-4 w-4 text-slate-400" />
             </div>
             <input 
@@ -967,14 +988,26 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-              className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors" 
-              placeholder="Search by name or email..." 
+              className="block w-full pl-10 pr-9 py-2.5 sm:py-2 border border-slate-200 rounded-xl text-xs sm:text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors shadow-2xs" 
+              placeholder="Search by name, email, or ID..." 
             />
+            {searchTerm && (
+              <button 
+                onClick={() => {
+                  setSearchTerm('');
+                  setCurrentPage(1);
+                }}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Desktop Actions */}
+          <div className="hidden sm:flex flex-wrap items-center gap-2 sm:gap-3">
             {/* Show Archived Users Only checkbox using CustomCheckbox */}
-            <div className="flex items-center gap-2 select-none cursor-pointer">
+            <div className="flex items-center gap-2 select-none cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
               <CustomCheckbox 
                 checked={showArchived}
                 onChange={() => {
@@ -983,7 +1016,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                   setCurrentPage(1);
                 }}
               />
-              <span className="text-sm text-slate-655 font-semibold">Show Archived Users Only</span>
+              <span className="text-xs sm:text-sm text-slate-655 font-semibold">Archived Only</span>
             </div>
 
             <div className="w-px h-5 bg-slate-200 hidden md:block" />
@@ -998,7 +1031,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 }
               }}
               className={cn(
-                "px-4 py-2 text-sm font-medium border rounded-lg transition-all shadow-sm flex items-center gap-2",
+                "px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border rounded-xl transition-all shadow-xs flex items-center gap-1.5 sm:gap-2 cursor-pointer",
                 isSelectionModeActive
                   ? "border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100"
                   : "border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:border-sage-350"
@@ -1006,11 +1039,11 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
             >
               {isSelectionModeActive ? (
                 <>
-                  <X className="h-4 w-4" /> Cancel Selection
+                  <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Cancel Select
                 </>
               ) : (
                 <>
-                  <CheckCircle className="h-4 w-4" /> Bulk Select
+                  <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Bulk Select
                 </>
               )}
             </button>
@@ -1018,17 +1051,120 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
             {/* Export current list button */}
             <button
               onClick={handleExportUsers}
-              className="px-4 py-2 text-sm font-medium border border-slate-200 hover:border-sage-350 text-slate-700 bg-white hover:bg-slate-50 rounded-lg transition-all shadow-sm flex items-center gap-2"
+              className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border border-slate-200 hover:border-sage-350 text-slate-700 bg-white hover:bg-slate-50 rounded-xl transition-all shadow-xs flex items-center gap-1.5 sm:gap-2 cursor-pointer"
             >
-              <Download className="h-4 w-4" /> Export current list
+              <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Export CSV
             </button>
           </div>
         </div>
 
-        {/* ── Filter Bar ─────────────────────────────────────────────────── */}
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm px-4 py-3 flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider flex-shrink-0">
-            <SlidersHorizontal className="h-3.5 w-3.5" />
+        {/* ── Mobile Quick Role Tabs (Horizontal Scroll) ────────────────── */}
+        <div className="md:hidden flex items-center gap-1.5 overflow-x-auto pb-1 -mx-3.5 px-3.5 no-scrollbar">
+          {[
+            { id: '', label: 'All', count: roleCounts.all },
+            { id: 'student', label: 'Students', count: roleCounts.student },
+            { id: 'faculty', label: 'Faculty', count: roleCounts.faculty },
+            { id: 'dean', label: 'Deans', count: roleCounts.dean },
+            { id: 'office', label: 'Office', count: roleCounts.office },
+            { id: 'admin', label: 'Admins', count: roleCounts.admin },
+          ].map(tab => {
+            const isSelected = roleFilter === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setRoleFilter(tab.id);
+                  setCurrentPage(1);
+                }}
+                className={cn(
+                  "px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0",
+                  isSelected
+                    ? "bg-slate-900 text-white shadow-xs"
+                    : "bg-white text-slate-600 border border-slate-200/90 hover:bg-slate-50"
+                )}
+              >
+                <span>{tab.label}</span>
+                <span className={cn(
+                  "text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full",
+                  isSelected ? "bg-slate-800 text-slate-200" : "bg-slate-100 text-slate-500"
+                )}>
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ── Mobile Filter & Action Row (md:hidden) ────────────────────── */}
+        <div className="md:hidden flex items-center justify-between gap-2 pt-0.5">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-xs font-bold text-slate-700 font-display truncate">
+              {filteredUsers.length} Users
+            </span>
+            {deptFilter && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-sage-50 text-sage-800 border border-sage-200">
+                {deptFilter === 'College of IT' || deptFilter === 'College of CS' ? 'CCS' : deptFilter}
+                <X className="h-2.5 w-2.5 cursor-pointer" onClick={() => setDeptFilter('')} />
+              </span>
+            )}
+            {yearFilter && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-sage-50 text-sage-800 border border-sage-200">
+                {yearFilter}
+                <X className="h-2.5 w-2.5 cursor-pointer" onClick={() => setYearFilter('')} />
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              onClick={() => setIsMobileFilterOpen(true)}
+              className={cn(
+                "px-2.5 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs",
+                (deptFilter || programFilter || yearFilter || sectionFilter || showArchived)
+                  ? "bg-sage-600 text-white border-sage-600"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              )}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              <span>Filters</span>
+              {(deptFilter || programFilter || yearFilter || sectionFilter || showArchived) && (
+                <span className="w-4 h-4 rounded-full bg-white text-sage-700 text-[9px] font-bold flex items-center justify-center">
+                  {[deptFilter, programFilter, yearFilter, sectionFilter, showArchived ? '1' : ''].filter(Boolean).length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => {
+                const nextMode = !isSelectionModeActive;
+                setIsSelectionModeActive(nextMode);
+                if (!nextMode) setSelectedUserIds(new Set());
+              }}
+              className={cn(
+                "p-1.5 text-xs font-semibold rounded-xl border flex items-center justify-center cursor-pointer transition-colors shadow-2xs",
+                isSelectionModeActive 
+                  ? "bg-rose-50 text-rose-700 border-rose-200" 
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+              )}
+              title="Bulk Select"
+            >
+              <CheckCircle className="h-4 w-4" />
+            </button>
+
+            <button
+              onClick={handleExportUsers}
+              className="p-1.5 text-xs font-semibold rounded-xl border bg-white text-slate-600 border-slate-200 hover:bg-slate-50 flex items-center justify-center cursor-pointer transition-colors shadow-2xs"
+              title="Export CSV"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* ── Desktop Filter Bar (hidden md:flex) ─────────────────────────── */}
+        <div className="hidden md:flex bg-white border border-slate-200/90 rounded-2xl shadow-xs p-3 sm:px-4 sm:py-3 flex-wrap items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider flex-shrink-0">
+            <SlidersHorizontal className="h-3.5 w-3.5 text-sage-600" />
             Filter by
             {activeFilterCount > 0 && (
               <span className="ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-sage-600 text-white text-[9px] font-bold">
@@ -1040,7 +1176,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           <div className="w-px h-5 bg-slate-200 hidden sm:block" />
 
           {/* Role Filter */}
-          <div className="flex flex-col gap-0.5 min-w-[120px]">
+          <div className="flex flex-col gap-0.5 min-w-[100px] flex-1 sm:flex-none">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Role</span>
             <select
               value={roleFilter}
@@ -1048,7 +1184,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 setRoleFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer"
+              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer w-full"
             >
               <option value="">All Roles</option>
               <option value="admin">Admin</option>
@@ -1060,7 +1196,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           </div>
 
           {/* Department Filter */}
-          <div className="flex flex-col gap-0.5 min-w-[180px] max-w-[240px]">
+          <div className="flex flex-col gap-0.5 min-w-[130px] flex-1 sm:flex-none max-w-full sm:max-w-[200px]">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">College</span>
             <select
               value={deptFilter}
@@ -1069,7 +1205,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 setProgramFilter('');
                 setCurrentPage(1);
               }}
-              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer truncate"
+              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer truncate w-full"
             >
               <option value="">All Colleges</option>
               {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
@@ -1079,7 +1215,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           </div>
 
           {/* Program Filter */}
-          <div className="flex flex-col gap-0.5 min-w-[180px] max-w-[320px]">
+          <div className="flex flex-col gap-0.5 min-w-[130px] flex-1 sm:flex-none max-w-full sm:max-w-[200px]">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Program</span>
             <select
               value={programFilter}
@@ -1087,7 +1223,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 setProgramFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer truncate"
+              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer truncate w-full"
             >
               <option value="">All Programs</option>
               {Array.from(new Set(
@@ -1099,7 +1235,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           </div>
 
           {/* Year Level Filter */}
-          <div className="flex flex-col gap-0.5 min-w-[130px]">
+          <div className="flex flex-col gap-0.5 min-w-[100px] flex-1 sm:flex-none">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Year Level</span>
             <select
               value={yearFilter}
@@ -1107,9 +1243,9 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 setYearFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer"
+              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer w-full"
             >
-              <option value="">All Year Levels</option>
+              <option value="">All Years</option>
               <option value="1st Year">1st Year</option>
               <option value="2nd Year">2nd Year</option>
               <option value="3rd Year">3rd Year</option>
@@ -1118,7 +1254,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           </div>
 
           {/* Section Filter */}
-          <div className="flex flex-col gap-0.5 min-w-[120px]">
+          <div className="flex flex-col gap-0.5 min-w-[100px] flex-1 sm:flex-none">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Section</span>
             <select
               value={sectionFilter}
@@ -1126,7 +1262,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 setSectionFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer"
+              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer w-full"
             >
               <option value="">All Sections</option>
               {uniqueSections.map(sec => (
@@ -1136,13 +1272,13 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           </div>
 
           {/* Clear + result count */}
-          <div className="ml-auto flex items-center gap-3">
+          <div className="w-full sm:w-auto sm:ml-auto flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
             {activeFilterCount > 0 && (
               <button
                 onClick={clearFilters}
-                className="flex items-center gap-1 text-xs font-semibold text-rose-500 hover:text-rose-700 transition-colors"
+                className="flex items-center gap-1 text-xs font-semibold text-rose-500 hover:text-rose-700 transition-colors cursor-pointer"
               >
-                <X className="h-3 w-3" /> Clear Filters
+                <X className="h-3.5 w-3.5" /> Clear
               </button>
             )}
             <span className="text-xs text-slate-400 font-mono">
@@ -1151,8 +1287,171 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           </div>
         </div>
 
-        {/* User Table Grid */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* ── Mobile User Card Feed (md:hidden) ─────────────────────────── */}
+        <div className="md:hidden space-y-2.5">
+          {currentPageUsers.length > 0 ? (
+            currentPageUsers.map((user) => {
+              const roleStyles = {
+                student: { bg: 'bg-emerald-50 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' },
+                faculty: { bg: 'bg-blue-50 text-blue-800 border-blue-200', dot: 'bg-blue-500' },
+                admin: { bg: 'bg-purple-50 text-purple-800 border-purple-200', dot: 'bg-purple-500' },
+                dean: { bg: 'bg-amber-50 text-amber-800 border-amber-200', dot: 'bg-amber-500' },
+                office: { bg: 'bg-indigo-50 text-indigo-800 border-indigo-200', dot: 'bg-indigo-500' }
+              }[user.role] || { bg: 'bg-slate-50 text-slate-800 border-slate-200', dot: 'bg-slate-400' };
+
+              return (
+                <div 
+                  key={user.id} 
+                  className={cn(
+                    "bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-2xs space-y-2.5 transition-all",
+                    selectedUserIds.has(user.id) && "bg-sage-50/40 border-sage-400 ring-1 ring-sage-400"
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    {isSelectionModeActive && (
+                      <div className="pt-1 flex-shrink-0">
+                        <CustomCheckbox
+                          checked={selectedUserIds.has(user.id)}
+                          onChange={() => handleSelectRow(user.id)}
+                        />
+                      </div>
+                    )}
+
+                    {/* Avatar Badge */}
+                    <div 
+                      onClick={() => fetchProfileDetails(user)}
+                      className={cn(
+                        "w-10 h-10 rounded-xl font-display font-bold text-xs flex items-center justify-center flex-shrink-0 cursor-pointer border shadow-2xs",
+                        roleStyles.bg
+                      )}
+                    >
+                      {user.firstName?.[0] || ''}{user.lastName?.[0] || ''}
+                    </div>
+
+                    {/* Info */}
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <button
+                          onClick={() => fetchProfileDetails(user)}
+                          className="font-bold text-slate-900 font-display text-sm hover:text-sage-600 text-left truncate block cursor-pointer"
+                        >
+                          {user.lastName}, {user.firstName} {user.middleName && user.middleName[0] + '.'}
+                        </button>
+                        
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold border flex-shrink-0 ${
+                          user.status === 'active' 
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                            : user.status === 'archived'
+                            ? 'bg-slate-100 text-slate-600 border-slate-200'
+                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}>
+                          {user.status === 'active' ? 'Active' : user.status === 'archived' ? 'Archived' : 'Inactive'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-500 truncate">
+                        <span className="truncate">{user.email}</span>
+                        {user.userNumber && (
+                          <span className="text-slate-400 font-bold flex-shrink-0">
+                            • {user.userNumber}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Badges / Chips */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    {getRoleBadge(user.role)}
+                    <span className="text-[10px] text-slate-600 font-semibold px-2 py-0.5 rounded-md bg-slate-50 border border-slate-150 truncate max-w-[200px]">
+                      {user.department === 'College of IT' || user.department === 'College of CS' ? 'CCS' : user.department}
+                    </span>
+                    {user.role === 'student' && (
+                      <>
+                        {user.yearLevel && (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-50 text-slate-600 border border-slate-150">
+                            {user.yearLevel}
+                          </span>
+                        )}
+                        {user.section && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-sage-50 text-sage-800 border border-sage-200 font-mono">
+                            {user.section}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {/* Actions Footer */}
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => fetchProfileDetails(user)}
+                      className="text-xs font-bold text-sage-600 hover:text-sage-700 flex items-center gap-1 py-1 px-2 rounded-lg hover:bg-sage-50 cursor-pointer"
+                    >
+                      <Eye className="h-3.5 w-3.5" /> View Profile
+                    </button>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => fetchUserLogs(user)}
+                        title="Activity Logs"
+                        className="p-1.5 text-slate-500 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                      </button>
+
+                      <button
+                        onClick={() => triggerEditUserConfirm(user)}
+                        title="Edit User"
+                        className="p-1.5 text-slate-500 hover:text-sage-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer"
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+
+                      <button
+                        onClick={() => triggerToggleStatusConfirm(user.id)}
+                        title={user.status === 'active' ? 'Disable' : 'Enable'}
+                        className={`p-1.5 rounded-lg border cursor-pointer ${
+                          user.status === 'active' 
+                            ? 'text-rose-600 hover:bg-rose-50 border-rose-200 bg-rose-50/50' 
+                            : 'text-emerald-600 hover:bg-emerald-50 border-emerald-200 bg-emerald-50/50'
+                        }`}
+                      >
+                        <Power className="h-3.5 w-3.5" />
+                      </button>
+
+                      {user.status !== 'archived' ? (
+                        <button
+                          onClick={() => triggerArchiveUserConfirm(user.id)}
+                          disabled={user.role === 'admin'}
+                          title="Archive User"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 rounded-lg border border-slate-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <Archive className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => triggerRestoreUserConfirm(user.id)}
+                          title="Restore User"
+                          className="p-1.5 text-emerald-600 bg-emerald-50/50 hover:bg-emerald-50 rounded-lg border border-emerald-200 cursor-pointer"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-200/90 p-8 text-center text-slate-400 text-xs">
+              No users match your criteria.
+            </div>
+          )}
+        </div>
+
+        {/* ── Desktop User Table Grid (hidden md:block) ── */}
+        <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="table-container overflow-x-auto min-h-[320px]">
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">
@@ -1332,42 +1631,44 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
               </tbody>
             </table>
           </div>
+        </div>
 
-          {/* Premium Pagination Footer */}
-          {totalPages > 1 && (
-            <div className="bg-slate-50/75 border-t border-slate-200 px-6 py-4 flex items-center justify-between">
-              <div className="text-xs text-slate-500 font-medium">
-                Showing <strong className="text-slate-800 font-semibold">{Math.min(filteredUsers.length, (currentPage - 1) * itemsPerPage + 1)}</strong> to <strong className="text-slate-800 font-semibold">{Math.min(filteredUsers.length, currentPage * itemsPerPage)}</strong> of <strong className="text-slate-800 font-semibold">{filteredUsers.length}</strong> users
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setCurrentPage(1)}
-                  disabled={currentPage === 1}
-                  className={cn(
-                    "p-1.5 rounded-lg border text-xs font-semibold transition-colors flex items-center justify-center",
-                    currentPage === 1
-                      ? "text-slate-300 border-slate-100 bg-slate-50 cursor-not-allowed"
-                      : "text-slate-600 border-slate-200 bg-white hover:bg-slate-50"
-                  )}
-                  title="First Page"
-                >
-                  <ChevronsLeft className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                  className={cn(
-                    "p-1.5 rounded-lg border text-xs font-semibold transition-colors flex items-center justify-center",
-                    currentPage === 1
-                      ? "text-slate-305 border-slate-100 bg-slate-50 cursor-not-allowed"
-                      : "text-slate-600 border-slate-205 bg-white hover:bg-slate-50"
-                  )}
-                  title="Previous Page"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
+        {/* ── Responsive Pagination Footer ── */}
+        {totalPages > 1 && (
+          <div className="bg-white rounded-2xl border border-slate-200/90 px-4 py-3 sm:px-6 sm:py-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+            <div className="text-xs text-slate-500 font-medium order-2 sm:order-1 text-center sm:text-left">
+              Showing <strong className="text-slate-800 font-semibold">{Math.min(filteredUsers.length, (currentPage - 1) * itemsPerPage + 1)}</strong> to <strong className="text-slate-800 font-semibold">{Math.min(filteredUsers.length, currentPage * itemsPerPage)}</strong> of <strong className="text-slate-800 font-semibold">{filteredUsers.length}</strong> users
+            </div>
+            <div className="flex items-center gap-1 sm:gap-1.5 order-1 sm:order-2">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className={cn(
+                  "p-1.5 sm:p-2 rounded-xl border text-xs font-semibold transition-colors flex items-center justify-center cursor-pointer",
+                  currentPage === 1
+                    ? "text-slate-300 border-slate-100 bg-slate-50 cursor-not-allowed"
+                    : "text-slate-600 border-slate-200 bg-white hover:bg-slate-50"
+                )}
+                title="First Page"
+              >
+                <ChevronsLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              </button>
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className={cn(
+                  "p-1.5 sm:p-2 rounded-xl border text-xs font-semibold transition-colors flex items-center justify-center cursor-pointer",
+                  currentPage === 1
+                    ? "text-slate-305 border-slate-100 bg-slate-50 cursor-not-allowed"
+                    : "text-slate-600 border-slate-205 bg-white hover:bg-slate-50"
+                )}
+                title="Previous Page"
+              >
+                <ChevronLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              </button>
 
-                {/* Render numbered buttons with window */}
+              {/* Render numbered buttons on tablet/desktop */}
+              <div className="hidden sm:flex items-center gap-1">
                 {Array.from({ length: totalPages }, (_, i) => i + 1)
                   .filter(page => {
                     return page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1;
@@ -1382,7 +1683,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                         <button
                           onClick={() => setCurrentPage(page)}
                           className={cn(
-                            "w-8 h-8 rounded-lg text-xs font-bold transition-all flex items-center justify-center",
+                            "w-8 h-8 rounded-xl text-xs font-bold transition-all flex items-center justify-center cursor-pointer",
                             currentPage === page
                               ? "bg-sage-600 text-white shadow-xs"
                               : "text-slate-600 border border-slate-200 bg-white hover:bg-slate-50"
@@ -1393,48 +1694,198 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                       </React.Fragment>
                     );
                   })}
+              </div>
 
+              {/* Mobile Compact Page Indicator */}
+              <div className="sm:hidden px-2.5 py-1 text-xs font-mono font-bold text-slate-600 bg-slate-100 rounded-xl border border-slate-200">
+                {currentPage} / {totalPages}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className={cn(
+                  "p-1.5 sm:p-2 rounded-xl border text-xs font-semibold transition-colors flex items-center justify-center cursor-pointer",
+                  currentPage === totalPages
+                    ? "text-slate-300 border-slate-100 bg-slate-50 cursor-not-allowed"
+                    : "text-slate-600 border-slate-200 bg-white hover:bg-slate-50"
+                )}
+                title="Next Page"
+              >
+                <ChevronRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className={cn(
+                  "p-1.5 sm:p-2 rounded-xl border text-xs font-semibold transition-colors flex items-center justify-center cursor-pointer",
+                  currentPage === totalPages
+                    ? "text-slate-300 border-slate-100 bg-slate-50 cursor-not-allowed"
+                    : "text-slate-600 border-slate-200 bg-white hover:bg-slate-50"
+                )}
+                title="Last Page"
+              >
+                <ChevronsRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Mobile Filter Bottom Sheet (md:hidden) ─────────────────── */}
+      {isMobileFilterOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center md:hidden animate-in fade-in duration-200">
+          <div 
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" 
+            onClick={() => setIsMobileFilterOpen(false)}
+          />
+          <div className="relative w-full max-h-[85vh] bg-white rounded-t-3xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-300 z-10">
+            {/* Grab Handle */}
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1 flex-shrink-0" />
+
+            {/* Header */}
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h3 className="text-base font-bold font-display text-slate-900">Filter Users</h3>
+                <p className="text-[11px] text-slate-500 font-medium">Refine user registry list</p>
+              </div>
+              <div className="flex items-center gap-3">
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={clearFilters}
+                    className="text-xs font-bold text-rose-600 hover:underline cursor-pointer"
+                  >
+                    Reset
+                  </button>
+                )}
                 <button
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                  className={cn(
-                    "p-1.5 rounded-lg border text-xs font-semibold transition-colors flex items-center justify-center",
-                    currentPage === totalPages
-                      ? "text-slate-305 border-slate-100 bg-slate-50 cursor-not-allowed"
-                      : "text-slate-600 border-slate-205 bg-white hover:bg-slate-50"
-                  )}
-                  title="Next Page"
+                  onClick={() => setIsMobileFilterOpen(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
                 >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setCurrentPage(totalPages)}
-                  disabled={currentPage === totalPages}
-                  className={cn(
-                    "p-1.5 rounded-lg border text-xs font-semibold transition-colors flex items-center justify-center",
-                    currentPage === totalPages
-                      ? "text-slate-300 border-slate-100 bg-slate-50 cursor-not-allowed"
-                      : "text-slate-600 border-slate-200 bg-white hover:bg-slate-50"
-                  )}
-                  title="Last Page"
-                >
-                  <ChevronsRight className="h-4 w-4" />
+                  <X className="h-5 w-5" />
                 </button>
               </div>
             </div>
-          )}
-        </div>
 
-      </div>
+            {/* Filter Form Body */}
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 text-left">
+              {/* College Filter */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">College / Department</label>
+                <select
+                  value={deptFilter}
+                  onChange={(e) => {
+                    setDeptFilter(e.target.value);
+                    setProgramFilter('');
+                    setCurrentPage(1);
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium text-slate-800 outline-none focus:ring-1 focus:ring-sage-500"
+                >
+                  <option value="">All Colleges</option>
+                  {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
+                    <option key={college} value={college}>{college}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Program Filter */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Academic Program</label>
+                <select
+                  value={programFilter}
+                  onChange={(e) => {
+                    setProgramFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium text-slate-800 outline-none focus:ring-1 focus:ring-sage-500"
+                >
+                  <option value="">All Programs</option>
+                  {Array.from(new Set(
+                    deptFilter ? (DYCI_ACADEMIC_PROGRAMS[deptFilter] || []) : Object.values(DYCI_ACADEMIC_PROGRAMS).flat()
+                  )).map(prog => (
+                    <option key={prog} value={prog}>{prog}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* Year Level Filter */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Year Level</label>
+                  <select
+                    value={yearFilter}
+                    onChange={(e) => {
+                      setYearFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium text-slate-800 outline-none focus:ring-1 focus:ring-sage-500"
+                  >
+                    <option value="">All Years</option>
+                    <option value="1st Year">1st Year</option>
+                    <option value="2nd Year">2nd Year</option>
+                    <option value="3rd Year">3rd Year</option>
+                    <option value="4th Year">4th Year</option>
+                  </select>
+                </div>
+
+                {/* Section Filter */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Section</label>
+                  <select
+                    value={sectionFilter}
+                    onChange={(e) => {
+                      setSectionFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium text-slate-800 outline-none focus:ring-1 focus:ring-sage-500"
+                  >
+                    <option value="">All Sections</option>
+                    {uniqueSections.map(sec => (
+                      <option key={sec} value={sec}>{sec}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Show Archived Toggle */}
+              <div className="pt-2 border-t border-slate-100">
+                <label className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                  <span className="text-xs font-bold text-slate-800">Show Archived Only</span>
+                  <CustomCheckbox 
+                    checked={showArchived}
+                    onChange={() => {
+                      setShowArchived(!showArchived);
+                      setSelectedUserIds(new Set());
+                      setCurrentPage(1);
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex-shrink-0">
+              <button
+                onClick={() => setIsMobileFilterOpen(false)}
+                className="w-full py-3 bg-sage-600 hover:bg-sage-700 text-white rounded-xl font-bold text-sm shadow-sm cursor-pointer transition-colors"
+              >
+                Apply Filters ({filteredUsers.length} Users)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CSV Import Modal */}
       {isImportOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl border border-slate-200 max-w-2xl w-full shadow-lg flex flex-col overflow-hidden max-h-[90vh]">
-            
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 max-w-2xl w-full shadow-2xl flex flex-col overflow-hidden max-h-[92vh] sm:max-h-[90vh] animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
+            {/* Grab handle for mobile */}
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1 sm:hidden flex-shrink-0" />
+
             {/* Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-base font-bold font-display text-slate-900 flex items-center gap-2">
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+              <h3 className="text-sm sm:text-base font-bold font-display text-slate-900 flex items-center gap-2">
                 <FileSpreadsheet className="h-5 w-5 text-sage-600" /> Batch Import Users (CSV)
               </h3>
               <button 
@@ -1446,14 +1897,14 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                   setImportSuccess('');
                   setIsEditingImport(false);
                 }}
-                className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-900 transition-colors"
+                className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-900 transition-colors"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
             {/* Body */}
-            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
               {importError && (
                 <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-lg text-xs font-semibold flex items-center gap-2">
                   <AlertCircle className="h-4 w-4 text-rose-600" /> {importError}
@@ -1674,7 +2125,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                         </ul>
                       </div>
                     )}
-                    
+
                     {/* Skipped List */}
                     {importReport.skipped.length > 0 && (
                       <div>
@@ -1696,7 +2147,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           </div>
 
           {/* Footer */}
-          <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+          <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3 flex-shrink-0">
             <button 
               disabled={isImporting}
               onClick={() => {
@@ -1730,8 +2181,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
       {/* Custom Confirmation Modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-xl border border-slate-200 max-w-sm w-full shadow-lg p-6 space-y-4 text-center animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-t-3xl sm:rounded-xl border border-slate-200 max-w-sm w-full shadow-2xl p-6 space-y-4 text-center animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
             <div className="mx-auto w-12 h-12 rounded-full bg-sage-50 text-sage-600 flex items-center justify-center">
               <CheckCircle className="h-6 w-6" />
             </div>
@@ -1745,7 +2196,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
               <button
                 type="button"
                 onClick={() => setShowConfirmModal(false)}
-                className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition-colors"
+                className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-semibold transition-colors"
               >
                 Cancel
               </button>
@@ -1755,7 +2206,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                   setShowConfirmModal(false);
                   executeSaveImport();
                 }}
-                className="flex-1 px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm"
+                className="flex-1 px-4 py-2.5 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
               >
                 Confirm
               </button>
@@ -1766,19 +2217,22 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
       {/* Slide-out User Profile Drawer */}
       {selectedUserProfile && (
-        <div className="fixed inset-0 z-50 overflow-hidden">
+        <div className="fixed inset-0 z-50 overflow-hidden flex items-end sm:items-stretch sm:justify-end">
           {/* Backdrop */}
           <div 
             onClick={() => setSelectedUserProfile(null)}
-            className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity" 
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity" 
           />
 
-          <div className="absolute inset-y-0 right-0 max-w-2xl w-full bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-300 ease-out">
+          <div className="relative w-full sm:max-w-2xl bg-white shadow-2xl flex flex-col rounded-t-3xl sm:rounded-none max-h-[92vh] sm:max-h-full animate-in slide-in-from-bottom sm:slide-in-from-right duration-300 ease-out z-10">
+            {/* Grab handle for mobile */}
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1 sm:hidden flex-shrink-0" />
+
             {/* Header */}
-            <div className="p-6 border-b border-slate-100 flex items-start justify-between bg-slate-50/50">
+            <div className="p-4 sm:p-6 border-b border-slate-100 flex items-start justify-between bg-slate-50/50 flex-shrink-0">
               <div className="space-y-1 text-left">
                 <div className="flex items-center gap-2.5">
-                  <h3 className="text-lg font-bold font-display text-slate-955">
+                  <h3 className="text-base sm:text-lg font-bold font-display text-slate-955">
                     {selectedUserProfile.lastName}, {selectedUserProfile.firstName} {selectedUserProfile.middleName}
                   </h3>
                   {getRoleBadge(selectedUserProfile.role)}
@@ -1803,7 +2257,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
             </div>
 
             {/* Content Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
               {profileLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 gap-3">
                   <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-sage-600"></div>
@@ -1819,7 +2273,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                         {profileDetails.enrollments.length === 0 ? (
                           <p className="text-xs text-slate-400 italic bg-slate-50 p-4 rounded-lg border border-slate-100 text-left">No active subject enrollments found.</p>
                         ) : (
-                          <div className="border border-slate-200 rounded-lg overflow-hidden shadow-xs">
+                          <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
                             <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
                               <thead className="bg-slate-50">
                                 <tr>
@@ -1850,7 +2304,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                         {profileDetails.grades.length === 0 ? (
                           <p className="text-xs text-slate-400 italic bg-slate-50 p-4 rounded-lg border border-slate-100 text-left">No academic grades have been posted.</p>
                         ) : (
-                          <div className="border border-slate-200 rounded-lg overflow-hidden shadow-xs">
+                          <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
                             <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
                               <thead className="bg-slate-50">
                                 <tr>
@@ -1892,7 +2346,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                       {profileDetails.classes.length === 0 ? (
                         <p className="text-xs text-slate-400 italic bg-slate-50 p-4 rounded-lg border border-slate-100 text-left">No active classes assigned to this account.</p>
                       ) : (
-                        <div className="border border-slate-200 rounded-lg overflow-hidden shadow-xs">
+                        <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
                           <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
                             <thead className="bg-slate-50">
                               <tr>
@@ -1926,10 +2380,10 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
             </div>
             
             {/* Footer */}
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end flex-shrink-0">
               <button
                 onClick={() => setSelectedUserProfile(null)}
-                className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-semibold transition-colors"
+                className="w-full sm:w-auto px-4 py-2.5 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl text-xs font-semibold transition-colors"
               >
                 Close Profile
               </button>
@@ -1940,17 +2394,19 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
       {/* User Activity Logs Modal */}
       {activeLogsUser && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl border border-sage-200 shadow-2xl flex flex-col overflow-hidden max-h-[85vh] max-w-2xl w-full animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-sage-200 shadow-2xl flex flex-col overflow-hidden max-h-[88vh] sm:max-h-[85vh] max-w-2xl w-full animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
+            {/* Grab handle for mobile */}
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1 sm:hidden flex-shrink-0" />
             
             {/* Header */}
-            <div className="bg-gradient-to-r from-sage-50/60 to-white/40 p-6 border-b border-sage-100 flex items-center justify-between">
-              <div className="space-y-1 text-left">
-                <h3 className="text-lg font-bold font-display text-sage-900 flex items-center gap-2.5">
-                  <FileText className="h-5.5 w-5.5 text-sage-600" /> User Activity History
+            <div className="bg-gradient-to-r from-sage-50/60 to-white/40 p-4 sm:p-6 border-b border-sage-100 flex items-center justify-between flex-shrink-0">
+              <div className="space-y-0.5 sm:space-y-1 text-left">
+                <h3 className="text-base sm:text-lg font-bold font-display text-sage-900 flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-sage-600" /> User Activity History
                 </h3>
-                <p className="text-xs text-slate-500 font-medium">
-                  Showing logs for <span className="text-slate-800 font-bold">{activeLogsUser.firstName} {activeLogsUser.lastName}</span> ({activeLogsUser.email})
+                <p className="text-[11px] sm:text-xs text-slate-500 font-medium truncate max-w-[260px] sm:max-w-none">
+                  Logs for <span className="text-slate-800 font-bold">{activeLogsUser.firstName} {activeLogsUser.lastName}</span>
                 </p>
               </div>
               <button 
@@ -1962,7 +2418,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
             </div>
 
             {/* Body */}
-            <div className="p-6 overflow-y-auto flex-1 space-y-4 bg-slate-50/20">
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-3 sm:space-y-4 bg-slate-50/20">
               {logsLoading ? (
                 <div className="flex flex-col items-center justify-center py-20 gap-3">
                   <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-sage-600"></div>
@@ -1974,12 +2430,12 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                   <p className="text-xs text-slate-400 font-medium">No activity records found for this user.</p>
                 </div>
               ) : (
-                <div className="space-y-3.5">
+                <div className="space-y-2.5 sm:space-y-3.5">
                   {userLogs.map((log) => (
                     <div 
                       key={log.log_id} 
                       className={cn(
-                        "bg-white rounded-xl p-4 shadow-xs space-y-3 hover:border-slate-350 transition-colors text-left border border-slate-150",
+                        "bg-white rounded-xl p-3 sm:p-4 shadow-2xs space-y-2 hover:border-slate-350 transition-colors text-left border border-slate-150",
                         getLogBorderColor(log.action)
                       )}
                     >
@@ -1995,8 +2451,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                         {log.message}
                       </p>
                       <div className="text-[10px] text-slate-455 flex items-center gap-1 font-medium font-sans">
-                        <span>Actor ID:</span>
-                        <span className="font-mono text-slate-700 font-semibold">{log.actor}</span>
+                        <span>Actor:</span>
+                        <span className="font-mono text-slate-700 font-semibold truncate">{log.actor}</span>
                       </div>
                     </div>
                   ))}
@@ -2005,10 +2461,10 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
             </div>
 
             {/* Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
+            <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end flex-shrink-0">
               <button 
                 onClick={() => setActiveLogsUser(null)}
-                className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-semibold transition-colors"
+                className="w-full sm:w-auto px-4 py-2.5 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl text-xs font-semibold transition-colors"
               >
                 Close History
               </button>
@@ -2020,12 +2476,12 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
       {/* Floating Batch Actions Bar */}
       {selectedUserIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur-md text-slate-800 px-6 py-3.5 rounded-2xl shadow-xl flex items-center gap-6 z-50 border border-sage-200/80 animate-in slide-in-from-bottom-4 duration-300">
-          <div className="text-sm font-semibold flex items-center">
-            <span className="font-mono text-sage-700 bg-sage-50 border border-sage-200 px-2 py-0.5 rounded-lg mr-2 font-bold">{selectedUserIds.size}</span>
-            {selectedUserIds.size === 1 ? 'user selected' : 'users selected'}
+        <div className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur-md text-slate-800 px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-2xl shadow-xl flex items-center justify-between sm:justify-start gap-3 sm:gap-6 z-50 border border-sage-200/80 animate-in slide-in-from-bottom-4 duration-300 w-[92%] sm:w-auto max-w-lg">
+          <div className="text-xs sm:text-sm font-semibold flex items-center">
+            <span className="font-mono text-sage-700 bg-sage-50 border border-sage-200 px-2 py-0.5 rounded-lg mr-1.5 sm:mr-2 font-bold text-xs">{selectedUserIds.size}</span>
+            <span className="truncate">{selectedUserIds.size === 1 ? 'selected' : 'selected'}</span>
           </div>
-          <div className="h-6 w-px bg-slate-200" />
+          <div className="h-5 sm:h-6 w-px bg-slate-200" />
           <div className="flex items-center gap-2">
             <button
               onClick={() => handleBulkToggleStatus(filteredUsers, 'active')}

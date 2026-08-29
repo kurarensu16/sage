@@ -456,33 +456,35 @@ export default function EvalResultsMy() {
   return (
     <>
       <PageHeader title="Student Evaluations" breadcrumb="Faculty Portal">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
           {/* Semester Selector */}
           <div className="relative">
             <select 
               value={selectedSemester}
               onChange={(e) => setSelectedSemester(e.target.value)}
-              className="appearance-none bg-white border border-slate-200 hover:border-sage-300 text-slate-700 px-4 py-2 pr-10 rounded-lg text-sm font-medium focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer"
+              className="appearance-none bg-white border border-slate-200 hover:border-sage-300 text-slate-700 px-3 sm:px-4 py-2 pr-8 sm:pr-10 rounded-xl text-xs sm:text-sm font-semibold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer shadow-2xs"
             >
               {semestersList.map((sem, idx) => (
                 <option key={idx} value={sem.label}>{sem.label}</option>
               ))}
             </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+            <ChevronDown className="absolute right-2.5 sm:right-3 top-1/2 -translate-y-1/2 h-3.5 sm:h-4 w-3.5 sm:w-4 text-slate-400 pointer-events-none" />
           </div>
 
-          <button className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:border-sage-300 rounded-lg transition-colors bg-white flex items-center gap-2">
-            <FileSpreadsheet className="h-4 w-4" /> Export Report
+          <button className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-slate-200 text-slate-700 hover:border-sage-300 rounded-xl transition-colors bg-white flex items-center gap-1.5 cursor-pointer shadow-2xs">
+            <FileSpreadsheet className="h-3.5 sm:h-4 w-3.5 sm:w-4 text-slate-500" /> 
+            <span className="hidden sm:inline">Export Report</span>
+            <span className="sm:hidden">Export</span>
           </button>
         </div>
       </PageHeader>
 
-      <div className="p-8 overflow-y-auto flex-1 space-y-8">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6">
         
         {!isReleasedToFaculty ? (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center space-y-4 shadow-sm max-w-2xl mx-auto my-8">
-            <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-700 mx-auto flex items-center justify-center">
-              <Lock className="h-7 w-7" />
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 sm:p-8 text-center space-y-4 shadow-2xs max-w-2xl mx-auto my-6 sm:my-8">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-amber-100 text-amber-700 mx-auto flex items-center justify-center">
+              <Lock className="h-6 w-6 sm:h-7 sm:h-7" />
             </div>
             <div className="space-y-1">
               <h3 className="text-base font-extrabold text-amber-950 font-display">Evaluation Results Pending Dean Release</h3>
@@ -490,261 +492,263 @@ export default function EvalResultsMy() {
                 Per institutional governance policy, student evaluation ratings and qualitative feedback for this academic term are under Dean review and have not yet been released to your faculty portal.
               </p>
             </div>
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100/80 text-amber-900 border border-amber-200 rounded-xl text-xs font-bold font-mono">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-amber-100/80 text-amber-900 border border-amber-200 rounded-xl text-xs font-bold font-mono">
               <span>Status: Under Dean Audit</span>
             </div>
           </div>
         ) : (
           <>
             {/* Anonymity Banner */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-start gap-3">
+            <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 flex items-start gap-3 shadow-2xs">
               <ShieldCheck className="h-5 w-5 text-sage-600 mt-0.5 flex-shrink-0" />
               <div>
-                <h4 className="font-semibold text-slate-900 text-sm text-left">Faculty Evaluation Privacy Protection</h4>
-                <p className="text-xs text-slate-505 mt-0.5 text-left leading-relaxed">
+                <h4 className="font-semibold text-slate-900 text-xs sm:text-sm text-left">Faculty Evaluation Privacy Protection</h4>
+                <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 text-left leading-relaxed">
                   In compliance with academic evaluation policy FR25, student identities are completely anonymized. Data is aggregated to protect student confidentiality.
                 </p>
               </div>
             </div>
 
-        {/* Filters and Sub-navigation */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0">
-            {classesList.map((cls) => (
-              <button
-                key={cls.id}
-                onClick={() => setSelectedClass(cls.id)}
-                className={`px-4 py-2 text-xs font-semibold rounded-full border transition-all whitespace-nowrap ${
-                  selectedClass === cls.id 
-                    ? 'bg-sage-600 text-white border-sage-600' 
-                    : 'bg-white text-slate-600 border-slate-200 hover:border-sage-300 hover:text-slate-900'
-                }`}
-              >
-                {cls.code === 'All Classes' ? 'All Classes (Combined)' : `${cls.code} - ${cls.section}`}
-              </button>
-            ))}
-          </div>
+            {/* Filters and Sub-navigation */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3 sm:pb-4">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+                {classesList.map((cls) => (
+                  <button
+                    key={cls.id}
+                    onClick={() => setSelectedClass(cls.id)}
+                    className={`px-3.5 py-1.5 text-xs font-bold rounded-full border transition-all whitespace-nowrap cursor-pointer flex-shrink-0 ${
+                      selectedClass === cls.id 
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-xs' 
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-sage-300 hover:text-slate-900'
+                    }`}
+                  >
+                    {cls.code === 'All Classes' ? 'All Classes (Combined)' : `${cls.code} - ${cls.section}`}
+                  </button>
+                ))}
+              </div>
 
-          <div className="text-xs text-slate-400 italic">
-            Currently showing results for: <span className="font-medium text-slate-650">{selectedSemester}</span>
-          </div>
-        </div>
-
-        {/* Dashboard Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          
-          {/* Main Stat Card - Overall Rating */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col items-center justify-center text-center relative overflow-hidden group hover:border-sage-300 transition-all md:col-span-1">
-            <div className="absolute top-0 inset-x-0 h-1 bg-sage-500"></div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 font-display">Overall Rating</p>
-            <div className="mt-4 flex items-baseline gap-1">
-              <span className="text-5xl font-extrabold font-mono text-slate-900">{stats.overall.toFixed(2)}</span>
-              <span className="text-lg text-slate-400 font-mono">/4.00</span>
-            </div>
-            
-            <div className="mt-3 flex items-center gap-1">
-              {[1, 2, 3, 4].map((star) => (
-                <Star 
-                  key={star} 
-                  className={`h-4 w-4 ${
-                    star <= Math.round(stats.overall) 
-                      ? 'text-amber-400 fill-amber-400' 
-                      : 'text-slate-200'
-                  }`} 
-                />
-              ))}
-            </div>
-
-            <span className={`mt-4 px-3 py-1 rounded-full text-xs font-semibold border ${ratingLabel.color}`}>
-              {ratingLabel.text}
-            </span>
-          </div>
-
-          {/* Stat 2 - Total Evaluators */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between hover:border-sage-300 transition-all">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Evaluators</span>
-              <div className="p-2 bg-sage-50 rounded-lg text-sage-600">
-                <Users className="h-5 w-5" />
+              <div className="text-[11px] text-slate-400 italic text-left">
+                Showing: <span className="font-semibold text-slate-600 not-italic">{selectedSemester}</span>
               </div>
             </div>
-            <div className="mt-6 text-left">
-              <h3 className="text-3xl font-extrabold font-mono text-slate-900">{stats.totalEvaluators}</h3>
-              <p className="text-xs text-slate-500 mt-1">Anonymized responses submitted</p>
-            </div>
-          </div>
 
-          {/* Stat 3 - Participation Rate */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between hover:border-sage-300 transition-all">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Response Rate</span>
-              <div className="p-2 bg-sage-50 rounded-lg text-sage-600">
-                <CheckCircle className="h-5 w-5" />
+            {/* 2x2 on Mobile, 4-col on Desktop Dashboard Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-6">
+              
+              {/* Main Stat Card - Overall Rating */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-6 shadow-2xs flex flex-col items-center justify-center text-center relative overflow-hidden group hover:border-sage-350 transition-all col-span-2 sm:col-span-1">
+                <div className="absolute top-0 inset-x-0 h-1 bg-sage-500"></div>
+                <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 font-display">Overall Rating</p>
+                <div className="mt-2 sm:mt-4 flex items-baseline gap-1">
+                  <span className="text-3xl sm:text-5xl font-extrabold font-mono text-slate-900">{stats.overall.toFixed(2)}</span>
+                  <span className="text-sm sm:text-lg text-slate-400 font-mono">/4.00</span>
+                </div>
+                
+                <div className="mt-2 sm:mt-3 flex items-center gap-1">
+                  {[1, 2, 3, 4].map((star) => (
+                    <Star 
+                      key={star} 
+                      className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${
+                        star <= Math.round(stats.overall) 
+                          ? 'text-amber-400 fill-amber-400' 
+                          : 'text-slate-200'
+                      }`} 
+                    />
+                  ))}
+                </div>
+
+                <span className={`mt-2.5 sm:mt-4 px-2.5 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold border ${ratingLabel.color}`}>
+                  {ratingLabel.text}
+                </span>
               </div>
-            </div>
-            <div className="mt-6 text-left">
-              <h3 className="text-3xl font-extrabold font-mono text-slate-900">{stats.participationRate}</h3>
-              <p className="text-xs text-slate-500 mt-1">Out of total registered students</p>
-            </div>
-          </div>
 
-          {/* Stat 4 - College Ranking */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between hover:border-sage-300 transition-all">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Department Rank</span>
-              <div className="p-2 bg-sage-50 rounded-lg text-sage-600">
-                <Award className="h-5 w-5" />
-              </div>
-            </div>
-            <div className="mt-6 text-left">
-              <h3 className="text-3xl font-extrabold font-mono text-slate-900">{stats.collegeRank}</h3>
-              <p className="text-xs text-slate-500 mt-1">Relative to department faculty</p>
-            </div>
-          </div>
-
-        </div>
-
-        {/* Criteria breakdown & student reviews */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* Detailed Criteria Breakdown */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm lg:col-span-2 space-y-6">
-            <div>
-              <h3 className="text-lg font-bold font-display text-slate-900 text-left">Criteria Breakdown</h3>
-              <p className="text-xs text-slate-500 text-left">Evaluation scores categorized by official teaching effectiveness metrics.</p>
-            </div>
-
-            <div className="space-y-5">
-              {stats.criteria.map((item, idx) => {
-                const percentage = (item.score / item.max) * 100;
-                return (
-                  <div key={idx} className="space-y-2">
-                    <div className="flex justify-between items-start">
-                      <div className="text-left">
-                        <h4 className="text-sm font-semibold text-slate-800">{item.name}</h4>
-                        <p className="text-xs text-slate-400 pr-4 mt-0.5 line-clamp-1">{item.description}</p>
-                      </div>
-                      <div className="text-right whitespace-nowrap">
-                        <span className="text-sm font-bold font-mono text-slate-900">{item.score.toFixed(2)}</span>
-                        <span className="text-xs text-slate-400 font-mono"> / {item.max.toFixed(2)}</span>
-                      </div>
-                    </div>
-
-                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                      <div 
-                        className="bg-sage-600 h-full rounded-full transition-all duration-500" 
-                        style={{ width: `${percentage}%` }}
-                      ></div>
-                    </div>
+              {/* Stat 2 - Total Evaluators */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-6 shadow-2xs flex flex-col justify-between hover:border-sage-350 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">Evaluators</span>
+                  <div className="p-1.5 sm:p-2 bg-sage-50 rounded-xl text-sage-600">
+                    <Users className="h-4 w-4 sm:h-5 sm:w-5" />
                   </div>
-                );
-              })}
-              {stats.criteria.length === 0 && (
-                <div className="text-center py-10 text-slate-400 text-sm">
-                  No criteria scores available for this selection.
                 </div>
-              )}
-            </div>
-          </div>
+                <div className="mt-3 sm:mt-6 text-left">
+                  <h3 className="text-xl sm:text-3xl font-extrabold font-mono text-slate-900">{stats.totalEvaluators}</h3>
+                  <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 line-clamp-1">Anonymized responses</p>
+                </div>
+              </div>
 
-          {/* Student Feedback & Professional Growth Insights Column */}
-          <div className="lg:col-span-1 space-y-6 flex flex-col">
-            {/* Professional Growth Insights Trigger Card */}
-            <div 
-              onClick={() => setIsDrawerOpen(true)}
-              className="bg-white rounded-xl border border-slate-200 hover:border-sage-300 p-5 shadow-sm cursor-pointer transition-all flex items-center justify-between group relative overflow-hidden text-left"
-            >
-              <div className="absolute top-0 inset-x-0 h-1 bg-sage-500"></div>
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-sage-50 text-sage-700 rounded-lg group-hover:scale-105 transition-transform flex-shrink-0">
-                  <BrainCircuit className="h-5 w-5" />
+              {/* Stat 3 - Participation Rate */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-6 shadow-2xs flex flex-col justify-between hover:border-sage-350 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">Response Rate</span>
+                  <div className="p-1.5 sm:p-2 bg-sage-50 rounded-xl text-sage-600">
+                    <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5" />
+                  </div>
                 </div>
+                <div className="mt-3 sm:mt-6 text-left">
+                  <h3 className="text-xl sm:text-3xl font-extrabold font-mono text-slate-900">{stats.participationRate}</h3>
+                  <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 line-clamp-1">Registered students</p>
+                </div>
+              </div>
+
+              {/* Stat 4 - College Ranking */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-6 shadow-2xs flex flex-col justify-between hover:border-sage-350 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-400">Department Rank</span>
+                  <div className="p-1.5 sm:p-2 bg-sage-50 rounded-xl text-sage-600">
+                    <Award className="h-4 w-4 sm:h-5 sm:w-5" />
+                  </div>
+                </div>
+                <div className="mt-3 sm:mt-6 text-left">
+                  <h3 className="text-xl sm:text-3xl font-extrabold font-mono text-slate-900">{stats.collegeRank}</h3>
+                  <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 line-clamp-1">Relative to faculty</p>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Criteria breakdown & student reviews */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+              
+              {/* Detailed Criteria Breakdown */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-6 shadow-2xs lg:col-span-2 space-y-4 sm:space-y-6">
                 <div>
-                  <h4 className="text-sm font-bold text-slate-900">Professional Growth Insights</h4>
-                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">View qualitative summary & development plans</p>
+                  <h3 className="text-sm sm:text-base font-bold font-display text-slate-900 text-left">Criteria Breakdown</h3>
+                  <p className="text-[11px] sm:text-xs text-slate-500 text-left">Evaluation scores categorized by official teaching effectiveness metrics.</p>
                 </div>
-              </div>
-              <ChevronRight className="h-5 w-5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-            </div>
 
-            {/* Student Comments list */}
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col space-y-4 flex-1">
-              <div>
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5 text-sage-600" />
-                  <h3 className="text-lg font-bold font-display text-slate-900">Student Feedback</h3>
-                </div>
-                <p className="text-xs text-slate-500 mt-1 text-left">Anonymized, direct excerpts of student feedback responses.</p>
-              </div>
+                <div className="space-y-4 sm:space-y-5">
+                  {stats.criteria.map((item, idx) => {
+                    const percentage = (item.score / item.max) * 100;
+                    return (
+                      <div key={idx} className="space-y-1.5">
+                        <div className="flex justify-between items-start">
+                          <div className="text-left min-w-0 pr-2">
+                            <h4 className="text-xs sm:text-sm font-semibold text-slate-800 truncate">{item.name}</h4>
+                            <p className="text-[10px] sm:text-xs text-slate-400 pr-2 mt-0.5 line-clamp-1">{item.description}</p>
+                          </div>
+                          <div className="text-right whitespace-nowrap flex-shrink-0">
+                            <span className="text-xs sm:text-sm font-bold font-mono text-slate-900">{item.score.toFixed(2)}</span>
+                            <span className="text-[10px] sm:text-xs text-slate-400 font-mono"> / {item.max.toFixed(2)}</span>
+                          </div>
+                        </div>
 
-              <div className="flex-1 overflow-y-auto space-y-4 max-h-[360px] pr-2 table-container">
-                {stats.comments.length > 0 ? (
-                  stats.comments.map((comment, index) => (
-                    <div key={index} className="bg-slate-50 border border-slate-150 rounded-lg p-4 text-xs space-y-2 text-left">
-                      <p className="text-slate-700 leading-relaxed italic whitespace-pre-line">"{comment.text}"</p>
-                      <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
-                        <span>Verified Student Submission</span>
-                        <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-mono font-bold">
-                          {comment.course}
-                        </span>
+                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                          <div 
+                            className="bg-sage-600 h-full rounded-full transition-all duration-500" 
+                            style={{ width: `${percentage}%` }}
+                          ></div>
+                        </div>
                       </div>
+                    );
+                  })}
+                  {stats.criteria.length === 0 && (
+                    <div className="text-center py-8 text-slate-400 text-xs sm:text-sm">
+                      No criteria scores available for this selection.
                     </div>
-                  ))
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center text-center py-10 text-slate-400">
-                    <MessageSquare className="h-8 w-8 text-slate-305 mb-2" />
-                    <p className="text-xs font-medium">No comments recorded for this filter selection.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Student Feedback & Professional Growth Insights Column */}
+              <div className="lg:col-span-1 space-y-4 sm:space-y-6 flex flex-col">
+                {/* Professional Growth Insights Trigger Card */}
+                <div 
+                  onClick={() => setIsDrawerOpen(true)}
+                  className="bg-white rounded-2xl border border-slate-200/90 hover:border-sage-350 p-4 sm:p-5 shadow-2xs cursor-pointer transition-all flex items-center justify-between group relative overflow-hidden text-left"
+                >
+                  <div className="absolute top-0 inset-x-0 h-1 bg-sage-500"></div>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-sage-50 text-sage-700 rounded-xl group-hover:scale-105 transition-transform flex-shrink-0">
+                      <BrainCircuit className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-bold text-slate-900">Growth Insights</h4>
+                      <p className="text-[10px] text-slate-500 font-medium mt-0.5">Qualitative summary & growth plans</p>
+                    </div>
                   </div>
-                )}
+                  <ChevronRight className="h-4 w-4 text-slate-400 group-hover:translate-x-0.5 transition-transform flex-shrink-0" />
+                </div>
+
+                {/* Student Comments list */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-6 shadow-2xs flex flex-col space-y-3.5 flex-1">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5 text-sage-600" />
+                      <h3 className="text-sm sm:text-base font-bold font-display text-slate-900">Student Feedback</h3>
+                    </div>
+                    <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 text-left">Anonymized student feedback excerpts.</p>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto space-y-3 max-h-[340px] pr-1">
+                    {stats.comments.length > 0 ? (
+                      stats.comments.map((comment, index) => (
+                        <div key={index} className="bg-slate-50 border border-slate-150 rounded-xl p-3.5 text-xs space-y-2 text-left">
+                          <p className="text-slate-700 leading-relaxed italic whitespace-pre-line text-[11px] sm:text-xs">"{comment.text}"</p>
+                          <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-slate-400 font-medium">
+                            <span>Verified Student</span>
+                            <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-mono font-bold">
+                              {comment.course}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-center py-8 text-slate-400">
+                        <MessageSquare className="h-7 w-7 text-slate-300 mb-2" />
+                        <p className="text-xs font-medium">No comments recorded for this selection.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      </>
-    )}
-  </div>
+          </>
+        )}
+      </div>
 
-      {/* Drawer Overlay & Side Panel */}
+      {/* Drawer Overlay & Responsive Side Panel / Bottom Sheet */}
       {isDrawerOpen && (
         <div 
-          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 animate-in fade-in duration-305"
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-40 animate-in fade-in duration-200"
           onClick={() => setIsDrawerOpen(false)}
         />
       )}
 
       <div 
-        className={`fixed top-0 right-0 h-full w-full max-w-md bg-white border-l border-slate-200 shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-out ${
-          isDrawerOpen ? 'translate-x-0' : 'translate-x-full'
+        className={`fixed inset-x-0 bottom-0 max-h-[85vh] sm:max-h-full sm:top-0 sm:right-0 sm:left-auto sm:h-full w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-none border-t sm:border-t-0 sm:border-l border-slate-200 shadow-2xl z-50 flex flex-col transition-transform duration-300 ease-out ${
+          isDrawerOpen ? 'translate-y-0 sm:translate-x-0' : 'translate-y-full sm:translate-y-0 sm:translate-x-full'
         }`}
       >
+        <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
+        
         {/* Drawer Header */}
-        <div className="p-6 border-b border-slate-150 flex items-center justify-between">
+        <div className="p-4 sm:p-6 border-b border-slate-150 flex items-center justify-between">
           <div className="flex items-center gap-2 text-sage-700">
             <BrainCircuit className="h-5 w-5" />
-            <h3 className="text-base font-bold text-slate-900 font-display">Growth Insights</h3>
+            <h3 className="text-sm sm:text-base font-bold text-slate-900 font-display">Growth Insights</h3>
           </div>
           <button 
             onClick={() => setIsDrawerOpen(false)}
-            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition-colors"
+            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Drawer Body (Scrollable) */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
           
           {selectedClass === 'All' ? (
             /* OVERALL STANDING VIEW */
-            <div className="space-y-6 text-left">
+            <div className="space-y-4 sm:space-y-6 text-left">
               
               {/* Performance Summary Banner */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+              <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 sm:p-5 space-y-3 sm:space-y-4">
                 <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">My Performance Standing</span>
-                  <div className="mt-2 flex items-baseline gap-1.5">
-                    <span className="text-3xl font-extrabold text-slate-900 font-mono">{stats.overall.toFixed(2)}</span>
-                    <span className="text-sm text-slate-400 font-mono">/ 4.00</span>
+                  <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">My Performance Standing</span>
+                  <div className="mt-1.5 flex items-baseline gap-1.5">
+                    <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-mono">{stats.overall.toFixed(2)}</span>
+                    <span className="text-xs sm:text-sm text-slate-400 font-mono">/ 4.00</span>
                   </div>
                 </div>
                 

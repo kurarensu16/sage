@@ -335,47 +335,52 @@ export default function GradeComputationsList() {
 
       {/* Templates configuration Drawer Modal */}
       {isEditorOpen && (
-        <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
+        <div className="fixed inset-0 z-50 overflow-hidden flex items-end sm:items-stretch sm:justify-end">
           {/* Backdrop blur */}
           <div 
             onClick={() => !saving && setIsEditorOpen(false)}
             className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity" 
           />
 
-          <div className="relative max-w-xl w-full bg-white shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-300 ease-out">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div className="relative max-w-xl w-full bg-white shadow-2xl max-h-[92vh] sm:max-h-full sm:h-full rounded-t-3xl sm:rounded-none flex flex-col animate-in slide-in-from-bottom sm:slide-in-from-right duration-300 ease-out z-10 overflow-hidden">
+            {/* Mobile Grab Handle */}
+            <div className="sm:hidden pt-3 pb-1 flex justify-center">
+              <div className="w-10 h-1.25 bg-slate-300 rounded-full" />
+            </div>
+
+            <div className="p-4 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <div>
-                <h3 className="text-base font-bold font-display text-slate-900 text-left">
+                <h3 className="text-sm sm:text-base font-bold font-display text-slate-900 text-left">
                   {editingTemplate ? 'Edit Grading Template' : 'Configure New Template'}
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5 text-left">Set calculation weights and default scales for courses.</p>
+                <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 text-left">Set calculation weights and default scales for courses.</p>
               </div>
               <button 
                 onClick={() => setIsEditorOpen(false)}
                 disabled={saving}
-                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-900 transition-colors"
+                className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-900 transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleOpenConfirm} className="flex-1 overflow-y-auto p-6 space-y-6 flex flex-col justify-between">
-              <div className="space-y-6 text-left">
+            <form onSubmit={handleOpenConfirm} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6 flex flex-col justify-between">
+              <div className="space-y-4 sm:space-y-6 text-left">
                 {errorMsg && (
-                  <div className="p-3 bg-rose-50 border border-rose-100 text-rose-700 text-xs font-semibold rounded-lg flex items-center gap-2">
+                  <div className="p-3 bg-rose-50 border border-rose-100 text-rose-700 text-xs font-semibold rounded-xl flex items-center gap-2">
                     <AlertCircle className="h-4 w-4 flex-shrink-0" />
                     <span>{errorMsg}</span>
                   </div>
                 )}
                 {successMsg && (
-                  <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-semibold rounded-lg flex items-center gap-2">
+                  <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-semibold rounded-xl flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
                     <span>{successMsg}</span>
                   </div>
                 )}
 
                 {/* General Info */}
-                <div className="space-y-4">
+                <div className="space-y-3 sm:space-y-4">
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Template Name <span className="text-rose-500">*</span></label>
                     <input 
@@ -384,7 +389,7 @@ export default function GradeComputationsList() {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="e.g. General Education Core"
-                      className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500"
+                      className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500"
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
@@ -393,7 +398,7 @@ export default function GradeComputationsList() {
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       placeholder="Specify departments or guidelines applying this formula scale..."
-                      className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm h-20 resize-none outline-none transition-all focus:ring-1 focus:ring-sage-500"
+                      className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm h-16 sm:h-20 resize-none outline-none transition-all focus:ring-1 focus:ring-sage-500"
                     />
                   </div>
                 </div>
@@ -405,14 +410,14 @@ export default function GradeComputationsList() {
                     <button 
                       type="button"
                       onClick={handleAddComponentRow}
-                      className="text-xs text-sage-600 hover:text-sage-700 font-bold flex items-center gap-1.5"
+                      className="text-xs text-sage-600 hover:text-sage-700 font-bold flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Plus className="h-3.5 w-3.5" /> Add Component Row
+                      <Plus className="h-3.5 w-3.5" /> Add Row
                     </button>
                   </div>
 
-                  {/* Table Row Headers to distinguish Weight and Max Points */}
-                  <div className="flex gap-2.5 items-center text-[9px] font-extrabold text-slate-400 uppercase tracking-wider px-1">
+                  {/* Table Row Headers */}
+                  <div className="hidden sm:flex gap-2.5 items-center text-[9px] font-extrabold text-slate-400 uppercase tracking-wider px-1">
                     <div className="flex-1">Component Name</div>
                     <div className="w-20 text-center">Weight %</div>
                     <div className="w-20 text-center">Max Score</div>
@@ -422,18 +427,18 @@ export default function GradeComputationsList() {
 
                   <div className="space-y-2.5">
                     {components.map((comp, idx) => (
-                      <div key={idx} className="flex gap-2.5 items-center">
-                        <div className="flex-1">
+                      <div key={idx} className="flex flex-wrap sm:flex-nowrap gap-2 items-center p-2.5 sm:p-0 bg-slate-50 sm:bg-transparent rounded-xl sm:rounded-none border sm:border-0 border-slate-200/80">
+                        <div className="w-full sm:flex-1">
                           <input 
                             type="text"
                             required
                             value={comp.name}
                             onChange={(e) => handleComponentChange(idx, 'name', e.target.value)}
                             placeholder="Component Name (e.g. Written Quiz)"
-                            className="block w-full px-3 py-1.5 border border-slate-250 hover:border-slate-300 focus:border-sage-500 rounded-lg text-xs outline-none transition-all"
+                            className="block w-full px-3 py-1.5 border border-slate-250 hover:border-slate-300 focus:border-sage-500 rounded-lg text-xs outline-none transition-all bg-white"
                           />
                         </div>
-                        <div className="w-20">
+                        <div className="flex-1 sm:w-20 sm:flex-none">
                           <input 
                             type="number"
                             required
@@ -442,10 +447,10 @@ export default function GradeComputationsList() {
                             value={comp.weight}
                             onChange={(e) => handleComponentChange(idx, 'weight', parseInt(e.target.value, 10))}
                             placeholder="Weight %"
-                            className="block w-full px-2.5 py-1.5 border border-slate-250 hover:border-slate-300 focus:border-sage-500 rounded-lg text-xs font-mono outline-none text-right"
+                            className="block w-full px-2.5 py-1.5 border border-slate-250 hover:border-slate-300 focus:border-sage-500 rounded-lg text-xs font-mono outline-none text-right bg-white"
                           />
                         </div>
-                        <div className="w-20">
+                        <div className="flex-1 sm:w-20 sm:flex-none">
                           <input 
                             type="number"
                             required
@@ -454,23 +459,23 @@ export default function GradeComputationsList() {
                             value={comp.max_score}
                             onChange={(e) => handleComponentChange(idx, 'max_score', parseInt(e.target.value, 10))}
                             placeholder="Max Score"
-                            className="block w-full px-2.5 py-1.5 border border-slate-250 hover:border-slate-300 focus:border-sage-500 rounded-lg text-xs font-mono outline-none text-right"
+                            className="block w-full px-2.5 py-1.5 border border-slate-250 hover:border-slate-300 focus:border-sage-500 rounded-lg text-xs font-mono outline-none text-right bg-white"
                           />
                         </div>
-                        <label className="flex items-center gap-1 cursor-pointer select-none border border-slate-200 rounded-lg px-2 py-1 bg-slate-50/50 hover:bg-slate-50 w-[78px] justify-center">
+                        <label className="flex items-center gap-1 cursor-pointer select-none border border-slate-200 rounded-lg px-2 py-1.5 bg-white hover:bg-slate-50 w-[78px] justify-center flex-shrink-0">
                           <input 
                             type="checkbox"
                             checked={!!comp.is_multiple}
                             onChange={(e) => handleComponentChange(idx, 'is_multiple', e.target.checked)}
                             className="rounded text-sage-600 focus:ring-sage-500 border-slate-300 w-3.5 h-3.5"
                           />
-                          <span className="text-[10px] text-slate-500 font-bold whitespace-nowrap">Multiple?</span>
+                          <span className="text-[10px] text-slate-500 font-bold whitespace-nowrap">Multi?</span>
                         </label>
                         <button 
                           type="button"
                           disabled={components.length <= 1}
                           onClick={() => handleRemoveComponentRow(idx)}
-                          className="p-1.5 text-slate-350 hover:text-rose-500 disabled:opacity-30 disabled:hover:text-slate-350 rounded-lg"
+                          className="p-1.5 text-slate-450 hover:text-rose-500 disabled:opacity-30 rounded-lg cursor-pointer flex-shrink-0"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -481,10 +486,10 @@ export default function GradeComputationsList() {
               </div>
 
               {/* Drawer footer details */}
-              <div className="pt-6 border-t border-slate-100 flex flex-col gap-4 bg-white mt-10">
+              <div className="pt-4 sm:pt-6 border-t border-slate-100 flex flex-col gap-3 sm:gap-4 bg-white mt-6 sm:mt-10">
                 <div className="flex items-center justify-between px-1">
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Total Weighted Sum:</span>
-                  <span className={`font-mono text-sm font-extrabold px-2.5 py-0.5 rounded-full border ${
+                  <span className={`font-mono text-xs sm:text-sm font-extrabold px-2.5 py-0.5 rounded-full border ${
                     totalWeight === 100 
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
                       : 'bg-rose-50 text-rose-700 border-rose-100'
@@ -498,14 +503,14 @@ export default function GradeComputationsList() {
                     type="button"
                     disabled={saving}
                     onClick={() => setIsEditorOpen(false)}
-                    className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-medium transition-colors"
+                    className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs sm:text-sm font-medium transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button 
                     type="submit"
                     disabled={saving}
-                    className="flex-1 px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-sage-400 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-sm"
+                    className="flex-1 px-4 py-2.5 bg-sage-600 hover:bg-sage-700 disabled:bg-sage-400 text-white rounded-xl text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-xs cursor-pointer"
                   >
                     <Save className="h-4 w-4" /> {saving ? 'Saving...' : 'Save Template'}
                   </button>
@@ -518,17 +523,17 @@ export default function GradeComputationsList() {
 
       {/* Confirmation Modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 space-y-5 text-left animate-in zoom-in-95 duration-200 max-w-md w-full">
-            <div className="flex items-start gap-4">
-              <div className="w-11 h-11 rounded-full bg-sage-50 text-sage-600 flex items-center justify-center flex-shrink-0">
+        <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 shadow-2xl p-5 sm:p-6 space-y-4 sm:space-y-5 text-left animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 max-w-md w-full">
+            <div className="flex items-start gap-3 sm:gap-4">
+              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-sage-50 text-sage-600 flex items-center justify-center flex-shrink-0">
                 <Settings className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900 font-display">
+                <h3 className="text-sm sm:text-base font-bold text-slate-900 font-display">
                   {editingTemplate ? 'Confirm Template Changes' : 'Confirm New Grading Template'}
                 </h3>
-                <p className="text-xs text-slate-500 mt-1 font-sans">
+                <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 font-sans">
                   {editingTemplate 
                     ? 'Please review the template components and weights before updating.' 
                     : 'Are you sure you want to register this new grading computation template?'}
@@ -536,7 +541,7 @@ export default function GradeComputationsList() {
               </div>
             </div>
 
-            <div className="bg-slate-50 rounded-xl p-4 border border-slate-150 space-y-3 text-xs">
+            <div className="bg-slate-50 rounded-xl p-3.5 sm:p-4 border border-slate-150 space-y-2.5 text-xs">
               <div className="flex justify-between items-start gap-3">
                 <span className="text-slate-450 font-bold uppercase tracking-wider text-[10px]">Template Name:</span>
                 <span className="font-bold text-slate-900 text-right">{name.trim()}</span>
@@ -565,18 +570,18 @@ export default function GradeComputationsList() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 pt-2">
+            <div className="flex items-center gap-3 pt-1 sm:pt-2">
               <button
                 type="button"
                 onClick={() => setShowConfirmModal(false)}
-                className="flex-1 px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition-colors"
+                className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmSave}
-                className="flex-1 px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm flex items-center justify-center gap-1.5"
+                className="flex-1 px-4 py-2.5 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Save className="h-3.5 w-3.5" />
                 {editingTemplate ? 'Save Changes' : 'Register Template'}

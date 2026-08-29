@@ -143,31 +143,31 @@ export default function AuditLog() {
         </div>
       </PageHeader>
 
-      <div className="p-8 overflow-y-auto flex-1 space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6">
 
         {errorMsg && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-lg text-sm font-semibold">
+          <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 sm:p-4 rounded-xl text-xs sm:text-sm font-semibold">
             {errorMsg}
           </div>
         )}
 
-        {/* Summary Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Summary Stats Row - 2x2 on Mobile */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
           {[
             { label: 'Total Records', value: logs.length, color: 'text-slate-900' },
             { label: 'Today\'s Actions', value: todayCount, color: 'text-sage-700' },
             { label: 'Unique Actors', value: Array.from(new Set(logs.map(l => l.actor))).length, color: 'text-blue-700' },
             { label: 'Action Types', value: uniqueActions.length, color: 'text-violet-700' },
           ].map((stat) => (
-            <div key={stat.label} className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">{stat.label}</p>
-              <p className={`text-2xl font-bold font-display mt-1 ${stat.color}`}>{stat.value}</p>
+            <div key={stat.label} className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-3.5 sm:p-4">
+              <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wide truncate">{stat.label}</p>
+              <p className={`text-xl sm:text-2xl font-bold font-display mt-0.5 sm:mt-1 ${stat.color}`}>{stat.value}</p>
             </div>
           ))}
         </div>
 
         {/* Toolbar Filters */}
-        <div className="flex flex-col md:flex-row md:items-center gap-3">
+        <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3">
           <div className="relative max-w-sm w-full">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search className="h-4 w-4 text-slate-400" />
@@ -177,50 +177,52 @@ export default function AuditLog() {
               id="audit-search"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors"
-              placeholder="Search by message or actor..."
+              className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors"
+              placeholder="Search message or actor..."
             />
           </div>
 
-          <select
-            id="audit-action-filter"
-            value={actionFilter}
-            onChange={(e) => setActionFilter(e.target.value)}
-            className="bg-white border border-slate-200 rounded-lg text-sm px-3 py-2 outline-none cursor-pointer hover:border-sage-300 transition-colors"
-          >
-            <option value="">All Action Types</option>
-            {uniqueActions.map((action, idx) => (
-              <option key={idx} value={action}>{action}</option>
-            ))}
-          </select>
-
-          <select
-            id="audit-date-filter"
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="bg-white border border-slate-200 rounded-lg text-sm px-3 py-2 outline-none cursor-pointer hover:border-sage-300 transition-colors"
-          >
-            <option value="">All Dates</option>
-            {uniqueDates.map((date, idx) => (
-              <option key={idx} value={date}>{date}</option>
-            ))}
-          </select>
-
-          {(searchTerm || actionFilter || dateFilter) && (
-            <button
-              onClick={() => { setSearchTerm(''); setActionFilter(''); setDateFilter(''); }}
-              className="text-xs text-rose-600 hover:text-rose-700 font-semibold transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap"
+          <div className="flex items-center gap-2 flex-1 flex-wrap sm:flex-nowrap">
+            <select
+              id="audit-action-filter"
+              value={actionFilter}
+              onChange={(e) => setActionFilter(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl text-xs sm:text-sm px-3 py-2 outline-none cursor-pointer hover:border-sage-300 transition-colors flex-1 sm:flex-none"
             >
-              Clear filters
-            </button>
-          )}
+              <option value="">All Action Types</option>
+              {uniqueActions.map((action, idx) => (
+                <option key={idx} value={action}>{action}</option>
+              ))}
+            </select>
+
+            <select
+              id="audit-date-filter"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl text-xs sm:text-sm px-3 py-2 outline-none cursor-pointer hover:border-sage-300 transition-colors flex-1 sm:flex-none"
+            >
+              <option value="">All Dates</option>
+              {uniqueDates.map((date, idx) => (
+                <option key={idx} value={date}>{date}</option>
+              ))}
+            </select>
+
+            {(searchTerm || actionFilter || dateFilter) && (
+              <button
+                onClick={() => { setSearchTerm(''); setActionFilter(''); setDateFilter(''); }}
+                className="text-xs text-rose-600 hover:text-rose-700 font-semibold transition-colors py-1 px-2 rounded-lg hover:bg-rose-50 cursor-pointer whitespace-nowrap"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Audit Log Card Layout */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-          <div className="bg-slate-50 px-6 py-4 flex items-center justify-between border-b border-slate-200">
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden flex flex-col">
+          <div className="bg-slate-50/80 px-4 sm:px-6 py-3.5 flex items-center justify-between border-b border-slate-100">
             <div className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-sage-600" />
+              <Shield className="h-4 w-4 sm:h-5 sm:w-5 text-sage-600" />
               <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">
                 Immutable Action Ledger
               </span>
@@ -235,25 +237,25 @@ export default function AuditLog() {
               paginatedLogs.map((log) => (
                 <div
                   key={log.log_id}
-                  className="px-6 py-4 hover:bg-slate-50/60 transition-colors flex flex-col md:flex-row md:items-start justify-between gap-4"
+                  className="p-3.5 sm:px-6 sm:py-4 hover:bg-slate-50/60 transition-colors flex flex-col md:flex-row md:items-start justify-between gap-2.5 sm:gap-4"
                 >
-                  <div className="space-y-1.5 flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border ${getActionBadgeColor(log.action)}`}>
+                  <div className="space-y-1 sm:space-y-1.5 flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs font-bold border ${getActionBadgeColor(log.action)}`}>
                         {log.action}
                       </span>
-                      <span className="text-xs font-mono text-slate-400 flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5 flex-shrink-0" />
+                      <span className="text-[10px] sm:text-xs font-mono text-slate-400 flex items-center gap-1">
+                        <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0" />
                         {formatTimestamp(log.timestamp)}
                       </span>
                     </div>
-                    <p className="text-sm text-slate-700 leading-relaxed font-sans break-words">{log.message}</p>
+                    <p className="text-xs sm:text-sm text-slate-700 leading-snug sm:leading-relaxed font-sans break-words">{log.message}</p>
                     <p className="text-[10px] font-mono text-slate-400">ID: {log.log_id}</p>
                   </div>
 
-                  <div className="md:text-right flex-shrink-0 self-start md:self-center">
+                  <div className="md:text-right flex-shrink-0 self-start md:self-center pt-1 md:pt-0 border-t md:border-t-0 border-slate-100 w-full md:w-auto flex items-center justify-between md:block">
                     <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Performed by</span>
-                    <h5 className="text-sm font-bold text-slate-900 mt-0.5">{log.actor}</h5>
+                    <h5 className="text-xs sm:text-sm font-bold text-slate-900 mt-0.5">{log.actor}</h5>
                   </div>
                 </div>
               ))
@@ -265,23 +267,27 @@ export default function AuditLog() {
               </div>
             )}
           </div>
+
           {totalPages > 1 && (
-            <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 flex items-center justify-between">
+            <div className="bg-slate-50/80 px-4 sm:px-6 py-3 border-t border-slate-100 flex items-center justify-between">
               <span className="text-xs font-medium text-slate-500">
-                Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredLogs.length)} of {filteredLogs.length} entries
+                {(currentPage - 1) * itemsPerPage + 1}–{Math.min(currentPage * itemsPerPage, filteredLogs.length)} of {filteredLogs.length}
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <button
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="px-3 py-1.5 border border-slate-200 rounded bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                 >
                   Previous
                 </button>
+                <span className="px-2 py-1 bg-sage-50 text-sage-800 border border-sage-200 rounded-lg text-xs font-bold font-mono">
+                  {currentPage} / {totalPages}
+                </span>
                 <button
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1.5 border border-slate-200 rounded bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-3 py-1.5 border border-slate-200 rounded-xl bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                 >
                   Next
                 </button>

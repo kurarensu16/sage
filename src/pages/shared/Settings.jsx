@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext';
 import { supabase } from '../../lib/supabase';
 import PageHeader from '../../components/layout/PageHeader';
@@ -18,16 +18,23 @@ import {
   Bell,
   BrainCircuit,
   Award,
-  Shield
+  Shield,
+  LogOut
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export default function Settings() {
   const location = useLocation();
+  const navigate = useNavigate();
   const path = location.pathname;
   const role = path.split('/')[1] || 'faculty';
 
-  const { profile } = useAuth();
+  const { profile, signOut } = useAuth();
+
+  const handleSignOut = async () => {
+    navigate('/login', { replace: true });
+    await signOut();
+  };
 
   // State definitions
   const [activeTab, setActiveTab] = useState('profile');
@@ -578,6 +585,25 @@ export default function Settings() {
             </div>
           )}
 
+        </div>
+
+        {/* Mobile-Only Sign Out Section */}
+        <div className="lg:hidden pt-2">
+          <div className="bg-white rounded-2xl border border-rose-200/80 p-4 shadow-sm space-y-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 font-display">Session Management</h3>
+              <p className="text-xs text-slate-500 mt-0.5">End your current active session on this device.</p>
+            </div>
+            
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 font-semibold text-xs sm:text-sm border border-rose-200 transition-colors cursor-pointer"
+            >
+              <LogOut className="h-4 w-4 text-rose-600 flex-shrink-0" />
+              <span>Sign Out of SAGE</span>
+            </button>
+          </div>
         </div>
 
       </div>

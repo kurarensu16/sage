@@ -410,8 +410,73 @@ export default function EvalWindowList() {
           )}
         </div>
 
-        {/* Windows Table */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* Windows Feed (Mobile Cards + Desktop Table) */}
+        
+        {/* Mobile View Card Feed */}
+        <div className="md:hidden space-y-3">
+          {paginatedWindows.length > 0 ? (
+            paginatedWindows.map((win) => {
+              const pct = win.totalStudents > 0 ? Math.round((win.responsesCount / win.totalStudents) * 100) : 0;
+              return (
+                <div key={win.id} className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-2xs space-y-3 text-left">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 font-display text-sm truncate">Prof. {win.facultyName}</span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                          {win.section}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 mt-0.5 truncate">{win.templateTitle}</p>
+                    </div>
+                    {getStatusBadge(win)}
+                  </div>
+
+                  {/* Survey Participation Meter */}
+                  <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400 font-medium">Participation Rate</span>
+                      <span className="font-mono font-bold text-slate-800">{win.responsesCount} / {win.totalStudents} ({pct}%)</span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className="bg-sage-600 h-full rounded-full transition-all duration-300"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <div className="text-[10px] text-slate-400 font-mono">
+                      Closes: {formatDateTime(win.closeAt)}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setSelectedWindowAnalytics(win)}
+                        className="px-2.5 py-1 text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg border border-blue-200 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Eye className="h-3 w-3" /> Analytics
+                      </button>
+                      <button
+                        onClick={() => navigate(`/office/evalwindowform?id=${win.id}`)}
+                        className="px-2.5 py-1 text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Edit2 className="h-3 w-3" /> Edit
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="p-8 text-center bg-white border border-slate-200 rounded-2xl text-slate-400 text-xs">
+              No evaluation windows found matching your filters.
+            </div>
+          )}
+        </div>
+
+        {/* Desktop Table View */}
+        <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="table-container overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">
@@ -606,11 +671,12 @@ export default function EvalWindowList() {
 
       {/* Submissions / Analytics Modal */}
       {selectedWindowAnalytics && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200">
+            <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
             
             {/* Header */}
-            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+            <div className="px-5 sm:px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
                   <BarChart2 className="h-4.5 w-4.5" />

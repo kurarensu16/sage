@@ -170,19 +170,19 @@ export default function Notifications() {
     <>
       <PageHeader title="Notification Center" breadcrumb="Office Portal" />
       
-      <div className="p-8 overflow-y-auto flex-1 max-w-5xl mx-auto w-full space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 max-w-5xl mx-auto w-full space-y-4 sm:space-y-6">
         
         {/* Controls Toolbar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
             {['All', 'Unread', 'Compliance', 'Roster', 'Evaluations'].map((filter) => (
               <button
                 key={filter}
                 onClick={() => setActiveFilter(filter)}
                 className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer",
+                  "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap shrink-0",
                   activeFilter === filter
-                    ? "bg-sage-600 text-white shadow-sm"
+                    ? "bg-sage-600 text-white shadow-xs"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                 )}
               >
@@ -196,18 +196,18 @@ export default function Notifications() {
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
             <button
               onClick={markAllAsRead}
               disabled={unreadCount === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               <Check className="h-3.5 w-3.5" /> Mark all read
             </button>
             <button
               onClick={clearAllNotifications}
               disabled={notifications.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               <Trash2 className="h-3.5 w-3.5" /> Clear all
             </button>
@@ -218,11 +218,11 @@ export default function Notifications() {
         {loading ? (
           <div className="space-y-3 animate-pulse">
             {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white border border-slate-200 rounded-xl p-5 h-24" />
+              <div key={i} className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 h-24" />
             ))}
           </div>
         ) : filteredNotifications.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-xl p-12 text-center space-y-3 shadow-sm">
+          <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 text-center space-y-3 shadow-2xs">
             <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
               <MailOpen className="h-6 w-6" />
             </div>
@@ -232,28 +232,28 @@ export default function Notifications() {
             </p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2.5 sm:space-y-3">
             {filteredNotifications.map((n) => {
               const IconComponent = n.icon || Bell;
               return (
                 <div
                   key={n.id}
                   className={cn(
-                    "bg-white border rounded-xl p-5 transition-all shadow-sm flex items-start justify-between gap-4",
-                    n.read ? "border-slate-200 opacity-80" : "border-sage-300 bg-sage-50/20"
+                    "bg-white border rounded-2xl p-3.5 sm:p-5 transition-all shadow-2xs flex items-start justify-between gap-3 sm:gap-4",
+                    n.read ? "border-slate-200/90 opacity-80" : "border-sage-300 bg-sage-50/20"
                   )}
                 >
-                  <div className="flex items-start gap-3.5">
-                    <div className={cn("p-2.5 rounded-xl border flex-shrink-0 mt-0.5", n.iconColor)}>
-                      <IconComponent className="h-5 w-5" />
+                  <div className="flex items-start gap-3 sm:gap-3.5 min-w-0">
+                    <div className={cn("p-2 sm:p-2.5 rounded-xl border flex-shrink-0 mt-0.5", n.iconColor)}>
+                      <IconComponent className="h-4 w-4 sm:h-5 sm:w-5" />
                     </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <h4 className={cn("text-xs font-bold", n.read ? "text-slate-700" : "text-slate-900")}>
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className={cn("text-xs sm:text-sm font-bold truncate", n.read ? "text-slate-700" : "text-slate-900")}>
                           {n.title}
                         </h4>
                         {!n.read && (
-                          <span className="w-2 h-2 rounded-full bg-sage-600" />
+                          <span className="w-2 h-2 rounded-full bg-sage-600 shrink-0" />
                         )}
                         <span className="text-[10px] text-slate-400 font-medium">· {n.time}</span>
                       </div>

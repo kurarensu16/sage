@@ -238,22 +238,22 @@ export default function GradeOverride() {
         )}
 
         {/* Student Lookup Search */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 sm:p-6 space-y-3 sm:space-y-4">
           <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Lookup Enrolled Student</label>
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3">
             <div className="relative flex-1">
               <input 
                 type="text" 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearchStudent()}
-                placeholder="Enter Student Name (e.g. Jenkins, Smith) or Student ID..."
-                className="block w-full pl-4 pr-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors" 
+                placeholder="Student Name or Student ID..."
+                className="block w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs sm:text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors" 
               />
             </div>
             <button 
               onClick={handleSearchStudent}
-              className="px-5 py-2.5 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
+              className="px-5 py-2.5 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-xs cursor-pointer"
             >
               <Search className="h-4 w-4" /> Search Student
             </button>
@@ -262,20 +262,62 @@ export default function GradeOverride() {
 
         {/* Student Grades View */}
         {selectedStudent && (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-6">
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden space-y-4 p-4 sm:p-6">
             <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-              <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-200 text-blue-700 font-bold text-xs flex items-center justify-center font-mono">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 font-bold text-xs flex items-center justify-center font-mono flex-shrink-0">
                 {selectedStudent.firstName[0]}{selectedStudent.lastName[0]}
               </div>
-              <div>
-                <h4 className="text-sm font-bold font-display text-slate-900">
+              <div className="min-w-0 flex-1">
+                <h4 className="text-sm font-bold font-display text-slate-900 truncate">
                   {selectedStudent.lastName}, {selectedStudent.firstName} {selectedStudent.middleName && selectedStudent.middleName[0] + '.'}
                 </h4>
-                <p className="text-[11px] text-slate-500 font-mono">{selectedStudent.email} — {selectedStudent.department}</p>
+                <p className="text-[11px] text-slate-500 font-mono truncate">{selectedStudent.email} — {selectedStudent.department}</p>
               </div>
             </div>
 
-            <div className="table-container border border-slate-200 rounded-lg overflow-hidden">
+            {/* ── Mobile Grades Cards (md:hidden) ── */}
+            <div className="md:hidden space-y-3">
+              {postedGrades.length > 0 ? (
+                postedGrades.map((grade) => (
+                  <div key={grade.id} className="bg-slate-50/70 rounded-xl p-3.5 border border-slate-200/80 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-bold text-slate-900">{grade.subjectCode}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">({grade.section})</span>
+                        </div>
+                        <span className="text-[11px] text-slate-600 capitalize block">{grade.gradePeriod} Period</span>
+                      </div>
+
+                      <div className="text-right">
+                        <div className="text-lg font-bold font-mono text-slate-950">{grade.computedGrade.toFixed(2)}</div>
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border ${
+                          grade.remarks === 'passed' 
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}>
+                          {grade.remarks === 'passed' ? 'Passed' : 'Failed'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={() => handleOpenOverride(grade)}
+                      className="w-full py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer active:scale-98"
+                    >
+                      <ShieldAlert className="h-3.5 w-3.5" /> Override Grade
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="py-8 text-center text-slate-400 text-xs">
+                  No posted grades found for this student.
+                </div>
+              )}
+            </div>
+
+            {/* ── Desktop Grades Table (hidden md:block) ── */}
+            <div className="hidden md:block table-container border border-slate-200 rounded-lg overflow-hidden">
               <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">
                   <tr>
@@ -339,17 +381,22 @@ export default function GradeOverride() {
 
       {/* Override dialog modal */}
       {isOverrideOpen && selectedGrade && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl border border-slate-200 max-w-md w-full shadow-lg flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 max-w-md w-full shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
             
+            {/* Mobile grab handle */}
+            <div className="sm:hidden pt-3 pb-1 flex justify-center">
+              <div className="w-10 h-1.25 bg-slate-300 rounded-full" />
+            </div>
+
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-amber-50/30">
-              <h3 className="text-base font-bold font-display text-amber-900 flex items-center gap-2">
-                <ShieldAlert className="h-5 w-5 text-amber-700" /> Execute Grade Override
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-amber-50/30">
+              <h3 className="text-sm sm:text-base font-bold font-display text-amber-900 flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 sm:h-5 sm:w-5 text-amber-700" /> Execute Grade Override
               </h3>
               <button 
                 onClick={() => setIsOverrideOpen(false)}
-                className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-900 transition-colors"
+                className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-900 transition-colors cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -357,16 +404,16 @@ export default function GradeOverride() {
 
             {/* Modal Body */}
             <form onSubmit={handleSaveOverride}>
-              <div className="p-6 space-y-4">
+              <div className="p-4 sm:p-6 space-y-4">
                 
                 {errorMsg && (
-                  <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-lg text-xs font-bold">
+                  <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-xl text-xs font-bold">
                     {errorMsg}
                   </div>
                 )}
 
-                <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg text-xs space-y-1">
-                  <div>Student Name: <strong className="text-slate-800">{selectedStudent?.lastName}, {selectedStudent?.firstName}</strong></div>
+                <div className="bg-slate-50 border border-slate-150 p-3.5 rounded-xl text-xs space-y-1">
+                  <div>Student: <strong className="text-slate-800">{selectedStudent?.lastName}, {selectedStudent?.firstName}</strong></div>
                   <div>Subject / Section: <span className="text-slate-600 font-mono">{selectedGrade.subjectCode} ({selectedGrade.section})</span></div>
                   <div>Grading Period: <span className="text-slate-600 capitalize">{selectedGrade.gradePeriod}</span></div>
                   <div>Current Grade: <strong className="text-slate-800 font-mono">{selectedGrade.computedGrade.toFixed(2)}</strong></div>
@@ -382,7 +429,7 @@ export default function GradeOverride() {
                     required
                     value={newGradeVal}
                     onChange={(e) => setNewGradeVal(e.target.value)}
-                    className="block w-full px-3.5 py-2.5 border border-slate-200 focus:border-sage-500 rounded-lg text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500"
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 focus:border-sage-500 rounded-xl text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500"
                     placeholder="e.g. 1.75"
                   />
                 </div>
@@ -394,8 +441,8 @@ export default function GradeOverride() {
                     rows="3"
                     value={overrideReason}
                     onChange={(e) => setOverrideReason(e.target.value)}
-                    className="block w-full p-3 border border-slate-200 focus:border-sage-500 rounded-lg text-xs outline-none transition-all focus:ring-1 focus:ring-sage-500"
-                    placeholder="Provide details for record auditing (e.g., dispute corrected by instructor, typo fix)..."
+                    className="block w-full p-3 border border-slate-200 focus:border-sage-500 rounded-xl text-xs outline-none transition-all focus:ring-1 focus:ring-sage-500"
+                    placeholder="Provide details for record auditing..."
                   />
                 </div>
               </div>
@@ -405,13 +452,13 @@ export default function GradeOverride() {
                 <button 
                   type="button"
                   onClick={() => setIsOverrideOpen(false)}
-                  className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors"
+                  className="flex-1 sm:flex-none px-4 py-2.5 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl text-xs sm:text-sm font-medium transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit"
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
+                  className="flex-1 sm:flex-none px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-xs cursor-pointer"
                 >
                   <Check className="h-4 w-4" /> Confirm Override
                 </button>

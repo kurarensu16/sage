@@ -529,27 +529,28 @@ export default function EvalForm() {
 
         {/* Confirmation Modal */}
         {showConfirmModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-              <div className="p-6">
-                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mb-4">
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-xs">
+            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200">
+              <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
+              <div className="p-5 sm:p-6">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mb-4">
                   <Check className="h-6 w-6" />
                 </div>
-                <h3 className="text-xl font-bold font-display text-slate-900 text-left">Submit Evaluation?</h3>
-                <p className="text-sm text-slate-550 mt-2 text-left">
+                <h3 className="text-lg sm:text-xl font-bold font-display text-slate-900 text-left">Submit Evaluation?</h3>
+                <p className="text-xs sm:text-sm text-slate-600 mt-2 text-left leading-relaxed">
                   Are you sure you want to submit this PPST Faculty Evaluation for <strong>Prof. {facultyName}</strong>? Once submitted, it cannot be modified or re-entered.
                 </p>
               </div>
-              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+              <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex flex-col-reverse sm:flex-row justify-end gap-2.5">
                 <button 
                   onClick={() => setShowConfirmModal(false)}
-                  className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg transition-colors font-sans"
+                  className="w-full sm:w-auto px-4 py-2.5 text-xs sm:text-sm font-semibold border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl transition-colors font-sans cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button 
                   onClick={confirmSubmit}
-                  className="px-4 py-2 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm font-sans"
+                  className="w-full sm:w-auto px-5 py-2.5 text-xs sm:text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-colors shadow-2xs font-sans cursor-pointer"
                 >
                   Yes, Submit Evaluation
                 </button>
@@ -560,21 +561,22 @@ export default function EvalForm() {
 
         {/* Success Modal (Compliant with no browser alert rule) */}
         {showSuccessModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200">
+            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200">
+              <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
               <div className="p-6 text-center">
-                <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4 border border-emerald-100">
-                  <Check className="h-8 w-8" />
+                <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4 border border-emerald-100">
+                  <Check className="h-7 w-7" />
                 </div>
-                <h3 className="text-xl font-extrabold font-display text-slate-900">Evaluation Submitted!</h3>
+                <h3 className="text-lg sm:text-xl font-extrabold font-display text-slate-900">Evaluation Submitted!</h3>
                 <p className="text-xs text-slate-500 mt-2 leading-relaxed px-4">
-                  Thank you! Your feedback has been securely recorded.
+                  Thank you! Your feedback has been securely recorded and your student clearance updated.
                 </p>
               </div>
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-center">
                 <button 
                   onClick={successModalClose}
-                  className="px-6 py-2 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm w-full sm:w-auto"
+                  className="px-6 py-2.5 text-xs sm:text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all shadow-2xs w-full sm:w-auto cursor-pointer"
                 >
                   Return to List
                 </button>
