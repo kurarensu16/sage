@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import StudentRow from '../../components/StudentRow';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus } from 'lucide-react';
+import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
@@ -1260,54 +1260,63 @@ export default function ScoreInput() {
     <>
       {/* Header */}
       <PageHeader title="Log Class Scores" breadcrumb="Faculty Portal">
-        <button 
-          onClick={() => navigate(`/faculty/postedgradesview?id=${classRecordId}`)}
-          className="px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-lg transition-all flex items-center gap-1.5"
-        >
-          🔒 View Posted Grades
-        </button>
-        <button 
-          onClick={() => setShowPostModal(true)}
-          className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
-        >
-          <Lock className="h-4 w-4" /> Post Grades
-        </button>
-        <button 
-          onClick={() => setShowExportModal(true)}
-          className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
-        >
-          <FileSpreadsheet className="h-4 w-4" /> Export Grades
-        </button>
-        <button 
-          disabled={savingDrafts}
-          onClick={handleBulkSave}
-          className="px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50"
-        >
-          <Save className="h-4 w-4" /> {savingDrafts ? 'Saving...' : 'Save All Drafts'}
-        </button>
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
+          <button 
+            onClick={() => navigate(`/faculty/postedgradesview?id=${classRecordId}`)}
+            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+          >
+            <Lock className="h-3.5 w-3.5 text-slate-500" />
+            <span className="hidden sm:inline">View Posted</span>
+            <span className="sm:hidden">Posted</span>
+          </button>
+          <button 
+            onClick={() => setShowPostModal(true)}
+            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          >
+            <Lock className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Post Grades</span>
+            <span className="sm:hidden">Post</span>
+          </button>
+          <button 
+            onClick={() => setShowExportModal(true)}
+            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+            <span className="hidden sm:inline">Export</span>
+          </button>
+          <button 
+            disabled={savingDrafts}
+            onClick={handleBulkSave}
+            className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer whitespace-nowrap"
+          >
+            <Save className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{savingDrafts ? 'Saving...' : 'Save All Drafts'}</span>
+            <span className="sm:hidden">{savingDrafts ? 'Saving...' : 'Save'}</span>
+          </button>
+        </div>
       </PageHeader>
 
       {/* Content */}
-      <div className="p-8 overflow-y-auto flex-1 space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6">
         
         {/* Navigation Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm text-slate-500">
+        <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-slate-500">
           <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/faculty/classrecordslist')}>
             Class Records
           </span>
-          <ChevronRight className="h-3 w-3" />
-          <span className="font-medium text-slate-900">
+          <ChevronRight className="h-3 w-3 text-slate-400" />
+          <span className="font-medium text-slate-900 truncate">
             Score Spreadsheet — {subjectCode} ({sectionName})
           </span>
         </div>
 
         {/* selectors bar */}
-        <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col sm:flex-row flex-wrap sm:items-center gap-3 sm:gap-4 p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 bg-white shadow-2xs">
           
           {/* Class Record Display */}
-          <div className="flex flex-col gap-1 flex-1 min-w-[240px]">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
-            <div className="text-xs font-bold text-slate-800 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+          <div className="flex flex-col gap-1 flex-1 min-w-0">
+            <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
+            <div className="text-xs font-bold text-slate-800 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 truncate">
               {subjectCode} - {sectionName} ({subjectName})
             </div>
           </div>
@@ -1315,13 +1324,13 @@ export default function ScoreInput() {
           <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
 
           {/* View Mode Selector */}
-          <div className="flex flex-col gap-1 min-w-[200px]">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">View Period</label>
+          <div className="flex flex-col gap-1 min-w-[180px]">
+            <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">View Period</label>
             <div className="relative">
               <select
                 value={viewMode}
                 onChange={(e) => setViewMode(e.target.value)}
-                className="appearance-none w-full bg-white border border-slate-200 hover:border-sage-300 px-3 py-2 pr-8 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer text-slate-700"
+                className="appearance-none w-full bg-white border border-slate-200 hover:border-sage-300 px-3 py-2 pr-8 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer text-slate-700 shadow-2xs"
               >
                 <option value="All">All Terms (Side-by-Side)</option>
                 {periodsList.includes('Prelim') && <option value="Prelim">Preliminary Grade (Only)</option>}
@@ -1340,10 +1349,10 @@ export default function ScoreInput() {
 
           {/* Add Activity Button */}
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Grading Setup</label>
+            <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Grading Setup</label>
             <button
               onClick={() => setIsAddActivityModalOpen(true)}
-              className="px-4 py-2 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all flex items-center gap-1.5 shadow-sm"
+              className="px-3.5 py-2 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer whitespace-nowrap"
             >
               <Plus className="h-3.5 w-3.5" /> Add Activity
             </button>
@@ -1352,15 +1361,15 @@ export default function ScoreInput() {
           <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
 
           {/* Stats Overview */}
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 sm:gap-6 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
             <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</p>
+              <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</p>
               <p className="text-xs font-mono font-bold text-slate-800 mt-0.5">{students.length} Students</p>
             </div>
             <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Spreadsheet Mode</p>
-              <p className="text-xs font-mono font-bold text-emerald-700 mt-0.5">
-                {viewMode === 'All' ? 'All 4 Terms (Side-by-Side)' : `${viewMode} View`}
+              <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Spreadsheet Mode</p>
+              <p className="text-xs font-mono font-bold text-emerald-700 mt-0.5 truncate max-w-[140px]">
+                {viewMode === 'All' ? 'All 4 Terms' : `${viewMode} View`}
               </p>
             </div>
           </div>
@@ -1968,28 +1977,29 @@ export default function ScoreInput() {
       {(() => {
         const isTermFull = (activities[newActivityTerm] || []).length >= 6;
         return isAddActivityModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm text-left">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden">
-              <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-xs text-left animate-in fade-in duration-200">
+            <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
+              <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
+              <div className="px-5 sm:px-6 py-3.5 sm:py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 font-sans">
-                  <span>➕ Add Activity Column</span>
+                  <span>Add Activity Column</span>
                 </h3>
                 <button 
                   onClick={() => setIsAddActivityModalOpen(false)}
-                  className="text-slate-400 hover:text-slate-650 transition-colors text-lg font-semibold cursor-pointer"
+                  className="text-slate-400 hover:text-slate-650 transition-colors p-1 cursor-pointer"
                 >
-                  &times;
+                  <X className="h-5 w-5" />
                 </button>
               </div>
               
-              <div className="p-6 space-y-4">
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-[11px] text-slate-500 leading-relaxed">
-                  <strong>ℹ️ Grading Information:</strong> A maximum of 6 formative assessment slots can be created per term period to align with student grade report cards, offline template bounds, and official grade computation templates.
+              <div className="p-4 sm:p-6 space-y-3.5 sm:space-y-4 max-h-[75vh] overflow-y-auto">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-500 leading-relaxed">
+                  <strong>Grading Policy:</strong> A maximum of 6 formative assessment slots can be created per term period to align with student grade report cards.
                 </div>
 
                 {isTermFull && (
-                  <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3.5 text-xs leading-relaxed font-sans">
-                    <strong>🚫 Limit Reached:</strong> You have already added the maximum limit of 6 formative assessments for the <strong>{newActivityTerm}</strong> period. You cannot add any more.
+                  <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-3 text-xs leading-relaxed font-sans font-semibold">
+                    <strong>Limit Reached:</strong> You have already added the maximum limit of 6 formative assessments for the <strong>{newActivityTerm}</strong> period.
                   </div>
                 )}
 
@@ -1998,7 +2008,7 @@ export default function ScoreInput() {
                   <select
                     value={newActivityTerm}
                     onChange={(e) => setNewActivityTerm(e.target.value)}
-                    className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
+                    className="block w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer shadow-2xs"
                   >
                     {periodsList.includes('Prelim') && <option value="Prelim">Prelim</option>}
                     {periodsList.includes('Midterm') && <option value="Midterm">Midterm</option>}
@@ -2014,8 +2024,8 @@ export default function ScoreInput() {
                     disabled={isTermFull}
                     value={newActivityName}
                     onChange={(e) => setNewActivityName(e.target.value)}
-                    placeholder="e.g. Quizzes, Written Work 1, Nursing Care Plan"
-                    className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all disabled:bg-slate-50 disabled:text-slate-450"
+                    placeholder="e.g. Quizzes, Written Work 1, Case Analysis"
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all disabled:bg-slate-50 disabled:text-slate-450 shadow-2xs"
                   />
                 </div>
 
@@ -2027,7 +2037,7 @@ export default function ScoreInput() {
                     onChange={(e) => setNewActivityDescription(e.target.value)}
                     placeholder="Provide details about the coverage, instructions, or rubric of this activity..."
                     rows={2}
-                    className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all resize-none font-sans disabled:bg-slate-50 disabled:text-slate-450"
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all resize-none font-sans disabled:bg-slate-50 disabled:text-slate-450 shadow-2xs"
                   />
                 </div>
 
@@ -2040,16 +2050,16 @@ export default function ScoreInput() {
                     disabled={isTermFull}
                     value={newActivityMax}
                     onChange={(e) => setNewActivityMax(Number(e.target.value))}
-                    className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all font-mono disabled:bg-slate-50 disabled:text-slate-450"
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all font-mono disabled:bg-slate-50 disabled:text-slate-450 shadow-2xs"
                   />
                 </div>
               </div>
 
-              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+              <div className="px-4 sm:px-6 py-3.5 sm:py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
                 <button 
                   type="button"
                   onClick={() => setIsAddActivityModalOpen(false)}
-                  className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                  className="px-4 py-2.5 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -2057,7 +2067,7 @@ export default function ScoreInput() {
                   type="button"
                   disabled={isTermFull}
                   onClick={handleAddActivitySubmit}
-                  className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:text-slate-450 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm cursor-pointer"
+                  className="px-5 py-2.5 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:text-slate-450 text-white rounded-xl text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
                 >
                   Add Column
                 </button>
@@ -2067,36 +2077,36 @@ export default function ScoreInput() {
         );
       })()}
 
-
       {/* 🔒 Post Grades Term Picker and Confirmation Modal */}
       {showPostModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200 text-left">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
+            <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
+            <div className="px-5 sm:px-6 py-3.5 sm:py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 font-sans">
                 <Lock className="h-4 w-4 text-emerald-600" />
                 <span>Post Semestral Grades</span>
               </h3>
               <button 
                 onClick={() => setShowPostModal(false)}
-                className="text-slate-400 hover:text-slate-650 transition-colors text-lg font-semibold"
+                className="text-slate-400 hover:text-slate-650 transition-colors p-1 cursor-pointer"
               >
-                &times;
+                <X className="h-5 w-5" />
               </button>
             </div>
             
-            <div className="p-6 space-y-4">
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-[11px] text-amber-800 leading-relaxed space-y-2">
+            <div className="p-4 sm:p-6 space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-xs text-amber-800 leading-relaxed space-y-2">
                 <p><strong>⚠️ Action is irreversible:</strong> Finalizing and posting will lock this class record across all periods (Prelim, Midterm, Semi-Final, and Final).</p>
                 <p>The grades will be officially posted to the Dean's Office and released to students. Any subsequent adjustments will require formal Dean override approval.</p>
               </div>
             </div>
             
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+            <div className="px-4 sm:px-6 py-3.5 sm:py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
               <button
                 type="button"
                 onClick={() => setShowPostModal(false)}
-                className="px-4 py-2 text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg transition-colors font-sans"
+                className="px-4 py-2.5 text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl transition-colors font-sans cursor-pointer"
               >
                 Cancel
               </button>
@@ -2104,7 +2114,7 @@ export default function ScoreInput() {
                 type="button"
                 disabled={postingGrades}
                 onClick={handlePostGrades}
-                className="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors shadow-sm flex items-center gap-1.5 font-sans disabled:opacity-50"
+                className="px-5 py-2.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-colors shadow-2xs flex items-center gap-1.5 font-sans disabled:opacity-50 cursor-pointer"
               >
                 {postingGrades ? 'Posting...' : 'Confirm & Post'}
               </button>
@@ -2115,18 +2125,19 @@ export default function ScoreInput() {
 
       {/* Shared Success Popup Modal */}
       {showPopup && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl border border-slate-100 flex flex-col items-center text-center space-y-4 animate-in zoom-in-95 duration-200">
-            <div className="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 animate-in fade-in duration-200 sm:p-4 text-center">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl p-5 sm:p-6 max-w-sm w-full shadow-2xl border border-slate-100 flex flex-col items-center space-y-4 animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
+            <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full -mt-2 mb-1" />
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
               <Check className="h-6 w-6" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-lg font-bold text-slate-900 font-display">{popupTitle}</h3>
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 font-display">{popupTitle}</h3>
               <p className="text-xs text-slate-500">{popupDesc}</p>
             </div>
             <button
               onClick={() => setShowPopup(false)}
-              className="w-full py-2 bg-sage-600 hover:bg-sage-700 text-white font-medium text-sm rounded-xl transition-colors shadow-sm font-sans"
+              className="w-full py-2.5 bg-sage-600 hover:bg-sage-700 text-white font-semibold text-xs sm:text-sm rounded-xl transition-colors shadow-2xs font-sans cursor-pointer"
             >
               OK
             </button>

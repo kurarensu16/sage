@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
+import BottomNav from './BottomNav';
 import OfflineBadge from '../pwa/OfflineBadge';
 import { useAuth } from '../../lib/AuthContext';
 
@@ -36,14 +37,14 @@ export default function MainLayout() {
       <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
         <Topbar 
           toggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} 
-          toggleMobileSidebar={() => setMobileOpen(!mobileOpen)}
           isCollapsed={sidebarCollapsed} 
         />
-        <main className="flex-1 flex flex-col h-full overflow-y-auto min-w-0">
+        <main className="flex-1 flex flex-col h-full overflow-y-auto min-w-0 pb-20 lg:pb-0">
           <Outlet />
         </main>
       </div>
 
+      <BottomNav />
       <OfflineBadge />
     </div>
   );

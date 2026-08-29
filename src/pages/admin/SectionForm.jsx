@@ -245,37 +245,37 @@ export default function SectionForm() {
         breadcrumb="Admin Portal" 
       />
 
-      <div className="p-8 overflow-y-auto flex-1 max-w-2xl mx-auto w-full space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 max-w-2xl mx-auto w-full space-y-4 sm:space-y-6">
         
-        {/* Navigation Breadcrumb detail */}
-        <div className="flex items-center gap-2 text-sm text-slate-500">
+        {/* Navigation Breadcrumb */}
+        <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-500">
           <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/admin/sectionlist')}>
-            Sections Database
+            Section Management
           </span>
           <ChevronRight className="h-3 w-3" />
-          <span className="font-medium text-slate-900 font-sans">
-            {isEditMode ? "Edit Section" : "Pre-load Section"}
+          <span className="font-medium text-slate-900">
+            {isEditMode ? "Edit Section" : "New Section"}
           </span>
         </div>
 
         {errorMsg && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-lg text-sm font-semibold flex items-center gap-2">
+          <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3.5 sm:p-4 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2">
             <span>{errorMsg}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
-          <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-            <div className="p-2 bg-sage-50 text-sage-600 rounded-lg">
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 sm:p-6 space-y-4 sm:space-y-6">
+          <div className="flex items-center gap-3 pb-3 sm:pb-4 border-b border-slate-100">
+            <div className="p-2 bg-sage-50 text-sage-600 rounded-xl">
               <Layers className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold font-display text-slate-900">Section Configuration</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Configure target cohort and class sections databases.</p>
+              <h3 className="text-sm sm:text-base font-bold font-display text-slate-900">Section Configuration</h3>
+              <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">Configure target cohort and class sections databases.</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
             {/* Owner College */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Owner College <span className="text-rose-500">*</span></label>
@@ -283,7 +283,7 @@ export default function SectionForm() {
                 required
                 value={formData.departmentId}
                 onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
               >
                 <option value="">Select College...</option>
                 {allDepartments.map((dept) => (
@@ -300,7 +300,7 @@ export default function SectionForm() {
                 disabled={!formData.departmentId}
                 value={formData.programName}
                 onChange={(e) => setFormData({ ...formData, programName: e.target.value })}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer disabled:bg-slate-50 disabled:text-slate-400"
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer disabled:bg-slate-50 disabled:text-slate-400"
               >
                 <option value="">Select Program...</option>
                 {filteredPrograms.map((prog) => (
@@ -310,7 +310,7 @@ export default function SectionForm() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             {/* Year Level */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Year Level <span className="text-rose-500">*</span></label>
@@ -318,7 +318,7 @@ export default function SectionForm() {
                 required
                 value={formData.yearLevel}
                 onChange={(e) => setFormData({ ...formData, yearLevel: e.target.value })}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
               >
                 <option value="1st Year">1st Year</option>
                 <option value="2nd Year">2nd Year</option>
@@ -334,7 +334,7 @@ export default function SectionForm() {
                 required
                 value={formData.suffix}
                 onChange={(e) => setFormData({ ...formData, suffix: e.target.value })}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer font-mono"
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer font-mono"
               >
                 {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'].map((lettr) => (
                   <option key={lettr} value={lettr}>{lettr}</option>
@@ -344,24 +344,24 @@ export default function SectionForm() {
 
             {/* Generated Section Name */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Generated Section Name</label>
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Generated Section</label>
               <input 
                 type="text" 
                 disabled
                 value={formData.name || 'Select details...'}
-                className="block w-full px-3.5 py-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-sm cursor-not-allowed font-mono font-bold"
+                className="block w-full px-3.5 py-2 bg-slate-50 border border-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm cursor-not-allowed font-mono font-bold"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
             {/* School Year */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">School Year <span className="text-rose-500">*</span></label>
               <select
                 value={formData.schoolYear}
                 onChange={(e) => setFormData({...formData, schoolYear: e.target.value})}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer font-mono"
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer font-mono"
               >
                 <option value="2024-2025">2024-2025</option>
                 <option value="2025-2026">2025-2026</option>
@@ -375,7 +375,7 @@ export default function SectionForm() {
               <select
                 value={formData.semester}
                 onChange={(e) => setFormData({...formData, semester: e.target.value})}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
               >
                 <option value="1st">1st Semester</option>
                 <option value="2nd">2nd Semester</option>
@@ -385,18 +385,18 @@ export default function SectionForm() {
           </div>
 
           {/* Form Actions */}
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+          <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-2.5 sm:gap-3">
             <button 
               type="button" 
               onClick={() => navigate('/admin/sectionlist')}
-              className="px-4 py-2 border border-slate-200 text-slate-700 hover:border-slate-300 rounded-lg text-sm font-medium transition-colors"
+              className="w-full sm:w-auto px-4 py-2.5 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs sm:text-sm font-medium transition-colors cursor-pointer text-center"
             >
               Cancel
             </button>
             <button 
               type="submit" 
               disabled={loading}
-              className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50"
+              className="w-full sm:w-auto px-5 py-2.5 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-xs disabled:opacity-50 cursor-pointer"
             >
               <Save className="h-4 w-4" /> {loading ? "Saving..." : (isEditMode ? "Save Section Details" : "Pre-load Section")}
             </button>

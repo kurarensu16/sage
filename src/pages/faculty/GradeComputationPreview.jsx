@@ -425,81 +425,166 @@ export default function GradeComputationPreview() {
   return (
     <>
       <PageHeader title="Computation Preview" breadcrumb="Faculty Portal">
-        <button 
-          onClick={() => navigate(`/faculty/scoreinput?id=${classRecordId}`)}
-          className="px-4 py-2 text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
-        >
-          📝 Input Scores
-        </button>
-        <button 
-          onClick={() => setShowConfirmModal(true)}
-          disabled={lockedMilestones.includes('Semestral Grade') || postingGrades}
-          className="px-4 py-2 text-sm font-semibold text-white bg-sage-600 hover:bg-sage-700 disabled:opacity-50 rounded-lg transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
-        >
-          <Send className="h-4 w-4" /> {lockedMilestones.includes('Semestral Grade') ? 'Grades Posted' : 'Post Grades'}
-        </button>
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <button 
+            onClick={() => navigate(`/faculty/scoreinput?id=${classRecordId}`)}
+            className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+          >
+            <span className="hidden sm:inline">Input Scores</span>
+            <span className="sm:hidden">Scores</span>
+          </button>
+          <button 
+            onClick={() => setShowConfirmModal(true)}
+            disabled={lockedMilestones.includes('Semestral Grade') || postingGrades}
+            className="px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-white bg-sage-600 hover:bg-sage-700 disabled:opacity-50 rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer whitespace-nowrap"
+          >
+            <Send className="h-3.5 w-3.5" /> 
+            <span>{lockedMilestones.includes('Semestral Grade') ? 'Posted' : 'Post Grades'}</span>
+          </button>
+        </div>
       </PageHeader>
       
-      <div className="p-8 overflow-y-auto flex-1 space-y-6 relative">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 relative">
 
-          {/* Selector Bar */}
-          <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl border border-slate-200 bg-white shadow-sm">
-            {/* Class Record Selector */}
-            <div className="flex flex-col gap-1 flex-1 min-w-[240px]">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
-              <div className="relative">
-                <select
-                  value={classRecordId}
-                  onChange={(e) => handleClassChange(e.target.value)}
-                  className="appearance-none w-full bg-white border border-slate-200 hover:border-sage-300 px-3 py-2 pr-8 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer text-slate-700"
-                >
-                  {classesList.map(c => (
-                    <option key={c.class_record_id} value={c.class_record_id}>
-                      {c.subjects?.code} - {c.sections?.name} ({c.subjects?.name})
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
-
-            <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
-
-            {/* Stats Overview */}
-            <div className="flex items-center gap-6">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</p>
-                <p className="text-xs font-mono font-bold text-slate-800 mt-0.5">{students.length} Students</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Preview Mode</p>
-                <p className="text-xs font-mono font-bold text-amber-700 mt-0.5">Read-Only Spreadsheet View</p>
-              </div>
+        {/* Selector Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 bg-white shadow-2xs">
+          {/* Class Record Selector */}
+          <div className="flex flex-col gap-1 flex-1 min-w-0">
+            <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
+            <div className="relative">
+              <select
+                value={classRecordId}
+                onChange={(e) => handleClassChange(e.target.value)}
+                className="appearance-none w-full bg-white border border-slate-200 hover:border-sage-300 px-3 py-2 pr-8 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer text-slate-700 shadow-2xs"
+              >
+                {classesList.map(c => (
+                  <option key={c.class_record_id} value={c.class_record_id}>
+                    {c.subjects?.code} - {c.sections?.name} ({c.subjects?.name})
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
             </div>
           </div>
+
+          <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
+
+          {/* Stats Overview */}
+          <div className="flex items-center gap-4 sm:gap-6 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+            <div>
+              <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</p>
+              <p className="text-xs font-mono font-bold text-slate-800 mt-0.5">{students.length} Students</p>
+            </div>
+            <div>
+              <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Preview Mode</p>
+              <p className="text-xs font-mono font-bold text-amber-700 mt-0.5">Read-Only Summary</p>
+            </div>
+          </div>
+        </div>
         
         {/* Info Banner */}
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-4">
-            <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5 animate-pulse" />
-            <div className="text-left">
-                <h4 className="text-sm font-bold text-amber-800">Review Before Posting</h4>
-                <p className="text-sm text-amber-700 mt-1 leading-relaxed">
-                    Please review the computed grades carefully. Once you click <strong>Post Grades</strong>, they will be locked and visible to students. Any changes will require a formal Dean administrative override approval.
-                </p>
-            </div>
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 sm:p-4 flex items-start gap-3 shadow-2xs">
+          <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5 animate-pulse" />
+          <div className="text-left">
+            <h4 className="text-xs sm:text-sm font-bold text-amber-900 font-display">Review Before Posting</h4>
+            <p className="text-[11px] sm:text-xs text-amber-800 mt-0.5 leading-relaxed">
+              Please review computed grades carefully. Once posted, records are locked and visible to students. Modifications require formal Dean override approval.
+            </p>
+          </div>
         </div>
 
-        {/* Header Info */}
-        <div className="flex items-center gap-2 text-sm text-slate-505">
-            <Link to="/faculty/classrecordslist" className="hover:text-sage-600 transition-colors">Class Records</Link>
-            <ChevronRight className="h-3 w-3" />
-            <span className="font-semibold text-slate-900">
-              {classInfo?.subjects?.code} - {classInfo?.sections?.name} (Semestral Summary)
-            </span>
+        {/* ── Mobile Student Grades Card Feed (md:hidden) ─────────────────── */}
+        <div className="md:hidden space-y-3">
+          {students.map((student, idx) => {
+            const getTermRating = (termName) => {
+              const tSc = student.periods?.[termName] || {};
+              const tMx = maxItems[termName] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
+              const tCs = (tSc.act1 || 0) + (tSc.act2 || 0) + (tSc.act3 || 0) + (tSc.act4 || 0) + (tSc.act5 || 0) + (tSc.act6 || 0);
+              const tCsMx = tMx.act1 + tMx.act2 + tMx.act3 + tMx.act4 + tMx.act5 + tMx.act6;
+              const tCsP = tCsMx > 0 ? (tCs / tCsMx) * 50 : 0;
+              const tChP = (tSc.char || 0) * 0.1;
+              const tExP = tMx.exam > 0 ? ((tSc.exam || 0) / tMx.exam) * 40 : 0;
+              return Math.min(100, Math.max(0, Math.round(tCsP + tChP + tExP)));
+            };
+
+            const pRate = getTermRating('Prelim');
+            const mRate = getTermRating('Midterm');
+            const sfRate = getTermRating('Semi-Final');
+            const fRate = getTermRating('Final');
+
+            const mr = Math.round((pRate + mRate) / 2);
+            const tfr = Math.round((sfRate + fRate) / 2);
+            const sg = Math.round((mr + tfr) / 2);
+            const gwa = getTransmutedGrade(sg);
+            const isPassed = gwa <= 3.00;
+
+            return (
+              <div key={student.id} className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-3.5 space-y-3 text-left">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold text-slate-400">#{idx + 1}</span>
+                      <span className="font-bold text-slate-900 font-display text-xs sm:text-sm truncate">{student.name}</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-400 block mt-0.5">{student.studentNo}</span>
+                  </div>
+
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold border flex-shrink-0 ${
+                    isPassed 
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                  }`}>
+                    {isPassed ? 'Passed' : 'Failed'}
+                  </span>
+                </div>
+
+                {/* Term Ratings Grid */}
+                <div className="grid grid-cols-4 gap-1.5 py-2 border-y border-slate-100 text-center font-mono">
+                  <div className="bg-slate-50/80 p-1.5 rounded-xl border border-slate-150">
+                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Prelim</span>
+                    <span className="text-xs font-bold text-slate-800">{pRate}</span>
+                  </div>
+                  <div className="bg-slate-50/80 p-1.5 rounded-xl border border-slate-150">
+                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Midterm</span>
+                    <span className="text-xs font-bold text-slate-800">{mRate}</span>
+                  </div>
+                  <div className="bg-slate-50/80 p-1.5 rounded-xl border border-slate-150">
+                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Semis</span>
+                    <span className="text-xs font-bold text-slate-800">{sfRate}</span>
+                  </div>
+                  <div className="bg-slate-50/80 p-1.5 rounded-xl border border-slate-150">
+                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Final</span>
+                    <span className="text-xs font-bold text-slate-800">{fRate}</span>
+                  </div>
+                </div>
+
+                {/* Summary Scores */}
+                <div className="flex items-center justify-between text-xs font-mono pt-0.5">
+                  <div className="text-[11px] text-slate-500">
+                    <span>MR: <strong className="text-slate-800">{mr}</strong></span>
+                    <span className="mx-1.5">•</span>
+                    <span>TFR: <strong className="text-slate-800">{tfr}</strong></span>
+                    <span className="mx-1.5">•</span>
+                    <span>SG: <strong className="text-slate-900">{sg}</strong></span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">GWA:</span>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-lg font-mono ${
+                      isPassed ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
+                    }`}>
+                      {gwa.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
+        {/* ── Desktop Spreadsheet Table (hidden md:block) ─────────────────── */}
         {isFullScreen && <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsFullScreen(false)} />}
-        <div className={isFullScreen ? "fixed inset-4 z-50 rounded-xl border border-slate-200 shadow-2xl bg-white overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200" : "rounded-xl border border-slate-200 shadow-sm bg-white overflow-hidden flex flex-col w-full max-w-full"}>
+        <div className={isFullScreen ? "fixed inset-4 z-50 rounded-xl border border-slate-200 shadow-2xl bg-white overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200" : "hidden md:flex rounded-2xl border border-slate-200 shadow-2xs bg-white overflow-hidden flex-col w-full max-w-full"}>
             {/* Fullscreen header bar */}
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/80">
               <div className="flex items-center gap-2">
@@ -507,15 +592,13 @@ export default function GradeComputationPreview() {
                 <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                   {classInfo?.subjects?.code} - {classInfo?.sections?.name}
                 </span>
-                {isFullScreen && (
-                  <span className="text-[10px] font-medium text-slate-400 ml-2">
-                    Semestral Summary · {students.length} students
-                  </span>
-                )}
+                <span className="text-[10px] font-medium text-slate-400 ml-2">
+                  Semestral Summary · {students.length} students
+                </span>
               </div>
               <button
                 onClick={() => setIsFullScreen(!isFullScreen)}
-                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-sage-50 hover:border-sage-300 text-slate-550 hover:text-slate-700 transition-all cursor-pointer"
+                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-sage-50 hover:border-sage-300 text-slate-505 hover:text-slate-700 transition-all cursor-pointer"
                 title={isFullScreen ? 'Exit fullscreen' : 'View fullscreen'}
               >
                 {isFullScreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
@@ -528,35 +611,18 @@ export default function GradeComputationPreview() {
                             <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-10 sticky left-0 bg-slate-50 z-30">No.</th>
                             <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24 sticky left-[40px] bg-slate-50 z-30">Student No.</th>
                             <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-[136px] bg-slate-50 border-r border-slate-200 z-30 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
-                            {/* Prelim Period */}
                             <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
-                            
-                            {/* Midterm Period */}
                             <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">MIDTERM GRADE</th>
-                            
-                            {/* Midterm Rating */}
                             <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-indigo-100 text-indigo-950 font-bold uppercase tracking-wider w-16">Midterm Rating (MR)</th>
-                            
-                            {/* Semi-Final Period */}
                             <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-amber-50 text-amber-850">SEMI-FINAL GRADE</th>
-                            
-                            {/* Final Period */}
                             <th colSpan={12} className="px-4 py-2 border-r border-slate-200 bg-orange-50 text-orange-850">FINAL GRADE</th>
-                            
-                            {/* Tentative Final Rating */}
                             <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-orange-100 text-orange-950 font-bold uppercase tracking-wider w-16">Tentative Final Rating (TFR)</th>
-                            
-                            {/* Semestral Grade */}
                             <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-50 text-emerald-800 font-extrabold uppercase tracking-wider w-16">Semestral Grade (SG)</th>
-                            
-                            {/* Equivalent (GWA) */}
                             <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-16">Equivalent GWA</th>
-                            
-                            {/* Remarks */}
                             <th rowSpan={2} className="px-4 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-20">Remarks</th>
                         </tr>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
-                          {/* Prelim sub-headers */}
+                          {/* Prelim */}
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
@@ -570,7 +636,7 @@ export default function GradeComputationPreview() {
                           <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                           <th className="px-2 py-1.5 border-r border-slate-200 bg-sky-100/30 font-bold w-14 text-slate-800">Rating</th>
 
-                          {/* Midterm sub-headers */}
+                          {/* Midterm */}
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
@@ -584,7 +650,7 @@ export default function GradeComputationPreview() {
                           <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                           <th className="px-2 py-1.5 border-r border-slate-200 bg-indigo-100/30 font-bold w-14 text-slate-800">Rating</th>
 
-                          {/* Semi-Final sub-headers */}
+                          {/* Semi-Final */}
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
@@ -598,7 +664,7 @@ export default function GradeComputationPreview() {
                           <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                           <th className="px-2 py-1.5 border-r border-slate-200 bg-amber-100/30 font-bold w-14 text-slate-800">Rating</th>
 
-                          {/* Final sub-headers */}
+                          {/* Final */}
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">1</th>
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">2</th>
                           <th className="px-1 py-1.5 border-r border-slate-100 w-12">3</th>
@@ -631,37 +697,43 @@ export default function GradeComputationPreview() {
         
         {/* Confirmation Modal */}
         {showConfirmModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-                <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                    <div className="p-6 text-left">
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xs sm:p-4 animate-in fade-in duration-200 text-left">
+                <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
+                    <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
+                    <div className="p-5 sm:p-6 text-left">
                         <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 rounded-full bg-sage-50 text-sage-600 flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-2xl bg-sage-50 text-sage-600 flex items-center justify-center flex-shrink-0">
                                 <Send className="h-5 w-5" />
                             </div>
                             <div>
-                                <h3 className="text-lg font-bold text-slate-900">Post Semestral Grades</h3>
-                                <p className="text-xs text-slate-455 font-semibold">Finalize scores and lock editing for all term milestones.</p>
+                                <h3 className="text-base sm:text-lg font-bold text-slate-900 font-display">Post Semestral Grades</h3>
+                                <p className="text-xs text-slate-450 font-medium">Finalize scores and lock editing for all term milestones.</p>
                             </div>
                         </div>
 
-                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 leading-relaxed space-y-2">
+                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 sm:p-4 text-xs text-amber-800 leading-relaxed space-y-2">
                             <p><strong>⚠️ Action is irreversible:</strong> Finalizing and posting will lock this class record (<strong>{classInfo?.subjects?.code} - {classInfo?.sections?.name}</strong>) across all periods.</p>
                             <p>Once posted, these grades will be visible to students. Any subsequent changes will require formal Dean administrative override approval.</p>
                         </div>
-                    </div>
-                    <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-                        <button 
-                          onClick={() => setShowConfirmModal(false)}
-                          className="px-4 py-2 text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                        <button 
-                          onClick={handlePostGrades}
-                          className="px-4 py-2 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Send className="h-3.5 w-3.5" /> Confirm & Post Grades
-                        </button>
+
+                        <div className="mt-5 sm:mt-6 flex items-center justify-end gap-2.5">
+                            <button
+                                type="button"
+                                onClick={() => setShowConfirmModal(false)}
+                                className="px-4 py-2.5 text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={postingGrades}
+                                onClick={handlePostGrades}
+                                className="px-5 py-2.5 text-xs font-semibold text-white bg-sage-600 hover:bg-sage-700 disabled:opacity-50 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                            >
+                                <Send className="h-3.5 w-3.5" />
+                                {postingGrades ? 'Posting...' : 'Confirm & Post'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

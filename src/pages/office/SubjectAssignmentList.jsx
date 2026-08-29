@@ -854,7 +854,93 @@ export default function SubjectAssignmentList() {
         </div>
 
         {/* Classrooms Grid/Table */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        
+        {/* Mobile View Card Feed */}
+        <div className="md:hidden space-y-3">
+          {filteredClassrooms.length > 0 ? (
+            filteredClassrooms.map((cls) => (
+              <div key={cls.id} className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-2xs space-y-3 text-left">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm font-bold text-slate-900">{cls.subjectCode}</span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                        {cls.section}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 truncate">{cls.subjectName}</p>
+                  </div>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${
+                    cls.status === 'active' 
+                      ? 'bg-blue-50 text-blue-700 border-blue-200' 
+                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                  }`}>
+                    {cls.status === 'active' ? 'Active' : 'Archived'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Instructor</span>
+                    <div className="mt-0.5">
+                      {cls.facultyName === 'Unassigned' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+                          <AlertTriangle className="h-3 w-3 text-amber-500" /> Unassigned
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-medium text-slate-800 truncate block">
+                          Prof. {cls.facultyName}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Enrolled Students</span>
+                    <span className="text-sm font-bold font-mono text-slate-900 mt-0.5 block">{cls.enrolledCount}</span>
+                  </div>
+                </div>
+
+                {/* Mobile Actions Button Group */}
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
+                  {cls.status === 'active' ? (
+                    <>
+                      <button
+                        onClick={() => handleOpenManageStudents(cls)}
+                        className="px-3 py-1.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Users className="h-3.5 w-3.5 text-blue-500" />
+                        Students ({cls.enrolledCount})
+                      </button>
+                      <button
+                        onClick={() => handleOpenReassign(cls)}
+                        className="px-3 py-1.5 text-xs font-semibold bg-sage-50 hover:bg-sage-100 text-sage-700 rounded-lg border border-sage-200 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <UserCheck className="h-3.5 w-3.5" />
+                        Reassign
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => triggerRestoreConfirm(cls)}
+                      className="px-3 py-1.5 text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg border border-emerald-200 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Restore
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="p-8 text-center bg-white border border-slate-200 rounded-2xl text-slate-400 text-xs">
+              No classrooms found matching your filters.
+            </div>
+          )}
+        </div>
+
+        {/* Desktop Table View */}
+        <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="table-container overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">
@@ -1003,8 +1089,9 @@ export default function SubjectAssignmentList() {
 
       {/* Manage Students Modal */}
       {isManageStudentsOpen && selectedClassForStudents && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl border border-slate-200 max-w-2xl w-full shadow-lg flex flex-col overflow-hidden max-h-[90vh]">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 max-w-2xl w-full shadow-2xl flex flex-col overflow-hidden max-h-[88vh] sm:max-h-[90vh] animate-in fade-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200">
+            <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
             
             {/* Modal Header */}
             <div className="p-5 border-b border-slate-100 flex items-center justify-between">

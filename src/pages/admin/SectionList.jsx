@@ -279,13 +279,13 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
         </div>
       </PageHeader>
 
-      <div className="p-8 overflow-y-auto flex-1 space-y-6">
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-3">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6">
+        <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 flex gap-3">
           <Layers className="h-5 w-5 text-sage-600 mt-0.5 flex-shrink-0" />
           <div>
-            <h4 className="font-bold text-sm text-slate-900 font-display">Sections Pre-loading Flow</h4>
-            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-              Define academic sections and target cohorts for the current semester. Pre-loading sections here enables the grouping of students under clear classroom records for gradings and evaluations.
+            <h4 className="font-bold text-xs sm:text-sm text-slate-900 font-display">Sections Pre-loading Flow</h4>
+            <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 leading-relaxed">
+              Define academic sections and target cohorts for the current semester. Pre-loading sections enables the grouping of students under classroom records.
             </p>
           </div>
         </div>
@@ -299,15 +299,15 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors"
-            placeholder="Search by section name..."
+            className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors"
+            placeholder="Search by section or program..."
           />
         </div>
 
         {/* ── Filter Bar ─────────────────────────────────────────────── */}
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm px-4 py-3 flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider flex-shrink-0">
-            <SlidersHorizontal className="h-3.5 w-3.5" />
+        <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs p-3 sm:px-4 sm:py-3 flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 text-[11px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider flex-shrink-0">
+            <SlidersHorizontal className="h-3.5 w-3.5 text-sage-600" />
             Filter by
             {activeFilterCount > 0 && (
               <span className="ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-sage-600 text-white text-[9px] font-bold">
@@ -318,13 +318,13 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
 
           <div className="w-px h-5 bg-slate-200 hidden sm:block" />
 
-          {/* College */}
-          <div className="flex flex-col gap-0.5 min-w-[180px]">
+          {/* College Filter */}
+          <div className="flex flex-col gap-0.5 min-w-[130px] flex-1 sm:flex-none">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">College</span>
             <select
               value={deptFilter}
-              onChange={e => { setDeptFilter(e.target.value); setFilterProgram(''); }}
-              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer"
+              onChange={(e) => setDeptFilter(e.target.value)}
+              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer w-full"
             >
               <option value="">All Colleges</option>
               {uniqueColleges.map(c => (
@@ -333,32 +333,30 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
             </select>
           </div>
 
-          {/* Program */}
-          <div className="flex flex-col gap-0.5 min-w-[140px]">
+          {/* Program Filter */}
+          <div className="flex flex-col gap-0.5 min-w-[130px] flex-1 sm:flex-none">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Program</span>
             <select
               value={filterProgram}
-              onChange={e => setFilterProgram(e.target.value)}
-              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer"
+              onChange={(e) => setFilterProgram(e.target.value)}
+              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer w-full"
             >
               <option value="">All Programs</option>
-              {uniquePrograms
-                .filter(p => !deptFilter || sections.some(s => s.department === deptFilter && s.programPrefix === p))
-                .map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
+              {uniquePrograms.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
             </select>
           </div>
 
           {/* Year Level */}
-          <div className="flex flex-col gap-0.5 min-w-[130px]">
+          <div className="flex flex-col gap-0.5 min-w-[100px] flex-1 sm:flex-none">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Year Level</span>
             <select
               value={filterYearLevel}
-              onChange={e => setFilterYearLevel(e.target.value)}
-              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer"
+              onChange={(e) => setFilterYearLevel(e.target.value)}
+              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer w-full"
             >
-              <option value="">All Year Levels</option>
+              <option value="">All Years</option>
               {yearLevels.map(y => (
                 <option key={y} value={y}>{y}</option>
               ))}
@@ -366,28 +364,28 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
           </div>
 
           {/* Semester */}
-          <div className="flex flex-col gap-0.5 min-w-[130px]">
+          <div className="flex flex-col gap-0.5 min-w-[100px] flex-1 sm:flex-none">
             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Semester</span>
             <select
               value={semFilter}
-              onChange={e => setSemFilter(e.target.value)}
-              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer"
+              onChange={(e) => setSemFilter(e.target.value)}
+              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer w-full"
             >
               <option value="">All Semesters</option>
-              <option value="1st">1st Semester</option>
-              <option value="2nd">2nd Semester</option>
+              <option value="1st">1st Sem</option>
+              <option value="2nd">2nd Sem</option>
               <option value="Summer">Summer</option>
             </select>
           </div>
 
           {/* Clear + result count */}
-          <div className="ml-auto flex items-center gap-3">
+          <div className="w-full sm:w-auto sm:ml-auto flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
             {activeFilterCount > 0 && (
               <button
                 onClick={clearFilters}
-                className="flex items-center gap-1 text-xs font-semibold text-rose-500 hover:text-rose-700 transition-colors"
+                className="flex items-center gap-1 text-xs font-semibold text-rose-500 hover:text-rose-700 transition-colors cursor-pointer"
               >
-                <X className="h-3 w-3" /> Clear Filters
+                <X className="h-3.5 w-3.5" /> Clear
               </button>
             )}
             <span className="text-xs text-slate-400 font-mono">
@@ -396,8 +394,64 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
           </div>
         </div>
 
-        {/* Sections Table */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* ── Mobile Card List View (md:hidden) ── */}
+        <div className="md:hidden space-y-3">
+          {filteredSections.length > 0 ? (
+            filteredSections.map((sec) => (
+              <div 
+                key={sec.id} 
+                className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs space-y-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-sage-50 text-sage-800 border border-sage-200">
+                        {sec.name}
+                      </span>
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
+                        AY {sec.schoolYear} • {sec.semester} Sem
+                      </span>
+                    </div>
+                    <h3 className="text-sm font-bold font-display text-slate-900 leading-snug">
+                      {sec.program || PROGRAM_NAMES[(sec.programPrefix || '').toUpperCase()] || 'General Program'}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-xs text-slate-500 truncate">
+                    {sec.department === 'College of IT' || sec.department === 'College of CS' ? 'College of Computer Studies' : sec.department}
+                  </span>
+
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button 
+                      onClick={() => navigate(`/admin/sectionform?id=${sec.id}`)}
+                      title="Edit Section"
+                      className="p-2 text-slate-600 hover:text-sage-700 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 transition-colors cursor-pointer"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </button>
+
+                    <button 
+                      onClick={() => handleDeleteSection(sec.id, sec.name)}
+                      title="Delete Section"
+                      className="p-2 text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-200/90 p-8 text-center text-slate-400 text-xs">
+              No sections registered. Click "Pre-load Section" or "Import CSV" to create one.
+            </div>
+          )}
+        </div>
+
+        {/* ── Desktop Sections Table (hidden md:block) ── */}
+        <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="table-container overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">
@@ -465,13 +519,18 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
 
       {/* CSV Import Modal */}
       {isImportOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl border border-slate-200 max-w-2xl w-full shadow-lg flex flex-col overflow-hidden max-h-[90vh]">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center sm:p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 max-w-2xl w-full shadow-2xl flex flex-col overflow-hidden max-h-[88vh] sm:max-h-[90vh] animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
             
+            {/* Mobile grab handle */}
+            <div className="sm:hidden pt-3 pb-1 flex justify-center">
+              <div className="w-10 h-1.25 bg-slate-300 rounded-full" />
+            </div>
+
             {/* Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-base font-bold font-display text-slate-900 flex items-center gap-2">
-                <FileSpreadsheet className="h-5 w-5 text-sage-600" /> Batch Import Sections (CSV)
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm sm:text-base font-bold font-display text-slate-900 flex items-center gap-2">
+                <FileSpreadsheet className="h-4 w-4 sm:h-5 sm:w-5 text-sage-600" /> Batch Import Sections (CSV)
               </h3>
               <button 
                 onClick={() => {

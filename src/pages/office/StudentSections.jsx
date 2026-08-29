@@ -636,49 +636,39 @@ export default function StudentSections() {
                   <span>Loading enrolled subjects...</span>
                 </div>
               ) : enrolledSubjects.length === 0 ? (
-                <div className="py-10 text-center border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs bg-slate-50/50 space-y-1">
+                <div className="py-10 text-center border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 text-xs bg-slate-50/50 space-y-1">
                   <p className="font-bold text-slate-600 text-sm font-display">No enrolled subjects found</p>
                   <p className="text-slate-400 max-w-md mx-auto">
                     This student currently has 0 active classroom enrollments. Select subjects from the catalog below to build their schedule.
                   </p>
                 </div>
               ) : (
-                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
-                      <tr>
-                        <th className="px-4 py-3">Subject Code & Description</th>
-                        <th className="px-4 py-3">Section</th>
-                        <th className="px-4 py-3">Instructor</th>
-                        <th className="px-4 py-3 text-center">Units</th>
-                        <th className="px-4 py-3 text-center">Status</th>
-                        <th className="px-4 py-3 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {enrolledSubjects.map((sub) => (
-                        <tr key={sub.enrollmentId} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="px-4 py-3">
-                            <div className="font-bold text-slate-800 font-mono">{sub.subjectCode}</div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">{sub.subjectName}</div>
-                          </td>
-                          <td className="px-4 py-3 font-semibold text-slate-700">
-                            <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded-md font-mono text-[11px]">
-                              {sub.sectionName}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-slate-600 font-medium">
+                <div className="space-y-3">
+                  {/* Mobile Enrolled Subjects Card Feed */}
+                  <div className="md:hidden space-y-2.5">
+                    {enrolledSubjects.map((sub) => (
+                      <div key={sub.enrollmentId} className="bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-2xs space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-900 font-mono text-xs">{sub.subjectCode}</span>
+                              <span className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded font-mono text-[10px] font-bold text-slate-700">
+                                {sub.sectionName}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-600 mt-0.5 truncate">{sub.subjectName}</p>
+                          </div>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                            Active
+                          </span>
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                          <div className="text-slate-500 text-[11px] truncate max-w-[180px]">
                             {sub.facultyName}
-                          </td>
-                          <td className="px-4 py-3 text-center font-mono font-bold text-slate-700">
-                            {sub.units.toFixed(1)}
-                          </td>
-                          <td className="px-4 py-3 text-center">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              Active
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right">
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-slate-700 text-xs">{sub.units.toFixed(1)} Units</span>
                             <button
                               onClick={() => {
                                 setConfirmConfig({
@@ -693,17 +683,81 @@ export default function StudentSections() {
                                   onConfirm: () => executeDropSubject(sub)
                                 });
                               }}
-                              className="px-2.5 py-1 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-md font-bold text-[11px] transition-colors inline-flex items-center gap-1"
+                              className="px-2.5 py-1 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg font-bold text-[10px] transition-colors inline-flex items-center gap-1 cursor-pointer"
                               title="Drop Subject"
                             >
                               <Trash2 className="h-3 w-3" />
                               <span>Drop</span>
                             </button>
-                          </td>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
+                        <tr>
+                          <th className="px-4 py-3">Subject Code &amp; Description</th>
+                          <th className="px-4 py-3">Section</th>
+                          <th className="px-4 py-3">Instructor</th>
+                          <th className="px-4 py-3 text-center">Units</th>
+                          <th className="px-4 py-3 text-center">Status</th>
+                          <th className="px-4 py-3 text-right">Action</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {enrolledSubjects.map((sub) => (
+                          <tr key={sub.enrollmentId} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-4 py-3">
+                              <div className="font-bold text-slate-800 font-mono">{sub.subjectCode}</div>
+                              <div className="text-[11px] text-slate-500 mt-0.5">{sub.subjectName}</div>
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-slate-700">
+                              <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded-md font-mono text-[11px]">
+                                {sub.sectionName}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-slate-600 font-medium">
+                              {sub.facultyName}
+                            </td>
+                            <td className="px-4 py-3 text-center font-mono font-bold text-slate-700">
+                              {sub.units.toFixed(1)}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Active
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <button
+                                onClick={() => {
+                                  setConfirmConfig({
+                                    title: 'Drop Subject Enrollment',
+                                    message: (
+                                      <span>
+                                        Are you sure you want to drop <strong className="text-slate-800 font-semibold">{sub.subjectCode} ({sub.sectionName})</strong> for <strong className="text-slate-800 font-semibold">{selectedStudent.first_name} {selectedStudent.last_name}</strong>? This will remove the student from the instructor's gradebook.
+                                      </span>
+                                    ),
+                                    confirmText: 'Drop Subject',
+                                    confirmBg: 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500',
+                                    onConfirm: () => executeDropSubject(sub)
+                                  });
+                                }}
+                                className="px-2.5 py-1 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-md font-bold text-[11px] transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                title="Drop Subject"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                                <span>Drop</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>

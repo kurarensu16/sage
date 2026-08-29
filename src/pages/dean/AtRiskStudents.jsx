@@ -428,55 +428,49 @@ export default function AtRiskStudents() {
           </div>
         )}
 
-        {/* ── Data table ── */}
+        {/* ── Data Feed (Mobile Cards + Desktop Table) ── */}
         {!loading && (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Student</th>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Program</th>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Section</th>
-                    <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Running GWA</th>
-                    <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">AI Recommendation / Advisory</th>
-                    <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Early Warning</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-100">
-                  {filtered.length > 0 ? (
-                    filtered.map(s => (
-                      <tr key={s.id} className={`hover:bg-slate-50/40 transition-colors ${s.severity === 'high' ? 'bg-rose-50/20' : ''}`}>
+          <div className="space-y-3">
+            
+            {/* Mobile View Card Feed */}
+            <div className="md:hidden space-y-3">
+              {filtered.length > 0 ? (
+                filtered.map(s => (
+                  <div 
+                    key={s.id} 
+                    className={cn(
+                      "bg-white rounded-2xl border p-4 shadow-2xs space-y-3 transition-all",
+                      s.severity === 'high' ? 'border-rose-200 bg-rose-50/15' : 'border-slate-200/90'
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center font-mono shrink-0">
+                          {s.firstName[0]}{s.lastName[0]}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-slate-900 truncate">{s.firstName} {s.lastName}</p>
+                          <p className="text-[10px] text-slate-400 font-mono truncate">{s.email}</p>
+                        </div>
+                      </div>
+                      <SeverityBadge severity={s.severity} />
+                    </div>
 
-                        {/* Student name + initials */}
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[10px] flex items-center justify-center font-mono flex-shrink-0">
-                              {s.firstName[0]}{s.lastName[0]}
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold text-slate-900">{s.firstName} {s.lastName}</p>
-                              <p className="text-[10px] text-slate-400 font-mono">{s.email}</p>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Program code */}
-                        <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-600 font-medium">
-                          {s.programCode}
-                        </td>
-
-                        {/* Section */}
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100/80 text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Section &amp; Program</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
                             {s.section}
                           </span>
-                        </td>
-
-                        {/* Running GWA */}
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <span className="text-slate-500 text-[11px]">{s.programCode}</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Running GWA</span>
+                        <div className="mt-0.5">
                           {s.runningGwa !== null ? (
-                            <span className="inline-flex items-center justify-center gap-1.5">
+                            <span className="inline-flex items-center gap-1">
                               <span className={`text-sm font-mono font-bold ${
                                 s.runningGwa > 3.00 ? 'text-rose-700' :
                                 s.runningGwa >= 2.75 ? 'text-amber-700' :
@@ -485,62 +479,149 @@ export default function AtRiskStudents() {
                                 {s.runningGwa.toFixed(2)}
                               </span>
                               {s.isTentative && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="Computed from unposted/draft term scores">
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                                   Tentative
-                                </span>
-                              )}
-                              {s.failingCount > 0 && (
-                                <span className="text-[10px] text-rose-500 font-medium">
-                                  ({s.failingCount} failing)
                                 </span>
                               )}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center justify-center gap-1.5">
-                              <span className="text-xs text-slate-400 font-medium italic">No grades yet</span>
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="No grades posted yet (Drafts pending)">
-                                Tentative
-                              </span>
-                            </span>
+                            <span className="text-xs text-slate-400 font-medium italic">No grades yet</span>
                           )}
-                        </td>
+                        </div>
+                      </div>
+                    </div>
 
-                        {/* AI Advisory */}
-                        <td className="px-6 py-4 text-xs text-slate-600 font-sans max-w-sm">
-                          <div className="flex items-start gap-1.5">
-                            <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${s.hasAi ? 'text-violet-500' : 'text-slate-400'}`} />
-                            <span className={s.hasAi ? 'text-slate-700' : 'text-slate-500 italic'}>
-                              {s.advisory}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Severity badge */}
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <SeverityBadge severity={s.severity} />
-                        </td>
-
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="6" className="px-6 py-12 text-center">
-                        <AlertCircle className="h-8 w-8 text-slate-200 mx-auto mb-2" />
-                        <p className="text-sm text-slate-400">No at-risk student records match the current filters.</p>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                    {/* AI Advisory */}
+                    <div className="p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs flex items-start gap-2">
+                      <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${s.hasAi ? 'text-violet-500' : 'text-slate-400'}`} />
+                      <span className={`text-[11px] leading-relaxed ${s.hasAi ? 'text-slate-700' : 'text-slate-500 italic'}`}>
+                        {s.advisory}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="p-8 text-center bg-white border border-slate-200 rounded-2xl">
+                  <AlertCircle className="h-8 w-8 text-slate-200 mx-auto mb-2" />
+                  <p className="text-xs text-slate-400">No at-risk student records match the current filters.</p>
+                </div>
+              )}
             </div>
 
-            {/* Table footer — result count */}
-            {filtered.length > 0 && (
-              <div className="border-t border-slate-100 px-6 py-3 bg-slate-50/50 text-xs text-slate-400">
-                Showing <span className="font-bold text-slate-600">{filtered.length}</span> of{' '}
-                <span className="font-bold text-slate-600">{students.length}</span> students in {deanCollege}
+            {/* Desktop Table View */}
+            <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Student</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Program</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Section</th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Running GWA</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">AI Recommendation / Advisory</th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Early Warning</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-slate-100">
+                    {filtered.length > 0 ? (
+                      filtered.map(s => (
+                        <tr key={s.id} className={`hover:bg-slate-50/40 transition-colors ${s.severity === 'high' ? 'bg-rose-50/20' : ''}`}>
+
+                          {/* Student name + initials */}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[10px] flex items-center justify-center font-mono flex-shrink-0">
+                                {s.firstName[0]}{s.lastName[0]}
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900">{s.firstName} {s.lastName}</p>
+                                <p className="text-[10px] text-slate-400 font-mono">{s.email}</p>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Program code */}
+                          <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-600 font-medium">
+                            {s.programCode}
+                          </td>
+
+                          {/* Section */}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                              {s.section}
+                            </span>
+                          </td>
+
+                          {/* Running GWA */}
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            {s.runningGwa !== null ? (
+                              <span className="inline-flex items-center justify-center gap-1.5">
+                                <span className={`text-sm font-mono font-bold ${
+                                  s.runningGwa > 3.00 ? 'text-rose-700' :
+                                  s.runningGwa >= 2.75 ? 'text-amber-700' :
+                                  'text-slate-900'
+                                }`}>
+                                  {s.runningGwa.toFixed(2)}
+                                </span>
+                                {s.isTentative && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="Computed from unposted/draft term scores">
+                                    Tentative
+                                  </span>
+                                )}
+                                {s.failingCount > 0 && (
+                                  <span className="text-[10px] text-rose-500 font-medium">
+                                    ({s.failingCount} failing)
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center justify-center gap-1.5">
+                                <span className="text-xs text-slate-400 font-medium italic">No grades yet</span>
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="No grades posted yet (Drafts pending)">
+                                  Tentative
+                                </span>
+                              </span>
+                            )}
+                          </td>
+
+                          {/* AI Advisory */}
+                          <td className="px-6 py-4 text-xs text-slate-600 font-sans max-w-sm">
+                            <div className="flex items-start gap-1.5">
+                              <Sparkles className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${s.hasAi ? 'text-violet-500' : 'text-slate-400'}`} />
+                              <span className={s.hasAi ? 'text-slate-700' : 'text-slate-500 italic'}>
+                                {s.advisory}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Severity badge */}
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <SeverityBadge severity={s.severity} />
+                          </td>
+
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="6" className="px-6 py-12 text-center">
+                          <AlertCircle className="h-8 w-8 text-slate-200 mx-auto mb-2" />
+                          <p className="text-sm text-slate-400">No at-risk student records match the current filters.</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
-            )}
+
+              {/* Table footer — result count */}
+              {filtered.length > 0 && (
+                <div className="border-t border-slate-100 px-6 py-3 bg-slate-50/50 text-xs text-slate-400">
+                  Showing <span className="font-bold text-slate-600">{filtered.length}</span> of{' '}
+                  <span className="font-bold text-slate-600">{students.length}</span> students in {deanCollege}
+                </div>
+              )}
+            </div>
+
           </div>
         )}
 

@@ -281,38 +281,38 @@ export default function SubjectForm() {
         breadcrumb="Admin Portal" 
       />
 
-      <div className="p-8 overflow-y-auto flex-1 max-w-2xl mx-auto w-full space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 max-w-2xl mx-auto w-full space-y-4 sm:space-y-6">
         
-        {/* Navigation Breadcrumb detail */}
-        <div className="flex items-center gap-2 text-sm text-slate-500">
+        {/* Navigation Breadcrumb */}
+        <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-500">
           <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/admin/subjectlist')}>
-            Subjects Database
+            Subject Management
           </span>
           <ChevronRight className="h-3 w-3" />
-          <span className="font-medium text-slate-900 font-sans">
-            {isEditMode ? "Edit Subject" : "Pre-load Subject"}
+          <span className="font-medium text-slate-900">
+            {isEditMode ? "Edit Subject" : "New Subject"}
           </span>
         </div>
 
         {errorMsg && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-lg text-sm font-semibold flex items-center gap-2">
+          <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3.5 sm:p-4 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2">
             <span>{errorMsg}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
-          <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-            <div className="p-2 bg-sage-50 text-sage-600 rounded-lg">
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 sm:p-6 space-y-4 sm:space-y-6">
+          <div className="flex items-center gap-3 pb-3 sm:pb-4 border-b border-slate-100">
+            <div className="p-2 bg-sage-50 text-sage-600 rounded-xl">
               <BookOpen className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold font-display text-slate-900">Subject Configuration</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Define subject properties in the school year database.</p>
+              <h3 className="text-sm sm:text-base font-bold font-display text-slate-900">Subject Configuration</h3>
+              <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">Define subject properties in the school year database.</p>
             </div>
           </div>
 
           {/* Group 1: College & Program (2 columns) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
             {/* Owner College */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Owner College <span className="text-rose-500">*</span></label>
@@ -320,7 +320,7 @@ export default function SubjectForm() {
                 required
                 value={formData.departmentId}
                 onChange={(e) => setFormData({...formData, departmentId: e.target.value})}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
               >
                 <option value="">Select College</option>
                 {allDepartments.map(dept => (
@@ -336,7 +336,7 @@ export default function SubjectForm() {
                 required
                 value={formData.programName}
                 onChange={(e) => setFormData({...formData, programName: e.target.value})}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
                 disabled={!formData.departmentId}
               >
                 <option value="">Select Program</option>
@@ -353,7 +353,7 @@ export default function SubjectForm() {
             <select
               value={formData.computationId}
               onChange={(e) => setFormData({...formData, computationId: e.target.value})}
-              className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+              className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
             >
               <option value="">No Template (Professor Defaults Standard)</option>
               {allComputations.map(comp => (
@@ -363,16 +363,16 @@ export default function SubjectForm() {
           </div>
 
           {/* Group 2: Prefix, Year Level, Semester, Code (4 columns) */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
             {/* Subject Prefix */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Subject Prefix <span className="text-rose-500">*</span></label>
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Prefix <span className="text-rose-500">*</span></label>
               <input 
                 type="text" 
                 required
                 value={formData.subjectPrefix}
                 onChange={(e) => setFormData({...formData, subjectPrefix: e.target.value.toUpperCase()})}
-                className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500"
+                className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500"
                 placeholder="e.g. IT"
               />
             </div>
@@ -383,7 +383,7 @@ export default function SubjectForm() {
               <select
                 value={formData.yearLevel}
                 onChange={(e) => setFormData({...formData, yearLevel: e.target.value})}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
               >
                 <option value="1st Year">1st Year</option>
                 <option value="2nd Year">2nd Year</option>
@@ -398,7 +398,7 @@ export default function SubjectForm() {
               <select
                 value={formData.semester}
                 onChange={(e) => setFormData({...formData, semester: e.target.value})}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
               >
                 <option value="1st Semester">1st Semester</option>
                 <option value="2nd Semester">2nd Semester</option>
@@ -413,14 +413,14 @@ export default function SubjectForm() {
                 type="text" 
                 readOnly
                 value={formData.code}
-                className="block w-full px-3.5 py-2 border border-slate-100 bg-slate-50 text-slate-500 font-bold font-mono rounded-lg text-sm outline-none cursor-not-allowed"
+                className="block w-full px-3.5 py-2 border border-slate-100 bg-slate-50 text-slate-500 font-bold font-mono rounded-xl text-xs sm:text-sm outline-none cursor-not-allowed"
                 placeholder="Auto-generated"
               />
             </div>
           </div>
 
           {/* Group 3: Title & Units (2 columns) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
             {/* Descriptive Title */}
             <div className="flex flex-col gap-1.5 md:col-span-2">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Descriptive Title <span className="text-rose-500">*</span></label>
@@ -429,7 +429,7 @@ export default function SubjectForm() {
                 required
                 value={formData.name}
                 onChange={(e) => setFormData({...formData, name: e.target.value})}
-                className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500"
+                className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500"
                 placeholder="e.g. Introduction to Computing"
               />
             </div>
@@ -440,7 +440,7 @@ export default function SubjectForm() {
               <select
                 value={formData.units}
                 onChange={(e) => setFormData({...formData, units: e.target.value})}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
               >
                 <option value="1">1 Unit</option>
                 <option value="2">2 Units</option>
@@ -452,18 +452,18 @@ export default function SubjectForm() {
           </div>
 
           {/* Form Actions */}
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+          <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-2.5 sm:gap-3">
             <button 
               type="button" 
               onClick={() => navigate('/admin/subjectlist')}
-              className="px-4 py-2 border border-slate-200 text-slate-700 hover:border-slate-300 rounded-lg text-sm font-medium transition-colors"
+              className="w-full sm:w-auto px-4 py-2.5 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs sm:text-sm font-medium transition-colors cursor-pointer text-center"
             >
               Cancel
             </button>
             <button 
               type="submit" 
               disabled={loading}
-              className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm disabled:opacity-50"
+              className="w-full sm:w-auto px-5 py-2.5 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-xs disabled:opacity-50 cursor-pointer"
             >
               <Save className="h-4 w-4" /> {loading ? "Saving..." : (isEditMode ? "Save Subject Details" : "Pre-load Subject")}
             </button>

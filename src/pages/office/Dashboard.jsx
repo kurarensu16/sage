@@ -167,19 +167,19 @@ export default function Dashboard() {
         </div>
       </PageHeader>
 
-      <div className="p-6 md:p-8 overflow-y-auto flex-1 space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6">
 
         {/* Institutional College Overview Banner */}
-        <div className="bg-sage-900 rounded-2xl border border-sage-800 p-6 md:p-8 text-white shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative overflow-hidden">
+        <div className="bg-sage-900 rounded-2xl border border-sage-800 p-4 sm:p-6 md:p-8 text-white shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-6 relative overflow-hidden">
           {/* Subtle brand tint accent */}
           <div className="absolute top-0 right-0 w-96 h-full bg-gradient-to-l from-emerald-500/10 via-transparent to-transparent pointer-events-none" />
           
-          <div className="space-y-3 max-w-2xl relative z-10">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-xs font-bold uppercase tracking-wider">
+          <div className="space-y-2 sm:space-y-3 max-w-2xl relative z-10">
+            <div className="inline-flex items-center gap-2 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] sm:text-xs font-bold uppercase tracking-wider">
               <Building2 className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
               <span>{userDepartmentName}</span>
             </div>
-            <h2 className="text-2xl md:text-3xl font-extrabold font-display tracking-tight text-white">
+            <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold font-display tracking-tight text-white">
               College Administration Overview
             </h2>
             <p className="text-xs md:text-sm text-sage-200/95 leading-relaxed">
@@ -188,21 +188,21 @@ export default function Dashboard() {
           </div>
 
           {activeTerm && (
-            <div className="bg-sage-800/90 border border-sage-700/80 rounded-xl p-4 flex items-center gap-4 flex-shrink-0 min-w-[240px] relative z-10 shadow-sm">
-              <div className="w-11 h-11 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center justify-center flex-shrink-0">
-                <Calendar className="h-5 w-5" />
+            <div className="bg-sage-800/90 border border-sage-700/80 rounded-xl p-3.5 sm:p-4 flex items-center gap-3.5 sm:gap-4 flex-shrink-0 min-w-[220px] sm:min-w-[240px] relative z-10 shadow-sm">
+              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center justify-center flex-shrink-0">
+                <Calendar className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
               <div className="space-y-0.5">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-sage-300">
-                    Active Academic Term
+                    Active Term
                   </span>
                 </div>
-                <p className="text-base font-bold text-white font-mono tracking-tight">
+                <p className="text-sm sm:text-base font-bold text-white font-mono tracking-tight">
                   {activeTerm.school_year}
                 </p>
-                <p className="text-xs font-semibold text-emerald-300">
+                <p className="text-[11px] sm:text-xs font-semibold text-emerald-300">
                   {activeTerm.semester} Semester
                 </p>
               </div>
@@ -211,74 +211,77 @@ export default function Dashboard() {
         </div>
 
         {/* Live Department Key Metrics */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 md:gap-5">
           {/* Total Students */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-500 mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Department Students</span>
-              <div className="p-2.5 bg-sage-50 text-sage-600 rounded-lg">
-                <GraduationCap className="h-5 w-5" />
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 sm:p-5 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between text-slate-500 mb-2 sm:mb-3">
+              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-500 truncate">Students</span>
+              <div className="p-2 sm:p-2.5 bg-sage-50 text-sage-600 rounded-xl">
+                <GraduationCap className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
             </div>
             <div>
-              <p className="text-3xl font-black text-slate-800 font-mono">
-                {loading ? <Loader2 className="h-7 w-7 animate-spin text-slate-400" /> : stats.totalStudents}
+              <p className="text-xl sm:text-3xl font-black text-slate-800 font-mono">
+                {loading ? <Loader2 className="h-6 w-6 animate-spin text-slate-400" /> : stats.totalStudents}
               </p>
-              <p className="text-xs text-slate-400 mt-1 font-medium">Active enrolled students</p>
+              <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 sm:mt-1 font-medium truncate">Enrolled students</p>
             </div>
           </div>
 
           {/* Department Faculty */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-500 mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Faculty Instructors</span>
-              <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-lg">
-                <Users className="h-5 w-5" />
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 sm:p-5 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between text-slate-500 mb-2 sm:mb-3">
+              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-500 truncate">Instructors</span>
+              <div className="p-2 sm:p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
+                <Users className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
             </div>
             <div>
-              <p className="text-3xl font-black text-slate-800 font-mono">
-                {loading ? <Loader2 className="h-7 w-7 animate-spin text-slate-400" /> : stats.totalFaculty}
+              <p className="text-xl sm:text-3xl font-black text-slate-800 font-mono">
+                {loading ? <Loader2 className="h-6 w-6 animate-spin text-slate-400" /> : stats.totalFaculty}
               </p>
-              <p className="text-xs text-slate-400 mt-1 font-medium">Department teaching staff</p>
+              <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 sm:mt-1 font-medium truncate">Teaching staff</p>
             </div>
           </div>
 
           {/* Active Sections */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-500 mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Active Sections</span>
-              <div className="p-2.5 bg-amber-50 text-amber-600 rounded-lg">
-                <Layers className="h-5 w-5" />
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 sm:p-5 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between text-slate-500 mb-2 sm:mb-3">
+              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-500 truncate">Sections</span>
+              <div className="p-2 sm:p-2.5 bg-amber-50 text-amber-600 rounded-xl">
+                <Layers className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
             </div>
             <div>
-              <p className="text-3xl font-black text-slate-800 font-mono">
-                {loading ? <Loader2 className="h-7 w-7 animate-spin text-slate-400" /> : stats.totalSections}
+              <p className="text-xl sm:text-3xl font-black text-slate-800 font-mono">
+                {loading ? <Loader2 className="h-6 w-6 animate-spin text-slate-400" /> : stats.totalSections}
               </p>
-              <p className="text-xs text-slate-400 mt-1 font-medium">Section cohorts</p>
+              <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 sm:mt-1 font-medium truncate">Section cohorts</p>
             </div>
           </div>
 
           {/* Clearance Progress */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-500 mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Clearance Status</span>
-              <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-lg">
-                <CheckCircle2 className="h-5 w-5" />
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-3.5 sm:p-5 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between text-slate-500 mb-2 sm:mb-3">
+              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-500 truncate">Clearance</span>
+              <div className="p-2 sm:p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
+                <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
             </div>
             <div>
               <div className="flex items-baseline justify-between">
-                <p className="text-3xl font-black text-emerald-600 font-mono">
-                  {loading ? <Loader2 className="h-7 w-7 animate-spin text-slate-400" /> : stats.clearedStudents}
+                <p className="text-xl sm:text-3xl font-black text-emerald-600 font-mono">
+                  {loading ? <Loader2 className="h-6 w-6 animate-spin text-slate-400" /> : stats.clearedStudents}
                 </p>
-                <span className="text-xs font-bold text-slate-500">
-                  {stats.clearancePct}% Cleared
+                <span className="text-[10px] sm:text-xs font-bold text-slate-500">
+                  {stats.clearancePct}%
                 </span>
               </div>
-              <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2.5 overflow-hidden">
-                <div className="bg-emerald-500 h-1.5 rounded-full transition-all duration-500" style={{ width: `${stats.clearancePct}%` }} />
+              <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
+                <div 
+                  className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
+                  style={{ width: `${stats.clearancePct}%` }}
+                />
               </div>
             </div>
           </div>

@@ -643,8 +643,70 @@ export default function ComplianceAudit() {
           </div>
         </div>
 
-        {/* Data Table */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* Data Feed (Mobile Cards + Desktop Table) */}
+        
+        {/* Mobile View Card Feed */}
+        <div className="md:hidden space-y-3">
+          {currentPageStudents.length > 0 ? (
+            currentPageStudents.map((s) => (
+              <div key={s.id} className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-2xs space-y-3 text-left">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-900 truncate">{s.lastName}, {s.firstName}</p>
+                    <p className="text-[11px] text-slate-400 font-mono mt-0.5 truncate">{s.email}</p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="text-[10px] font-mono text-slate-500 font-semibold">{s.userNumber || 'N/A'}</span>
+                      <span className="text-slate-300">•</span>
+                      <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                        {s.section || 'Unassigned'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="shrink-0">
+                    {s.clearanceStatus === 'SIGNED' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <CheckCircle className="h-3.5 w-3.5" /> Cleared
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        <XCircle className="h-3.5 w-3.5" /> Pending
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <button
+                    onClick={() => handleViewEvaluationDetails(s)}
+                    disabled={!activeTerm}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    <Eye className="h-3.5 w-3.5" /> Eval Details
+                  </button>
+
+                  <button
+                    onClick={() => promptToggleStatus(s)}
+                    disabled={processing || !activeTerm}
+                    className={`inline-flex items-center px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                      s.clearanceStatus === 'SIGNED'
+                        ? 'bg-white border border-rose-200 text-rose-600 hover:bg-rose-50'
+                        : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm'
+                    }`}
+                  >
+                    {s.clearanceStatus === 'SIGNED' ? 'Revoke' : 'Sign Off'}
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="p-8 text-center bg-white border border-slate-200 rounded-2xl text-slate-400 text-xs">
+              No students found matching your criteria.
+            </div>
+          )}
+        </div>
+
+        {/* Desktop Table View */}
+        <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">
@@ -895,16 +957,17 @@ export default function ComplianceAudit() {
 
       {/* 📋 Evaluation Details Inspect Modal */}
       {isDetailsModalOpen && selectedStudentForDetails && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm text-left animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs text-left animate-in fade-in duration-200">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 shadow-2xl w-full max-w-xl overflow-hidden animate-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200 max-h-[88vh] sm:max-h-[90vh] flex flex-col">
+            <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
+            <div className="px-5 sm:px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 font-sans">
                 <ClipboardList className="h-4.5 w-4.5 text-sage-600" />
-                <span>Evaluation Progress: {selectedStudentForDetails.lastName}, {selectedStudentForDetails.firstName}</span>
+                <span className="truncate">Evaluation Progress: {selectedStudentForDetails.lastName}, {selectedStudentForDetails.firstName}</span>
               </h3>
               <button 
                 onClick={() => setIsDetailsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-650 transition-colors text-lg font-semibold cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 transition-colors text-lg font-semibold cursor-pointer p-1"
               >
                 &times;
               </button>

@@ -482,7 +482,7 @@ export default function Dashboard() {
     <>
       <PageHeader title="Academic Oversight" breadcrumb="Dean Portal" />
       
-      <div className="p-8 overflow-y-auto flex-1 space-y-8 max-w-7xl mx-auto w-full">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8 max-w-7xl mx-auto w-full">
         {error && (
           <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs">
             {error}
@@ -490,53 +490,53 @@ export default function Dashboard() {
         )}
 
         {/* Hero Welcome & Active Term Banner */}
-        <div className="bg-gradient-to-r from-sage-900 via-sage-800 to-sage-900 rounded-2xl p-6 md:p-8 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="bg-gradient-to-r from-sage-900 via-sage-800 to-sage-900 rounded-2xl p-4 sm:p-6 md:p-8 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
           <div className="space-y-2">
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-sage-700/50 text-sage-100 border border-sage-600/30">
+            <span className="inline-flex items-center px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[10px] sm:text-xs font-semibold bg-sage-700/50 text-sage-100 border border-sage-600/30">
               Active Term: AY {activeTerm?.school_year || '2025-2026'} • {activeTerm?.semester === '1st' ? 'First' : activeTerm?.semester === '2nd' ? 'Second' : activeTerm?.semester || 'Second'} Semester
             </span>
-            <h1 className="text-3xl font-extrabold tracking-tight font-display">Academic Oversight & Analytics</h1>
-            <p className="text-sm text-sage-200/90 max-w-xl">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight font-display">Academic Oversight & Analytics</h1>
+            <p className="text-xs sm:text-sm text-sage-200/90 max-w-xl">
               College performance metrics, grade distribution diagnostics, and early warning risk monitoring.
             </p>
           </div>
         </div>
         
         {/* KPI Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 md:gap-5">
           {loading ? (
             [1, 2, 3, 4].map((i) => (
-              <div key={i} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center gap-4 animate-pulse">
-                <div className="p-3 bg-slate-100 rounded-lg w-12 h-12"></div>
-                <div className="space-y-2 flex-1">
+              <div key={i} className="bg-white border border-slate-200 rounded-2xl p-3.5 sm:p-5 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center gap-2.5 sm:gap-4 animate-pulse">
+                <div className="p-2.5 sm:p-3 bg-slate-100 rounded-xl w-9 h-9 sm:w-12 sm:h-12"></div>
+                <div className="space-y-2 flex-1 w-full">
                   <div className="h-3 bg-slate-200 rounded w-2/3"></div>
-                  <div className="h-6 bg-slate-200 rounded w-1/3 mt-1"></div>
+                  <div className="h-5 sm:h-6 bg-slate-200 rounded w-1/3 mt-1"></div>
                 </div>
               </div>
             ))
           ) : (
             <>
               {/* Card 1: Faculty */}
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center gap-4 hover:border-sage-300 transition-colors">
-                <div className="p-3 bg-sage-50 text-sage-700 rounded-lg">
-                  <GraduationCap className="h-6 w-6" />
+              <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-5 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center gap-2.5 sm:gap-4 hover:border-sage-300 transition-colors">
+                <div className="p-2.5 sm:p-3 bg-sage-50 text-sage-700 rounded-xl">
+                  <GraduationCap className="h-5 w-5 sm:h-6 sm:w-6" />
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Total Faculty</p>
-                  <h3 className="text-2xl font-bold font-display text-slate-900 mt-1 font-mono">
+                  <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase tracking-wider">Total Faculty</p>
+                  <h3 className="text-lg sm:text-2xl font-bold font-display text-slate-900 mt-0.5 sm:mt-1 font-mono">
                     {stats.facultyCount}
                   </h3>
                 </div>
               </div>
 
               {/* Card 2: Active Classrooms */}
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center gap-4 hover:border-indigo-300 transition-colors">
-                <div className="p-3 bg-indigo-50 text-indigo-700 rounded-lg">
-                  <BookOpen className="h-6 w-6" />
+              <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-5 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center gap-2.5 sm:gap-4 hover:border-indigo-300 transition-colors">
+                <div className="p-2.5 sm:p-3 bg-indigo-50 text-indigo-700 rounded-xl">
+                  <BookOpen className="h-5 w-5 sm:h-6 sm:w-6" />
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Active Classrooms</p>
-                  <h3 className="text-2xl font-bold font-display text-slate-900 mt-1 font-mono">
+                  <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase tracking-wider">Active Classes</p>
+                  <h3 className="text-lg sm:text-2xl font-bold font-display text-slate-900 mt-0.5 sm:mt-1 font-mono">
                     {stats.sectionsCount}
                   </h3>
                 </div>
@@ -545,14 +545,14 @@ export default function Dashboard() {
               {/* Card 3: At-Risk Students */}
               <div 
                 onClick={() => navigate('/dean/atriskstudents')}
-                className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center gap-4 cursor-pointer hover:border-rose-300 transition-colors group"
+                className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-5 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center gap-2.5 sm:gap-4 cursor-pointer hover:border-rose-300 transition-colors group"
               >
-                <div className="p-3 bg-rose-50 text-rose-700 rounded-lg group-hover:scale-105 transition-transform">
-                  <AlertCircle className="h-6 w-6 animate-pulse" />
+                <div className="p-2.5 sm:p-3 bg-rose-50 text-rose-700 rounded-xl group-hover:scale-105 transition-transform">
+                  <AlertCircle className="h-5 w-5 sm:h-6 sm:w-6 animate-pulse" />
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">At-Risk Students</p>
-                  <h3 className="text-2xl font-bold font-display text-rose-700 mt-1 font-mono">
+                  <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase tracking-wider">At-Risk</p>
+                  <h3 className="text-lg sm:text-2xl font-bold font-display text-rose-700 mt-0.5 sm:mt-1 font-mono">
                     {stats.atRiskCount}
                   </h3>
                 </div>
@@ -561,14 +561,14 @@ export default function Dashboard() {
               {/* Card 4: Pending Posts */}
               <div 
                 onClick={() => navigate('/dean/gradepostingstatus')}
-                className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center gap-4 cursor-pointer hover:border-amber-300 transition-colors group"
+                className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-5 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center gap-2.5 sm:gap-4 cursor-pointer hover:border-amber-300 transition-colors group"
               >
-                <div className="p-3 bg-amber-50 text-amber-700 rounded-lg group-hover:scale-105 transition-transform">
-                  <ClipboardCheck className="h-6 w-6" />
+                <div className="p-2.5 sm:p-3 bg-amber-50 text-amber-700 rounded-xl group-hover:scale-105 transition-transform">
+                  <ClipboardCheck className="h-5 w-5 sm:h-6 sm:w-6" />
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Pending Grade Posts</p>
-                  <h3 className="text-2xl font-bold font-display text-amber-700 mt-1 font-mono">
+                  <p className="text-[10px] sm:text-xs text-slate-500 font-bold uppercase tracking-wider">Pending Posts</p>
+                  <h3 className="text-lg sm:text-2xl font-bold font-display text-amber-700 mt-0.5 sm:mt-1 font-mono">
                     {stats.pendingPosts}
                   </h3>
                 </div>
@@ -578,10 +578,10 @@ export default function Dashboard() {
         </div>
 
         {/* ── NEW VISUAL ANALYTICS INTELLIGENCE ROW (CHARTS) ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-stretch">
           
           {/* Chart 1: College-Wide Academic Health & GWA Distribution (8 Cols) */}
-          <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
+          <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm flex flex-col justify-between">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
               <div>
                 <h3 className="text-sm font-bold font-display text-slate-900 uppercase tracking-wide flex items-center gap-2">
