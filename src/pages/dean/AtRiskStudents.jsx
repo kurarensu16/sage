@@ -4,6 +4,7 @@ import { Search, AlertCircle, Filter, Sparkles, Building2, Loader2, AlertTriangl
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { getTransmutedGrade } from '../../lib/gradingMath';
+import { cn } from '../../lib/utils';
 
 // Compute tentative GWA for a class record from its scores
 function computeTentativeGrade(classRecordScores, classRecordCols) {

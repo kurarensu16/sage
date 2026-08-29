@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SAGE</string>
+    <string name="title_activity_main">SAGE</string>
+    <string name="package_name">ph.edu.dyci.sage</string>
+    <string name="custom_url_scheme">ph.edu.dyci.sage</string>
+</resources>

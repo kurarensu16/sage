@@ -1,0 +1,15 @@
+{
+  "appId": "ph.edu.dyci.sage",
+  "appName": "SAGE",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "https",
+    "hostname": "localhost"
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  }
+}
