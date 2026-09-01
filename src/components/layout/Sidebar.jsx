@@ -2,17 +2,29 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { BookOpen, LayoutDashboard, Users, FileText, LogOut, Calendar, AlertCircle, BarChart3, Star, FileDown, Layers, BookMarked, Shield, ClipboardList, BrainCircuit, Download, X, Smartphone, Monitor, Settings } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import SageLogo from './SageLogo';
+import SmartInstallModal from './SmartInstallModal';
 import { useAuth } from '../../lib/AuthContext';
 import { usePwaInstall } from '../../lib/usePwaInstall';
 
 export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut } = useAuth();
-  const { promptInstall, showGuideModal, setShowGuideModal, canNativeInstall } = usePwaInstall();
+  const { signOut, user, profile } = useAuth();
+  const { 
+    platform,
+    isInstalled,
+    canNativeInstall,
+    downloadApk,
+    promptInstall, 
+    showGuideModal, 
+    setShowGuideModal,
+    activeTab,
+    setActiveTab
+  } = usePwaInstall();
   const path = location.pathname;
   
   const role = path.split('/')[1] || 'faculty';
+  const actorName = profile?.first_name ? `${profile.first_name} ${profile.last_name}` : (user?.email || 'Institutional User');
 
   const links = {
     admin: [
@@ -66,6 +78,31 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
     navigate('/login', { replace: true });
     await signOut();
   };
+
+  // Platform-specific label and icon for install trigger
+  const installButtonConfig = {
+    android: {
+      label: 'Download Android App (.APK)',
+      icon: Smartphone,
+      iconColor: 'text-emerald-400'
+    },
+    ios: {
+      label: 'Add to Home Screen',
+      icon: Smartphone,
+      iconColor: 'text-indigo-400'
+    },
+    desktop: {
+      label: 'Install Desktop App',
+      icon: Download,
+      iconColor: 'text-emerald-400'
+    }
+  }[platform] || {
+    label: 'Install SAGE App',
+    icon: Download,
+    iconColor: 'text-emerald-400'
+  };
+
+  const InstallIcon = installButtonConfig.icon;
 
   const sidebarInner = (
     <aside className={cn(
@@ -121,7 +158,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
             ))}
         </nav>
         
-        {/* Footer section (Settings, PWA Install & Sign Out) */}
+        {/* Footer section (Settings, Adaptive Install & Sign Out) */}
         <div className="p-3 border-t border-sage-800 space-y-1 flex-shrink-0">
             {/* Account Settings Link */}
             <NavLink
@@ -140,21 +177,25 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
               {(!isCollapsed || mobileOpen) && <span>Account Settings</span>}
             </NavLink>
 
-            {/* PWA Install Button */}
-            <button
-              onClick={promptInstall}
-              title={isCollapsed ? "Install SAGE App" : undefined}
-              className={cn(
-                "w-full flex items-center bg-sage-800/90 hover:bg-sage-700 text-sage-100 hover:text-white rounded-lg transition-all border border-sage-700/60 font-medium cursor-pointer text-left shadow-sm group",
-                isCollapsed ? "justify-center p-2.5" : "gap-3 px-3.5 py-2 text-xs"
-              )}
-            >
-              <Download className="h-4 w-4 flex-shrink-0 text-emerald-400 group-hover:scale-110 transition-transform" />
-              {(!isCollapsed || mobileOpen) && <span>Install SAGE App</span>}
-            </button>
+            {/* Adaptive Device-Aware Install Button (Suppressed if running in Standalone/Native app) */}
+            {!isInstalled && (
+              <button
+                type="button"
+                onClick={promptInstall}
+                title={isCollapsed ? installButtonConfig.label : undefined}
+                className={cn(
+                  "w-full flex items-center bg-sage-800/90 hover:bg-sage-700 text-sage-100 hover:text-white rounded-lg transition-all border border-sage-700/60 font-medium cursor-pointer text-left shadow-sm group",
+                  isCollapsed ? "justify-center p-2.5" : "gap-3 px-3.5 py-2 text-xs"
+                )}
+              >
+                <InstallIcon className={cn("h-4 w-4 flex-shrink-0 group-hover:scale-110 transition-transform", installButtonConfig.iconColor)} />
+                {(!isCollapsed || mobileOpen) && <span>{installButtonConfig.label}</span>}
+              </button>
+            )}
 
             {/* Sign Out Button */}
             <button 
+              type="button"
               onClick={handleSignOut}
               title={isCollapsed ? "Sign Out" : undefined}
               className={cn(
@@ -189,66 +230,19 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
         </div>
       )}
 
-      {/* PWA Install Guide Modal */}
-      {showGuideModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 text-slate-800 relative animate-in fade-in zoom-in duration-200">
-            <button 
-              onClick={() => setShowGuideModal(false)}
-              className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-sage-100 text-sage-700 flex items-center justify-center font-bold">
-                <Download className="h-5 w-5 text-sage-600" />
-              </div>
-              <div>
-                <h3 className="font-bold font-display text-slate-900 text-lg">Install SAGE PWA</h3>
-                <p className="text-xs text-slate-500">Run SAGE as a standalone app</p>
-              </div>
-            </div>
-
-            <div className="space-y-3 text-xs text-slate-600">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1.5">
-                <div className="flex items-center gap-2 font-semibold text-slate-900">
-                  <Monitor className="h-4 w-4 text-indigo-600" />
-                  <span>Desktop (Chrome / Edge)</span>
-                </div>
-                <p>Click the <strong>Install icon (⊕)</strong> on the right side of your browser address bar above.</p>
-              </div>
-
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1.5">
-                <div className="flex items-center gap-2 font-semibold text-slate-900">
-                  <Smartphone className="h-4 w-4 text-emerald-600" />
-                  <span>Mobile (Android / Safari iOS)</span>
-                </div>
-                <p><strong>Android:</strong> Tap browser menu <span className="font-bold">(⋮)</span> → <strong>Add to Home screen</strong>.</p>
-                <p><strong>iOS Safari:</strong> Tap Share button <span className="font-bold">[⎋]</span> → <strong>Add to Home Screen</strong>.</p>
-              </div>
-            </div>
-
-            <div className="mt-6 flex items-center justify-end gap-2">
-              {canNativeInstall && (
-                <button
-                  onClick={promptInstall}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Install App Now
-                </button>
-              )}
-              <button
-                onClick={() => setShowGuideModal(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium text-xs transition-colors cursor-pointer"
-              >
-                {canNativeInstall ? 'Cancel' : 'Got It'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Smart Adaptive Install Modal */}
+      <SmartInstallModal
+        isOpen={showGuideModal}
+        onClose={() => setShowGuideModal(false)}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        platform={platform}
+        downloadApk={downloadApk}
+        canNativeInstall={canNativeInstall}
+        promptInstall={promptInstall}
+        actorName={actorName}
+      />
     </>
   );
 }
+

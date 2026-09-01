@@ -16,11 +16,30 @@ export default function SummaryReports() {
   const [reportData, setReportData] = useState([]);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-  // Pre-select department filter on load for deans
+  const [termList, setTermList] = useState([]);
+
+  // Pre-select department filter and active term on load
   useEffect(() => {
     if (profile?.departments?.name) {
       setDeptFilter(profile.departments.name);
     }
+
+    async function loadActiveTerm() {
+      const { data: terms } = await supabase
+        .from('academic_terms')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (terms && terms.length > 0) {
+        setTermList(terms);
+        const active = terms.find(t => t.is_active) || terms[0];
+        if (active) {
+          setSyFilter(active.school_year);
+          setSemFilter(active.semester);
+        }
+      }
+    }
+    loadActiveTerm();
   }, [profile]);
 
   useEffect(() => {
@@ -451,6 +470,7 @@ export default function SummaryReports() {
               >
                 <option value="1st">1st Semester</option>
                 <option value="2nd">2nd Semester</option>
+                <option value="Summer">Summer Term</option>
               </select>
             </div>
 
@@ -462,8 +482,9 @@ export default function SummaryReports() {
                 onChange={(e) => setSyFilter(e.target.value)}
                 className="block w-full border border-slate-200 px-3 py-2.5 rounded-lg text-xs bg-white outline-none cursor-pointer"
               >
-                <option value="2025-2026">2025-2026</option>
-                <option value="2026-2027">2026-2027</option>
+                {Array.from(new Set(['2025-2026', '2026-2027', ...termList.map(t => t.school_year)])).map(sy => (
+                  <option key={sy} value={sy}>{sy}</option>
+                ))}
               </select>
             </div>
 

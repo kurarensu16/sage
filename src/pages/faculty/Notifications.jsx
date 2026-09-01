@@ -8,28 +8,17 @@ import {
   CheckCircle, 
   Clock, 
   Info,
-  MailOpen
+  MailOpen,
+  Award,
+  MessageSquare,
+  ShieldCheck
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn, formatRelativeTime } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
-const formatRelativeTime = (isoString) => {
-  if (!isoString) return '';
-  const diffMs = new Date() - new Date(isoString);
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays === 1) return 'Yesterday';
-  return `${diffDays} days ago`;
-};
-
 export default function Notifications() {
-  const { user } = useAuth();
+  const { user, refreshUnreadCount } = useAuth();
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [notifications, setNotifications] = useState([]);
@@ -52,25 +41,32 @@ export default function Notifications() {
           let icon = Info;
           let iconColor = 'text-slate-600 bg-slate-50 border-slate-200';
 
-          if (n.type === 'override_approved') {
-            type = 'critical';
-            title = 'Grade Override Request Approved';
-            icon = AlertTriangle;
-            iconColor = 'text-amber-605 bg-amber-50 border-amber-250';
-          } else if (n.type === 'override_rejected') {
-            type = 'critical';
-            title = 'Grade Override Request Rejected';
-            icon = AlertTriangle;
-            iconColor = 'text-rose-600 bg-rose-50 border-rose-200';
-          } else if (n.type === 'term_rollover_reminder') {
-            type = 'system';
-            title = 'Grade Posting Reminder';
-            icon = Clock;
+          if (n.type === 'grade_posted' || n.type === 'grades_pending') {
+            type = 'grade';
+            title = n.type === 'grade_posted' ? 'Grades Finalized' : 'Grade Approval Status';
+            icon = Award;
+            iconColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
+          } else if (n.type === 'eval_window_open') {
+            type = 'eval';
+            title = 'Faculty Evaluation Open';
+            icon = MessageSquare;
             iconColor = 'text-blue-600 bg-blue-50 border-blue-200';
+          } else if (n.type === 'eval_compiled' || n.type === 'eval_closed') {
+            type = 'eval';
+            title = 'Evaluation Reports Compiled';
+            icon = MessageSquare;
+            iconColor = 'text-blue-600 bg-blue-50 border-blue-200';
+          } else if (n.type === 'override_approved' || n.type === 'override_rejected') {
+            type = 'override';
+            title = n.type === 'override_approved' ? 'Override Request Approved' : 'Override Request Rejected';
+            icon = ShieldCheck;
+            iconColor = n.type === 'override_approved' 
+              ? 'text-emerald-600 bg-emerald-50 border-emerald-200' 
+              : 'text-rose-600 bg-rose-50 border-rose-200';
           } else if (n.type === 'class_assigned') {
-            type = 'success';
+            type = 'system';
             title = 'New Class Assigned';
-            icon = CheckCircle;
+            icon = Info;
             iconColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
           }
 
@@ -108,6 +104,7 @@ export default function Notifications() {
 
       if (error) throw error;
       setNotifications(notifications.map(n => ({ ...n, read: true })));
+      refreshUnreadCount?.();
     } catch (err) {
       console.error('Error marking all notifications as read:', err);
     }
@@ -122,6 +119,7 @@ export default function Notifications() {
 
       if (error) throw error;
       setNotifications(notifications.filter(n => n.id !== id));
+      refreshUnreadCount?.();
     } catch (err) {
       console.error('Error deleting notification:', err);
     }
@@ -138,6 +136,7 @@ export default function Notifications() {
 
       if (error) throw error;
       setNotifications(notifications.map(n => n.id === id ? { ...n, read: !n.read } : n));
+      refreshUnreadCount?.();
     } catch (err) {
       console.error('Error toggling notification read state:', err);
     }

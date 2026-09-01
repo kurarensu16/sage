@@ -42,7 +42,7 @@ export default function Topbar({ toggleSidebar }) {
     }
   };
 
-  const { profile } = useAuth();
+  const { profile, unreadCount } = useAuth();
   const currentMeta = roleMeta[role] || roleMeta.faculty;
   const displayName = profile?.first_name ? `${profile.first_name} ${profile.last_name}` : currentMeta.name;
   
@@ -100,11 +100,15 @@ export default function Topbar({ toggleSidebar }) {
         <div className="relative">
           <Link 
             to={`/${role}/notifications`}
-            title="Notifications"
-            className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-colors block"
+            title={`Notifications ${unreadCount > 0 ? `(${unreadCount} unread)` : ''}`}
+            className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-colors block relative"
           >
             <Bell className="h-5 w-5" />
-            <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-600 rounded-full border-2 border-white"></span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-rose-600 text-white font-mono text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-xs">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
           </Link>
         </div>
 

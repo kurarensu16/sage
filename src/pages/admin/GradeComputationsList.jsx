@@ -4,6 +4,7 @@ import { Plus, Trash2, Edit2, Save, X, Settings, ListCollapse, CheckCircle2, Ale
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyAdminActivity } from '../../lib/notificationDispatcher';
 
 export default function GradeComputationsList() {
   const { user, profile } = useAuth();
@@ -184,6 +185,12 @@ export default function GradeComputationsList() {
           `Modified grading template: "${name}" (${components.length} components).`,
           actorName
         );
+
+        await notifyAdminActivity({
+          type: 'system',
+          message: `Grade Computation Templates: Template "${name}" was updated by ${actorName}.`,
+          actorName
+        });
         setSuccessMsg('Grading template updated successfully!');
       } else {
         // Insert new template header
@@ -216,6 +223,12 @@ export default function GradeComputationsList() {
           `Created grading template: "${name}" (${components.length} components).`,
           actorName
         );
+
+        await notifyAdminActivity({
+          type: 'system',
+          message: `Grade Computation Templates: New template "${name}" was created by ${actorName}.`,
+          actorName
+        });
         setSuccessMsg('Grading template created successfully!');
       }
 
@@ -243,11 +256,18 @@ export default function GradeComputationsList() {
 
       if (error) throw error;
 
+      const actorName = resolveActorName(profile, user);
       await logActivity(
         'Grading Template Deletion',
         `Deleted grading template: "${templateName}"`,
-        resolveActorName(profile, user)
+        actorName
       );
+
+      await notifyAdminActivity({
+        type: 'system',
+        message: `Grade Computation Templates: Template "${templateName}" was deleted by ${actorName}.`,
+        actorName
+      });
 
       loadTemplates();
     } catch (err) {

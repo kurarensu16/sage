@@ -24,6 +24,7 @@ export default function EvalList() {
   const [activeEvaluations, setActiveEvaluations] = useState([]);
   const [archivedEvaluations, setArchivedEvaluations] = useState([]);
   const [activeTerm, setActiveTerm] = useState(null);
+  const [isOfficeSigned, setIsOfficeSigned] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState({});
 
   const toggleGroup = (groupKey) => {
@@ -51,6 +52,27 @@ export default function EvalList() {
           .maybeSingle();
 
         setActiveTerm(termData || null);
+
+        // 1b. Check if College Office officially signed student's clearance
+        let officeSigned = false;
+        try {
+          let clrQuery = supabase
+            .from('clearance_records')
+            .select('status, cleared_at')
+            .eq('student_id', user.id);
+
+          if (termData?.term_id) {
+            clrQuery = clrQuery.eq('term_id', termData.term_id);
+          }
+
+          const { data: clr } = await clrQuery.maybeSingle();
+          if (clr && clr.status === 'SIGNED') {
+            officeSigned = true;
+          }
+        } catch (e) {
+          console.error('Error fetching clearance record:', e);
+        }
+        setIsOfficeSigned(officeSigned);
 
         // 2. Resolve student's section(s) from Profile, User Record, and Enrollments
         const sectionIds = new Set();
@@ -191,14 +213,13 @@ export default function EvalList() {
           ];
           const colorClass = avatarColors[idx % avatarColors.length];
 
-          const winSy = win.sections?.school_year || termData?.school_year || '2025-2026';
-          const winSem = win.sections?.semester || termData?.semester || '2nd';
+          const winSy = win.sections?.school_year || termData?.school_year || '2026-2027';
+          const winSem = win.sections?.semester || termData?.semester || '1st';
 
-          // Determine whether this window belongs to the active term or is an archived past term
-          const isCurrentTerm = !win.is_closed && (
-            !termData || (
-              winSy === termData.school_year && winSem === termData.semester
-            )
+          // An evaluation window belongs to current term if its academic term matches activeTerm
+          const isCurrentTerm = !termData || (
+            winSy === termData.school_year && 
+            (winSem === termData.semester || (termData.semester === '1st' && winSem === '1st') || (termData.semester === '2nd' && winSem === '2nd') || (termData.semester === 'Summer' && winSem === 'Summer'))
           );
 
           let displayStatus = 'Pending';
@@ -221,7 +242,7 @@ export default function EvalList() {
             templateTitle: win.evaluation_forms?.title || 'Faculty Appraisal',
             schoolYear: winSy,
             semester: winSem,
-            groupKey: `AY ${winSy} — ${winSem === '1st' ? '1st' : winSem === '2nd' ? '2nd' : winSem} Semester`,
+            groupKey: `AY ${winSy} — ${winSem === 'Summer' ? 'Summer Term' : `${winSem === '1st' ? '1st' : '2nd'} Semester`}`,
             status: displayStatus,
             isCurrentTerm,
             isClosed: win.is_closed,
@@ -301,8 +322,11 @@ export default function EvalList() {
   const activeTotalCount = activeEvaluations.length;
   const activeProgressPct = activeTotalCount > 0 ? Math.round((activeCompletedCount / activeTotalCount) * 100) : 100;
 
+  const formatSem = (sem) => (sem === '1st' ? '1st' : sem === '2nd' ? '2nd' : sem === 'Summer' ? 'Summer' : sem);
   const currentTermHeading = activeTerm
-    ? `AY ${activeTerm.school_year} — ${activeTerm.semester === '1st' ? 'First' : activeTerm.semester === '2nd' ? 'Second' : activeTerm.semester} Semester`
+    ? `AY ${activeTerm.school_year} — ${formatSem(activeTerm.semester)} Semester`.replace('Summer Semester', 'Summer Term')
+    : activeEvaluations.length > 0 && activeEvaluations[0].schoolYear && activeEvaluations[0].semester
+    ? `AY ${activeEvaluations[0].schoolYear} — ${formatSem(activeEvaluations[0].semester)} Semester`.replace('Summer Semester', 'Summer Term')
     : 'Active Academic Term';
 
   return (
@@ -353,15 +377,20 @@ export default function EvalList() {
                 </div>
 
                 <span className="text-xs font-medium">
-                  {activePendingCount > 0 ? (
+                  {isOfficeSigned ? (
+                    <span className="text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full inline-flex items-center gap-1.5">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                      Clearance Signed by Office
+                    </span>
+                  ) : activePendingCount > 0 ? (
                     <span className="text-amber-700 font-semibold bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full inline-flex items-center gap-1.5">
                       <Clock className="h-3.5 w-3.5 text-amber-600" />
                       {activePendingCount} Pending Survey{activePendingCount > 1 ? 's' : ''}
                     </span>
                   ) : (
-                    <span className="text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full inline-flex items-center gap-1.5">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                      Term Clearance Signed
+                    <span className="text-sky-700 font-semibold bg-sky-50 border border-sky-200 px-2.5 py-1 rounded-full inline-flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-sky-600" />
+                      Surveys Done — Awaiting Office Sign-off
                     </span>
                   )}
                 </span>

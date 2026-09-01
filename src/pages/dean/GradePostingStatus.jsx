@@ -21,11 +21,30 @@ export default function GradePostingStatus() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOverrideClass, setSelectedOverrideClass] = useState('');
 
-  // Pre-select dean's department on load
+  const [termList, setTermList] = useState([]);
+
+  // Pre-select dean's department and active term on load
   useEffect(() => {
     if (profile?.departments?.name) {
       setDeptFilter(profile.departments.name);
     }
+
+    async function loadActiveTerm() {
+      const { data: terms } = await supabase
+        .from('academic_terms')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (terms && terms.length > 0) {
+        setTermList(terms);
+        const active = terms.find(t => t.is_active) || terms[0];
+        if (active) {
+          setSyFilter(active.school_year);
+          setSemFilter(active.semester);
+        }
+      }
+    }
+    loadActiveTerm();
   }, [profile]);
 
   // Fetch data from Supabase
@@ -352,8 +371,9 @@ export default function GradePostingStatus() {
                 className="block w-full border border-slate-200 px-3 py-2 rounded-lg text-xs bg-white outline-none cursor-pointer"
               >
                 <option value="">All School Years</option>
-                <option value="2025-2026">2025-2026</option>
-                <option value="2026-2027">2026-2027</option>
+                {Array.from(new Set(['2025-2026', '2026-2027', ...termList.map(t => t.school_year)])).map(sy => (
+                  <option key={sy} value={sy}>{sy}</option>
+                ))}
               </select>
             </div>
 

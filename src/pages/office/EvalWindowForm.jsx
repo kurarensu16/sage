@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import SuccessModal from '../../components/SuccessModal';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyEvaluationWindowOpen } from '../../lib/notificationDispatcher';
 
 export default function EvalWindowForm() {
   const navigate = useNavigate();
@@ -270,6 +271,19 @@ export default function EvalWindowForm() {
             `Scheduled evaluation window for ${facultyName} in ${userDepartmentName} using template "${templateTitle}" (opens: ${new Date(formData.openAt).toLocaleString()}, closes: ${new Date(formData.closeAt).toLocaleString()}).`,
             resolveActorName(profile, user)
           );
+
+          // Dispatch real-time notifications to Students, Faculty, Dean, and Office
+          const cls = classrooms.find(c => c.sectionId === formData.sectionId && c.facultyId === formData.facultyId) || classrooms.find(c => c.sectionId === formData.sectionId);
+          const subjectName = cls ? `${cls.subjectCode} - ${cls.subjectName}` : '';
+          const sectionName = cls ? cls.section : '';
+          await notifyEvaluationWindowOpen({
+            sectionId: formData.sectionId,
+            facultyId: formData.facultyId,
+            subjectName,
+            sectionName,
+            facultyName,
+            actorId: user?.id
+          });
         }
         setSuccessModalMessage(isEditMode ? "Evaluation window updated successfully!" : "Evaluation window scheduled successfully!");
       } else {
@@ -297,6 +311,23 @@ export default function EvalWindowForm() {
           `Scheduled batch evaluations for ${userDepartmentName} (Total: ${uniqueBatchPairs.length} classes) using template "${templateTitle}" (opens: ${new Date(formData.openAt).toLocaleString()}, closes: ${new Date(formData.closeAt).toLocaleString()}).`,
           resolveActorName(profile, user)
         );
+
+        // Dispatch real-time notifications for each batch pair
+        for (const pair of uniqueBatchPairs) {
+          const faculty = facultyUsers.find(f => f.id === pair.facultyId);
+          const facultyName = faculty ? `${faculty.firstName} ${faculty.lastName}` : 'Unknown';
+          const cls = classrooms.find(c => c.sectionId === pair.sectionId && c.facultyId === pair.facultyId);
+          const subjectName = cls ? `${cls.subjectCode} - ${cls.subjectName}` : '';
+          const sectionName = cls ? cls.section : '';
+          await notifyEvaluationWindowOpen({
+            sectionId: pair.sectionId,
+            facultyId: pair.facultyId,
+            subjectName,
+            sectionName,
+            facultyName,
+            actorId: user?.id
+          });
+        }
 
         setSuccessModalMessage(`Successfully scheduled evaluations for ${uniqueBatchPairs.length} active classes in ${userDepartmentName}!`);
       }

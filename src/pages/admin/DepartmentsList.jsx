@@ -4,6 +4,7 @@ import { Plus, Edit2, Save, X, Building, UserCheck, UserX, CheckCircle2, AlertCi
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyAdminActivity } from '../../lib/notificationDispatcher';
 import { cn } from '../../lib/utils';
 
 export default function DepartmentsList() {
@@ -151,6 +152,12 @@ export default function DepartmentsList() {
           `Modified college department: "${name}".`,
           actorName
         );
+
+        await notifyAdminActivity({
+          type: 'system',
+          message: `Department Database: Department "${name}" was updated by ${actorName}.`,
+          actorName
+        });
         setSuccessMsg('College department updated successfully!');
       } else {
         // Create new department
@@ -178,6 +185,12 @@ export default function DepartmentsList() {
           `Created new college department: "${name}".`,
           actorName
         );
+
+        await notifyAdminActivity({
+          type: 'system',
+          message: `Department Database: New department "${name}" was created by ${actorName}.`,
+          actorName
+        });
         setSuccessMsg('College department registered successfully!');
       }
 

@@ -8,6 +8,7 @@ import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyUserStatusChange } from '../../lib/notificationDispatcher';
 
 // Custom styled premium checkbox matching SAGE design language
 const CustomCheckbox = ({ checked, onChange }) => {
@@ -240,6 +241,15 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         `Set user account for ${userToToggle.lastName}, ${userToToggle.firstName} (${userToToggle.email}) to "${nextStatus}".`,
         actorName
       );
+
+      await notifyUserStatusChange({
+        targetUserName: `${userToToggle.firstName} ${userToToggle.lastName}`,
+        targetUserEmail: userToToggle.email,
+        targetRole: userToToggle.role,
+        targetUserId: userToToggle.id,
+        newStatus: nextStatus,
+        actorName
+      });
     } catch (err) {
       console.error('Failed to toggle status:', err);
       alert('Error updating status: ' + err.message);
@@ -355,6 +365,15 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         `Archived ${userToArchive.role} account for ${userToArchive.lastName}, ${userToArchive.firstName} (${userToArchive.email}).`,
         actorName
       );
+
+      await notifyUserStatusChange({
+        targetUserName: `${userToArchive.firstName} ${userToArchive.lastName}`,
+        targetUserEmail: userToArchive.email,
+        targetRole: userToArchive.role,
+        targetUserId: userToArchive.id,
+        newStatus: 'archived',
+        actorName
+      });
     } catch (err) {
       console.error('Failed to archive user:', err);
       alert('Error archiving user: ' + err.message);
@@ -383,6 +402,15 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         `Restored ${userToRestore.role} account for ${userToRestore.lastName}, ${userToRestore.firstName} (${userToRestore.email}) to active status.`,
         actorName
       );
+
+      await notifyUserStatusChange({
+        targetUserName: `${userToRestore.firstName} ${userToRestore.lastName}`,
+        targetUserEmail: userToRestore.email,
+        targetRole: userToRestore.role,
+        targetUserId: userToRestore.id,
+        newStatus: 'active',
+        actorName
+      });
     } catch (err) {
       console.error('Failed to restore user:', err);
       alert('Error restoring user: ' + err.message);

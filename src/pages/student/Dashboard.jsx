@@ -14,7 +14,37 @@ import { useAuth } from '../../lib/AuthContext';
 
 // Helper to check pending evaluations
 const checkPendingEvals = async (studentId, sectionId) => {
+  let isOfficeSigned = false;
+
+  // 1. Check if explicit clearance record is signed by Office in clearance_records
+  try {
+    const { data: activeTerm } = await supabase
+      .from('academic_terms')
+      .select('term_id')
+      .eq('is_active', true)
+      .maybeSingle();
+
+    let clrQuery = supabase
+      .from('clearance_records')
+      .select('status')
+      .eq('student_id', studentId);
+
+    if (activeTerm?.term_id) {
+      clrQuery = clrQuery.eq('term_id', activeTerm.term_id);
+    }
+
+    const { data: clr } = await clrQuery.maybeSingle();
+    if (clr && clr.status === 'SIGNED') {
+      isOfficeSigned = true;
+    }
+  } catch {
+    // Ignore error if table not queried
+  }
+
+  if (!sectionId) return { totalWindows: 0, pendingCount: 0, isOfficeSigned };
   const now = new Date().toISOString();
+
+  // 2. Query active evaluation windows
   const { data: windows } = await supabase
     .from('evaluation_windows')
     .select('window_id')
@@ -23,9 +53,10 @@ const checkPendingEvals = async (studentId, sectionId) => {
     .gte('close_at', now)
     .eq('is_closed', false);
 
-  if (!windows || windows.length === 0) return 0;
+  if (!windows || windows.length === 0) {
+    return { totalWindows: 0, pendingCount: 0, isOfficeSigned };
+  }
 
-  // Fetch responses submitted by this student
   const { data: responses } = await supabase
     .from('evaluation_responses')
     .select('window_id')
@@ -38,7 +69,12 @@ const checkPendingEvals = async (studentId, sectionId) => {
       pendingCount++;
     }
   }
-  return pendingCount;
+
+  return {
+    totalWindows: windows.length,
+    pendingCount,
+    isOfficeSigned
+  };
 };
 
 export default function Dashboard() {
@@ -49,7 +85,7 @@ export default function Dashboard() {
   const [enrolledSubjects, setEnrolledSubjects] = useState([]);
   const [currentGwa, setCurrentGwa] = useState('—');
   const [gwaStanding, setGwaStanding] = useState('No grades posted yet');
-  const [pendingEvals, setPendingEvals] = useState(0);
+  const [evalClearance, setEvalClearance] = useState({ totalWindows: 0, pendingCount: 0, isSigned: false });
   const [insightVerdict, setInsightVerdict] = useState('Normal');
   const [insightSummary, setInsightSummary] = useState('No academic risk flags detected. Keep up the good work!');
 
@@ -170,8 +206,8 @@ export default function Dashboard() {
         // 8. Pending Evaluations (check across enrolled sections)
         const targetSectionId = activeSectionId || (enrolls && enrolls.length > 0 ? enrolls[0].section_id : null);
         if (targetSectionId) {
-          const count = await checkPendingEvals(user.id, targetSectionId);
-          setPendingEvals(count);
+          const clearanceInfo = await checkPendingEvals(user.id, targetSectionId);
+          setEvalClearance(clearanceInfo);
         }
 
         // 9. Academic Insights
@@ -252,7 +288,7 @@ export default function Dashboard() {
         </div>
 
         {/* Term Clearance & Evaluation Alert Banner */}
-        {pendingEvals > 0 && (
+        {evalClearance.pendingCount > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 shadow-sm">
             <div className="flex items-start sm:items-center gap-3">
               <div className="p-2 bg-amber-100 rounded-lg text-amber-700 flex-shrink-0 mt-0.5 sm:mt-0">
@@ -261,7 +297,7 @@ export default function Dashboard() {
               <div>
                 <h4 className="font-bold text-xs sm:text-sm font-display text-amber-950">Term Clearance Pending</h4>
                 <p className="text-[11px] sm:text-xs text-amber-800 mt-0.5">
-                  You have <strong>{pendingEvals}</strong> pending faculty evaluation(s). Completing your evaluations signs your term clearance and unlocks official grade summary visibility.
+                  You have <strong>{evalClearance.pendingCount}</strong> pending faculty evaluation(s). Completing your evaluations signs your term clearance and unlocks official grade summary visibility.
                 </p>
               </div>
             </div>
@@ -304,14 +340,31 @@ export default function Dashboard() {
           <div className="bg-white p-3.5 sm:p-5 md:p-6 rounded-xl border border-slate-200 hover:border-sage-300 transition-all flex justify-between items-start">
             <div>
               <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider block">Term Clearance</span>
-              <h3 className={`text-base sm:text-lg md:text-xl font-extrabold font-display mt-1 sm:mt-2 ${pendingEvals === 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                {pendingEvals === 0 ? 'SIGNED' : 'UNSIGNED'}
+              <h3 className={`text-base sm:text-lg md:text-xl font-extrabold font-display mt-1 sm:mt-2 ${
+                evalClearance.isSigned 
+                  ? 'text-emerald-700' 
+                  : evalClearance.pendingCount > 0 
+                  ? 'text-amber-700' 
+                  : 'text-slate-700'
+              }`}>
+                {evalClearance.isSigned ? 'SIGNED' : evalClearance.pendingCount > 0 ? 'UNSIGNED' : 'PENDING'}
               </h3>
               <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 truncate max-w-[110px] sm:max-w-none">
-                {pendingEvals === 0 ? 'All evals completed' : `${pendingEvals} eval(s) pending`}
+                {evalClearance.isSigned 
+                  ? 'All evals completed' 
+                  : evalClearance.pendingCount > 0 
+                  ? `${evalClearance.pendingCount} eval(s) pending` 
+                  : 'Evaluation period not active'
+                }
               </p>
             </div>
-            <div className={`p-2 sm:p-3 rounded-lg flex-shrink-0 ${pendingEvals === 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+            <div className={`p-2 sm:p-3 rounded-lg flex-shrink-0 ${
+              evalClearance.isSigned 
+                ? 'bg-emerald-50 text-emerald-600' 
+                : evalClearance.pendingCount > 0 
+                ? 'bg-amber-50 text-amber-600' 
+                : 'bg-slate-100 text-slate-500'
+            }`}>
               <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
@@ -411,9 +464,13 @@ export default function Dashboard() {
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900">Faculty Evaluations</h3>
               </div>
               <p className="text-xs text-slate-500">
-                {pendingEvals > 0 
-                  ? `You have ${pendingEvals} pending instructor evaluation surveys.` 
-                  : 'All scheduled faculty evaluations are fully completed. Thank you for your feedback!'}
+                {evalClearance.isOfficeSigned
+                  ? 'Your semester clearance has been officially verified and signed by the College Office.'
+                  : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0
+                  ? 'All faculty evaluations are submitted. Your clearance is awaiting College Office review and sign-off.'
+                  : evalClearance.pendingCount > 0 
+                  ? `You have ${evalClearance.pendingCount} pending instructor evaluation surveys.` 
+                  : 'No active faculty evaluation surveys are currently open for this semester.'}
               </p>
               <Link to="/student/evallist" className="inline-flex items-center gap-1 text-xs font-bold text-sage-600 hover:underline">
                 Open Evaluations List <ChevronRight className="h-3.5 w-3.5" />

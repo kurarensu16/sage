@@ -2,15 +2,44 @@ import { getTransmutedGrade } from '../../lib/gradingMath';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronDown, Eye, CheckCircle, Award, ChevronRight, Lock, ShieldCheck, MessageSquare } from 'lucide-react';
+import { ChevronDown, Eye, CheckCircle, Award, ChevronRight, Lock, ShieldCheck, MessageSquare, Clock } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
 // Helper to check pending evaluations for clearance sign-off
 const checkPendingEvals = async (studentId, sectionId) => {
-  if (!sectionId) return 0;
+  let isOfficeSigned = false;
+
+  // 1. Check if explicit clearance record is signed by Office in clearance_records
+  try {
+    const { data: activeTerm } = await supabase
+      .from('academic_terms')
+      .select('term_id')
+      .eq('is_active', true)
+      .maybeSingle();
+
+    let clrQuery = supabase
+      .from('clearance_records')
+      .select('status')
+      .eq('student_id', studentId);
+
+    if (activeTerm?.term_id) {
+      clrQuery = clrQuery.eq('term_id', activeTerm.term_id);
+    }
+
+    const { data: clr } = await clrQuery.maybeSingle();
+    if (clr && clr.status === 'SIGNED') {
+      isOfficeSigned = true;
+    }
+  } catch {
+    // Ignore error if table not queried
+  }
+
+  if (!sectionId) return { totalWindows: 0, pendingCount: 0, isOfficeSigned };
   const now = new Date().toISOString();
+
+  // 2. Query active evaluation windows for section
   const { data: windows } = await supabase
     .from('evaluation_windows')
     .select('window_id')
@@ -19,7 +48,9 @@ const checkPendingEvals = async (studentId, sectionId) => {
     .gte('close_at', now)
     .eq('is_closed', false);
 
-  if (!windows || windows.length === 0) return 0;
+  if (!windows || windows.length === 0) {
+    return { totalWindows: 0, pendingCount: 0, isOfficeSigned };
+  }
 
   const { data: responses } = await supabase
     .from('evaluation_responses')
@@ -33,7 +64,12 @@ const checkPendingEvals = async (studentId, sectionId) => {
       pendingCount++;
     }
   }
-  return pendingCount;
+
+  return {
+    totalWindows: windows.length,
+    pendingCount,
+    isOfficeSigned
+  };
 };
 
 // Helper to transmute raw scores to DYCI standard grades
@@ -74,7 +110,7 @@ export default function MyGradesList() {
   const [semestersList, setSemestersList] = useState([]);
   const [selectedSemLabel, setSelectedSemLabel] = useState('');
   const [grades, setGrades] = useState([]);
-  const [pendingEvals, setPendingEvals] = useState(0);
+  const [evalClearance, setEvalClearance] = useState({ totalWindows: 0, pendingCount: 0, isSigned: false });
 
   const [officialGwa, setOfficialGwa] = useState(null);
   const [officialStanding, setOfficialStanding] = useState('No grades posted yet');
@@ -83,6 +119,14 @@ export default function MyGradesList() {
     async function loadSemesters() {
       if (!user) return;
       try {
+        // 1. Fetch active term from central academic_terms registry
+        const { data: activeTerm } = await supabase
+          .from('academic_terms')
+          .select('term_id, school_year, semester')
+          .eq('is_active', true)
+          .maybeSingle();
+
+        // 2. Fetch student's enrollments and assigned section
         const { data: enrolls, error } = await supabase
           .from('enrollments')
           .select(`
@@ -96,6 +140,15 @@ export default function MyGradesList() {
         const options = [];
         const seen = new Set();
 
+        const formatLabel = (sem, sy) => {
+          const syFormatted = sy?.startsWith('AY') ? sy : `AY ${sy || ''}`;
+          const semName = sem === '1st' ? 'First' : sem === '2nd' ? 'Second' : sem === 'Summer' ? 'Summer' : (sem || '');
+          const label = `${semName} Semester, ${syFormatted}`;
+          return label.replace('Summer Semester', 'Summer Term');
+        };
+
+        const activeLabel = activeTerm ? formatLabel(activeTerm.semester, activeTerm.school_year) : '';
+
         if (profile?.section_id) {
           const { data: currentSec } = await supabase
             .from('sections')
@@ -104,9 +157,7 @@ export default function MyGradesList() {
             .single();
 
           if (currentSec) {
-            const sy = currentSec.school_year.startsWith('AY') ? currentSec.school_year : `AY ${currentSec.school_year}`;
-            const semName = currentSec.semester === '1st' ? 'First' : currentSec.semester === '2nd' ? 'Second' : currentSec.semester;
-            const label = `${semName} Semester, ${sy}`;
+            const label = formatLabel(currentSec.semester, currentSec.school_year);
             seen.add(label);
             options.push({
               label,
@@ -119,9 +170,7 @@ export default function MyGradesList() {
 
         enrolls?.forEach(e => {
           if (e.sections) {
-            const sy = e.sections.school_year.startsWith('AY') ? e.sections.school_year : `AY ${e.sections.school_year}`;
-            const semName = e.sections.semester === '1st' ? 'First' : e.sections.semester === '2nd' ? 'Second' : e.sections.semester;
-            const label = `${semName} Semester, ${sy}`;
+            const label = formatLabel(e.sections.semester, e.sections.school_year);
             if (!seen.has(label)) {
               seen.add(label);
               options.push({
@@ -134,10 +183,23 @@ export default function MyGradesList() {
           }
         });
 
+        // Ensure central active term is in options
+        if (activeLabel && !seen.has(activeLabel)) {
+          options.unshift({
+            label: activeLabel,
+            semester: activeTerm.semester,
+            school_year: activeTerm.school_year,
+            section_id: profile?.section_id || (enrolls?.[0]?.section_id || null)
+          });
+        }
+
         setSemestersList(options);
         if (options.length > 0) {
-          const currentOpt = options.find(o => o.section_id === profile?.section_id) || options[0];
-          setSelectedSemLabel(currentOpt.label);
+          // Prioritize active system term
+          const matchedActive = activeLabel ? options.find(o => o.label === activeLabel) : null;
+          const matchedProfile = options.find(o => o.section_id === profile?.section_id);
+          const defaultOpt = matchedActive || matchedProfile || options[0];
+          setSelectedSemLabel(defaultOpt.label);
         } else {
           setLoading(false);
         }
@@ -159,33 +221,44 @@ export default function MyGradesList() {
         if (!activeOpt) return;
 
         // Fetch pending evaluation count for clearance gating
-        const pCount = await checkPendingEvals(user.id, activeOpt.section_id);
-        setPendingEvals(pCount);
+        const clearanceInfo = await checkPendingEvals(user.id, activeOpt.section_id);
+        setEvalClearance(clearanceInfo);
 
         // 1. Fetch enrollments for the selected semester
-        const { data: enrolls } = await supabase
+        let enrollsQuery = supabase
           .from('enrollments')
           .select(`
             subject_id,
             section_id,
+            sections ( section_id, school_year, semester ),
             subjects ( subject_id, code, name, units )
           `)
-          .eq('student_id', user.id)
-          .eq('section_id', activeOpt.section_id);
+          .eq('student_id', user.id);
 
+        if (activeOpt.section_id) {
+          enrollsQuery = enrollsQuery.eq('section_id', activeOpt.section_id);
+        }
+
+        const { data: enrolls } = await enrollsQuery;
         const subjectIds = enrolls?.map(e => e.subject_id) || [];
         
         // 2. Fetch class records
-        const { data: classRecords } = await supabase
+        let crQuery = supabase
           .from('class_records')
           .select(`
             class_record_id,
             subject_id,
+            section_id,
             faculty:users!faculty_id ( first_name, last_name )
           `)
-          .eq('section_id', activeOpt.section_id)
           .in('subject_id', subjectIds)
           .eq('status', 'active');
+
+        if (activeOpt.section_id) {
+          crQuery = crQuery.eq('section_id', activeOpt.section_id);
+        }
+
+        const { data: classRecords } = await crQuery;
 
         const classRecordIds = classRecords?.map(cr => cr.class_record_id) || [];
 
@@ -404,39 +477,80 @@ export default function MyGradesList() {
         {/* Term Clearance & Evaluation Lock Status Banner */}
         <div className={cn(
           "rounded-2xl p-4 sm:p-5 border shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4",
-          pendingEvals === 0
+          evalClearance.isOfficeSigned
             ? "bg-emerald-50 border-emerald-200 text-emerald-950"
-            : "bg-amber-50 border-amber-200 text-amber-950"
+            : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0
+            ? "bg-sky-50 border-sky-200 text-sky-950"
+            : evalClearance.pendingCount > 0
+            ? "bg-amber-50 border-amber-200 text-amber-950"
+            : "bg-slate-50 border-slate-200 text-slate-900"
         )}>
           <div className="flex items-start sm:items-center gap-3.5">
             <div className={cn(
               "p-2.5 rounded-xl flex-shrink-0 mt-0.5 sm:mt-0",
-              pendingEvals === 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+              evalClearance.isOfficeSigned 
+                ? "bg-emerald-100 text-emerald-700" 
+                : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0
+                ? "bg-sky-100 text-sky-700"
+                : evalClearance.pendingCount > 0 
+                ? "bg-amber-100 text-amber-700" 
+                : "bg-slate-200/70 text-slate-600"
             )}>
-              {pendingEvals === 0 ? <ShieldCheck className="h-6 w-6" /> : <Lock className="h-6 w-6" />}
+              {evalClearance.isOfficeSigned ? (
+                <ShieldCheck className="h-6 w-6" />
+              ) : evalClearance.pendingCount > 0 ? (
+                <Lock className="h-6 w-6" />
+              ) : (
+                <Clock className="h-6 w-6" />
+              )}
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h4 className="font-extrabold text-sm sm:text-base font-display">
-                  Term Clearance: {pendingEvals === 0 ? 'SIGNED & CLEARED' : 'UNSIGNED (PENDING EVALUATION)'}
+                  Term Clearance: {
+                    evalClearance.isOfficeSigned 
+                      ? 'SIGNED & CLEARED' 
+                      : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0
+                      ? 'AWAITING OFFICE SIGN-OFF'
+                      : evalClearance.pendingCount > 0 
+                      ? 'UNSIGNED (PENDING EVALUATION)' 
+                      : 'PENDING EVALUATION PERIOD'
+                  }
                 </h4>
                 <span className={cn(
                   "px-2 py-0.5 rounded-full text-[10px] font-extrabold border",
-                  pendingEvals === 0 ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "bg-amber-100 text-amber-800 border-amber-200"
+                  evalClearance.isOfficeSigned
+                    ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                    : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0
+                    ? "bg-sky-100 text-sky-800 border-sky-200"
+                    : evalClearance.pendingCount > 0
+                    ? "bg-amber-100 text-amber-800 border-amber-200"
+                    : "bg-slate-200/80 text-slate-700 border-slate-300"
                 )}>
-                  {pendingEvals === 0 ? 'Clearance Signed' : `${pendingEvals} Pending Eval(s)`}
+                  {evalClearance.isOfficeSigned 
+                    ? 'Clearance Signed by Office' 
+                    : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0
+                    ? 'Surveys Completed'
+                    : evalClearance.pendingCount > 0 
+                    ? `${evalClearance.pendingCount} Pending Eval(s)` 
+                    : 'Evaluation Period Not Active'
+                  }
                 </span>
               </div>
               <p className="text-xs mt-1 text-slate-600">
-                {pendingEvals === 0
-                  ? "All faculty evaluation surveys have been completed on-time. Your clearance is signed for the semester."
-                  : `You have ${pendingEvals} pending faculty evaluation survey(s). Complete all evaluations to unlock grade summaries and sign your clearance.`
+                {evalClearance.isOfficeSigned
+                  ? "Your semester clearance has been officially verified and signed off by the College Office."
+                  : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0
+                  ? "You have completed all faculty evaluation surveys. Your official clearance is currently being audited and finalized by the College Office."
+                  : evalClearance.pendingCount > 0
+                  ? `You have ${evalClearance.pendingCount} pending faculty evaluation survey(s). Complete all evaluations to qualify for clearance sign-off.`
+                  : "Faculty evaluation survey period is not currently active for this semester. Clearance sign-off is pending until evaluation windows open and are completed."
                 }
               </p>
             </div>
           </div>
 
-          {pendingEvals > 0 && (
+          {evalClearance.pendingCount > 0 && (
             <Link
               to="/student/evallist"
               className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm whitespace-nowrap self-end sm:self-auto cursor-pointer"
@@ -445,14 +559,15 @@ export default function MyGradesList() {
             </Link>
           )}
         </div>
-            {/* Single Official GWA Summary Metric Card */}
+        
+        {/* Single Official GWA Summary Metric Card */}
         <div className="bg-emerald-50/40 border border-emerald-100/90 rounded-2xl p-5 sm:p-6 shadow-sm flex items-center justify-between">
           <div className="space-y-1 text-left">
             <span className="text-[10px] sm:text-xs font-bold text-emerald-800 uppercase tracking-wider block">Official Cumulative GWA</span>
             <div className="text-3xl sm:text-4xl font-extrabold font-mono text-emerald-950">
-              {pendingEvals > 0 ? '🔒.🔒🔒' : (officialGwa !== null ? officialGwa.toFixed(2) : '—')}
+              {evalClearance.pendingCount > 0 ? '🔒.🔒🔒' : (officialGwa !== null ? officialGwa.toFixed(2) : '—')}
             </div>
-            <p className="text-xs sm:text-sm text-emerald-700 font-medium">Official Academic Standing: <strong className="font-bold">{pendingEvals > 0 ? 'Locked (Complete Evaluations)' : officialStanding}</strong></p>
+            <p className="text-xs sm:text-sm text-emerald-700 font-medium">Official Academic Standing: <strong className="font-bold">{evalClearance.pendingCount > 0 ? 'Locked (Complete Evaluations)' : officialStanding}</strong></p>
           </div>
           <div className="p-3.5 sm:p-4 bg-emerald-100 text-emerald-700 rounded-2xl shadow-sm flex-shrink-0">
             <Award className="h-6 w-6 sm:h-8 sm:w-8" />
@@ -490,7 +605,7 @@ export default function MyGradesList() {
                       GWA
                     </span>
                     <span className="font-mono text-base font-extrabold block">
-                      {pendingEvals > 0 ? '🔒' : item.officialGrade}
+                      {evalClearance.pendingCount > 0 ? '🔒' : item.officialGrade}
                     </span>
                   </div>
                 </div>
@@ -575,9 +690,9 @@ export default function MyGradesList() {
                       <td className="px-4 py-4 text-center">
                         <span className={cn(
                           "font-mono text-base font-extrabold",
-                          pendingEvals > 0 ? 'text-amber-600' : (item.officialGrade === '—' ? 'text-slate-350' : 'text-emerald-700')
+                          evalClearance.pendingCount > 0 ? 'text-amber-600' : (item.officialGrade === '—' ? 'text-slate-350' : 'text-emerald-700')
                         )}>
-                          {pendingEvals > 0 ? '🔒' : item.officialGrade}
+                          {evalClearance.pendingCount > 0 ? '🔒' : item.officialGrade}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">

@@ -10,26 +10,12 @@ import {
   Info,
   MailOpen
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn, formatRelativeTime } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
-const formatRelativeTime = (isoString) => {
-  if (!isoString) return '';
-  const diffMs = new Date() - new Date(isoString);
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays === 1) return 'Yesterday';
-  return `${diffDays} days ago`;
-};
-
 export default function Notifications() {
-  const { user } = useAuth();
+  const { user, refreshUnreadCount } = useAuth();
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [notifications, setNotifications] = useState([]);
@@ -113,6 +99,7 @@ export default function Notifications() {
 
       if (error) throw error;
       setNotifications(notifications.map(n => ({ ...n, read: true })));
+      refreshUnreadCount?.();
     } catch (err) {
       console.error('Error marking all notifications as read:', err);
     }
@@ -127,6 +114,7 @@ export default function Notifications() {
 
       if (error) throw error;
       setNotifications(notifications.filter(n => n.id !== id));
+      refreshUnreadCount?.();
     } catch (err) {
       console.error('Error deleting notification:', err);
     }
@@ -141,6 +129,7 @@ export default function Notifications() {
 
       if (error) throw error;
       setNotifications(notifications.map(n => n.id === id ? { ...n, read: !currentReadState } : n));
+      refreshUnreadCount?.();
     } catch (err) {
       console.error('Error toggling notification read state:', err);
     }
