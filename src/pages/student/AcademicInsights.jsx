@@ -242,17 +242,6 @@ export default function AcademicInsights() {
               .eq('student_id', user.id)
               .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000']);
 
-            const { data: drafts } = await supabase
-              .from('student_term_scores')
-              .select('*')
-              .eq('student_id', user.id)
-              .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000']);
-
-            const { data: gradingCols } = await supabase
-              .from('class_grading_columns')
-              .select('*')
-              .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000']);
-
             const subMap = {};
             enrollsCheck?.forEach(e => {
               if (e.subjects) subMap[e.subject_id] = e.subjects;
@@ -270,58 +259,22 @@ export default function AcademicInsights() {
             const officialMilestonesExist = officialPostedCount > 0;
             setHasOfficialMilestone(officialMilestonesExist);
 
-            const draftsMap = {};
-            drafts?.forEach(d => {
-              if (!draftsMap[d.class_record_id]) draftsMap[d.class_record_id] = {};
-              draftsMap[d.class_record_id][d.term] = d;
-            });
-
-            const colsMap = {};
-            gradingCols?.forEach(c => {
-              if (!colsMap[c.class_record_id]) colsMap[c.class_record_id] = {};
-              colsMap[c.class_record_id][c.term] = {
-                act1: c.act1_max,
-                act2: c.act2_max,
-                act3: c.act3_max,
-                act4: c.act4_max,
-                act5: c.act5_max,
-                act6: c.act6_max,
-                exam: c.exam_max
-              };
-            });
-
             let totalRunningUnits = 0;
             let weightedRunningSum = 0;
-
-            // Aggregated diagnostic accumulators
-            let totalCsEarned = 0;
-            let totalCsPossible = 0;
-            let totalExamEarned = 0;
-            let totalExamPossible = 0;
-            let totalCharEarned = 0;
-            let charCount = 0;
 
             const computedSubjectsList = (classRecords || [])
               .filter(cr => subMap[cr.subject_id])
               .map(cr => {
                 const subj = subMap[cr.subject_id];
                 const crPosted = postedMap[cr.class_record_id] || [];
-                const crDrafts = draftsMap[cr.class_record_id] || {};
-                const crCols = colsMap[cr.class_record_id] || {};
-
-                // Subject-level diagnostic accumulators
-                let subCsEarned = 0;
-                let subCsPossible = 0;
-                let subExamEarned = 0;
-                let subExamPossible = 0;
 
                 const getTermRating = (termName) => {
                   const dbTermKey = termName.toLowerCase().replace('-', '_');
-                  const postedRow = crPosted.find(p => p.grade_period === dbTermKey);
+                  const postedRow = crPosted.find(p => p.grade_period === dbTermKey || p.grade_period === termName.toLowerCase());
                   if (postedRow) {
                     const rating = parseFloat(postedRow.computed_grade);
                     const gwa = postedRow.effective_grade !== null 
-                      ? postedRow.effective_grade.toFixed(2) 
+                      ? Number(postedRow.effective_grade).toFixed(2) 
                       : getTransmutedGrade(parseFloat(postedRow.computed_grade)).toFixed(2);
                     return {
                       rating,
@@ -330,106 +283,112 @@ export default function AcademicInsights() {
                       insight: generateDynamicInsight(termName, rating, gwa, 'Posted')
                     };
                   }
-                  const draftRow = crDrafts[termName];
-                  if (draftRow) {
-                    const maxSetup = crCols[termName] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
-                    
-                    const csSum = (draftRow.act1 || 0) + (draftRow.act2 || 0) + (draftRow.act3 || 0) + (draftRow.act4 || 0) + (draftRow.act5 || 0) + (draftRow.act6 || 0);
-                    const csMax = maxSetup.act1 + maxSetup.act2 + maxSetup.act3 + maxSetup.act4 + maxSetup.act5 + maxSetup.act6;
-                    
-                    if (csMax > 0) {
-                      subCsEarned += csSum;
-                      subCsPossible += csMax;
-                      totalCsEarned += csSum;
-                      totalCsPossible += csMax;
-                    }
-
-                    if (draftRow.exam !== null && maxSetup.exam > 0) {
-                      subExamEarned += draftRow.exam;
-                      subExamPossible += maxSetup.exam;
-                      totalExamEarned += draftRow.exam;
-                      totalExamPossible += maxSetup.exam;
-                    }
-
-                    if (draftRow.char_rating !== null) {
-                      totalCharEarned += draftRow.char_rating;
-                      charCount++;
-                    }
-
-                    const hasScores = csSum > 0 || (draftRow.char_rating && draftRow.char_rating > 0) || (draftRow.exam && draftRow.exam > 0);
-                    if (!hasScores) return { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting term evaluation components.` };
-
-                    const computedRating = calculateTermRating(draftRow, maxSetup);
-                    const computedGwa = getTransmutedGrade(computedRating).toFixed(2);
-                    return {
-                      rating: computedRating,
-                      gwa: computedGwa,
-                      status: 'Draft',
-                      insight: generateDynamicInsight(termName, computedRating, computedGwa, 'Draft')
-                    };
-                  }
-                  return { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting term evaluation components.` };
+                  
+                  // Grade is NOT posted yet: MUST NOT calculate or display any draft grades
+                  return { 
+                    rating: 0, 
+                    gwa: '—', 
+                    status: 'Pending', 
+                    insight: `Awaiting officially posted ${termName} grade from instructor and college dean.` 
+                  };
                 };
 
                 const prelim = getTermRating('Prelim');
                 const midterm = getTermRating('Midterm');
                 
+                // Check if official Midterm Rating row exists in posted_grades
+                const mrPostedRow = crPosted.find(p => p.grade_period === 'midterm_rating' || p.grade_period === 'mr');
                 let mr = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Prelim and Midterm components.` };
-                if (prelim.gwa !== '—' && midterm.gwa !== '—') {
+                
+                if (mrPostedRow) {
+                  const rating = parseFloat(mrPostedRow.computed_grade);
+                  const gwa = mrPostedRow.effective_grade !== null 
+                    ? Number(mrPostedRow.effective_grade).toFixed(2) 
+                    : getTransmutedGrade(rating).toFixed(2);
+                  mr = {
+                    rating,
+                    gwa,
+                    status: 'Posted',
+                    insight: generateDynamicInsight('Midterm Rating', rating, gwa, 'Posted')
+                  };
+                } else if (prelim.status === 'Posted' && midterm.status === 'Posted') {
                   const avgRating = Math.round((prelim.rating + midterm.rating) / 2);
                   const avgGwa = getTransmutedGrade(avgRating).toFixed(2);
-                  const status = prelim.status === 'Posted' && midterm.status === 'Posted' ? 'Posted' : 'Draft';
                   mr = {
                     rating: avgRating,
                     gwa: avgGwa,
-                    status,
-                    insight: generateDynamicInsight('Midterm Rating', avgRating, avgGwa, status)
+                    status: 'Posted',
+                    insight: generateDynamicInsight('Midterm Rating', avgRating, avgGwa, 'Posted')
                   };
                 }
 
                 const semiFinal = getTermRating('Semi-Final');
                 const final = getTermRating('Final');
 
+                // Check if official Tentative Final Rating row exists in posted_grades
+                const tfrPostedRow = crPosted.find(p => p.grade_period === 'tentative_final_rating' || p.grade_period === 'tfr');
                 let tentativeFinalRating = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Semi-Final and Final components.` };
-                if (semiFinal.gwa !== '—' && final.gwa !== '—') {
+                
+                if (tfrPostedRow) {
+                  const rating = parseFloat(tfrPostedRow.computed_grade);
+                  const gwa = tfrPostedRow.effective_grade !== null 
+                    ? Number(tfrPostedRow.effective_grade).toFixed(2) 
+                    : getTransmutedGrade(rating).toFixed(2);
+                  tentativeFinalRating = {
+                    rating,
+                    gwa,
+                    status: 'Posted',
+                    insight: generateDynamicInsight('Tentative Final Rating', rating, gwa, 'Posted')
+                  };
+                } else if (semiFinal.status === 'Posted' && final.status === 'Posted') {
                   const avgRating = Math.round((semiFinal.rating + final.rating) / 2);
                   const avgGwa = getTransmutedGrade(avgRating).toFixed(2);
-                  const status = semiFinal.status === 'Posted' && final.status === 'Posted' ? 'Posted' : 'Draft';
                   tentativeFinalRating = {
                     rating: avgRating,
                     gwa: avgGwa,
-                    status,
-                    insight: generateDynamicInsight('Tentative Final Rating', avgRating, avgGwa, status)
+                    status: 'Posted',
+                    insight: generateDynamicInsight('Tentative Final Rating', avgRating, avgGwa, 'Posted')
                   };
                 }
 
+                // Check if official Semestral Grade row exists in posted_grades
+                const sgPostedRow = crPosted.find(p => p.grade_period === 'semestral_grade' || p.grade_period === 'sg');
                 let semestralGrade = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting complete term components.` };
-                if (mr.gwa !== '—' && tentativeFinalRating.gwa !== '—') {
+                
+                if (sgPostedRow) {
+                  const rating = parseFloat(sgPostedRow.computed_grade);
+                  const gwa = sgPostedRow.effective_grade !== null 
+                    ? Number(sgPostedRow.effective_grade).toFixed(2) 
+                    : getTransmutedGrade(rating).toFixed(2);
+                  semestralGrade = {
+                    rating,
+                    gwa,
+                    status: 'Posted',
+                    insight: generateDynamicInsight('Semestral Grade', rating, gwa, 'Posted')
+                  };
+                } else if (mr.status === 'Posted' && tentativeFinalRating.status === 'Posted') {
                   const avgRating = Math.round((mr.rating + tentativeFinalRating.rating) / 2);
                   const avgGwa = getTransmutedGrade(avgRating).toFixed(2);
-                  const status = mr.status === 'Posted' && tentativeFinalRating.status === 'Posted' ? 'Posted' : 'Draft';
                   semestralGrade = {
-                    rating: avgRating,
-                    gwa: avgGwa,
-                    status,
-                    insight: generateDynamicInsight('Semestral Grade', avgRating, avgGwa, status)
+                    rating,
+                    gwa,
+                    status: 'Posted',
+                    insight: generateDynamicInsight('Semestral Grade', avgRating, avgGwa, 'Posted')
                   };
                 }
 
+                // Running GWA is strictly derived ONLY from officially posted milestones
                 let runningGwaVal = null;
-                if (semestralGrade.gwa !== '—') runningGwaVal = parseFloat(semestralGrade.gwa);
-                else if (tentativeFinalRating.gwa !== '—') runningGwaVal = parseFloat(tentativeFinalRating.gwa);
-                else if (mr.gwa !== '—') runningGwaVal = parseFloat(mr.gwa);
-                else if (prelim.gwa !== '—') runningGwaVal = parseFloat(prelim.gwa);
+                if (semestralGrade.status === 'Posted') runningGwaVal = parseFloat(semestralGrade.gwa);
+                else if (tentativeFinalRating.status === 'Posted') runningGwaVal = parseFloat(tentativeFinalRating.gwa);
+                else if (mr.status === 'Posted') runningGwaVal = parseFloat(mr.gwa);
+                else if (prelim.status === 'Posted') runningGwaVal = parseFloat(prelim.gwa);
 
                 const courseUnits = Number(subj.units) || 3;
                 if (runningGwaVal !== null && !isNaN(runningGwaVal)) {
                   totalRunningUnits += courseUnits;
                   weightedRunningSum += runningGwaVal * courseUnits;
                 }
-
-                const subCsAvg = subCsPossible > 0 ? Math.round((subCsEarned / subCsPossible) * 100) : 0;
-                const subExamAvg = subExamPossible > 0 ? Math.round((subExamEarned / subExamPossible) * 100) : 0;
 
                 return {
                   code: subj.code,
@@ -438,8 +397,8 @@ export default function AcademicInsights() {
                   instructor: cr.faculty ? `Prof. ${cr.faculty.first_name} ${cr.faculty.last_name}` : 'TBA',
                   runningGwa: runningGwaVal !== null ? runningGwaVal.toFixed(2) : '—',
                   diagnostics: {
-                    csAvg: subCsAvg,
-                    examAvg: subExamAvg
+                    csAvg: 0,
+                    examAvg: 0
                   },
                   periods: {
                     prelim,
@@ -453,19 +412,14 @@ export default function AcademicInsights() {
                 };
               });
 
-            // Overall aggregated diagnostic calculations
-            const csAvgPct = totalCsPossible > 0 ? Math.round((totalCsEarned / totalCsPossible) * 100) : 0;
-            const examAvgPct = totalExamPossible > 0 ? Math.round((totalExamEarned / totalExamPossible) * 100) : 0;
-            const charAvgPct = charCount > 0 ? Math.round(totalCharEarned / charCount) : 0;
-
-            // Compute GWA strictly when there are real calculated running units (never default to 5.00 or 2.50)
+            // Compute GWA strictly when there are real posted running units (never default to a fake number)
             const computedGwa = totalRunningUnits > 0 
               ? parseFloat((weightedRunningSum / totalRunningUnits).toFixed(2))
               : null;
 
             // Trajectory and Standing classification
-            let gwaStanding = 'No Official Grades Yet';
-            let trajectoryVerdict = 'Awaiting Milestone Assessments';
+            let gwaStanding = 'No Grades Posted Yet';
+            let trajectoryVerdict = 'Awaiting Grade Posting';
             let trajectoryType = 'good'; // 'honors' | 'good' | 'warning' | 'critical'
 
             if (fdaFlags > 0 || absentAtt >= 4) {
@@ -494,23 +448,21 @@ export default function AcademicInsights() {
                 trajectoryType = 'critical';
               }
             } else {
-              gwaStanding = computedSubjectsList.length > 0 ? 'Pending Official Milestone Grades' : 'No Active Enrollment';
-              trajectoryVerdict = computedSubjectsList.length > 0 ? 'Awaiting Milestone Assessments' : 'Not Enrolled';
+              gwaStanding = computedSubjectsList.length > 0 ? 'No Grades Posted Yet' : 'No Active Enrollment';
+              trajectoryVerdict = computedSubjectsList.length > 0 ? 'Awaiting Official Grade Posting' : 'Not Enrolled';
             }
 
-            // Latin Honors / DL eligibility
-            const hasDisqualifyingGrade = computedSubjectsList.some(sub => {
-              const r = parseFloat(sub.runningGwa);
-              return !isNaN(r) && r > 2.00;
-            });
-
-            let dlCategory = 'Not Eligible';
+            // Latin Honors / DL eligibility (only calculated when posted grades exist)
+            let dlCategory = 'Pending Official Grades';
             let dlProbability = 0;
-            let dlMessage = computedGwa === null 
-              ? 'Dean\'s Lister eligibility will be calculated once official Midterm or Final grades are published.' 
-              : 'Your current average does not qualify for Dean\'s Lister honors. Focus on upcoming milestones to improve your score.';
+            let dlMessage = 'Dean\'s Lister eligibility and academic honors forecasts will be determined once official Midterm or Final grades are published by the college.';
             
             if (computedGwa !== null) {
+              const hasDisqualifyingGrade = computedSubjectsList.some(sub => {
+                const r = parseFloat(sub.runningGwa);
+                return !isNaN(r) && r > 2.00;
+              });
+
               if (hasDisqualifyingGrade) {
                 dlCategory = 'Not Eligible';
                 dlProbability = 0;
@@ -523,11 +475,15 @@ export default function AcademicInsights() {
                 dlCategory = "2nd Class Dean's Lister";
                 dlProbability = 85;
                 dlMessage = `Your current average of ${computedGwa.toFixed(2)} qualifies you for 2nd Class Dean's Lister honors! Strive for 1.45 to upgrade to 1st Class honors.`;
+              } else {
+                dlCategory = 'Not Eligible';
+                dlProbability = 0;
+                dlMessage = 'Your current average does not qualify for Dean\'s Lister honors. Focus on upcoming milestones to improve your score.';
               }
             }
 
-            // Identify Priority Subject for rescue/elevation
-            let prioritySub = computedSubjectsList[0] || null;
+            // Identify Priority Subject for rescue/elevation (only if running GWA exists)
+            let prioritySub = null;
             let lowestGwa = 0;
             computedSubjectsList.forEach(s => {
               const num = parseFloat(s.runningGwa);
@@ -536,6 +492,9 @@ export default function AcademicInsights() {
                 prioritySub = s;
               }
             });
+            if (!prioritySub && computedSubjectsList.length > 0) {
+              prioritySub = computedSubjectsList[0];
+            }
 
             // If a saved insight exists in DB, populate the cached summary
             if (pregenData && pregenData.summary) {
@@ -556,9 +515,9 @@ export default function AcademicInsights() {
                 message: dlMessage
               },
               diagnostics: {
-                csAvg: csAvgPct,
-                examAvg: examAvgPct,
-                charAvg: charAvgPct,
+                csAvg: 0,
+                examAvg: 0,
+                charAvg: 0,
                 attendanceRate,
                 absentCount: absentAtt,
                 fdaRisk: fdaFlags > 0 || absentAtt >= 4

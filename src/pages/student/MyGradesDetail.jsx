@@ -262,13 +262,13 @@ export default function MyGradesDetail() {
 
           const finalRating = isPosted 
             ? parseFloat(postedRow.computed_grade) 
-            : (hasScores ? calculatedRating : null);
+            : null;
 
           const finalGrade = finalRating !== null 
-            ? (isPosted && postedRow.effective_grade !== null ? postedRow.effective_grade.toFixed(2) : getTransmutedGrade(finalRating).toFixed(2))
+            ? (postedRow.effective_grade !== null ? Number(postedRow.effective_grade).toFixed(2) : getTransmutedGrade(finalRating).toFixed(2))
             : '—';
           
-          const status = isPosted ? 'Posted' : 'Draft';
+          const status = isPosted ? 'Posted' : 'Pending';
 
           // Components array for detailed view
           const components = [

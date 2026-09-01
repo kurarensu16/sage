@@ -332,23 +332,9 @@ export default function MyGradesList() {
 
             const getTermRating = (termName) => {
               const dbTermKey = termName.toLowerCase().replace('-', '_');
-              const postedRow = crPosted.find(p => p.grade_period === dbTermKey);
+              const postedRow = crPosted.find(p => p.grade_period === dbTermKey || p.grade_period === termName.toLowerCase());
               if (postedRow) {
                 return parseFloat(postedRow.computed_grade);
-              }
-              const draftRow = crDrafts[termName];
-              if (draftRow) {
-                const hasScores = 
-                  (draftRow.act1 && draftRow.act1 > 0) ||
-                  (draftRow.act2 && draftRow.act2 > 0) ||
-                  (draftRow.act3 && draftRow.act3 > 0) ||
-                  (draftRow.act4 && draftRow.act4 > 0) ||
-                  (draftRow.act5 && draftRow.act5 > 0) ||
-                  (draftRow.act6 && draftRow.act6 > 0) ||
-                  (draftRow.char_rating && draftRow.char_rating > 0) ||
-                  (draftRow.exam && draftRow.exam > 0);
-                if (!hasScores) return null;
-                return calculateTermRating(draftRow, crCols[termName]);
               }
               return null;
             };
