@@ -29,7 +29,7 @@ export function usePwaInstall() {
   const [activeTab, setActiveTab] = useState(platform);
 
   const apkDownloadUrl = import.meta.env.VITE_ANDROID_APK_URL || 
-    `${import.meta.env.VITE_SUPABASE_URL || 'https://ettnwknyhdhehoclrwwh.supabase.co'}/storage/v1/object/public/app-releases/sage-latest.apk`;
+    `${import.meta.env.VITE_SUPABASE_URL || 'https://ettnwknyhdhehoclrwwh.supabase.co'}/storage/v1/object/public/app-releases/sage.apk`;
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {

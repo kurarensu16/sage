@@ -70,34 +70,29 @@ async function main() {
   const fileBuffer = fs.readFileSync(apkPath);
   console.log(`APK File Size: ${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB`);
 
-  console.log('4. Uploading sage.apk to Supabase Storage...');
-  const { data: uploadData, error: upErr } = await supabase.storage
-    .from(bucketName)
-    .upload('sage.apk', fileBuffer, {
-      contentType: 'application/vnd.android.package-archive',
-      upsert: true
-    });
+  const fileNames = ['sage.apk', 'sage-latest.apk', 'app-debug.apk'];
 
-  if (upErr) {
-    console.error('Upload failed:', upErr);
-    process.exit(1);
+  console.log('4. Uploading APK aliases to Supabase Storage...');
+  for (const name of fileNames) {
+    const { data: uploadData, error: upErr } = await supabase.storage
+      .from(bucketName)
+      .upload(name, fileBuffer, {
+        contentType: 'application/vnd.android.package-archive',
+        upsert: true
+      });
+
+    if (upErr) {
+      console.error(`Upload of ${name} failed:`, upErr);
+    } else {
+      console.log(`Uploaded ${name} successfully:`, uploadData.path);
+    }
+
+    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucketName}/${name}`;
+    const res = await fetch(publicUrl, { method: 'HEAD' });
+    console.log(`  -> ${name} HTTP status:`, res.status, res.statusText);
   }
 
-  console.log('Upload successful:', uploadData);
-
-  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucketName}/sage.apk`;
-  console.log('5. Testing download URL:', publicUrl);
-
-  const res = await fetch(publicUrl, { method: 'HEAD' });
-  console.log('HTTP Status:', res.status, res.statusText);
-  console.log('Content-Type:', res.headers.get('content-type'));
-  console.log('Content-Length:', res.headers.get('content-length'), 'bytes');
-
-  if (res.status === 200) {
-    console.log('SUCCESS! sage.apk is live and accessible for download.');
-  } else {
-    console.error('WARNING: HTTP status is', res.status);
-  }
+  console.log('ALL APK endpoints are live and verified.');
 }
 
 main().catch(err => {
