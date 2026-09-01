@@ -37,7 +37,11 @@ export const registerPushNotifications = async (userId) => {
       console.warn('Push notification registration warning (FCM project setup pending):', error);
     });
 
-    await PushNotifications.register();
+    try {
+      await PushNotifications.register();
+    } catch (regErr) {
+      console.warn('PushNotifications.register handled gracefully:', regErr);
+    }
   } catch (err) {
     console.warn('Push notification initialization gracefully bypassed:', err);
   }
