@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase';
 import SuccessModal from '../../components/SuccessModal';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyAdminActivity } from '../../lib/notificationDispatcher';
 
 const PROGRAM_ABBREVIATIONS = {
   "Bachelor of Science in Accountancy": "BSA",
@@ -207,11 +208,18 @@ export default function SectionForm() {
            throw error;
         }
 
+        const actorName = resolveActorName(profile, user);
         await logActivity(
           'Section Update',
           `Updated section "${formData.name}" (${formData.schoolYear}, ${formData.semester} Semester).`,
-          resolveActorName(profile, user)
+          actorName
         );
+
+        await notifyAdminActivity({
+          type: 'system',
+          message: `Sections Database: Section "${formData.name}" (${formData.schoolYear}, ${formData.semester} Sem) was updated by ${actorName}.`,
+          actorName
+        });
       } else {
         const { error } = await supabase
           .from('sections')
@@ -222,11 +230,18 @@ export default function SectionForm() {
            throw error;
         }
 
+        const actorName = resolveActorName(profile, user);
         await logActivity(
           'Section Creation',
           `Pre-loaded new section "${formData.name}" for ${formData.schoolYear} (${formData.semester} Semester).`,
-          resolveActorName(profile, user)
+          actorName
         );
+
+        await notifyAdminActivity({
+          type: 'system',
+          message: `Sections Database: New section "${formData.name}" (${formData.schoolYear}, ${formData.semester} Sem) was created by ${actorName}.`,
+          actorName
+        });
       }
 
       setSuccessModalMessage(isEditMode ? "Section details updated successfully!" : "Section pre-loaded successfully!");

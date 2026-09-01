@@ -3,6 +3,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Calendar, RefreshCw, AlertTriangle, CheckCircle, ShieldAlert, Database, ArrowRight, Check, X, ClipboardList } from 'lucide-react';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyAdminActivity } from '../../lib/notificationDispatcher';
 import { supabase } from '../../lib/supabase';
 import { cn } from '../../lib/utils';
 import SuccessModal from '../../components/SuccessModal';
@@ -318,7 +319,13 @@ export default function TermManagement() {
       });
 
       // Write to audit log helper if present
-      logActivity('Semester Transition', `Transitioned academic term from AY ${activeTerm.schoolYear} (${activeTerm.semester} Sem) to AY ${targetSy} (${targetSem} Sem). All old classrooms archived and evaluation windows sealed.`, actorName);
+      await logActivity('Semester Transition', `Transitioned academic term from AY ${activeTerm.schoolYear} (${activeTerm.semester} Sem) to AY ${targetSy} (${targetSem} Sem). All old classrooms archived and evaluation windows sealed.`, actorName);
+
+      await notifyAdminActivity({
+        type: 'system',
+        message: `Academic Term Management: Institutional term transitioned to AY ${targetSy} (${targetSem} Semester) by ${actorName}.`,
+        actorName
+      });
 
       setWizardStep(3);
     } catch (err) {

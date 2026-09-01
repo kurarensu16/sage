@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, Clock, Shield, RefreshCw, DownloadCloud } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -21,12 +22,15 @@ const ACTION_BADGE_MAP = {
   'Eval Window Update':   'bg-orange-50 text-orange-600 border-orange-100',
   'Eval Form Creation':   'bg-pink-50 text-pink-700 border-pink-200',
   'Eval Form Update':     'bg-pink-50 text-pink-600 border-pink-100',
+  'APK Download':         'bg-emerald-50 text-emerald-700 border-emerald-200',
+  'Mobile App Distribution': 'bg-teal-50 text-teal-700 border-teal-200',
 };
 
 const getActionBadgeColor = (action) =>
   ACTION_BADGE_MAP[action] || 'bg-slate-100 text-slate-600 border-slate-200';
 
 export default function AuditLog() {
+  const location = useLocation();
   const [logs, setLogs] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('');
@@ -35,6 +39,14 @@ export default function AuditLog() {
   const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const actionParam = params.get('action');
+    const searchParam = params.get('search');
+    if (actionParam) setActionFilter(actionParam);
+    if (searchParam) setSearchTerm(searchParam);
+  }, [location.search]);
 
   useEffect(() => {
     setCurrentPage(1);

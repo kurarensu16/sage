@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase';
 import SuccessModal from '../../components/SuccessModal';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { dispatchNotifications } from '../../lib/notificationDispatcher';
 
 const isSubjectMatchingSection = (sub, sectionObj) => {
   if (!sectionObj) return true;
@@ -430,11 +431,35 @@ export default function SubjectAssignmentForm() {
       const selectedFaculty = facultyUsers.find(f => f.id === formData.facultyId);
       const facultyName = selectedFaculty ? `${selectedFaculty.firstName} ${selectedFaculty.lastName}` : 'Unknown';
       const actorName = resolveActorName(profile, user);
+      const subName = selectedSubject.name || '';
+      
       await logActivity(
         'Classroom Creation',
-        `Created classroom: ${formData.subject.split('|')[0]} \u2013 ${formData.section} (${formData.schoolYear}, ${formData.semester}). Instructor: ${facultyName}. Auto-enrolled ${students.length} student(s).`,
+        `Created classroom: ${subCode} – ${formData.section} (${formData.schoolYear}, ${formData.semester}). Instructor: ${facultyName}. Auto-enrolled ${students.length} student(s).`,
         actorName
       );
+
+      // Dispatch notifications to Faculty, Enrolled Students, and Office Actor
+      const notifList = [
+        {
+          recipient_id: formData.facultyId,
+          type: 'class_assigned',
+          message: `You have been assigned to instruct ${subCode} (${subName} - ${formData.section}) for ${formData.schoolYear} ${formData.semester}.`
+        },
+        ...students.map(st => ({
+          recipient_id: st.user_id,
+          type: 'class_enrolled',
+          message: `You have been successfully registered into ${subCode} - ${subName} (${formData.section}).`
+        }))
+      ];
+      if (user?.id) {
+        notifList.push({
+          recipient_id: user.id,
+          type: 'assignment',
+          message: `Classroom created: ${subCode} (${formData.section}) assigned to Prof. ${facultyName}.`
+        });
+      }
+      await dispatchNotifications(notifList);
       
       setSuccessModalMessage(`Classroom created successfully and ${students.length} students enrolled.`);
       setIsSuccessModalOpen(true);

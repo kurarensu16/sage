@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase';
 import SuccessModal from '../../components/SuccessModal';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyAdminActivity } from '../../lib/notificationDispatcher';
 
 const PROGRAM_SUBJECT_PREFIXES = {
   "Bachelor of Science in Accountancy": "ACT",
@@ -243,11 +244,18 @@ export default function SubjectForm() {
         
         if (error) throw error;
 
+        const actorName = resolveActorName(profile, user);
         await logActivity(
           'Subject Update',
           `Updated subject: ${formData.code} \u2013 "${formData.name}" (${formData.units} units).`,
-          resolveActorName(profile, user)
+          actorName
         );
+
+        await notifyAdminActivity({
+          type: 'system',
+          message: `Subjects Database: Subject "${formData.code} \u2013 ${formData.name}" was updated by ${actorName}.`,
+          actorName
+        });
       } else {
         const { error } = await supabase
           .from('subjects')
@@ -258,11 +266,18 @@ export default function SubjectForm() {
            throw error;
         }
 
+        const actorName = resolveActorName(profile, user);
         await logActivity(
           'Subject Creation',
           `Pre-loaded new subject: ${formData.code} \u2013 "${formData.name}" (${formData.units} units).`,
-          resolveActorName(profile, user)
+          actorName
         );
+
+        await notifyAdminActivity({
+          type: 'system',
+          message: `Subjects Database: New subject "${formData.code} \u2013 ${formData.name}" (${formData.units} units) was created by ${actorName}.`,
+          actorName
+        });
       }
 
       setSuccessModalMessage(isEditMode ? "Subject updated successfully!" : "Subject saved successfully!");

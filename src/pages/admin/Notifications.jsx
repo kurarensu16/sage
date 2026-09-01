@@ -10,26 +10,12 @@ import {
   Info,
   MailOpen
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn, formatRelativeTime } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
-const formatRelativeTime = (isoString) => {
-  if (!isoString) return '';
-  const diffMs = new Date() - new Date(isoString);
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays === 1) return 'Yesterday';
-  return `${diffDays} days ago`;
-};
-
 export default function Notifications() {
-  const { user } = useAuth();
+  const { user, refreshUnreadCount } = useAuth();
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [notifications, setNotifications] = useState([]);
@@ -50,11 +36,11 @@ export default function Notifications() {
           let type = 'system';
           let title = 'System Notification';
           let icon = Info;
-          let iconColor = 'text-slate-655 bg-slate-50 border-slate-205';
+          let iconColor = 'text-slate-600 bg-slate-50 border-slate-200';
 
           if (n.type === 'security') {
             type = 'security';
-            title = 'New Administrative Audit Log Entry';
+            title = 'Administrative Security Alert';
             icon = ShieldAlert;
             iconColor = 'text-rose-600 bg-rose-50 border-rose-200';
           } else if (n.type === 'database_sync') {
@@ -103,6 +89,7 @@ export default function Notifications() {
 
       if (error) throw error;
       setNotifications(notifications.map(n => ({ ...n, read: true })));
+      refreshUnreadCount?.();
     } catch (err) {
       console.error('Error marking all notifications as read:', err);
     }
@@ -117,6 +104,7 @@ export default function Notifications() {
 
       if (error) throw error;
       setNotifications(notifications.filter(n => n.id !== id));
+      refreshUnreadCount?.();
     } catch (err) {
       console.error('Error deleting notification:', err);
     }
@@ -133,6 +121,7 @@ export default function Notifications() {
 
       if (error) throw error;
       setNotifications(notifications.map(n => n.id === id ? { ...n, read: !n.read } : n));
+      refreshUnreadCount?.();
     } catch (err) {
       console.error('Error toggling notification read state:', err);
     }
@@ -140,7 +129,9 @@ export default function Notifications() {
 
   const filtered = notifications.filter(n => {
     if (activeFilter === 'Unread') return !n.read;
-    if (activeFilter === 'System') return n.type === 'security' || n.type === 'database';
+    if (activeFilter === 'Security') return n.type === 'security';
+    if (activeFilter === 'System') return n.type === 'database' || n.type === 'system';
+    if (activeFilter === 'Users') return n.type === 'user';
     return true;
   });
 
@@ -170,7 +161,7 @@ export default function Notifications() {
         
         {/* Filters tab pills */}
         <div className="flex items-center gap-2 border-b border-slate-200 pb-3 sm:pb-4 overflow-x-auto">
-          {['All', 'Unread', 'System'].map(filter => (
+          {['All', 'Unread', 'Security', 'System', 'Users'].map(filter => (
             <button
               key={filter}
               onClick={() => setActiveFilter(filter)}

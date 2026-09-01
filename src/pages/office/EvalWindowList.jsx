@@ -22,11 +22,13 @@ import {
   Users, 
   CheckCircle2, 
   BarChart2, 
-  ShieldCheck 
+  ShieldCheck,
+  Lock
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyEvaluationWindowClosed } from '../../lib/notificationDispatcher';
 
 export default function EvalWindowList() {
   const navigate = useNavigate();
@@ -132,6 +134,7 @@ export default function EvalWindowList() {
             id: w.window_id,
             facultyId: w.faculty_id || w.faculty?.user_id,
             facultyName: w.faculty ? `${w.faculty.first_name} ${w.faculty.last_name}` : 'Unknown Faculty',
+            sectionId: w.section_id || w.sections?.section_id,
             section: w.sections?.name || 'Unknown Section',
             templateTitle: w.evaluation_forms?.title || 'Unknown Template',
             openAt: w.open_at,
@@ -224,6 +227,59 @@ export default function EvalWindowList() {
         } catch (err) {
           console.error('Error canceling window:', err);
           alert('Error canceling window: ' + err.message);
+        }
+      }
+    });
+  };
+
+  // Trigger Close Window with SAGE Confirmation Modal and Notification Dispatch
+  const triggerCloseWindowConfirm = (win) => {
+    setActiveDropdownId(null);
+    setConfirmModalConfig({
+      title: 'Close Evaluation Window',
+      message: (
+        <span>
+          Are you sure you want to close the active evaluation window for{' '}
+          <strong className="text-slate-800 font-semibold">Prof. {win.facultyName}</strong> ({win.section})?
+          <span className="text-amber-800 block mt-2 text-xs bg-amber-50 border border-amber-200 p-2.5 rounded-lg text-left">
+            ℹ️ <strong>Notice:</strong> Closing this window will immediately finalize student submissions and notify all enrolled students, the faculty member, and the Dean's Office.
+          </span>
+        </span>
+      ),
+      confirmText: 'Close Window Now',
+      confirmBg: 'bg-amber-600 hover:bg-amber-700 focus:ring-amber-500',
+      icon: <Lock className="h-6 w-6 text-amber-600" />,
+      iconBg: 'bg-amber-50',
+      onConfirm: async () => {
+        try {
+          const { error } = await supabase
+            .from('evaluation_windows')
+            .update({ is_closed: true, close_at: new Date().toISOString() })
+            .eq('window_id', win.id);
+
+          if (error) throw error;
+
+          const actorName = resolveActorName(profile, user);
+          await logActivity(
+            'Evaluation Window Closed',
+            `Officially closed evaluation window for Prof. ${win.facultyName} in section ${win.section}.`,
+            actorName
+          );
+
+          await notifyEvaluationWindowClosed({
+            sectionId: win.sectionId,
+            facultyId: win.facultyId,
+            subjectName: win.templateTitle,
+            sectionName: win.section,
+            facultyName: win.facultyName,
+            actorId: user?.id
+          });
+
+          setConfirmModalConfig(null);
+          loadWindows();
+        } catch (err) {
+          console.error('Error closing window:', err);
+          alert('Error closing window: ' + err.message);
         }
       }
     });
@@ -560,6 +616,16 @@ export default function EvalWindowList() {
                                 <Eye className="h-3.5 w-3.5 text-blue-500" />
                                 View Submissions / Analytics
                               </button>
+
+                              {computeWindowStatus(win) !== 'closed' && (
+                                <button
+                                  onClick={() => triggerCloseWindowConfirm(win)}
+                                  className="w-full text-left px-4 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50/50 flex items-center gap-2"
+                                >
+                                  <Lock className="h-3.5 w-3.5 text-amber-600" />
+                                  Close Window Now
+                                </button>
+                              )}
 
                               <div className="border-t border-slate-100 my-1"></div>
 

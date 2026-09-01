@@ -6,32 +6,18 @@ import {
   Trash2, 
   ShieldAlert, 
   FileSpreadsheet, 
-  ClipboardCheck, 
   Users,
   Info,
   MailOpen,
-  Calendar
+  Calendar,
+  MessageSquare
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { cn, formatRelativeTime } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 
-const formatRelativeTime = (isoString) => {
-  if (!isoString) return '';
-  const diffMs = new Date() - new Date(isoString);
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays === 1) return 'Yesterday';
-  return `${diffDays} days ago`;
-};
-
 export default function Notifications() {
-  const { user } = useAuth();
+  const { user, refreshUnreadCount } = useAuth();
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
   const [notifications, setNotifications] = useState([]);
@@ -64,12 +50,12 @@ export default function Notifications() {
             title = 'Student Roster Processed';
             icon = FileSpreadsheet;
             iconColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
-          } else if (n.type === 'eval_window') {
-            type = 'evaluation';
+          } else if (n.type === 'eval_window' || n.type === 'eval_window_open' || n.type === 'eval_closed') {
+            type = 'eval';
             title = 'Evaluation Window Status';
             icon = Calendar;
             iconColor = 'text-indigo-600 bg-indigo-50 border-indigo-200';
-          } else if (n.type === 'assignment') {
+          } else if (n.type === 'assignment' || n.type === 'class_assigned') {
             type = 'assignment';
             title = 'Subject Assignment Update';
             icon = Users;
@@ -100,192 +86,169 @@ export default function Notifications() {
     loadNotifications();
   }, [user]);
 
-  const markAllAsRead = async () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  const markAllRead = async () => {
+    if (!user || notifications.length === 0) return;
     try {
-      if (user) {
-        await supabase
-          .from('notifications')
-          .update({ is_read: true })
-          .eq('recipient_id', user.id);
-      }
-    } catch (err) {
-      console.error('Failed to mark notifications read in DB:', err);
-    }
-  };
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('recipient_id', user.id);
 
-  const markAsRead = async (id) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-    try {
-      if (user) {
-        await supabase
-          .from('notifications')
-          .update({ is_read: true })
-          .eq('notification_id', id);
-      }
+      if (error) throw error;
+      setNotifications(notifications.map(n => ({ ...n, read: true })));
+      refreshUnreadCount?.();
     } catch (err) {
-      console.error('Failed to update single notification status:', err);
+      console.error('Failed to mark all notifications as read:', err);
     }
   };
 
   const deleteNotification = async (id) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
     try {
-      if (user) {
-        await supabase
-          .from('notifications')
-          .delete()
-          .eq('notification_id', id);
-      }
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('notification_id', id);
+
+      if (error) throw error;
+      setNotifications(notifications.filter(n => n.id !== id));
+      refreshUnreadCount?.();
     } catch (err) {
       console.error('Failed to delete notification:', err);
     }
   };
 
-  const clearAllNotifications = async () => {
-    setNotifications([]);
+  const toggleRead = async (id, currentReadState) => {
     try {
-      if (user) {
-        await supabase
-          .from('notifications')
-          .delete()
-          .eq('recipient_id', user.id);
-      }
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: !currentReadState })
+        .eq('notification_id', id);
+
+      if (error) throw error;
+      setNotifications(notifications.map(n => n.id === id ? { ...n, read: !currentReadState } : n));
+      refreshUnreadCount?.();
     } catch (err) {
-      console.error('Failed to clear notifications in DB:', err);
+      console.error('Failed to update notification read state:', err);
     }
   };
 
-  const filteredNotifications = notifications.filter(n => {
+  const filtered = notifications.filter(n => {
     if (activeFilter === 'Unread') return !n.read;
+    if (activeFilter === 'Evaluations') return n.type === 'eval';
+    if (activeFilter === 'Assignments') return n.type === 'assignment';
     if (activeFilter === 'Compliance') return n.type === 'compliance';
-    if (activeFilter === 'Roster') return n.type === 'roster';
-    if (activeFilter === 'Evaluations') return n.type === 'evaluation';
     return true;
   });
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-sage-600"></div>
+          <p className="text-xs text-slate-500 font-medium font-sans">Loading notifications...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
-      <PageHeader title="Notification Center" breadcrumb="Office Portal" />
+      <PageHeader title="My Notifications" breadcrumb="College Office Portal">
+        <button 
+          onClick={markAllRead}
+          className="w-full sm:w-auto px-3.5 py-2 text-xs font-semibold border border-slate-200 text-slate-700 hover:border-sage-300 rounded-xl transition-colors bg-white flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+        >
+          <MailOpen className="h-4 w-4 text-slate-500" /> Mark all as read
+        </button>
+      </PageHeader>
       
-      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 max-w-5xl mx-auto w-full space-y-4 sm:space-y-6">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
         
-        {/* Controls Toolbar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-            {['All', 'Unread', 'Compliance', 'Roster', 'Evaluations'].map((filter) => (
-              <button
-                key={filter}
-                onClick={() => setActiveFilter(filter)}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap shrink-0",
-                  activeFilter === filter
-                    ? "bg-sage-600 text-white shadow-xs"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                )}
-              >
-                {filter}
-                {filter === 'Unread' && unreadCount > 0 && (
-                  <span className="ml-1.5 px-1.5 py-0.2 bg-white text-sage-700 rounded-full text-[10px] font-bold">
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+        {/* Filters Tab Pills */}
+        <div className="flex items-center gap-2 border-b border-slate-200 pb-3.5 sm:pb-5 overflow-x-auto">
+          {['All', 'Unread', 'Evaluations', 'Assignments', 'Compliance'].map(filter => (
             <button
-              onClick={markAllAsRead}
-              disabled={unreadCount === 0}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              key={filter}
+              onClick={() => setActiveFilter(filter)}
+              className={cn(
+                "px-3.5 py-1.5 text-xs font-semibold rounded-full border transition-colors whitespace-nowrap cursor-pointer",
+                activeFilter === filter 
+                  ? "bg-slate-900 text-white border-slate-900" 
+                  : "bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:text-slate-900"
+              )}
             >
-              <Check className="h-3.5 w-3.5" /> Mark all read
+              {filter}
             </button>
-            <button
-              onClick={clearAllNotifications}
-              disabled={notifications.length === 0}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Clear all
-            </button>
-          </div>
+          ))}
         </div>
 
-        {/* Notifications List */}
-        {loading ? (
-          <div className="space-y-3 animate-pulse">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 h-24" />
-            ))}
-          </div>
-        ) : filteredNotifications.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-12 text-center space-y-3 shadow-2xs">
-            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
-              <MailOpen className="h-6 w-6" />
-            </div>
-            <h3 className="text-sm font-bold text-slate-800">No Notifications</h3>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              You are completely caught up! No alerts match the selected filter.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2.5 sm:space-y-3">
-            {filteredNotifications.map((n) => {
-              const IconComponent = n.icon || Bell;
-              return (
-                <div
-                  key={n.id}
-                  className={cn(
-                    "bg-white border rounded-2xl p-3.5 sm:p-5 transition-all shadow-2xs flex items-start justify-between gap-3 sm:gap-4",
-                    n.read ? "border-slate-200/90 opacity-80" : "border-sage-300 bg-sage-50/20"
-                  )}
-                >
-                  <div className="flex items-start gap-3 sm:gap-3.5 min-w-0">
-                    <div className={cn("p-2 sm:p-2.5 rounded-xl border flex-shrink-0 mt-0.5", n.iconColor)}>
-                      <IconComponent className="h-4 w-4 sm:h-5 sm:w-5" />
-                    </div>
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className={cn("text-xs sm:text-sm font-bold truncate", n.read ? "text-slate-700" : "text-slate-900")}>
-                          {n.title}
-                        </h4>
-                        {!n.read && (
-                          <span className="w-2 h-2 rounded-full bg-sage-600 shrink-0" />
-                        )}
-                        <span className="text-[10px] text-slate-400 font-medium">· {n.time}</span>
-                      </div>
-                      <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">
-                        {n.message}
-                      </p>
-                    </div>
+        {/* Notifications list */}
+        <div className="space-y-3 sm:space-y-4">
+          {filtered.length > 0 ? (
+            filtered.map((noti) => (
+              <div 
+                key={noti.id} 
+                className={cn(
+                  "p-3.5 sm:p-5 rounded-xl border transition-all flex flex-col sm:flex-row items-start justify-between gap-3 sm:gap-4 group",
+                  noti.read 
+                    ? "bg-white border-slate-200" 
+                    : "bg-sage-50/20 border-sage-200 shadow-xs"
+                )}
+              >
+                
+                <div className="flex gap-3 sm:gap-4 items-start w-full">
+                  {/* Icon Card */}
+                  <div className={cn(
+                    "p-2.5 rounded-lg border w-9 h-9 sm:w-10 sm:h-10 flex-shrink-0 flex items-center justify-center mt-0.5",
+                    noti.iconColor
+                  )}>
+                    <noti.icon className="h-4 w-4 sm:h-5 sm:w-5" />
                   </div>
-
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {!n.read && (
-                      <button
-                        onClick={() => markAsRead(n.id)}
-                        title="Mark as read"
-                        className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-sage-600 rounded-lg transition-colors cursor-pointer"
-                      >
-                        <Check className="h-4 w-4" />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => deleteNotification(n.id)}
-                      title="Delete"
-                      className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                  
+                  {/* Details block */}
+                  <div className="space-y-1 flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className={cn(
+                        "text-xs sm:text-sm font-bold text-slate-900 line-clamp-1",
+                        !noti.read && "text-sage-950"
+                      )}>{noti.title}</h4>
+                      {!noti.read && (
+                        <span className="w-2 h-2 bg-sage-600 rounded-full flex-shrink-0"></span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600 leading-relaxed max-w-2xl text-left break-words">{noti.message}</p>
+                    <span className="text-[10px] text-slate-400 font-medium block pt-0.5 text-left">{noti.time}</span>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
+
+                {/* Actions - Visible on touch, hover on desktop */}
+                <div className="flex items-center gap-1 self-end sm:self-center pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 w-full sm:w-auto justify-end md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => toggleRead(noti.id, noti.read)}
+                    className="p-2 sm:p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                    title={noti.read ? "Mark as unread" : "Mark as read"}
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => deleteNotification(noti.id)}
+                    className="p-2 sm:p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                    title="Delete notification"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-12 sm:py-16 bg-white border border-slate-200 rounded-xl p-4">
+              <Bell className="h-8 w-8 sm:h-10 sm:w-10 text-slate-300 mx-auto mb-2 sm:mb-3" />
+              <h3 className="text-xs sm:text-sm font-bold text-slate-900">All caught up!</h3>
+              <p className="text-xs text-slate-400 mt-1">No office alerts found matching your filter selection.</p>
+            </div>
+          )}
+        </div>
 
       </div>
     </>

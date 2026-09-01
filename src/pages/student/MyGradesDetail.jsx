@@ -4,11 +4,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { 
   ChevronRight, 
   ChevronDown, 
-  HelpCircle, 
-  AlertCircle, 
-  Table, 
-  Maximize2, 
-  Minimize2 
+  AlertCircle 
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
@@ -23,8 +19,6 @@ export default function MyGradesDetail() {
   const classRecordId = new URLSearchParams(location.search).get('id');
   const [activeTab, setActiveTab] = useState('Prelim');
   const [isCsExpanded, setIsCsExpanded] = useState(true);
-  const [isSpreadsheetFullScreen, setIsSpreadsheetFullScreen] = useState(false);
-  const [spreadsheetViewMode, setSpreadsheetViewMode] = useState('All');
   const [selectedActivity, setSelectedActivity] = useState(null);
 
   const [loading, setLoading] = useState(true);
@@ -36,13 +30,6 @@ export default function MyGradesDetail() {
     Midterm: { rating: 0, grade: '—', status: 'Draft', overallPct: 0, components: [], missingScores: [] },
     'Semi-Final': { rating: 0, grade: '—', status: 'Draft', overallPct: 0, components: [], missingScores: [] },
     Final: { rating: 0, grade: '—', status: 'Draft', overallPct: 0, components: [], missingScores: [] }
-  });
-
-  const [spreadsheetRow, setSpreadsheetRow] = useState({
-    Prelim: { act1: 0, act2: 0, act3: 0, act4: 0, act5: 0, act6: 0, csSum: 0, csPct: 0, char: 0, exam: 0, examPct: 0, rating: 0 },
-    Midterm: { act1: 0, act2: 0, act3: 0, act4: 0, act5: 0, act6: 0, csSum: 0, csPct: 0, char: 0, exam: 0, examPct: 0, rating: 0 },
-    'Semi-Final': { act1: 0, act2: 0, act3: 0, act4: 0, act5: 0, act6: 0, csSum: 0, csPct: 0, char: 0, exam: 0, examPct: 0, rating: 0 },
-    Final: { act1: 0, act2: 0, act3: 0, act4: 0, act5: 0, act6: 0, csSum: 0, csPct: 0, char: 0, exam: 0, examPct: 0, rating: 0 }
   });
 
   const [finalCalculations, setFinalCalculations] = useState({
@@ -211,7 +198,6 @@ export default function MyGradesDetail() {
 
         // Compute results for each term
         const newTermData = {};
-        const newSpreadsheet = {};
         const isSummer = crInfo?.semester === 'Summer' || crInfo?.semester?.toLowerCase().includes('summer');
         const terms = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
 
@@ -219,12 +205,6 @@ export default function MyGradesDetail() {
           const max = colsMap[term] || defaultMax;
           const studScores = scoresMap[term] || { act1: null, act2: null, act3: null, act4: null, act5: null, act6: null, char: null, exam: null };
           
-          const act1 = studScores.act1 !== null ? studScores.act1 : 0;
-          const act2 = studScores.act2 !== null ? studScores.act2 : 0;
-          const act3 = studScores.act3 !== null ? studScores.act3 : 0;
-          const act4 = studScores.act4 !== null ? studScores.act4 : 0;
-          const act5 = studScores.act5 !== null ? studScores.act5 : 0;
-          const act6 = studScores.act6 !== null ? studScores.act6 : 0;
           const char = studScores.char !== null ? studScores.char : 0;
           const exam = studScores.exam !== null ? studScores.exam : 0;
 
@@ -304,17 +284,25 @@ export default function MyGradesDetail() {
             { name: 'Examination', weight: 40, obtained: exam, max: examMax, contribution: examPct }
           ];
 
-          // Check missing scores
+          // Check missing scores only if officially posted
           const missingScores = [];
-          if (termActs.length === 0) {
-            if (studScores.act1 === null) missingScores.push('Formative Assessment 1');
-            if (studScores.act2 === null) missingScores.push('Formative Assessment 2');
-            if (studScores.act3 === null) missingScores.push('Formative Assessment 3');
-            if (studScores.act4 === null) missingScores.push('Formative Assessment 4');
-            if (studScores.act5 === null) missingScores.push('Formative Assessment 5');
-            if (studScores.act6 === null) missingScores.push('Formative Assessment 6');
+          if (isPosted) {
+            if (termActs.length > 0) {
+              termActs.forEach(act => {
+                if (studentScoresByActivity[act.activity_id] === undefined || studentScoresByActivity[act.activity_id] === null) {
+                  missingScores.push(act.name);
+                }
+              });
+            } else {
+              if (studScores.act1 === null) missingScores.push('Formative Assessment 1');
+              if (studScores.act2 === null) missingScores.push('Formative Assessment 2');
+              if (studScores.act3 === null) missingScores.push('Formative Assessment 3');
+              if (studScores.act4 === null) missingScores.push('Formative Assessment 4');
+              if (studScores.act5 === null) missingScores.push('Formative Assessment 5');
+              if (studScores.act6 === null) missingScores.push('Formative Assessment 6');
+            }
+            if (studScores.exam === null) missingScores.push(`${term} Exam`);
           }
-          if (studScores.exam === null) missingScores.push(`${term} Exam`);
 
           newTermData[term] = {
             rating: finalRating,
@@ -324,16 +312,9 @@ export default function MyGradesDetail() {
             components,
             missingScores
           };
-
-          newSpreadsheet[term] = {
-            act1, act2, act3, act4, act5, act6,
-            csSum, csPct, char, exam, examPct,
-            rating: finalRating
-          };
         });
 
         setTermData(newTermData);
-        setSpreadsheetRow(newSpreadsheet);
 
         // Final Calculations (MR, TFR, SG, GWA, Remarks)
         const calcResult = calculateSemestralGrade({
@@ -576,8 +557,8 @@ export default function MyGradesDetail() {
               )}
             </div>
 
-            {/* Missing Scores list */}
-            {activeData.missingScores.length > 0 && (
+            {/* Missing Scores list - only displayed for officially posted grades */}
+            {activeData.status === 'Posted' && activeData.missingScores?.length > 0 && (
               <div className="bg-rose-50 text-rose-800 rounded-xl p-4 border border-rose-100 space-y-2">
                 <div className="flex items-center gap-1.5 font-bold text-xs">
                   <AlertCircle className="h-4 w-4 text-rose-600" /> Missing Submissions
@@ -629,285 +610,6 @@ export default function MyGradesDetail() {
 
           </div>
 
-        </div>
-
-        {/* Complete Semestral Grade Record Spreadsheet View */}
-        {isSpreadsheetFullScreen && <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsSpreadsheetFullScreen(false)} />}
-        
-        <div className={cn(
-          "bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col transition-all",
-          isSpreadsheetFullScreen ? "fixed inset-4 z-50 rounded-xl border border-slate-200 shadow-2xl bg-white overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200" : "flex flex-col"
-        )}>
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/50">
-            <div className="flex items-center gap-2">
-              <Table className="h-4.5 w-4.5 text-sage-600" />
-              <h3 className="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wider font-display">Complete Semestral Grade Record (Spreadsheet View)</h3>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5">
-                {['All', 'Prelim', 'Midterm', 'Semi-Final', 'Final'].map(mode => (
-                  <button
-                    key={mode}
-                    onClick={() => setSpreadsheetViewMode(mode)}
-                    className={cn(
-                      "px-2.5 py-1 text-[10px] font-bold rounded-md transition-all",
-                      spreadsheetViewMode === mode
-                        ? "bg-white text-sage-700 shadow-sm border border-slate-200"
-                        : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
-                    )}
-                  >
-                    {mode === 'Semi-Final' ? 'Semi' : mode}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setIsSpreadsheetFullScreen(!isSpreadsheetFullScreen)}
-                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-sage-50 hover:border-sage-300 text-slate-500 hover:text-sage-700 transition-all"
-                title={isSpreadsheetFullScreen ? 'Exit fullscreen' : 'View fullscreen'}
-              >
-                {isSpreadsheetFullScreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-          
-          <div className={cn("table-container overflow-auto", isSpreadsheetFullScreen ? "flex-1" : "max-h-[300px]")}>
-            <table className={cn("w-full text-left border-collapse text-center text-xs", spreadsheetViewMode === 'All' ? 'min-w-[1500px]' : 'min-w-[500px]')}>
-              <thead>
-                <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold text-xs">
-                  {/* Prelim Period */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Prelim') && (
-                    <th colSpan={12} className="px-4 py-3 border-r border-slate-200 bg-sky-50 text-sky-900 text-center font-bold tracking-wide text-xs">
-                      PRELIMINARY PERIOD
-                    </th>
-                  )}
-                  
-                  {/* Midterm Period */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Midterm') && (
-                    <th colSpan={12} className="px-4 py-3 border-r border-slate-200 bg-indigo-50 text-indigo-900 text-center font-bold tracking-wide text-xs">
-                      MIDTERM PERIOD
-                    </th>
-                  )}
-                  
-                  {/* Midterm Rating */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Midterm') && (
-                    <th className="px-4 py-3 border-r border-slate-200 bg-indigo-150 text-indigo-950 font-bold uppercase w-20 text-xs">
-                      MR
-                    </th>
-                  )}
-                  
-                  {/* Semi-Final Period */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Semi-Final') && (
-                    <th colSpan={12} className="px-4 py-3 border-r border-slate-200 bg-amber-50 text-amber-900 text-center font-bold tracking-wide text-xs">
-                      SEMI-FINAL PERIOD
-                    </th>
-                  )}
-                  
-                  {/* Final Period */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Final') && (
-                    <th colSpan={12} className="px-4 py-3 border-r border-slate-200 bg-orange-50 text-orange-950 text-center font-bold tracking-wide text-xs">
-                      FINAL PERIOD
-                    </th>
-                  )}
-                  
-                  {/* Tentative Final Rating */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Final') && (
-                    <th className="px-4 py-3 border-r border-slate-200 bg-orange-150 text-orange-950 font-bold uppercase w-20 text-xs">
-                      TFR
-                    </th>
-                  )}
-                  
-                  {/* Semestral Grade - only in All view */}
-                  {spreadsheetViewMode === 'All' && (
-                    <>
-                      <th className="px-4 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-900 font-extrabold uppercase w-20 text-xs">
-                        SG
-                      </th>
-                      <th className="px-4 py-3 border-r border-slate-200 bg-emerald-200/60 text-emerald-950 font-extrabold uppercase w-20 text-xs">
-                        GWA
-                      </th>
-                      <th className="px-4 py-3 bg-emerald-200/60 text-emerald-950 font-extrabold uppercase w-24 text-xs">
-                        Remarks
-                      </th>
-                    </>
-                  )}
-                </tr>
-                
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-550 font-bold text-[10px]">
-                  {/* Prelim sub-headers */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Prelim') && (
-                    <>
-                      {['1', '2', '3', '4', '5', '6'].map(a => <th key={`p-${a}`} className="px-2 py-2 border-r border-slate-100 w-12 font-mono font-bold">FA {a}</th>)}
-                      <th className="px-2 py-2 border-r border-slate-100 bg-slate-100/60 w-14 font-mono font-bold">Total</th>
-                      <th className="px-2 py-2 border-r border-slate-100 bg-slate-100/60 w-14 font-mono font-bold">CS %</th>
-                      <th className="px-2 py-2 border-r border-slate-100 w-16 font-mono font-bold">Char</th>
-                      <th className="px-2 py-2 border-r border-slate-100 w-12 font-mono font-bold">Exam</th>
-                      <th className="px-2 py-2 border-r border-slate-100 bg-slate-100/60 w-14 font-mono font-bold">Exam %</th>
-                      <th className="px-3 py-2 border-r border-slate-200 bg-sky-100/40 font-extrabold w-16 text-slate-800 font-mono">Rating</th>
-                    </>
-                  )}
-
-                  {/* Midterm sub-headers */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Midterm') && (
-                    <>
-                      {['1', '2', '3', '4', '5', '6'].map(a => <th key={`m-${a}`} className="px-2 py-2 border-r border-slate-100 w-12 font-mono font-bold">FA {a}</th>)}
-                      <th className="px-2 py-2 border-r border-slate-100 bg-slate-100/60 w-14 font-mono font-bold">Total</th>
-                      <th className="px-2 py-2 border-r border-slate-100 bg-slate-100/60 w-14 font-mono font-bold">CS %</th>
-                      <th className="px-2 py-2 border-r border-slate-100 w-16 font-mono font-bold">Char</th>
-                      <th className="px-2 py-2 border-r border-slate-100 w-12 font-mono font-bold">Exam</th>
-                      <th className="px-2 py-2 border-r border-slate-100 bg-slate-100/60 w-14 font-mono font-bold">Exam %</th>
-                      <th className="px-3 py-2 border-r border-slate-200 bg-indigo-100/40 font-extrabold w-16 text-slate-800 font-mono">Rating</th>
-                    </>
-                  )}
-
-                  {/* MR dummy th */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Midterm') && (
-                    <th className="border-r border-slate-200 bg-indigo-50/30"></th>
-                  )}
-
-                  {/* Semi-Final sub-headers */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Semi-Final') && (
-                    <>
-                      {['1', '2', '3', '4', '5', '6'].map(a => <th key={`sf-${a}`} className="px-2 py-2 border-r border-slate-100 w-12 font-mono font-bold">FA {a}</th>)}
-                      <th className="px-2 py-2 border-r border-slate-100 bg-slate-100/60 w-14 font-mono font-bold">Total</th>
-                      <th className="px-2 py-2 border-r border-slate-100 bg-slate-100/60 w-14 font-mono font-bold">CS %</th>
-                      <th className="px-2 py-2 border-r border-slate-100 w-16 font-mono font-bold">Char</th>
-                      <th className="px-2 py-2 border-r border-slate-100 w-12 font-mono font-bold">Exam</th>
-                      <th className="px-2 py-2 border-r border-slate-100 bg-slate-100/60 w-14 font-mono font-bold">Exam %</th>
-                      <th className="px-3 py-2 border-r border-slate-200 bg-amber-100/40 font-extrabold w-16 text-slate-800 font-mono">Rating</th>
-                    </>
-                  )}
-
-                  {/* Final sub-headers */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Final') && (
-                    <>
-                      {['1', '2', '3', '4', '5', '6'].map(a => <th key={`f-${a}`} className="px-2 py-2 border-r border-slate-100 w-12 font-mono font-bold">FA {a}</th>)}
-                      <th className="px-2 py-2 border-r border-slate-100 bg-slate-100/60 w-14 font-mono font-bold">Total</th>
-                      <th className="px-2 py-2 border-r border-slate-100 bg-slate-100/60 w-14 font-mono font-bold">CS %</th>
-                      <th className="px-2 py-2 border-r border-slate-100 w-16 font-mono font-bold">Char</th>
-                      <th className="px-2 py-2 border-r border-slate-100 w-12 font-mono font-bold">Exam</th>
-                      <th className="px-2 py-2 border-r border-slate-100 bg-slate-100/60 w-14 font-mono font-bold">Exam %</th>
-                      <th className="px-3 py-2 border-r border-slate-200 bg-orange-100/40 font-extrabold w-16 text-slate-800 font-mono">Rating</th>
-                    </>
-                  )}
-
-                  {/* TFR dummy th */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Final') && (
-                    <th className="border-r border-slate-200 bg-orange-50/30"></th>
-                  )}
-
-                  {/* SG, GWA, Remarks dummy ths - only in All view */}
-                  {spreadsheetViewMode === 'All' && (
-                    <>
-                      <th className="border-r border-slate-200 bg-emerald-50/30"></th>
-                      <th className="border-r border-slate-200 bg-emerald-100/30"></th>
-                      <th className="bg-emerald-100/30"></th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-150 text-slate-800 font-semibold font-mono text-xs">
-                <tr className="hover:bg-slate-50/80 transition-colors">
-                  {/* Prelim scores */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Prelim') && (
-                    <>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Prelim.act1}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Prelim.act2}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Prelim.act3}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Prelim.act4}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Prelim.act5}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Prelim.act6}</td>
-                      <td className="py-4 border-r border-slate-100 bg-slate-100/30 font-bold text-slate-900">{spreadsheetRow.Prelim.csSum}</td>
-                      <td className="py-4 border-r border-slate-100 bg-slate-100/30 text-slate-600">{spreadsheetRow.Prelim.csPct.toFixed(1)}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Prelim.char}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Prelim.exam}</td>
-                      <td className="py-4 border-r border-slate-100 bg-slate-100/30 text-slate-600">{spreadsheetRow.Prelim.examPct.toFixed(1)}</td>
-                      <td className="py-4 border-r border-slate-200 bg-sky-100/40 font-bold text-sky-900 text-sm">{spreadsheetRow.Prelim.rating !== null ? spreadsheetRow.Prelim.rating : '—'}</td>
-                    </>
-                  )}
-
-                  {/* Midterm scores */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Midterm') && (
-                    <>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Midterm.act1}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Midterm.act2}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Midterm.act3}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Midterm.act4}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Midterm.act5}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Midterm.act6}</td>
-                      <td className="py-4 border-r border-slate-100 bg-slate-100/30 font-bold text-slate-900">{spreadsheetRow.Midterm.csSum}</td>
-                      <td className="py-4 border-r border-slate-100 bg-slate-100/30 text-slate-600">{spreadsheetRow.Midterm.csPct.toFixed(1)}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Midterm.char}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Midterm.exam}</td>
-                      <td className="py-4 border-r border-slate-100 bg-slate-100/30 text-slate-600">{spreadsheetRow.Midterm.examPct.toFixed(1)}</td>
-                      <td className="py-4 border-r border-slate-200 bg-indigo-100/40 font-bold text-indigo-900 text-sm">{spreadsheetRow.Midterm.rating !== null ? spreadsheetRow.Midterm.rating : '—'}</td>
-                    </>
-                  )}
-
-                  {/* MR */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Midterm') && (
-                    <td className="py-4 border-r border-slate-200 bg-indigo-100 text-indigo-950 font-extrabold text-sm">{finalCalculations.mr !== null ? finalCalculations.mr : '—'}</td>
-                  )}
-
-                  {/* Semi-Final scores */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Semi-Final') && (
-                    <>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow['Semi-Final'].act1}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow['Semi-Final'].act2}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow['Semi-Final'].act3}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow['Semi-Final'].act4}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow['Semi-Final'].act5}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow['Semi-Final'].act6}</td>
-                      <td className="py-4 border-r border-slate-100 bg-slate-100/30 font-bold text-slate-900">{spreadsheetRow['Semi-Final'].csSum}</td>
-                      <td className="py-4 border-r border-slate-100 bg-slate-100/30 text-slate-600">{spreadsheetRow['Semi-Final'].csPct.toFixed(1)}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow['Semi-Final'].char}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow['Semi-Final'].exam}</td>
-                      <td className="py-4 border-r border-slate-100 bg-slate-100/30 text-slate-600">{spreadsheetRow['Semi-Final'].examPct.toFixed(1)}</td>
-                      <td className="py-4 border-r border-slate-200 bg-amber-100/40 font-bold text-amber-900 text-sm">{spreadsheetRow['Semi-Final'].rating !== null ? spreadsheetRow['Semi-Final'].rating : '—'}</td>
-                    </>
-                  )}
-
-                  {/* Final scores */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Final') && (
-                    <>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Final.act1}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Final.act2}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Final.act3}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Final.act4}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Final.act5}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Final.act6}</td>
-                      <td className="py-4 border-r border-slate-100 bg-slate-100/30 font-bold text-slate-900">{spreadsheetRow.Final.csSum}</td>
-                      <td className="py-4 border-r border-slate-100 bg-slate-100/30 text-slate-600">{spreadsheetRow.Final.csPct.toFixed(1)}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Final.char}</td>
-                      <td className="py-4 border-r border-slate-100">{spreadsheetRow.Final.exam}</td>
-                      <td className="py-4 border-r border-slate-100 bg-slate-100/30 text-slate-600">{spreadsheetRow.Final.examPct.toFixed(1)}</td>
-                      <td className="py-4 border-r border-slate-200 bg-orange-100/40 font-bold text-orange-950 text-sm">{spreadsheetRow.Final.rating !== null ? spreadsheetRow.Final.rating : '—'}</td>
-                    </>
-                  )}
-
-                  {/* TFR */}
-                  {(spreadsheetViewMode === 'All' || spreadsheetViewMode === 'Final') && (
-                    <td className="py-4 border-r border-slate-200 bg-orange-100 text-orange-950 font-extrabold text-sm">{finalCalculations.tfr !== null ? finalCalculations.tfr : '—'}</td>
-                  )}
-
-                  {/* SG, GWA, Remarks - only in All view */}
-                  {spreadsheetViewMode === 'All' && (
-                    <>
-                      <td className="py-4 border-r border-slate-200 bg-emerald-50 text-emerald-850 font-extrabold text-sm">{finalCalculations.sg !== null ? finalCalculations.sg : '—'}</td>
-                      <td className="py-4 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold text-sm">
-                        <span className="px-3 py-1 rounded bg-white shadow-sm border border-emerald-250 text-emerald-700">
-                          {finalCalculations.finalGwa}
-                        </span>
-                      </td>
-                      <td className="py-4 bg-emerald-150 font-bold text-emerald-900 font-sans text-sm">{finalCalculations.remarks}</td>
-                    </>
-                  )}
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span className="flex items-center gap-1.5"><HelpCircle className="h-3.5 w-3.5" /> Formula: CS % (50%) + Char % (10%) + Exam % (40%) = Rating. Semestral Grade (SG) = (MR + TFR) / 2.</span>
-          </div>
         </div>
 
       {/* 📋 Activity Details Modal */}
