@@ -11,7 +11,7 @@ export async function initLocalNotifications() {
 
   try {
     let permStatus = await LocalNotifications.checkPermissions();
-    if (permStatus.display === 'prompt' || permStatus.display === 'prompt-with-rationale') {
+    if (permStatus.display !== 'granted') {
       permStatus = await LocalNotifications.requestPermissions();
     }
 
@@ -24,7 +24,8 @@ export async function initLocalNotifications() {
       visibility: 1, // Public -> Visible on lock screen
       vibration: true,
       lights: true,
-      lightColor: '#2563EB',
+      lightColor: '#1A4A3C',
+      sound: 'default'
     });
 
     return permStatus.display === 'granted';
@@ -46,6 +47,36 @@ export async function showLocalNotification({
 }) {
   try {
     if (Capacitor.isNativePlatform()) {
+      let permStatus = await LocalNotifications.checkPermissions();
+      if (permStatus.display !== 'granted') {
+        permStatus = await LocalNotifications.requestPermissions();
+      }
+
+      if (permStatus.display !== 'granted') {
+        console.warn('Notification permission not granted by user.');
+        return false;
+      }
+
+      try {
+        await LocalNotifications.createChannel({
+          id: 'sage-alerts',
+          name: 'SAGE Alerts',
+          description: 'Urgent academic updates, grading alerts, and official notices from SAGE',
+          importance: 5,
+          visibility: 1,
+          vibration: true,
+          lights: true,
+          lightColor: '#1A4A3C',
+          sound: 'default'
+        });
+      } catch {
+        // Channel already configured
+      }
+
+      const scheduleConfig = delayMs > 0 
+        ? { at: new Date(Date.now() + delayMs), allowWhileIdle: true } 
+        : undefined;
+
       await LocalNotifications.schedule({
         notifications: [
           {
@@ -53,10 +84,11 @@ export async function showLocalNotification({
             title,
             body,
             channelId: 'sage-alerts',
-            schedule: delayMs > 0 ? { at: new Date(Date.now() + delayMs) } : undefined,
+            schedule: scheduleConfig,
             extra: payload,
-            smallIcon: 'ic_launcher',
-            iconColor: '#2563EB',
+            smallIcon: 'ic_launcher_foreground',
+            iconColor: '#1A4A3C',
+            sound: 'default'
           }
         ]
       });
@@ -75,7 +107,7 @@ export async function showLocalNotification({
       }
     }
   } catch (err) {
-    console.warn('Failed to display native notification:', err);
+    console.error('Failed to display native notification:', err);
   }
   return false;
 }
