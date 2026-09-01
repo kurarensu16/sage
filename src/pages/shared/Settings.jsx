@@ -3,7 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { sendTestNotification } from '../../lib/notificationService';
+import { usePwaInstall } from '../../lib/usePwaInstall';
 import PageHeader from '../../components/layout/PageHeader';
+import SmartInstallModal from '../../components/layout/SmartInstallModal';
 import { 
   User, 
   Lock, 
@@ -23,7 +25,8 @@ import {
   BrainCircuit,
   Award,
   Shield,
-  LogOut
+  LogOut,
+  Download
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -34,6 +37,17 @@ export default function Settings() {
   const role = path.split('/')[1] || 'faculty';
 
   const { profile, signOut } = useAuth();
+  const { 
+    platform, 
+    isInstalled, 
+    canNativeInstall, 
+    downloadApk, 
+    promptInstall, 
+    showGuideModal, 
+    setShowGuideModal,
+    activeTab: pwaActiveTab,
+    setActiveTab: setPwaActiveTab 
+  } = usePwaInstall();
 
   const handleSignOut = async () => {
     navigate('/login', { replace: true });
@@ -662,8 +676,46 @@ export default function Settings() {
 
         </div>
 
-        {/* Mobile-Only Sign Out Section */}
-        <div className="lg:hidden pt-2">
+        {/* Mobile-Only Device & Session Management Section */}
+        <div className="lg:hidden pt-2 space-y-3">
+          {/* Download Mobile App (Rendered if not in standalone mode) */}
+          {!isInstalled && (
+            <div className="bg-white rounded-2xl border border-emerald-200/80 p-4 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 font-display">Install SAGE Mobile</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Direct client installation for your device.</p>
+                </div>
+                <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  {platform === 'android' ? 'Android APK' : platform === 'ios' ? 'Safari PWA' : 'Desktop App'}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={promptInstall}
+                className={cn(
+                  "w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold text-xs sm:text-sm border transition-all cursor-pointer shadow-xs",
+                  platform === 'android' 
+                    ? "bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white border-transparent"
+                    : platform === 'ios'
+                    ? "bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white border-transparent"
+                    : "bg-sage-700 hover:bg-sage-800 active:scale-[0.99] text-white border-transparent"
+                )}
+              >
+                <Download className="h-4 w-4" />
+                <span>
+                  {platform === 'android' 
+                    ? 'Download Android App (.APK)' 
+                    : platform === 'ios' 
+                    ? 'Add to Home Screen (iOS Safari)' 
+                    : 'Install SAGE Desktop App'}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* Session Management / Sign Out */}
           <div className="bg-white rounded-2xl border border-rose-200/80 p-4 shadow-sm space-y-3">
             <div>
               <h3 className="text-sm font-bold text-slate-900 font-display">Session Management</h3>
@@ -682,6 +734,19 @@ export default function Settings() {
         </div>
 
       </div>
+
+      {/* Smart Adaptive Install Modal */}
+      <SmartInstallModal
+        isOpen={showGuideModal}
+        onClose={() => setShowGuideModal(false)}
+        activeTab={pwaActiveTab}
+        setActiveTab={setPwaActiveTab}
+        platform={platform}
+        downloadApk={downloadApk}
+        canNativeInstall={canNativeInstall}
+        promptInstall={promptInstall}
+        actorName={profileData.name || 'Institutional User'}
+      />
     </>
   );
 }
