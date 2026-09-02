@@ -1,6 +1,8 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 
+const NOTIFICATION_CHANNEL_ID = 'sage-alerts-v3';
+
 /**
  * Initialize local notification channels and permissions.
  */
@@ -17,15 +19,14 @@ export async function initLocalNotifications() {
 
     // Create high-priority notification channel for Android heads-up popups & lockscreen
     await LocalNotifications.createChannel({
-      id: 'sage-alerts',
-      name: 'SAGE Alerts',
+      id: NOTIFICATION_CHANNEL_ID,
+      name: 'SAGE Institutional Alerts',
       description: 'Urgent academic updates, grading alerts, and official notices from SAGE',
       importance: 5, // High importance -> Heads-up popup banner
       visibility: 1, // Public -> Visible on lock screen
       vibration: true,
       lights: true,
-      lightColor: '#1A4A3C',
-      sound: 'default'
+      lightColor: '#1A4A3C'
     });
 
     return permStatus.display === 'granted';
@@ -59,15 +60,14 @@ export async function showLocalNotification({
 
       try {
         await LocalNotifications.createChannel({
-          id: 'sage-alerts',
-          name: 'SAGE Alerts',
+          id: NOTIFICATION_CHANNEL_ID,
+          name: 'SAGE Institutional Alerts',
           description: 'Urgent academic updates, grading alerts, and official notices from SAGE',
           importance: 5,
           visibility: 1,
           vibration: true,
           lights: true,
-          lightColor: '#1A4A3C',
-          sound: 'default'
+          lightColor: '#1A4A3C'
         });
       } catch {
         // Channel already configured
@@ -83,12 +83,13 @@ export async function showLocalNotification({
             id,
             title,
             body,
-            channelId: 'sage-alerts',
+            channelId: NOTIFICATION_CHANNEL_ID,
             schedule: scheduleConfig,
             extra: payload,
-            smallIcon: 'ic_launcher_foreground',
-            iconColor: '#1A4A3C',
-            sound: 'default'
+            foreground: true, // Forces heads-up banner even when app is open in foreground!
+            isExactNotification: false, // Prevents Android 12+ exact alarm setting rejection
+            smallIcon: 'ic_stat_sage',
+            iconColor: '#1A4A3C'
           }
         ]
       });
