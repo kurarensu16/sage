@@ -1,5 +1,4 @@
 import { supabase } from './supabase';
-import { showLocalNotification } from './notificationService';
 
 export const NOTIFICATION_TITLES = {
   grade_posted: '📊 New Grade Posted',
@@ -32,7 +31,7 @@ let realtimeAlertChannel = null;
 function getRealtimeChannel() {
   if (!realtimeAlertChannel) {
     realtimeAlertChannel = supabase.channel('sage-realtime-alerts', {
-      config: { broadcast: { self: false } }
+      config: { broadcast: { self: true } }
     });
     realtimeAlertChannel.subscribe();
   }
@@ -69,27 +68,7 @@ export async function dispatchNotifications(notificationList = []) {
       console.warn('Failed to insert notifications into database:', error);
     }
 
-    // 2. Immediate Local Popup: If the current logged-in user on THIS device is a recipient,
-    // trigger native notification immediately without awaiting remote websocket roundtrip!
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const currentUserId = session?.user?.id;
-      if (currentUserId) {
-        const myNotif = formatted.find(n => n.recipient_id === currentUserId);
-        if (myNotif) {
-          const title = NOTIFICATION_TITLES[myNotif.type] || 'SAGE Notification';
-          showLocalNotification({
-            title,
-            body: myNotif.message,
-            payload: myNotif
-          });
-        }
-      }
-    } catch (localErr) {
-      console.warn('Local native notification dispatch error:', localErr);
-    }
-
-    // 3. Send Realtime Broadcast to notify other devices in real-time
+    // 2. Send Realtime Broadcast — AuthContext on each device listens and shows native popups
     try {
       const channel = getRealtimeChannel();
       for (const notif of formatted) {

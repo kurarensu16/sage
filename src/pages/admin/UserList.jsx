@@ -253,8 +253,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       });
 
       await showLocalNotification({
-        title: '🔒 Administrative Security Alert',
-        body: `Security Notice: ${userToToggle.role.toUpperCase()} account for ${userToToggle.firstName} ${userToToggle.lastName} was ${nextStatus === 'inactive' ? 'disabled' : 'enabled'}.`
+        title: 'Administrative Security Alert',
+        body: `🔒 Security Notice: ${userToToggle.role.toUpperCase()} account for ${userToToggle.firstName} ${userToToggle.lastName} was ${nextStatus === 'inactive' ? 'disabled' : 'enabled'}.`
       });
     } catch (err) {
       console.error('Failed to toggle status:', err);
@@ -382,8 +382,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       });
 
       await showLocalNotification({
-        title: '🔒 Administrative Security Alert',
-        body: `Security Notice: ${userToArchive.role.toUpperCase()} account for ${userToArchive.firstName} ${userToArchive.lastName} was archived.`
+        title: 'Administrative Security Alert',
+        body: `🔒 Security Notice: ${userToArchive.role.toUpperCase()} account for ${userToArchive.firstName} ${userToArchive.lastName} was archived.`
       });
     } catch (err) {
       console.error('Failed to archive user:', err);
@@ -424,8 +424,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       });
 
       await showLocalNotification({
-        title: '🔒 Administrative Security Alert',
-        body: `Security Notice: ${userToRestore.role.toUpperCase()} account for ${userToRestore.firstName} ${userToRestore.lastName} was restored.`
+        title: 'Administrative Security Alert',
+        body: `🔒 Security Notice: ${userToRestore.role.toUpperCase()} account for ${userToRestore.firstName} ${userToRestore.lastName} was restored.`
       });
     } catch (err) {
       console.error('Failed to restore user:', err);
@@ -494,8 +494,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         });
 
         await showLocalNotification({
-          title: '🔒 Administrative Security Alert',
-          body: `Security Notice: Archived ${selectedList.length} user accounts in bulk.`
+          title: 'Administrative Security Alert',
+          body: `🔒 Security Notice: Archived ${selectedList.length} user accounts in bulk.`
         });
       } catch (err) {
         console.error('Bulk archive failed:', err);
@@ -535,8 +535,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       });
 
       await showLocalNotification({
-        title: '🔒 Administrative Security Alert',
-        body: `Security Notice: Set status to "${targetStatus}" for ${selectedList.length} user accounts in bulk.`
+        title: 'Administrative Security Alert',
+        body: `🔒 Security Notice: Set status to "${targetStatus}" for ${selectedList.length} user accounts in bulk.`
       });
     } catch (err) {
       console.error('Bulk status change failed:', err);

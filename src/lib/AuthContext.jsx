@@ -178,6 +178,10 @@ export const AuthProvider = ({ children }) => {
     const userId = session?.user?.id;
     if (!userId) return;
 
+    // Reset state for this userId so new sessions always get a fresh baseline
+    displayedNotificationIds.current = new Set();
+    initialLoadDone.current = false;
+
     initLocalNotifications();
     fetchUnreadCount(userId);
 

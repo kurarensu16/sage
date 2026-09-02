@@ -267,8 +267,8 @@ export default function UserForm() {
         });
 
         await showLocalNotification({
-          title: '👤 User Profile Updated',
-          body: `Successfully updated ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName}.`
+          title: 'User Profile Updated',
+          body: `👤 Successfully updated ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName}.`
         });
       } else {
         // Generate user number
@@ -325,8 +325,8 @@ export default function UserForm() {
         });
 
         await showLocalNotification({
-          title: '👤 New User Registered',
-          body: `Successfully created ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName}.`
+          title: 'New User Registered',
+          body: `👤 Successfully created ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName}.`
         });
       }
 
