@@ -1,7 +1,47 @@
 import { supabase } from './supabase';
+import { showLocalNotification } from './notificationService';
+
+export const NOTIFICATION_TITLES = {
+  grade_posted: '📊 New Grade Posted',
+  class_enrolled: '📚 Class Registration Success',
+  eval_window_open: '📝 Faculty Evaluation Open',
+  eval_closed: '🔒 Faculty Evaluation Closed',
+  eval_deadline_reminder: '⏰ Evaluation Deadline Reminder',
+  ews_alert: '⚠️ Early Warning System Alert',
+  ai_recommendation: '🧠 AI Counseling Ready',
+  class_assigned: '📋 New Class Assigned',
+  term_rollover_reminder: '⏰ Grade Submission Reminder',
+  override_approved: '✅ Grade Override Approved',
+  override_rejected: '❌ Grade Override Rejected',
+  risk_threshold: '⚠️ At-Risk Threshold Alert',
+  grades_pending: '📑 Grade Sheet Pending Approval',
+  override_request: '📝 Grade Override Pending',
+  eval_compiled: '⭐ Evaluation Reports Compiled',
+  compliance: '🛡️ Grading Compliance Alert',
+  roster_import: '📊 Student Roster Processed',
+  eval_window: '📅 Evaluation Window Status',
+  assignment: '👥 Subject Assignment Update',
+  security: '🔒 Administrative Security Alert',
+  database_sync: '🔄 Database Sync Success',
+  user_signup: '👤 New User Registered',
+  system: 'ℹ️ SAGE System Notice'
+};
+
+// Global broadcast channel for cross-client real-time alerts
+let realtimeAlertChannel = null;
+function getRealtimeChannel() {
+  if (!realtimeAlertChannel) {
+    realtimeAlertChannel = supabase.channel('sage-realtime-alerts', {
+      config: { broadcast: { self: false } }
+    });
+    realtimeAlertChannel.subscribe();
+  }
+  return realtimeAlertChannel;
+}
 
 /**
- * Insert notifications into Supabase database to trigger Realtime and in-app feeds.
+ * Insert notifications into Supabase database, trigger local native notification popup,
+ * and broadcast to other active devices via Supabase Realtime Broadcast.
  * @param {Array<{ recipient_id: string, type: string, message: string }>} notificationList
  */
 export async function dispatchNotifications(notificationList = []) {
@@ -20,12 +60,47 @@ export async function dispatchNotifications(notificationList = []) {
 
     if (formatted.length === 0) return;
 
+    // 1. Insert into persistent database table
     const { error } = await supabase
       .from('notifications')
       .insert(formatted);
 
     if (error) {
-      console.warn('Failed to insert notifications:', error);
+      console.warn('Failed to insert notifications into database:', error);
+    }
+
+    // 2. Immediate Local Popup: If the current logged-in user on THIS device is a recipient,
+    // trigger native notification immediately without awaiting remote websocket roundtrip!
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUserId = session?.user?.id;
+      if (currentUserId) {
+        const myNotif = formatted.find(n => n.recipient_id === currentUserId);
+        if (myNotif) {
+          const title = NOTIFICATION_TITLES[myNotif.type] || 'SAGE Notification';
+          showLocalNotification({
+            title,
+            body: myNotif.message,
+            payload: myNotif
+          });
+        }
+      }
+    } catch (localErr) {
+      console.warn('Local native notification dispatch error:', localErr);
+    }
+
+    // 3. Send Realtime Broadcast to notify other devices in real-time
+    try {
+      const channel = getRealtimeChannel();
+      for (const notif of formatted) {
+        channel.send({
+          type: 'broadcast',
+          event: 'notification',
+          payload: notif
+        });
+      }
+    } catch (broadcastErr) {
+      console.warn('Realtime broadcast dispatch error:', broadcastErr);
     }
   } catch (err) {
     console.warn('Error dispatching notifications:', err);

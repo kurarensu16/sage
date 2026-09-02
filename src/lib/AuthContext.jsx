@@ -5,6 +5,7 @@ import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { initLocalNotifications, showLocalNotification } from './notificationService';
+import { NOTIFICATION_TITLES } from './notificationDispatcher';
 
 const AuthContext = createContext({});
 
@@ -177,7 +178,25 @@ export const AuthProvider = ({ children }) => {
     initLocalNotifications();
     fetchUnreadCount(userId);
 
-    const channel = supabase
+    // A. Realtime Broadcast channel (works instantly cross-device without Postgres WAL configuration)
+    const broadcastChannel = supabase
+      .channel('sage-realtime-alerts', { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'notification' }, (event) => {
+        const notif = event.payload;
+        if (notif && notif.recipient_id === userId) {
+          setUnreadCount((prev) => prev + 1);
+          const title = NOTIFICATION_TITLES[notif.type] || 'SAGE Notification';
+          showLocalNotification({
+            title,
+            body: notif.message || 'You have a new update in SAGE.',
+            payload: notif
+          });
+        }
+      })
+      .subscribe();
+
+    // B. Postgres changes channel (database persistence listener)
+    const dbChannel = supabase
       .channel(`realtime-notifications-${userId}`)
       .on(
         'postgres_changes',
@@ -191,34 +210,7 @@ export const AuthProvider = ({ children }) => {
           const n = payload.new;
           if (n) {
             setUnreadCount((prev) => prev + 1);
-
-            const typeTitles = {
-              grade_posted: '📊 New Grade Posted',
-              class_enrolled: '📚 Class Registration Success',
-              eval_window_open: '📝 Faculty Evaluation Open',
-              eval_closed: '🔒 Faculty Evaluation Closed',
-              eval_deadline_reminder: '⏰ Evaluation Deadline Reminder',
-              ews_alert: '⚠️ Early Warning System Alert',
-              ai_recommendation: '🧠 AI Counseling Ready',
-              class_assigned: '📋 New Class Assigned',
-              term_rollover_reminder: '⏰ Grade Submission Reminder',
-              override_approved: '✅ Grade Override Approved',
-              override_rejected: '❌ Grade Override Rejected',
-              risk_threshold: '⚠️ At-Risk Threshold Alert',
-              grades_pending: '📑 Grade Sheet Pending Approval',
-              override_request: '📝 Grade Override Pending',
-              eval_compiled: '⭐ Evaluation Reports Compiled',
-              compliance: '🛡️ Grading Compliance Alert',
-              roster_import: '📊 Student Roster Processed',
-              eval_window: '📅 Evaluation Window Status',
-              assignment: '👥 Subject Assignment Update',
-              security: '🔒 Administrative Security Alert',
-              database_sync: '🔄 Database Sync Success',
-              user_signup: '👤 New User Registered',
-              system: 'ℹ️ SAGE System Notice'
-            };
-
-            const title = typeTitles[n.type] || 'SAGE Notification';
+            const title = NOTIFICATION_TITLES[n.type] || 'SAGE Notification';
             showLocalNotification({
               title,
               body: n.message || 'You have a new update in SAGE.',
@@ -230,7 +222,8 @@ export const AuthProvider = ({ children }) => {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(broadcastChannel);
+      supabase.removeChannel(dbChannel);
     };
   }, [session?.user?.id, fetchUnreadCount]);
 

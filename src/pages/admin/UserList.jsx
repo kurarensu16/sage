@@ -8,7 +8,7 @@ import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { notifyUserStatusChange } from '../../lib/notificationDispatcher';
+import { notifyUserStatusChange, notifyAdminActivity } from '../../lib/notificationDispatcher';
 
 // Custom styled premium checkbox matching SAGE design language
 const CustomCheckbox = ({ checked, onChange }) => {
@@ -470,6 +470,12 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           `Archived ${selectedList.length} user accounts in bulk.`,
           actorName
         );
+
+        await notifyAdminActivity({
+          type: 'security',
+          message: `Security Notice: Archived ${selectedList.length} user accounts in bulk by ${actorName}.`,
+          actorName
+        });
       } catch (err) {
         console.error('Bulk archive failed:', err);
         alert('Error performing bulk archive: ' + err.message);
@@ -500,6 +506,12 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         `Set status to "${targetStatus}" for ${selectedList.length} user accounts in bulk.`,
         actorName
       );
+
+      await notifyAdminActivity({
+        type: 'security',
+        message: `Security Notice: Set status to "${targetStatus}" for ${selectedList.length} user accounts in bulk by ${actorName}.`,
+        actorName
+      });
     } catch (err) {
       console.error('Bulk status change failed:', err);
       alert('Error performing bulk status change: ' + err.message);
