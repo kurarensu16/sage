@@ -225,16 +225,20 @@ export default function Settings() {
     setTestSending(true);
     setTestFeedback('');
     try {
-      await sendTestNotification(role, delayMs);
-      if (delayMs > 0) {
-        setTestFeedback('Notification scheduled in 5s! You can lock your screen now to see the lock-screen banner.');
+      const success = await sendTestNotification(role, delayMs);
+      if (success) {
+        if (delayMs > 0) {
+          setTestFeedback('Notification scheduled in 5s! You can lock your screen now to see the lock-screen banner.');
+        } else {
+          setTestFeedback('Native notification triggered! Check your status bar & notification shade.');
+        }
       } else {
-        setTestFeedback('Native notification triggered! Check your status bar & notification shade.');
+        setTestFeedback('Notification permission not granted. Please allow notification permission in your phone settings.');
       }
       setTimeout(() => setTestFeedback(''), 6000);
     } catch (err) {
       console.error('Test notification failed:', err);
-      setTestFeedback('Could not trigger notification. Ensure device permissions are enabled.');
+      setTestFeedback('Could not trigger notification: ' + (err?.message || 'Check device permissions.'));
       setTimeout(() => setTestFeedback(''), 5000);
     } finally {
       setTestSending(false);

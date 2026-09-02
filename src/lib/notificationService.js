@@ -1,6 +1,8 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 
+const NOTIFICATION_CHANNEL_ID = 'sage-alerts-v3';
+
 /**
  * Initialize local notification channels and permissions.
  */
@@ -11,20 +13,20 @@ export async function initLocalNotifications() {
 
   try {
     let permStatus = await LocalNotifications.checkPermissions();
-    if (permStatus.display === 'prompt' || permStatus.display === 'prompt-with-rationale') {
+    if (permStatus.display !== 'granted') {
       permStatus = await LocalNotifications.requestPermissions();
     }
 
     // Create high-priority notification channel for Android heads-up popups & lockscreen
     await LocalNotifications.createChannel({
-      id: 'sage-alerts',
-      name: 'SAGE Alerts',
+      id: NOTIFICATION_CHANNEL_ID,
+      name: 'SAGE Institutional Alerts',
       description: 'Urgent academic updates, grading alerts, and official notices from SAGE',
       importance: 5, // High importance -> Heads-up popup banner
       visibility: 1, // Public -> Visible on lock screen
       vibration: true,
       lights: true,
-      lightColor: '#2563EB',
+      lightColor: '#1A4A3C'
     });
 
     return permStatus.display === 'granted';
@@ -46,17 +48,48 @@ export async function showLocalNotification({
 }) {
   try {
     if (Capacitor.isNativePlatform()) {
+      let permStatus = await LocalNotifications.checkPermissions();
+      if (permStatus.display !== 'granted') {
+        permStatus = await LocalNotifications.requestPermissions();
+      }
+
+      if (permStatus.display !== 'granted') {
+        console.warn('Notification permission not granted by user.');
+        return false;
+      }
+
+      try {
+        await LocalNotifications.createChannel({
+          id: NOTIFICATION_CHANNEL_ID,
+          name: 'SAGE Institutional Alerts',
+          description: 'Urgent academic updates, grading alerts, and official notices from SAGE',
+          importance: 5,
+          visibility: 1,
+          vibration: true,
+          lights: true,
+          lightColor: '#1A4A3C'
+        });
+      } catch {
+        // Channel already configured
+      }
+
+      const scheduleConfig = delayMs > 0 
+        ? { at: new Date(Date.now() + delayMs), allowWhileIdle: true } 
+        : undefined;
+
       await LocalNotifications.schedule({
         notifications: [
           {
             id,
             title,
             body,
-            channelId: 'sage-alerts',
-            schedule: delayMs > 0 ? { at: new Date(Date.now() + delayMs) } : undefined,
+            channelId: NOTIFICATION_CHANNEL_ID,
+            schedule: scheduleConfig,
             extra: payload,
-            smallIcon: 'ic_launcher',
-            iconColor: '#2563EB',
+            foreground: true, // Forces heads-up banner even when app is open in foreground!
+            isExactNotification: false, // Prevents Android 12+ exact alarm setting rejection
+            smallIcon: 'ic_stat_sage',
+            iconColor: '#1A4A3C'
           }
         ]
       });
@@ -75,7 +108,7 @@ export async function showLocalNotification({
       }
     }
   } catch (err) {
-    console.warn('Failed to display native notification:', err);
+    console.error('Failed to display native notification:', err);
   }
   return false;
 }
