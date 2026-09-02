@@ -9,6 +9,7 @@ import { cn } from '../../lib/utils';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { notifyUserStatusChange, notifyAdminActivity } from '../../lib/notificationDispatcher';
+import { showLocalNotification } from '../../lib/notificationService';
 
 // Custom styled premium checkbox matching SAGE design language
 const CustomCheckbox = ({ checked, onChange }) => {
@@ -250,6 +251,11 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         newStatus: nextStatus,
         actorName
       });
+
+      await showLocalNotification({
+        title: '🔒 Administrative Security Alert',
+        body: `Security Notice: ${userToToggle.role.toUpperCase()} account for ${userToToggle.firstName} ${userToToggle.lastName} was ${nextStatus === 'inactive' ? 'disabled' : 'enabled'}.`
+      });
     } catch (err) {
       console.error('Failed to toggle status:', err);
       alert('Error updating status: ' + err.message);
@@ -374,6 +380,11 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         newStatus: 'archived',
         actorName
       });
+
+      await showLocalNotification({
+        title: '🔒 Administrative Security Alert',
+        body: `Security Notice: ${userToArchive.role.toUpperCase()} account for ${userToArchive.firstName} ${userToArchive.lastName} was archived.`
+      });
     } catch (err) {
       console.error('Failed to archive user:', err);
       alert('Error archiving user: ' + err.message);
@@ -410,6 +421,11 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         targetUserId: userToRestore.id,
         newStatus: 'active',
         actorName
+      });
+
+      await showLocalNotification({
+        title: '🔒 Administrative Security Alert',
+        body: `Security Notice: ${userToRestore.role.toUpperCase()} account for ${userToRestore.firstName} ${userToRestore.lastName} was restored.`
       });
     } catch (err) {
       console.error('Failed to restore user:', err);
@@ -476,6 +492,11 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           message: `Security Notice: Archived ${selectedList.length} user accounts in bulk by ${actorName}.`,
           actorName
         });
+
+        await showLocalNotification({
+          title: '🔒 Administrative Security Alert',
+          body: `Security Notice: Archived ${selectedList.length} user accounts in bulk.`
+        });
       } catch (err) {
         console.error('Bulk archive failed:', err);
         alert('Error performing bulk archive: ' + err.message);
@@ -511,6 +532,11 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         type: 'security',
         message: `Security Notice: Set status to "${targetStatus}" for ${selectedList.length} user accounts in bulk by ${actorName}.`,
         actorName
+      });
+
+      await showLocalNotification({
+        title: '🔒 Administrative Security Alert',
+        body: `Security Notice: Set status to "${targetStatus}" for ${selectedList.length} user accounts in bulk.`
       });
     } catch (err) {
       console.error('Bulk status change failed:', err);
