@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from './supabase';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
@@ -53,6 +53,9 @@ export const AuthProvider = ({ children }) => {
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  const displayedNotificationIds = useRef(new Set());
+  const initialLoadDone = useRef(false);
 
   const fetchUnreadCount = useCallback(async (userId) => {
     if (!userId) return;
@@ -170,7 +173,7 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  // 4. Real-time notifications listener for native popups and live badge
+  // 4. Real-time notifications listener & active database sync for native popups and live badge
   useEffect(() => {
     const userId = session?.user?.id;
     if (!userId) return;
@@ -178,24 +181,89 @@ export const AuthProvider = ({ children }) => {
     initLocalNotifications();
     fetchUnreadCount(userId);
 
-    // A. Realtime Broadcast channel (works instantly cross-device without Postgres WAL configuration)
+    // 1. Initial baseline: Record current existing notifications once to avoid re-alerting on app launch
+    const initBaseline = async () => {
+      try {
+        const { data: existing } = await supabase
+          .from('notifications')
+          .select('notification_id')
+          .eq('recipient_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        if (existing) {
+          existing.forEach(n => displayedNotificationIds.current.add(n.notification_id));
+        }
+        initialLoadDone.current = true;
+      } catch (e) {
+        console.warn('Baseline notification check error:', e);
+        initialLoadDone.current = true;
+      }
+    };
+    initBaseline();
+
+    // 2. Active Sync Engine: Regularly checks database for newly inserted unread notifications
+    const syncUnreadNotifications = async () => {
+      if (!initialLoadDone.current) return;
+      try {
+        const { data: unreadNotifs, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('recipient_id', userId)
+          .eq('is_read', false)
+          .order('created_at', { ascending: false })
+          .limit(15);
+
+        if (!error && unreadNotifs) {
+          setUnreadCount(unreadNotifs.length);
+          for (const n of unreadNotifs) {
+            if (!displayedNotificationIds.current.has(n.notification_id)) {
+              displayedNotificationIds.current.add(n.notification_id);
+              const title = NOTIFICATION_TITLES[n.type] || 'SAGE Notification';
+              await showLocalNotification({
+                title,
+                body: n.message || 'You have a new update in SAGE.',
+                payload: n
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Active notification poller error:', err);
+      }
+    };
+
+    // Poll every 3 seconds for instant on-device notification delivery
+    const pollerInterval = setInterval(syncUnreadNotifications, 3000);
+
+    // Sync immediately when app is brought to the foreground
+    let appStateListener = null;
+    if (Capacitor.isNativePlatform()) {
+      CapApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) syncUnreadNotifications();
+      }).then(l => { appStateListener = l; });
+    }
+
+    // A. Realtime Broadcast channel (for sub-second cross-device push)
     const broadcastChannel = supabase
-      .channel('sage-realtime-alerts', { config: { broadcast: { self: false } } })
-      .on('broadcast', { event: 'notification' }, (event) => {
+      .channel('sage-realtime-alerts', { config: { broadcast: { self: true } } })
+      .on('broadcast', { event: 'notification' }, async (event) => {
         const notif = event.payload;
         if (notif && notif.recipient_id === userId) {
-          setUnreadCount((prev) => prev + 1);
-          const title = NOTIFICATION_TITLES[notif.type] || 'SAGE Notification';
-          showLocalNotification({
-            title,
-            body: notif.message || 'You have a new update in SAGE.',
-            payload: notif
-          });
+          if (!displayedNotificationIds.current.has(notif.notification_id)) {
+            displayedNotificationIds.current.add(notif.notification_id);
+            setUnreadCount((prev) => prev + 1);
+            const title = NOTIFICATION_TITLES[notif.type] || 'SAGE Notification';
+            await showLocalNotification({
+              title,
+              body: notif.message || 'You have a new update in SAGE.',
+              payload: notif
+            });
+          }
         }
       })
       .subscribe();
 
-    // B. Postgres changes channel (database persistence listener)
+    // B. Postgres changes channel (database persistence listener fallback)
     const dbChannel = supabase
       .channel(`realtime-notifications-${userId}`)
       .on(
@@ -206,12 +274,13 @@ export const AuthProvider = ({ children }) => {
           table: 'notifications',
           filter: `recipient_id=eq.${userId}`
         },
-        (payload) => {
+        async (payload) => {
           const n = payload.new;
-          if (n) {
+          if (n && !displayedNotificationIds.current.has(n.notification_id)) {
+            displayedNotificationIds.current.add(n.notification_id);
             setUnreadCount((prev) => prev + 1);
             const title = NOTIFICATION_TITLES[n.type] || 'SAGE Notification';
-            showLocalNotification({
+            await showLocalNotification({
               title,
               body: n.message || 'You have a new update in SAGE.',
               payload: n
@@ -222,6 +291,8 @@ export const AuthProvider = ({ children }) => {
       .subscribe();
 
     return () => {
+      clearInterval(pollerInterval);
+      if (appStateListener) appStateListener.remove();
       supabase.removeChannel(broadcastChannel);
       supabase.removeChannel(dbChannel);
     };
