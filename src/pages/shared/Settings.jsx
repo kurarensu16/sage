@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { useAuth } from '../../lib/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { sendTestNotification } from '../../lib/notificationService';
@@ -62,6 +64,33 @@ export default function Settings() {
   const [submittingPassword, setSubmittingPassword] = useState(false);
   const [testSending, setTestSending] = useState(false);
   const [testFeedback, setTestFeedback] = useState('');
+  const [deviceNotifState, setDeviceNotifState] = useState({
+    checked: false,
+    permission: 'unknown',
+    areEnabled: true
+  });
+
+  const checkDeviceStatus = async () => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const perm = await LocalNotifications.checkPermissions();
+        const enabled = await LocalNotifications.areEnabled();
+        setDeviceNotifState({
+          checked: true,
+          permission: perm.display,
+          areEnabled: enabled.value
+        });
+      } catch (err) {
+        console.warn('Could not query device notification status:', err);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'preferences') {
+      checkDeviceStatus();
+    }
+  }, [activeTab]);
 
   // Role metadata default configs
   const roleMeta = {
@@ -615,6 +644,29 @@ export default function Settings() {
                     </div>
                   </div>
 
+                  {/* Real-time Device System Status */}
+                  {deviceNotifState.checked && (
+                    <div className="flex flex-wrap items-center gap-2 pt-0.5 text-[11px]">
+                      <span className="font-semibold text-slate-500">Device Status:</span>
+                      <span className={cn(
+                        "px-2 py-0.5 rounded-md font-mono font-medium",
+                        deviceNotifState.permission === 'granted' 
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200" 
+                          : "bg-rose-100 text-rose-800 border border-rose-200"
+                      )}>
+                        Permission: {deviceNotifState.permission}
+                      </span>
+                      <span className={cn(
+                        "px-2 py-0.5 rounded-md font-mono font-medium",
+                        deviceNotifState.areEnabled 
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200" 
+                          : "bg-rose-100 text-rose-800 border border-rose-200"
+                      )}>
+                        OS Channel: {deviceNotifState.areEnabled ? 'Enabled' : 'Blocked'}
+                      </span>
+                    </div>
+                  )}
+
                   {testFeedback && (
                     <div className="px-3.5 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2 shadow-2xs">
                       <Check className="h-4 w-4 text-emerald-600 flex-shrink-0" />
@@ -642,6 +694,21 @@ export default function Settings() {
                       <Lock className="h-3.5 w-3.5 text-indigo-600" />
                       <span>Lock Screen Test (5s Delay)</span>
                     </button>
+                  </div>
+
+                  {/* Xiaomi / Redmi / POCO / OEM Floating Banner Guidance */}
+                  <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200/80 text-[11px] text-amber-900 space-y-1 mt-2">
+                    <div className="font-bold flex items-center gap-1.5 text-amber-950">
+                      <AlertCircle className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
+                      <span>Note for Xiaomi / Redmi / POCO / Vivo / Oppo phones:</span>
+                    </div>
+                    <p className="text-amber-800 leading-relaxed">
+                      Android automatically delivers notifications to your <strong>Notification Drawer</strong> (swipe down from top of your screen to see it). If you want <strong>floating popup banners</strong> sliding from the top, turn on floating alerts in:
+                      <br />
+                      <span className="font-mono text-[10px] bg-amber-100/90 px-1.5 py-0.5 rounded text-amber-950 inline-block mt-1">
+                        Phone Settings ➔ Apps ➔ Manage Apps ➔ SAGE ➔ Notifications ➔ Turn ON "Floating notifications"
+                      </span>
+                    </p>
                   </div>
                 </div>
 
