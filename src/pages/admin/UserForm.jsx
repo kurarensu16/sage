@@ -246,6 +246,12 @@ export default function UserForm() {
       };
 
       if (isEditMode) {
+        // Fire native notification IMMEDIATELY before DB call — mimics test trigger behaviour
+        await showLocalNotification({
+          title: 'User Profile Updated',
+          body: `👤 Successfully updated ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName}.`
+        });
+
         const { error } = await supabase
           .from('users')
           .update(userPayload)
@@ -265,11 +271,6 @@ export default function UserForm() {
           message: `Security Notice: User details for ${formData.lastName}, ${formData.firstName} (${formData.email}) were updated by ${actorName}.`,
           actorName
         });
-
-        await showLocalNotification({
-          title: 'User Profile Updated',
-          body: `👤 Successfully updated ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName}.`
-        });
       } else {
         // Generate user number
         const prefix = formData.role === 'student' ? '' : formData.role === 'admin' ? 'ADM-' : formData.role === 'faculty' ? 'FAC-' : formData.role === 'office' ? 'OFC-' : 'DN-';
@@ -284,6 +285,12 @@ export default function UserForm() {
         const nextSeq = String((count || 0) + 1).padStart(5, '0');
         const userNumber = `${prefix}${year}-${nextSeq}`;
         
+        // Fire native notification IMMEDIATELY before the Edge Function invoke call
+        await showLocalNotification({
+          title: 'New User Registered',
+          body: `👤 Successfully created ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName}.`
+        });
+
         const { data: invokeData, error: invokeErr } = await supabase.functions.invoke('create-admin-user', {
           body: {
             email: formData.email.trim().toLowerCase(),
@@ -322,11 +329,6 @@ export default function UserForm() {
           type: 'user_signup',
           message: `Security Notice: Created new ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName} (${formData.email}) by ${actorName}.`,
           actorName
-        });
-
-        await showLocalNotification({
-          title: 'New User Registered',
-          body: `👤 Successfully created ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName}.`
         });
       }
 

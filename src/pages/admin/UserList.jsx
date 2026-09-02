@@ -225,6 +225,12 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       if (!userToToggle) return;
 
       const nextStatus = userToToggle.status === 'active' ? 'inactive' : 'active';
+
+      // Fire native notification IMMEDIATELY (before network calls) — mimics test trigger behaviour
+      await showLocalNotification({
+        title: 'Administrative Security Alert',
+        body: `🔒 Security Notice: ${userToToggle.role.toUpperCase()} account for ${userToToggle.firstName} ${userToToggle.lastName} was ${nextStatus === 'inactive' ? 'disabled' : 'enabled'}.`
+      });
       
       const { error } = await supabase
         .from('users')
@@ -250,11 +256,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         targetUserId: userToToggle.id,
         newStatus: nextStatus,
         actorName
-      });
-
-      await showLocalNotification({
-        title: 'Administrative Security Alert',
-        body: `🔒 Security Notice: ${userToToggle.role.toUpperCase()} account for ${userToToggle.firstName} ${userToToggle.lastName} was ${nextStatus === 'inactive' ? 'disabled' : 'enabled'}.`
       });
     } catch (err) {
       console.error('Failed to toggle status:', err);
@@ -355,6 +356,12 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       const userToArchive = users.find(u => u.id === userId);
       if (!userToArchive) return;
 
+      // Fire native notification IMMEDIATELY before network calls
+      await showLocalNotification({
+        title: 'Administrative Security Alert',
+        body: `🔒 Security Notice: ${userToArchive.role.toUpperCase()} account for ${userToArchive.firstName} ${userToArchive.lastName} was archived.`
+      });
+
       const { error } = await supabase
         .from('users')
         .update({ status: 'archived' })
@@ -380,11 +387,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         newStatus: 'archived',
         actorName
       });
-
-      await showLocalNotification({
-        title: 'Administrative Security Alert',
-        body: `🔒 Security Notice: ${userToArchive.role.toUpperCase()} account for ${userToArchive.firstName} ${userToArchive.lastName} was archived.`
-      });
     } catch (err) {
       console.error('Failed to archive user:', err);
       alert('Error archiving user: ' + err.message);
@@ -397,6 +399,12 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
     if (!userToRestore) return;
 
     try {
+      // Fire native notification IMMEDIATELY before network calls
+      await showLocalNotification({
+        title: 'Administrative Security Alert',
+        body: `🔒 Security Notice: ${userToRestore.role.toUpperCase()} account for ${userToRestore.firstName} ${userToRestore.lastName} was restored.`
+      });
+
       const { error } = await supabase
         .from('users')
         .update({ status: 'active' })
@@ -421,11 +429,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         targetUserId: userToRestore.id,
         newStatus: 'active',
         actorName
-      });
-
-      await showLocalNotification({
-        title: 'Administrative Security Alert',
-        body: `🔒 Security Notice: ${userToRestore.role.toUpperCase()} account for ${userToRestore.firstName} ${userToRestore.lastName} was restored.`
       });
     } catch (err) {
       console.error('Failed to restore user:', err);
@@ -468,6 +471,12 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
     if (selectedList.length === 0) return;
 
     if (confirm(`Are you sure you want to archive all ${selectedList.length} selected users?`)) {
+      // Fire native notification IMMEDIATELY after confirm, before network calls
+      await showLocalNotification({
+        title: 'Administrative Security Alert',
+        body: `🔒 Security Notice: Archived ${selectedList.length} user accounts in bulk.`
+      });
+
       try {
         const idsArray = selectedList.map(u => u.id);
         const { error } = await supabase
@@ -492,11 +501,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           message: `Security Notice: Archived ${selectedList.length} user accounts in bulk by ${actorName}.`,
           actorName
         });
-
-        await showLocalNotification({
-          title: 'Administrative Security Alert',
-          body: `🔒 Security Notice: Archived ${selectedList.length} user accounts in bulk.`
-        });
       } catch (err) {
         console.error('Bulk archive failed:', err);
         alert('Error performing bulk archive: ' + err.message);
@@ -508,6 +512,12 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
   const handleBulkToggleStatus = async (filteredList, targetStatus) => {
     const selectedList = filteredList.filter(u => selectedUserIds.has(u.id));
     if (selectedList.length === 0) return;
+
+    // Fire native notification IMMEDIATELY, before network calls
+    await showLocalNotification({
+      title: 'Administrative Security Alert',
+      body: `🔒 Security Notice: Set status to "${targetStatus}" for ${selectedList.length} user accounts in bulk.`
+    });
 
     try {
       const idsArray = selectedList.map(u => u.id);
@@ -532,11 +542,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         type: 'security',
         message: `Security Notice: Set status to "${targetStatus}" for ${selectedList.length} user accounts in bulk by ${actorName}.`,
         actorName
-      });
-
-      await showLocalNotification({
-        title: 'Administrative Security Alert',
-        body: `🔒 Security Notice: Set status to "${targetStatus}" for ${selectedList.length} user accounts in bulk.`
       });
     } catch (err) {
       console.error('Bulk status change failed:', err);

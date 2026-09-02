@@ -4,8 +4,8 @@ import { supabase } from './supabase';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { PushNotifications } from '@capacitor/push-notifications';
-import { initLocalNotifications, showLocalNotification } from './notificationService';
-import { NOTIFICATION_TITLES } from './notificationDispatcher';
+import { initLocalNotifications } from './notificationService';
+
 
 const AuthContext = createContext({});
 
@@ -205,31 +205,22 @@ export const AuthProvider = ({ children }) => {
     };
     initBaseline();
 
-    // 2. Active Sync Engine: Regularly checks database for newly inserted unread notifications
+    // 2. Active Sync Engine: Regularly polls the database to keep the unread badge count fresh.
+    // NOTE: Native popup notification is the responsibility of each action handler (UserList, etc.).
+    // This poller only updates the badge count to avoid racing with direct showLocalNotification calls.
     const syncUnreadNotifications = async () => {
       if (!initialLoadDone.current) return;
       try {
         const { data: unreadNotifs, error } = await supabase
           .from('notifications')
-          .select('*')
+          .select('notification_id')
           .eq('recipient_id', userId)
           .eq('is_read', false)
           .order('created_at', { ascending: false })
-          .limit(15);
+          .limit(50);
 
         if (!error && unreadNotifs) {
           setUnreadCount(unreadNotifs.length);
-          for (const n of unreadNotifs) {
-            if (!displayedNotificationIds.current.has(n.notification_id)) {
-              displayedNotificationIds.current.add(n.notification_id);
-              const title = NOTIFICATION_TITLES[n.type] || 'SAGE Notification';
-              await showLocalNotification({
-                title,
-                body: n.message || 'You have a new update in SAGE.',
-                payload: n
-              });
-            }
-          }
         }
       } catch (err) {
         console.warn('Active notification poller error:', err);
@@ -247,27 +238,18 @@ export const AuthProvider = ({ children }) => {
       }).then(l => { appStateListener = l; });
     }
 
-    // A. Realtime Broadcast channel (for sub-second cross-device push)
+    // A. Realtime Broadcast channel — updates badge count only (native popup is handled by page action handlers)
     const broadcastChannel = supabase
       .channel('sage-realtime-alerts', { config: { broadcast: { self: true } } })
       .on('broadcast', { event: 'notification' }, async (event) => {
         const notif = event.payload;
         if (notif && notif.recipient_id === userId) {
-          if (!displayedNotificationIds.current.has(notif.notification_id)) {
-            displayedNotificationIds.current.add(notif.notification_id);
-            setUnreadCount((prev) => prev + 1);
-            const title = NOTIFICATION_TITLES[notif.type] || 'SAGE Notification';
-            await showLocalNotification({
-              title,
-              body: notif.message || 'You have a new update in SAGE.',
-              payload: notif
-            });
-          }
+          setUnreadCount((prev) => prev + 1);
         }
       })
       .subscribe();
 
-    // B. Postgres changes channel (database persistence listener fallback)
+    // B. Postgres changes channel — updates badge count for any other device's actions
     const dbChannel = supabase
       .channel(`realtime-notifications-${userId}`)
       .on(
@@ -280,15 +262,8 @@ export const AuthProvider = ({ children }) => {
         },
         async (payload) => {
           const n = payload.new;
-          if (n && !displayedNotificationIds.current.has(n.notification_id)) {
-            displayedNotificationIds.current.add(n.notification_id);
+          if (n) {
             setUnreadCount((prev) => prev + 1);
-            const title = NOTIFICATION_TITLES[n.type] || 'SAGE Notification';
-            await showLocalNotification({
-              title,
-              body: n.message || 'You have a new update in SAGE.',
-              payload: n
-            });
           }
         }
       )
