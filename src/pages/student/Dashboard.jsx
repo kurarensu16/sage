@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { getCachedData, setCachedData } from '../../lib/dataCache';
+import { DashboardSkeleton } from '../../components/common/Skeleton';
 
 // Helper to check pending evaluations
 const checkPendingEvals = async (studentId, sectionId) => {
@@ -92,7 +94,21 @@ export default function Dashboard() {
   useEffect(() => {
     async function loadDashboardData() {
       if (!user || !profile) return;
-      setLoading(true);
+      
+      const cacheKey = `student_dashboard_${user.id}`;
+      const cached = getCachedData(cacheKey, 120000);
+      if (cached) {
+        setSection(cached.section);
+        setActiveTerm(cached.activeTerm);
+        setEnrolledSubjects(cached.enrolledSubjects);
+        setCurrentGwa(cached.currentGwa);
+        setGwaStanding(cached.gwaStanding);
+        setEvalClearance(cached.evalClearance);
+        setInsightVerdict(cached.insightVerdict);
+        setInsightSummary(cached.insightSummary);
+        setLoading(false);
+      }
+
       try {
         // 1. Fetch active academic term
         const { data: termData } = await supabase
@@ -113,13 +129,15 @@ export default function Dashboard() {
         const activeSectionId = profile.section_id || (enrolls && enrolls.length > 0 ? enrolls[0].section_id : null);
 
         // 3. Fetch section details
+        let resolvedSection = null;
         if (activeSectionId) {
           const { data: secData } = await supabase
             .from('sections')
             .select('*')
             .eq('section_id', activeSectionId)
             .maybeSingle();
-          setSection(secData || null);
+          resolvedSection = secData || null;
+          setSection(resolvedSection);
         }
 
         // 4. Fetch all active class records to pair with enrollments
@@ -158,56 +176,48 @@ export default function Dashboard() {
           );
           const classRecId = matchingClass?.class_record_id;
           const pGrade = classRecId ? postedMap[classRecId] : null;
-          const hasFinal = (posted || []).some(p => p.class_record_id === classRecId && p.grade_period === 'final');
 
           return {
             class_record_id: classRecId,
-            subject_id: e.subject_id,
-            section_id: e.section_id,
-            code: e.subjects?.code || 'N/A',
-            name: e.subjects?.name || 'Untitled Subject',
-            credits: Number(e.subjects?.units) || 3,
-            sectionName: e.sections?.name || 'Irregular',
-            professor: matchingClass?.faculty ? `Prof. ${matchingClass.faculty.first_name} ${matchingClass.faculty.last_name}` : 'TBA',
-            status: hasFinal ? 'Grades Posted' : 'Ongoing',
-            grade: pGrade ? pGrade.effective_grade : '—'
+            code: e.subjects?.code || 'SUBJ',
+            name: e.subjects?.name || 'Subject Name',
+            credits: Number(e.subjects?.credit_units || 3.0),
+            professor: matchingClass?.faculty ? `Prof. ${matchingClass.faculty.first_name} ${matchingClass.faculty.last_name}` : 'Faculty Instructor',
+            grade: pGrade ? pGrade.computed_grade?.toFixed(2) : '—',
+            status: pGrade ? 'Grades Posted' : 'Active'
           };
         });
 
         setEnrolledSubjects(activeEnrolled);
 
-        // 7. Calculate running GWA from posted grades
-        let totalUnits = 0;
-        let weightedGradesSum = 0;
-        activeEnrolled.forEach(sub => {
-          if (sub.grade !== '—') {
-            const numGrade = parseFloat(sub.grade);
-            if (!isNaN(numGrade)) {
-              totalUnits += sub.credits;
-              weightedGradesSum += numGrade * sub.credits;
-            }
-          }
-        });
+        // 7. Calculate real-time GWA
+        const validGrades = activeEnrolled.filter(s => s.grade !== '—' && !isNaN(parseFloat(s.grade)));
+        let resolvedGwa = '—';
+        let resolvedStanding = 'No grades posted yet';
 
-        if (totalUnits > 0) {
-          const calculatedGwa = (weightedGradesSum / totalUnits).toFixed(2);
-          setCurrentGwa(calculatedGwa);
-          
-          const gwaNum = parseFloat(calculatedGwa);
-          if (gwaNum <= 1.45) setGwaStanding('Excellent standing');
-          else if (gwaNum <= 1.75) setGwaStanding('Very Good standing');
-          else if (gwaNum <= 3.00) setGwaStanding('Satisfactory standing');
-          else setGwaStanding('Academic warning');
+        if (validGrades.length > 0) {
+          const totalWeighted = validGrades.reduce((sum, s) => sum + (parseFloat(s.grade) * s.credits), 0);
+          const totalCreds = validGrades.reduce((sum, s) => sum + s.credits, 0);
+          const gwaNum = totalWeighted / totalCreds;
+          resolvedGwa = gwaNum.toFixed(2);
+          setCurrentGwa(resolvedGwa);
+
+          if (gwaNum <= 1.45) resolvedStanding = 'Excellent';
+          else if (gwaNum <= 1.75) resolvedStanding = 'Very Good';
+          else if (gwaNum <= 3.00) resolvedStanding = 'Satisfactory';
+          else resolvedStanding = 'Academic warning';
+          setGwaStanding(resolvedStanding);
         } else {
           setCurrentGwa('—');
           setGwaStanding('No grades posted yet');
         }
 
-        // 8. Pending Evaluations (check across enrolled sections)
+        // 8. Pending Evaluations
+        let resolvedClearance = { totalWindows: 0, pendingCount: 0, isSigned: false };
         const targetSectionId = activeSectionId || (enrolls && enrolls.length > 0 ? enrolls[0].section_id : null);
         if (targetSectionId) {
-          const clearanceInfo = await checkPendingEvals(user.id, targetSectionId);
-          setEvalClearance(clearanceInfo);
+          resolvedClearance = await checkPendingEvals(user.id, targetSectionId);
+          setEvalClearance(resolvedClearance);
         }
 
         // 9. Academic Insights
@@ -218,15 +228,30 @@ export default function Dashboard() {
           .order('generated_at', { ascending: false })
           .limit(1);
 
+        let resolvedVerdict = 'Normal';
+        let resolvedSummary = 'No academic risk flags detected. Keep up the good work!';
         if (insightData && insightData.length > 0) {
           const latest = insightData[0];
-          const verdictLabel = latest.verdict === 'continue' ? 'Safe' : latest.verdict === 'at_risk' ? 'At Risk' : 'Shift';
-          setInsightVerdict(verdictLabel);
-          setInsightSummary(latest.summary);
+          resolvedVerdict = latest.verdict === 'continue' ? 'Safe' : latest.verdict === 'at_risk' ? 'At Risk' : 'Shift';
+          resolvedSummary = latest.summary;
+          setInsightVerdict(resolvedVerdict);
+          setInsightSummary(resolvedSummary);
         } else {
           setInsightVerdict('Normal');
           setInsightSummary('No academic risk flags detected. Keep up the good work!');
         }
+
+        // Store in cache
+        setCachedData(cacheKey, {
+          section: resolvedSection,
+          activeTerm: termData || null,
+          enrolledSubjects: activeEnrolled,
+          currentGwa: resolvedGwa,
+          gwaStanding: resolvedStanding,
+          evalClearance: resolvedClearance,
+          insightVerdict: resolvedVerdict,
+          insightSummary: resolvedSummary
+        });
 
       } catch (err) {
         console.error('Error loading dashboard data:', err);
@@ -239,14 +264,7 @@ export default function Dashboard() {
   }, [user, profile]);
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-xs text-slate-500 font-medium font-sans">Loading dashboard...</p>
-        </div>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   const termLabel = activeTerm
@@ -261,26 +279,26 @@ export default function Dashboard() {
     <>
       <PageHeader title="Student Overview" breadcrumb="Student Portal" />
       
-      <div className="p-4 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
+      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
         
         {/* Welcome Banner Hero */}
-        <div className="bg-gradient-to-r from-sage-900 via-sage-800 to-sage-900 rounded-2xl p-5 sm:p-6 md:p-8 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6">
-          <div className="space-y-1.5 sm:space-y-2">
-            <span className="inline-flex items-center px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[10px] sm:text-xs font-semibold bg-sage-700/50 text-sage-100 border border-sage-600/30">
+        <div className="bg-gradient-to-r from-sage-900 via-sage-800 to-sage-900 rounded-2xl p-4 sm:p-6 md:p-8 text-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6">
+          <div className="space-y-1.5 sm:space-y-2 min-w-0 flex-1">
+            <span className="inline-flex items-center px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[10px] sm:text-xs font-semibold bg-sage-700/50 text-sage-100 border border-sage-600/30 whitespace-nowrap">
               Academic Term: {termLabel}
             </span>
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight font-display">
+            <h1 className="text-lg sm:text-2xl md:text-3xl font-extrabold tracking-tight font-display leading-tight">
               Welcome Back, {profile?.first_name || 'Student'}!
             </h1>
-            <p className="text-xs sm:text-sm text-sage-200/90 max-w-xl">
+            <p className="text-xs sm:text-sm text-sage-200/90 max-w-xl leading-relaxed">
               Track your real-time grades, evaluate faculty performance, and review AI counseling insights.
             </p>
           </div>
           
-          <div className="flex w-full md:w-auto">
+          <div className="flex w-full md:w-auto flex-shrink-0">
             <Link 
               to="/student/mygradeslist" 
-              className="w-full md:w-auto justify-center px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-semibold bg-white text-sage-900 hover:bg-sage-50 rounded-xl transition-all shadow-md flex items-center gap-2 whitespace-nowrap"
+              className="w-full md:w-auto justify-center px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-semibold bg-white text-sage-900 hover:bg-sage-50 rounded-xl transition-all shadow-md flex items-center gap-2 whitespace-nowrap cursor-pointer"
             >
               <Award className="h-4 w-4" /> View My Grades
             </Link>
@@ -289,58 +307,61 @@ export default function Dashboard() {
 
         {/* Term Clearance & Evaluation Alert Banner */}
         {evalClearance.pendingCount > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 shadow-sm">
-            <div className="flex items-start sm:items-center gap-3">
-              <div className="p-2 bg-amber-100 rounded-lg text-amber-700 flex-shrink-0 mt-0.5 sm:mt-0">
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 shadow-sm">
+            <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+              <div className="p-2 bg-amber-100 rounded-xl text-amber-700 flex-shrink-0 mt-0.5 sm:mt-0">
                 <MessageSquare className="h-5 w-5" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <h4 className="font-bold text-xs sm:text-sm font-display text-amber-950">Term Clearance Pending</h4>
-                <p className="text-[11px] sm:text-xs text-amber-800 mt-0.5">
+                <p className="text-[11px] sm:text-xs text-amber-800 mt-0.5 leading-relaxed">
                   You have <strong>{evalClearance.pendingCount}</strong> pending faculty evaluation(s). Completing your evaluations signs your term clearance and unlocks official grade summary visibility.
                 </p>
               </div>
             </div>
             <Link
               to="/student/evallist"
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap shadow-sm self-end sm:self-auto cursor-pointer"
+              className="w-full sm:w-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap shadow-sm cursor-pointer flex-shrink-0"
             >
               Evaluate Now <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
         )}
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
+        {/* Stats Row - Fully Responsive & Anti-Collision on Mobile */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 md:gap-6">
           
-          <div className="bg-white p-3.5 sm:p-5 md:p-6 rounded-xl border border-slate-200 hover:border-sage-300 transition-all flex justify-between items-start">
-            <div>
-              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider block">Current GWA</span>
-              <h3 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900 font-mono mt-1 sm:mt-2">{currentGwa}</h3>
-              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 truncate max-w-[110px] sm:max-w-none">{gwaStanding}</p>
+          {/* Stat 1: Current GWA */}
+          <div className="bg-white p-3 sm:p-5 md:p-6 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all shadow-xs flex items-start justify-between gap-2 sm:gap-3">
+            <div className="min-w-0 flex-1">
+              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block truncate">Current GWA</span>
+              <h3 className="text-lg sm:text-2xl md:text-3xl font-extrabold text-slate-900 font-mono mt-0.5 sm:mt-1 truncate">{currentGwa}</h3>
+              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate" title={gwaStanding}>{gwaStanding}</p>
             </div>
-            <div className="p-2 sm:p-3 bg-sage-50 text-sage-600 rounded-lg flex-shrink-0">
+            <div className="p-2 sm:p-2.5 md:p-3 bg-sage-50 text-sage-600 rounded-xl flex-shrink-0 mt-0.5">
               <Award className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
 
-          <div className="bg-white p-3.5 sm:p-5 md:p-6 rounded-xl border border-slate-200 hover:border-sage-300 transition-all flex justify-between items-start">
-            <div>
-              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider block">Subjects</span>
-              <h3 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900 font-mono mt-1 sm:mt-2">
+          {/* Stat 2: Enrolled Subjects */}
+          <div className="bg-white p-3 sm:p-5 md:p-6 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all shadow-xs flex items-start justify-between gap-2 sm:gap-3">
+            <div className="min-w-0 flex-1">
+              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block truncate">Subjects</span>
+              <h3 className="text-lg sm:text-2xl md:text-3xl font-extrabold text-slate-900 font-mono mt-0.5 sm:mt-1 truncate">
                 {enrolledSubjects.length < 10 ? `0${enrolledSubjects.length}` : enrolledSubjects.length}
               </h3>
-              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 truncate max-w-[110px] sm:max-w-none">{totalCredits} units total</p>
+              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate">{totalCredits} units total</p>
             </div>
-            <div className="p-2 sm:p-3 bg-sage-50 text-sage-600 rounded-lg flex-shrink-0">
+            <div className="p-2 sm:p-2.5 md:p-3 bg-sage-50 text-sage-600 rounded-xl flex-shrink-0 mt-0.5">
               <BookOpen className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
 
-          <div className="bg-white p-3.5 sm:p-5 md:p-6 rounded-xl border border-slate-200 hover:border-sage-300 transition-all flex justify-between items-start">
-            <div>
-              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider block">Term Clearance</span>
-              <h3 className={`text-base sm:text-lg md:text-xl font-extrabold font-display mt-1 sm:mt-2 ${
+          {/* Stat 3: Term Clearance */}
+          <div className="bg-white p-3 sm:p-5 md:p-6 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all shadow-xs flex items-start justify-between gap-2 sm:gap-3">
+            <div className="min-w-0 flex-1">
+              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block truncate">Clearance</span>
+              <h3 className={`text-sm sm:text-lg md:text-xl font-extrabold font-display mt-0.5 sm:mt-1 truncate ${
                 evalClearance.isSigned 
                   ? 'text-emerald-700' 
                   : evalClearance.pendingCount > 0 
@@ -349,16 +370,22 @@ export default function Dashboard() {
               }`}>
                 {evalClearance.isSigned ? 'SIGNED' : evalClearance.pendingCount > 0 ? 'UNSIGNED' : 'PENDING'}
               </h3>
-              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 truncate max-w-[110px] sm:max-w-none">
-                {evalClearance.isSigned 
+              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate" title={
+                evalClearance.isSigned 
                   ? 'All evals completed' 
                   : evalClearance.pendingCount > 0 
                   ? `${evalClearance.pendingCount} eval(s) pending` 
                   : 'Evaluation period not active'
+              }>
+                {evalClearance.isSigned 
+                  ? 'All evals completed' 
+                  : evalClearance.pendingCount > 0 
+                  ? `${evalClearance.pendingCount} pending` 
+                  : 'Not active'
                 }
               </p>
             </div>
-            <div className={`p-2 sm:p-3 rounded-lg flex-shrink-0 ${
+            <div className={`p-2 sm:p-2.5 md:p-3 rounded-xl flex-shrink-0 mt-0.5 ${
               evalClearance.isSigned 
                 ? 'bg-emerald-50 text-emerald-600' 
                 : evalClearance.pendingCount > 0 
@@ -369,17 +396,18 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="bg-white p-3.5 sm:p-5 md:p-6 rounded-xl border border-slate-200 hover:border-sage-300 transition-all flex justify-between items-start">
-            <div>
-              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider block">Academic Insight</span>
-              <h3 className={`text-xl sm:text-2xl md:text-3xl font-extrabold font-mono mt-1 sm:mt-2 ${insightVerdict === 'Safe' ? 'text-emerald-600' : insightVerdict === 'At Risk' ? 'text-rose-600' : 'text-amber-600'}`}>
+          {/* Stat 4: Academic Insight */}
+          <div className="bg-white p-3 sm:p-5 md:p-6 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all shadow-xs flex items-start justify-between gap-2 sm:gap-3">
+            <div className="min-w-0 flex-1">
+              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block truncate">AI Standing</span>
+              <h3 className={`text-lg sm:text-2xl md:text-3xl font-extrabold font-mono mt-0.5 sm:mt-1 truncate ${insightVerdict === 'Safe' ? 'text-emerald-600' : insightVerdict === 'At Risk' ? 'text-rose-600' : 'text-amber-600'}`}>
                 {insightVerdict}
               </h3>
-              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 truncate max-w-[110px] sm:max-w-none">
-                {insightVerdict === 'Safe' ? 'Low risk status' : insightVerdict === 'At Risk' ? 'High risk status' : 'Standing alert'}
+              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate">
+                {insightVerdict === 'Safe' ? 'Low risk' : insightVerdict === 'At Risk' ? 'High risk' : 'Standing alert'}
               </p>
             </div>
-            <div className={`p-2 sm:p-3 rounded-lg flex-shrink-0 ${insightVerdict === 'Safe' ? 'bg-emerald-50 text-emerald-600' : insightVerdict === 'At Risk' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
+            <div className={`p-2 sm:p-2.5 md:p-3 rounded-xl flex-shrink-0 mt-0.5 ${insightVerdict === 'Safe' ? 'bg-emerald-50 text-emerald-600' : insightVerdict === 'At Risk' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
               <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
@@ -390,34 +418,34 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
           
           {/* Active Enrolled Classes */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-6 lg:col-span-2 space-y-4 sm:space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 sm:p-6 lg:col-span-2 space-y-4 sm:space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
+              <div className="min-w-0">
                 <h3 className="text-base sm:text-lg font-bold font-display text-slate-900">Enrolled Subjects</h3>
                 <p className="text-xs text-slate-500">Overview of courses and instructors for the current term.</p>
               </div>
-              <Link to="/student/mygradeslist" className="text-xs font-bold text-sage-600 hover:text-sage-700 flex items-center gap-1 self-start sm:self-auto">
+              <Link to="/student/mygradeslist" className="text-xs font-bold text-sage-600 hover:text-sage-700 flex items-center gap-1 self-start sm:self-auto whitespace-nowrap">
                 View Detailed Grades <ArrowRight className="h-3 w-3" />
               </Link>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               {enrolledSubjects.map((sub) => (
-                <div key={sub.class_record_id} className="p-3.5 sm:p-4 rounded-xl border border-slate-200 hover:border-sage-300 transition-all bg-slate-50/50 flex flex-col justify-between min-h-[9rem]">
+                <div key={sub.class_record_id} className="p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all bg-slate-50/50 flex flex-col justify-between min-h-[8.5rem]">
                   <div>
                     <div className="flex justify-between items-start gap-2">
-                      <span className="text-xs font-bold font-mono text-slate-400 truncate">{sub.code}</span>
+                      <span className="text-xs font-bold font-mono text-slate-400 truncate min-w-0 flex-1">{sub.code}</span>
                       {sub.status === 'Grades Posted' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 flex-shrink-0">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 flex-shrink-0 whitespace-nowrap">
                           {sub.grade} Posted
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 flex-shrink-0">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 flex-shrink-0 whitespace-nowrap">
                           Active
                         </span>
                       )}
                     </div>
-                    <h4 className="font-bold text-xs sm:text-sm text-slate-900 mt-1.5 line-clamp-2">{sub.name}</h4>
+                    <h4 className="font-bold text-xs sm:text-sm text-slate-900 mt-1.5 line-clamp-2 leading-snug">{sub.name}</h4>
                     <p className="text-xs text-slate-500 mt-0.5 truncate">{sub.professor}</p>
                   </div>
                   
@@ -441,7 +469,7 @@ export default function Dashboard() {
           <div className="space-y-4 sm:space-y-6">
             
             {/* Academic Insights alert */}
-            <div className={`${insightVerdict === 'Safe' ? 'bg-emerald-50/40 border-emerald-100' : insightVerdict === 'At Risk' ? 'bg-rose-50/40 border-rose-100' : 'bg-amber-50/40 border-amber-100'} border rounded-xl p-4 sm:p-5 shadow-sm space-y-3 sm:space-y-4`}>
+            <div className={`${insightVerdict === 'Safe' ? 'bg-emerald-50/40 border-emerald-100' : insightVerdict === 'At Risk' ? 'bg-rose-50/40 border-rose-100' : 'bg-amber-50/40 border-amber-100'} border rounded-2xl p-4 sm:p-5 shadow-sm space-y-3 sm:space-y-4`}>
               <div className="flex items-center gap-2">
                 <BrainCircuit className={`h-4 w-4 sm:h-5 sm:w-5 ${insightVerdict === 'Safe' ? 'text-emerald-600' : insightVerdict === 'At Risk' ? 'text-rose-600' : 'text-amber-600'}`} />
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900">Academic Insights</h3>
@@ -458,12 +486,12 @@ export default function Dashboard() {
             </div>
 
             {/* Pending evaluations card */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-3 sm:space-y-4">
+            <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-sm space-y-3 sm:space-y-4">
               <div className="flex items-center gap-2">
                 <MessageSquare className="h-4 w-4 sm:h-5 sm:w-5 text-sage-600" />
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900">Faculty Evaluations</h3>
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 leading-relaxed">
                 {evalClearance.isOfficeSigned
                   ? 'Your semester clearance has been officially verified and signed by the College Office.'
                   : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0

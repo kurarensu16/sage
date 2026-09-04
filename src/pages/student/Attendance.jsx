@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { Calendar, CheckCircle2, Clock, AlertTriangle, ChevronRight, MessageSquare, ShieldAlert } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { getCachedData, setCachedData } from '../../lib/dataCache';
+import { CardListSkeleton } from '../../components/common/Skeleton';
 
 export default function Attendance() {
   const { user } = useAuth();
@@ -17,8 +19,20 @@ export default function Attendance() {
   }, [user]);
 
   const loadAttendance = async () => {
-    try {
+    if (!user) return;
+    const cacheKey = `student_attendance_${user.id}`;
+    const cached = getCachedData(cacheKey, 180000);
+    if (cached) {
+      setAttendanceData(cached);
+      if (cached.length > 0 && !selectedClass) {
+        setSelectedClass(cached[0]);
+      }
+      setLoading(false);
+    } else {
       setLoading(true);
+    }
+
+    try {
       
       // 1. Fetch student's enrollments to find enrolled subjects & section
       const { data: enrolls, error: enrollErr } = await supabase
@@ -94,8 +108,9 @@ export default function Attendance() {
 
       setAttendanceData(mapped);
       if (mapped.length > 0) {
-        setSelectedClass(mapped[0]);
+        setSelectedClass(prev => prev ? (mapped.find(c => c.classRecordId === prev.classRecordId) || mapped[0]) : mapped[0]);
       }
+      setCachedData(cacheKey, mapped);
     } catch (err) {
       console.error('Failed to load attendance records:', err);
     } finally {
@@ -103,17 +118,16 @@ export default function Attendance() {
     }
   };
 
+  if (loading) {
+    return <CardListSkeleton count={4} />;
+  }
+
   return (
     <>
       <PageHeader title="My Attendance Registry" breadcrumb="Student Portal" />
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
         
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-3">
-            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-sage-600"></div>
-            <p className="text-sm text-slate-500 font-medium">Loading attendance records...</p>
-          </div>
-        ) : attendanceData.length === 0 ? (
+        {attendanceData.length === 0 ? (
           <div className="text-center py-16 bg-white border border-slate-200 rounded-2xl text-slate-400 p-6 text-sm">
              You are not currently enrolled in any active classes this term.
           </div>

@@ -4,6 +4,7 @@ import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity } from '../../lib/auditLog';
+import { notifyOverrideApproved, notifyOverrideRejected } from '../../lib/notificationDispatcher';
 import {
   Search,
   Filter,
@@ -97,6 +98,7 @@ export default function RemarkOverrideRequests() {
           classCode: r.class_record_id,
           subjectName: r.subject_name || '—',
           facultyName: r.faculty_name || '—',
+          facultyId: r.requested_by || null,
           section: r.section_name || '—',
           studentId: r.student_id,
           studentName: r.student
@@ -167,6 +169,16 @@ export default function RemarkOverrideRequests() {
         actorName
       );
 
+      // 5. Notify Faculty and Student
+      await notifyOverrideApproved({
+        facultyId: req.facultyId,
+        studentId: req.studentId,
+        studentName: req.studentName,
+        subjectName: req.subjectName,
+        requestedRemark: req.requestedRemark,
+        actorName
+      });
+
       setRefreshKey(k => k + 1);
     } catch (err) {
       console.error('Error approving request:', err);
@@ -205,6 +217,15 @@ export default function RemarkOverrideRequests() {
         `Dean rejected remark override for student ${req.studentName} (${req.currentRemark} → ${req.requestedRemark}) in ${req.subjectName}. Reason: ${dNote || 'None'}`,
         actorName
       );
+
+      // 4. Notify Faculty
+      await notifyOverrideRejected({
+        facultyId: req.facultyId,
+        studentName: req.studentName,
+        subjectName: req.subjectName,
+        reason: dNote,
+        actorName
+      });
 
       setRefreshKey(k => k + 1);
     } catch (err) {

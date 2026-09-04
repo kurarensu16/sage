@@ -6,6 +6,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { cn } from '../../lib/utils';
 import SuccessModal from '../../components/SuccessModal';
+import { TableSkeleton } from '../../components/common/Skeleton';
 
 export default function ComplianceAudit() {
   const { user, profile } = useAuth();
@@ -450,14 +451,7 @@ export default function ComplianceAudit() {
   };
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-10 w-10 text-sage-600 animate-spin" />
-          <p className="text-sm text-slate-500 font-medium">Loading clearance records...</p>
-        </div>
-      </div>
-    );
+    return <TableSkeleton rows={8} />;
   }
 
   if (!userDepartmentId) {

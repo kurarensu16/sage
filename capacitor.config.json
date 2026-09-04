@@ -9,7 +9,7 @@
   },
   "plugins": {
     "LocalNotifications": {
-      "smallIcon": "ic_launcher_foreground",
+      "smallIcon": "ic_stat_sage",
       "iconColor": "#1A4A3C"
     },
     "PushNotifications": {

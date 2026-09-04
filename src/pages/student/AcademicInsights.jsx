@@ -27,6 +27,9 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getAiAcademicInsight } from '../../lib/openrouter';
+import { dispatchNotifications } from '../../lib/notificationDispatcher';
+import { showLocalNotification } from '../../lib/notificationService';
+import { DetailSkeleton } from '../../components/common/Skeleton';
 
 // Helper to calculate term ratings from draft scores (DYCI Standard: 50% CS, 10% Char, 40% Exam)
 const calculateTermRating = (draftScores, maxSetup) => {
@@ -165,6 +168,19 @@ export default function AcademicInsights() {
         console.warn("Could not save insight to database:", error);
       } else {
         console.log("Insight saved to student_academic_insights table:", data);
+
+        // Immediate local alert
+        await showLocalNotification({
+          title: 'AI Counseling Ready',
+          body: '🧠 Your personalized academic guidance and counseling verdict is ready.'
+        });
+
+        // Persist notification record for inbox
+        await dispatchNotifications([{
+          recipient_id: user.id,
+          type: 'ai_recommendation',
+          message: 'Your personalized academic AI trajectory guidance and counseling report is ready.'
+        }]);
       }
     } catch (err) {
       console.warn("Error inserting to student_academic_insights:", err);
@@ -370,8 +386,8 @@ export default function AcademicInsights() {
                   const avgRating = Math.round((mr.rating + tentativeFinalRating.rating) / 2);
                   const avgGwa = getTransmutedGrade(avgRating).toFixed(2);
                   semestralGrade = {
-                    rating,
-                    gwa,
+                    rating: avgRating,
+                    gwa: avgGwa,
                     status: 'Posted',
                     insight: generateDynamicInsight('Semestral Grade', avgRating, avgGwa, 'Posted')
                   };
@@ -732,14 +748,7 @@ export default function AcademicInsights() {
   };
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50 min-h-[400px]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-xs text-slate-500 font-medium font-sans">Compiling Academic Insights & Diagnostics...</p>
-        </div>
-      </div>
-    );
+    return <DetailSkeleton />;
   }
 
   return (

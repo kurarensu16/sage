@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, AlertCircle, Filter, Sparkles, Building2, Loader2, AlertTriangle } from 'lucide-react';
+import { Search, AlertCircle, Filter, Sparkles, Building2, Loader2, AlertTriangle, Bell, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { dispatchNotifications } from '../../lib/notificationDispatcher';
+import { showLocalNotification } from '../../lib/notificationService';
 import { getTransmutedGrade } from '../../lib/gradingMath';
 import { cn } from '../../lib/utils';
 
@@ -85,17 +87,51 @@ function SeverityBadge({ severity }) {
 }
 
 export default function AtRiskStudents() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
 
   const [students, setStudents] = useState([]);
   const [sections, setSections] = useState([]);   // for the section filter dropdown
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [alertSentMap, setAlertSentMap] = useState({});
 
   // Filters
   const [severityFilter, setSeverityFilter] = useState('');
   const [sectionFilter, setSectionFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+
+  const handleAlertStudent = async (student) => {
+    try {
+      const gwaText = student.runningGwa !== null ? student.runningGwa.toFixed(2) : 'Under Evaluation';
+      
+      // Immediate local feedback for Dean
+      await showLocalNotification({
+        title: 'Academic Notice Dispatched',
+        body: `⚠️ Sent Early Warning advisory to ${student.firstName} ${student.lastName} (${student.section}).`
+      });
+
+      // Dispatch EWS alert to student and risk_threshold notice to dean
+      await dispatchNotifications([
+        {
+          recipient_id: student.id,
+          type: 'ews_alert',
+          message: `Academic Early Warning: You have received a ${student.severity.toUpperCase()} risk academic advisory with running GWA ${gwaText}. Please consult your department chair or college advisor.`
+        },
+        {
+          recipient_id: user?.id,
+          type: 'risk_threshold',
+          message: `At-Risk Student Flagged: Issued academic advisory for ${student.firstName} ${student.lastName} (${student.section}) with running GWA ${gwaText}.`
+        }
+      ].filter(n => Boolean(n.recipient_id)));
+
+      setAlertSentMap(prev => ({ ...prev, [student.id]: true }));
+      setTimeout(() => {
+        setAlertSentMap(prev => ({ ...prev, [student.id]: false }));
+      }, 4000);
+    } catch (err) {
+      console.error('Failed to dispatch EWS alert:', err);
+    }
+  };
 
   useEffect(() => {
     // Wait for the dean's department_id to be loaded
@@ -454,7 +490,24 @@ export default function AtRiskStudents() {
                           <p className="text-[10px] text-slate-400 font-mono truncate">{s.email}</p>
                         </div>
                       </div>
-                      <SeverityBadge severity={s.severity} />
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <SeverityBadge severity={s.severity} />
+                        <button
+                          type="button"
+                          onClick={() => handleAlertStudent(s)}
+                          disabled={alertSentMap[s.id]}
+                          className={cn(
+                            "px-2 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer",
+                            alertSentMap[s.id]
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                              : "bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300"
+                          )}
+                          title="Dispatch early warning notice to student"
+                        >
+                          {alertSentMap[s.id] ? <Check className="h-3 w-3 text-emerald-600" /> : <Bell className="h-3 w-3 text-amber-600" />}
+                          <span>{alertSentMap[s.id] ? 'Alerted' : 'Notify'}</span>
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100/80 text-xs">
@@ -595,9 +648,26 @@ export default function AtRiskStudents() {
                             </div>
                           </td>
 
-                          {/* Severity badge */}
+                          {/* Severity badge & Action */}
                           <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <SeverityBadge severity={s.severity} />
+                            <div className="flex items-center justify-center gap-2">
+                              <SeverityBadge severity={s.severity} />
+                              <button
+                                type="button"
+                                onClick={() => handleAlertStudent(s)}
+                                disabled={alertSentMap[s.id]}
+                                className={cn(
+                                  "px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs",
+                                  alertSentMap[s.id]
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    : "bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200"
+                                )}
+                                title="Dispatch early warning notice to student"
+                              >
+                                {alertSentMap[s.id] ? <Check className="h-3 w-3 text-emerald-600" /> : <Bell className="h-3 w-3 text-amber-600" />}
+                                <span>{alertSentMap[s.id] ? 'Alerted' : 'Notify'}</span>
+                              </button>
+                            </div>
                           </td>
 
                         </tr>

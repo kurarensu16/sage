@@ -8,6 +8,9 @@ import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyGradesPosted } from '../../lib/notificationDispatcher';
+import { showLocalNotification } from '../../lib/notificationService';
+import { TableSkeleton } from '../../components/common/Skeleton';
 
 export default function GradeComputationPreview() {
   const navigate = useNavigate();
@@ -356,6 +359,23 @@ export default function GradeComputationPreview() {
         actorName
       );
 
+      // Trigger immediate local feedback for faculty
+      await showLocalNotification({
+        title: 'Grades Finalized',
+        body: `📊 Semestral grades posted for ${classInfo?.subjects?.code || 'class'} (${classInfo?.sections?.name || ''}).`
+      });
+
+      // Dispatch real-time and database notifications to enrolled students
+      const targetSectionId = classInfo?.sections?.section_id || classInfo?.section_id;
+      if (targetSectionId) {
+        await notifyGradesPosted({
+          sectionId: targetSectionId,
+          subjectCode: classInfo?.subjects?.code || '',
+          termName: 'Semestral',
+          facultyName: actorName
+        });
+      }
+
       setShowConfirmModal(false);
       alert('Grades posted and locked successfully!');
       navigate('/faculty/postedgradesview');
@@ -372,14 +392,7 @@ export default function GradeComputationPreview() {
   };
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-sm text-slate-500 font-medium font-sans">Loading computation preview...</p>
-        </div>
-      </div>
-    );
+    return <TableSkeleton rows={6} />;
   }
 
   if (!classRecordId) {

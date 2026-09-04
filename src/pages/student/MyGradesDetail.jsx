@@ -10,6 +10,7 @@ import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { getTransmutedGrade, calculateSemestralGrade } from '../../lib/gradingMath';
+import { DetailSkeleton } from '../../components/common/Skeleton';
 
 export default function MyGradesDetail() {
   const navigate = useNavigate();
@@ -359,14 +360,7 @@ export default function MyGradesDetail() {
   }, [user, classRecordId]);
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-sm text-slate-500 font-medium font-sans">Loading grade breakdown...</p>
-        </div>
-      </div>
-    );
+    return <DetailSkeleton />;
   }
 
   if (!classInfo) {

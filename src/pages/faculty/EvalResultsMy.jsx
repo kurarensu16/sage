@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { DetailSkeleton } from '../../components/common/Skeleton';
 
 export default function EvalResultsMy() {
   const { user, profile } = useAuth();
@@ -433,14 +434,7 @@ export default function EvalResultsMy() {
   const verdictDetails = getVerdictDetails(selectedClass === 'All' ? activeInsight.overallVerdict : (activeSectionInsight?.sectionRating >= 3.60 ? 'excellent' : activeSectionInsight?.sectionRating >= 3.00 ? 'satisfactory' : 'needs_improvement'));
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-sm text-slate-500 font-medium font-sans">Loading evaluation stats...</p>
-        </div>
-      </div>
-    );
+    return <DetailSkeleton />;
   }
 
   if (semestersList.length === 0) {

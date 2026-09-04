@@ -54,6 +54,12 @@ export default function Login() {
         return;
       }
 
+      if (profile.status === 'inactive') {
+        setErrorMsg('This account has been temporarily disabled. Please contact the administrator.');
+        await supabase.auth.signOut();
+        return;
+      }
+
       if (profile.status === 'archived') {
         setErrorMsg('This account has been archived. Please contact system support.');
         await supabase.auth.signOut();

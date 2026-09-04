@@ -5,6 +5,7 @@ import Topbar from './Topbar';
 import BottomNav from './BottomNav';
 import OfflineBadge from '../pwa/OfflineBadge';
 import { useAuth } from '../../lib/AuthContext';
+import { DashboardSkeleton } from '../common/Skeleton';
 
 export default function MainLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -13,13 +14,17 @@ export default function MainLayout() {
 
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-slate-50 text-slate-500 font-semibold text-sm">
-        Loading SAGE...
+      <div className="h-screen w-screen overflow-hidden bg-slate-50 flex flex-col">
+        <DashboardSkeleton />
       </div>
     );
   }
 
   if (!session) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (profile?.status === 'inactive' || profile?.status === 'archived') {
     return <Navigate to="/login" replace />;
   }
 

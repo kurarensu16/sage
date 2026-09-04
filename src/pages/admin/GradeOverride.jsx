@@ -3,6 +3,8 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Search, ShieldAlert, Check, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { notifyAdminGradeOverride } from '../../lib/notificationDispatcher';
+import { showLocalNotification } from '../../lib/notificationService';
 
 export default function GradeOverride() {
   const { user } = useAuth();
@@ -49,6 +51,7 @@ export default function GradeOverride() {
           is_locked,
           class_records (
             class_record_id,
+            faculty_id,
             sections (name),
             subjects (code, name)
           )
@@ -61,6 +64,7 @@ export default function GradeOverride() {
         id: g.posted_grade_id,
         subjectCode: g.class_records?.subjects?.code || 'N/A',
         section: g.class_records?.sections?.name || 'N/A',
+        facultyId: g.class_records?.faculty_id || null,
         gradePeriod: g.grade_period,
         computedGrade: g.effective_grade !== null ? g.effective_grade : g.computed_grade,
         remarks: g.remarks,
@@ -195,6 +199,24 @@ export default function GradeOverride() {
       if (logErr) {
         console.error('Failed to write activity log:', logErr);
       }
+
+      // Local notification for admin actor
+      await showLocalNotification({
+        title: 'Grade Override Executed',
+        body: `🔒 Overrode ${selectedStudent.firstName} ${selectedStudent.lastName}'s ${selectedGrade.gradePeriod} grade in ${selectedGrade.subjectCode} to ${parsedGrade.toFixed(2)} (${remarks}).`
+      });
+
+      // Dispatch notifications to affected student and instructor
+      await notifyAdminGradeOverride({
+        studentId: selectedStudent.id,
+        facultyId: selectedGrade.facultyId || null,
+        studentName: `${selectedStudent.firstName} ${selectedStudent.lastName}`,
+        subjectCode: selectedGrade.subjectCode,
+        oldGrade: oldGradeVal,
+        newGrade: parsedGrade,
+        remarks: remarks,
+        actorName
+      });
 
       setIsOverrideOpen(false);
       setSuccessMsg('Grade override submitted successfully. Action logged to audit service.');

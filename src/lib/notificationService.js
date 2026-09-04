@@ -42,11 +42,15 @@ export async function initLocalNotifications() {
 export async function showLocalNotification({
   title = 'SAGE Notification',
   body = '',
-  id = Math.floor(Math.random() * 1000000),
+  id = null,
   payload = null,
   delayMs = 0
 }) {
   try {
+    const validId = (typeof id === 'number' && id > 0)
+      ? Math.floor(id)
+      : (Math.floor(Date.now() % 10000000) + Math.floor(Math.random() * 1000) + 1);
+
     if (Capacitor.isNativePlatform()) {
       let permStatus = await LocalNotifications.checkPermissions();
       if (permStatus.display !== 'granted') {
@@ -80,7 +84,7 @@ export async function showLocalNotification({
       await LocalNotifications.schedule({
         notifications: [
           {
-            id,
+            id: validId,
             title,
             body,
             channelId: NOTIFICATION_CHANNEL_ID,
@@ -97,12 +101,12 @@ export async function showLocalNotification({
     } else if (typeof window !== 'undefined' && 'Notification' in window) {
       // Browser fallback when running on desktop web
       if (Notification.permission === 'granted') {
-        new Notification(title, { body });
+        new Notification(title, { body, icon: '/favicon.svg' });
         return true;
       } else if (Notification.permission !== 'denied') {
         const perm = await Notification.requestPermission();
         if (perm === 'granted') {
-          new Notification(title, { body });
+          new Notification(title, { body, icon: '/favicon.svg' });
           return true;
         }
       }

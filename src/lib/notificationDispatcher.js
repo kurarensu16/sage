@@ -1,8 +1,57 @@
 import { supabase } from './supabase';
 
+export const NOTIFICATION_TITLES = {
+  grade_posted: '📊 New Grade Posted',
+  class_enrolled: '📚 Class Registration Success',
+  eval_window_open: '📝 Faculty Evaluation Open',
+  eval_closed: '🔒 Faculty Evaluation Closed',
+  eval_deadline_reminder: '⏰ Evaluation Deadline Reminder',
+  ews_alert: '⚠️ Early Warning System Alert',
+  ai_recommendation: '🧠 AI Counseling Ready',
+  class_assigned: '📋 New Class Assigned',
+  term_rollover_reminder: '⏰ Grade Submission Reminder',
+  override_approved: '✅ Grade Override Approved',
+  override_rejected: '❌ Grade Override Rejected',
+  risk_threshold: '⚠️ At-Risk Threshold Alert',
+  grades_pending: '📑 Grade Sheet Pending Approval',
+  override_request: '📝 Grade Override Pending',
+  eval_compiled: '⭐ Evaluation Reports Compiled',
+  compliance: '🛡️ Grading Compliance Alert',
+  roster_import: '📊 Student Roster Processed',
+  eval_window: '📅 Evaluation Window Status',
+  assignment: '👥 Subject Assignment Update',
+  security: '🔒 Administrative Security Alert',
+  database_sync: '🔄 Database Sync Success',
+  user_signup: '👤 New User Registered',
+  system: 'ℹ️ SAGE System Notice'
+};
+
+// Global broadcast channel for cross-client real-time alerts
+let realtimeAlertChannel = null;
+function getRealtimeChannel() {
+  if (!realtimeAlertChannel) {
+    realtimeAlertChannel = supabase.channel('sage-realtime-alerts', {
+      config: { broadcast: { self: true } }
+    });
+    realtimeAlertChannel.subscribe();
+  }
+  return realtimeAlertChannel;
+}
+
+function generateUUID() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
 /**
- * Insert notifications into Supabase database to trigger Realtime and in-app feeds.
- * @param {Array<{ recipient_id: string, type: string, message: string }>} notificationList
+ * Insert notifications into Supabase database, trigger local native notification popup,
+ * and broadcast to other active devices via Supabase Realtime Broadcast.
+ * @param {Array<{ recipient_id: string, type: string, message: string, notification_id?: string }>} notificationList
  */
 export async function dispatchNotifications(notificationList = []) {
   if (!notificationList || notificationList.length === 0) return;
@@ -10,6 +59,7 @@ export async function dispatchNotifications(notificationList = []) {
   try {
     const formatted = notificationList
       .map(n => ({
+        notification_id: n.notification_id || generateUUID(),
         recipient_id: n.recipient_id || n.recipientId,
         type: n.type || 'system',
         message: n.message,
@@ -20,12 +70,30 @@ export async function dispatchNotifications(notificationList = []) {
 
     if (formatted.length === 0) return;
 
-    const { error } = await supabase
+    // 1. Insert into persistent database table with .select() to confirm IDs
+    const { data: insertedRows, error } = await supabase
       .from('notifications')
-      .insert(formatted);
+      .insert(formatted)
+      .select();
 
     if (error) {
-      console.warn('Failed to insert notifications:', error);
+      console.warn('Failed to insert notifications into database:', error);
+    }
+
+    const payloadList = (insertedRows && insertedRows.length > 0) ? insertedRows : formatted;
+
+    // 2. Send Realtime Broadcast — AuthContext on each device listens and shows native popups
+    try {
+      const channel = getRealtimeChannel();
+      for (const notif of payloadList) {
+        channel.send({
+          type: 'broadcast',
+          event: 'notification',
+          payload: notif
+        });
+      }
+    } catch (broadcastErr) {
+      console.warn('Realtime broadcast dispatch error:', broadcastErr);
     }
   } catch (err) {
     console.warn('Error dispatching notifications:', err);
@@ -294,6 +362,259 @@ export async function notifyAdminActivity({
     console.warn('Error in notifyAdminActivity:', err);
   }
 }
+
+/**
+ * Notify Dean that a faculty member requested a remark override.
+ */
+export async function notifyOverrideRequested({
+  deanId = null,
+  facultyName = 'Faculty',
+  studentName = 'Student',
+  subjectName = 'Subject',
+  currentRemark = '',
+  requestedRemark = 'Pending Edit'
+}) {
+  try {
+    const list = [];
+    if (deanId) {
+      list.push({
+        recipient_id: deanId,
+        type: 'override_request',
+        message: `Remark Override Request: Prof. ${facultyName} submitted a request for ${studentName} (${currentRemark} → ${requestedRemark}) in ${subjectName}.`
+      });
+    } else {
+      const { data: deans } = await supabase
+        .from('users')
+        .select('user_id')
+        .eq('role', 'dean')
+        .eq('status', 'active');
+      
+      if (deans && deans.length > 0) {
+        deans.forEach(d => {
+          list.push({
+            recipient_id: d.user_id,
+            type: 'override_request',
+            message: `Remark Override Request: Prof. ${facultyName} submitted a request for ${studentName} (${currentRemark} → ${requestedRemark}) in ${subjectName}.`
+          });
+        });
+      }
+    }
+    await dispatchNotifications(list);
+  } catch (err) {
+    console.warn('Error in notifyOverrideRequested:', err);
+  }
+}
+
+/**
+ * Notify Faculty and Student when Dean approves a remark override.
+ */
+export async function notifyOverrideApproved({
+  facultyId,
+  studentId = null,
+  studentName = 'Student',
+  subjectName = 'Subject',
+  requestedRemark = 'Passed',
+  actorName = 'Dean'
+}) {
+  try {
+    const list = [];
+    if (facultyId) {
+      list.push({
+        recipient_id: facultyId,
+        type: 'override_approved',
+        message: `Override Request Approved: Your remark override request for ${studentName} in ${subjectName} was approved by ${actorName}. New remark: ${requestedRemark}.`
+      });
+    }
+    if (studentId) {
+      list.push({
+        recipient_id: studentId,
+        type: 'grade_posted',
+        message: `Official Remark Update: Your semestral grade remark for ${subjectName} has been officially updated to ${requestedRemark}.`
+      });
+    }
+    await dispatchNotifications(list);
+  } catch (err) {
+    console.warn('Error in notifyOverrideApproved:', err);
+  }
+}
+
+/**
+ * Notify Faculty when Dean rejects a remark override.
+ */
+export async function notifyOverrideRejected({
+  facultyId,
+  studentName = 'Student',
+  subjectName = 'Subject',
+  reason = '',
+  actorName = 'Dean'
+}) {
+  try {
+    if (!facultyId) return;
+    await dispatchNotifications([{
+      recipient_id: facultyId,
+      type: 'override_rejected',
+      message: `Override Request Declined: Your remark override request for ${studentName} in ${subjectName} was declined by ${actorName}.${reason ? ` Reason: ${reason}` : ''}`
+    }]);
+  } catch (err) {
+    console.warn('Error in notifyOverrideRejected:', err);
+  }
+}
+
+/**
+ * Notify Dean when Faculty requests a milestone unlock.
+ */
+export async function notifyUnlockRequested({
+  deanId = null,
+  facultyName = 'Faculty',
+  subjectName = 'Subject',
+  milestone = 'Semestral Grade'
+}) {
+  try {
+    const list = [];
+    if (deanId) {
+      list.push({
+        recipient_id: deanId,
+        type: 'grades_pending',
+        message: `Unlock Request: Prof. ${facultyName} requested permission to unlock ${milestone} grades for ${subjectName}.`
+      });
+    } else {
+      const { data: deans } = await supabase
+        .from('users')
+        .select('user_id')
+        .eq('role', 'dean')
+        .eq('status', 'active');
+      
+      if (deans && deans.length > 0) {
+        deans.forEach(d => {
+          list.push({
+            recipient_id: d.user_id,
+            type: 'grades_pending',
+            message: `Unlock Request: Prof. ${facultyName} requested permission to unlock ${milestone} grades for ${subjectName}.`
+          });
+        });
+      }
+    }
+    await dispatchNotifications(list);
+  } catch (err) {
+    console.warn('Error in notifyUnlockRequested:', err);
+  }
+}
+
+/**
+ * Notify Faculty when Dean approves milestone unlock.
+ */
+export async function notifyUnlockApproved({
+  facultyId,
+  subjectName = 'Subject',
+  milestone = 'Semestral Grade',
+  actorName = 'Dean'
+}) {
+  try {
+    if (!facultyId) return;
+    await dispatchNotifications([{
+      recipient_id: facultyId,
+      type: 'system',
+      message: `Grade Registry Unlocked: ${actorName} approved your unlock request for ${milestone} in ${subjectName}. You may now update score sheets.`
+    }]);
+  } catch (err) {
+    console.warn('Error in notifyUnlockApproved:', err);
+  }
+}
+
+/**
+ * Notify Student and Faculty when Admin performs a direct grade override.
+ */
+export async function notifyAdminGradeOverride({
+  studentId,
+  facultyId = null,
+  studentName = 'Student',
+  subjectCode = '',
+  oldGrade = 0,
+  newGrade = 0,
+  remarks = '',
+  actorName = 'Administrator'
+}) {
+  try {
+    const list = [];
+    if (studentId) {
+      list.push({
+        recipient_id: studentId,
+        type: 'grade_posted',
+        message: `Administrative Grade Update: Your official ${subjectCode} grade was updated to ${Number(newGrade).toFixed(2)} (${remarks}) by ${actorName}.`
+      });
+    }
+    if (facultyId) {
+      list.push({
+        recipient_id: facultyId,
+        type: 'compliance',
+        message: `Compliance Notice: Administrative grade adjustment executed for ${studentName} in ${subjectCode} (${Number(oldGrade).toFixed(2)} → ${Number(newGrade).toFixed(2)}) by ${actorName}.`
+      });
+    }
+    await dispatchNotifications(list);
+  } catch (err) {
+    console.warn('Error in notifyAdminGradeOverride:', err);
+  }
+}
+
+/**
+ * Notify Faculty and Deans when an academic term is activated or rolled over.
+ */
+export async function notifyTermActivated({
+  termName = '',
+  schoolYear = '',
+  semester = '',
+  actorName = 'Administrator'
+}) {
+  try {
+    const { data: targetUsers } = await supabase
+      .from('users')
+      .select('user_id, role')
+      .in('role', ['faculty', 'dean'])
+      .eq('status', 'active');
+
+    if (!targetUsers || targetUsers.length === 0) return;
+
+    const list = targetUsers.map(u => ({
+      recipient_id: u.user_id,
+      type: 'term_rollover_reminder',
+      message: `Academic Term Activated: ${schoolYear} ${semester}${termName ? ` (${termName})` : ''} has been officially set active by ${actorName}.`
+    }));
+
+    await dispatchNotifications(list);
+  } catch (err) {
+    console.warn('Error in notifyTermActivated:', err);
+  }
+}
+
+/**
+ * Notify all administrators and office actor when batch roster import is completed.
+ */
+export async function notifyRosterImported({
+  count = 0,
+  departmentName = '',
+  actorName = 'College Office'
+}) {
+  try {
+    const { data: admins } = await supabase
+      .from('users')
+      .select('user_id')
+      .eq('role', 'admin')
+      .eq('status', 'active');
+
+    if (!admins || admins.length === 0) return;
+
+    const list = admins.map(adm => ({
+      recipient_id: adm.user_id,
+      type: 'roster_import',
+      message: `Roster Synchronization: ${count} member(s) synchronized into ${departmentName || 'institution'} by ${actorName}.`
+    }));
+
+    await dispatchNotifications(list);
+  } catch (err) {
+    console.warn('Error in notifyRosterImported:', err);
+  }
+}
+
 
 
 
