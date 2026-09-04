@@ -10,6 +10,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { notifyUserStatusChange, notifyAdminActivity } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
+import { TableSkeleton } from '../../components/common/Skeleton';
 
 // Custom styled premium checkbox matching SAGE design language
 const CustomCheckbox = ({ checked, onChange }) => {
@@ -62,17 +63,7 @@ export default function UserList() {
   const [yearFilter, setYearFilter] = useState('');
   const [programFilter, setProgramFilter] = useState('');
   const [sectionFilter, setSectionFilter] = useState('');
-
-  const activeFilterCount = [roleFilter, deptFilter, programFilter, yearFilter, sectionFilter].filter(Boolean).length;
-
-  const clearFilters = () => {
-    setRoleFilter('');
-    setDeptFilter('');
-    setProgramFilter('');
-    setYearFilter('');
-    setSectionFilter('');
-    setCurrentPage(1);
-  };
+  const [statusFilter, setStatusFilter] = useState('');
 
   // Batch CSV Import Modal State
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -86,7 +77,7 @@ export default function UserList() {
   const [importReport, setImportReport] = useState(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isEditingImport, setIsEditingImport] = useState(false);
-  const fileInputRef = React.useRef(null);
+  const fileInputRef = useRef(null);
 
   const [departments, setDepartments] = useState([]);
   const [dbSections, setDbSections] = useState([]);
@@ -99,6 +90,19 @@ export default function UserList() {
   const [activeDropdownId, setActiveDropdownId] = useState(null);
   const [confirmModalConfig, setConfirmModalConfig] = useState(null);
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+
+  const activeFilterCount = [roleFilter, deptFilter, programFilter, yearFilter, sectionFilter, statusFilter, showArchived ? 'archived' : ''].filter(Boolean).length;
+
+  const clearFilters = () => {
+    setRoleFilter('');
+    setDeptFilter('');
+    setProgramFilter('');
+    setYearFilter('');
+    setSectionFilter('');
+    setStatusFilter('');
+    setShowArchived(false);
+    setCurrentPage(1);
+  };
 
   // Quick profile drawer state
   const [selectedUserProfile, setSelectedUserProfile] = useState(null);
@@ -159,7 +163,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadUsers();
   }, []);
 
@@ -200,14 +203,33 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       const matchesProgram = programFilter ? user.program === programFilter : true;
       const matchesYear = yearFilter ? user.yearLevel === yearFilter : true;
       const matchesSection = sectionFilter ? user.section === sectionFilter : true;
-      const matchesStatus = showArchived ? user.status === 'archived' : user.status !== 'archived';
+      
+      let matchesStatus;
+      if (showArchived) {
+        matchesStatus = user.status === 'archived';
+      } else if (statusFilter === 'inactive') {
+        matchesStatus = user.status === 'inactive';
+      } else if (statusFilter === 'active') {
+        matchesStatus = user.status === 'active';
+      } else {
+        matchesStatus = user.status !== 'archived';
+      }
       
       return matchesSearch && matchesRole && matchesDept && matchesProgram && matchesYear && matchesSection && matchesStatus;
     });
-  }, [users, searchTerm, roleFilter, deptFilter, programFilter, yearFilter, sectionFilter, showArchived]);
+  }, [users, searchTerm, roleFilter, deptFilter, programFilter, yearFilter, sectionFilter, statusFilter, showArchived]);
 
   const roleCounts = useMemo(() => {
-    const baseList = users.filter(u => showArchived ? u.status === 'archived' : u.status !== 'archived');
+    let baseList;
+    if (showArchived) {
+      baseList = users.filter(u => u.status === 'archived');
+    } else if (statusFilter === 'inactive') {
+      baseList = users.filter(u => u.status === 'inactive');
+    } else if (statusFilter === 'active') {
+      baseList = users.filter(u => u.status === 'active');
+    } else {
+      baseList = users.filter(u => u.status !== 'archived');
+    }
     return {
       all: baseList.length,
       student: baseList.filter(u => u.role === 'student').length,
@@ -216,7 +238,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       office: baseList.filter(u => u.role === 'office').length,
       admin: baseList.filter(u => u.role === 'admin').length,
     };
-  }, [users, showArchived]);
+  }, [users, statusFilter, showArchived]);
 
   // Toggle User Active/Inactive Status (Disable)
   const handleToggleStatus = async (userId) => {
@@ -1002,14 +1024,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
   };
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-sm text-slate-500 font-medium font-sans">Loading user registry...</p>
-        </div>
-      </div>
-    );
+    return <TableSkeleton rows={8} />;
   }
 
   const availableSections = dbSections
@@ -1077,17 +1092,34 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
           {/* Desktop Actions */}
           <div className="hidden sm:flex flex-wrap items-center gap-2 sm:gap-3">
+            {/* Show Disabled Users Only checkbox using CustomCheckbox */}
+            <div className="flex items-center gap-2 select-none cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+              <CustomCheckbox 
+                checked={statusFilter === 'inactive'}
+                onChange={() => {
+                  const nextVal = statusFilter === 'inactive' ? '' : 'inactive';
+                  setStatusFilter(nextVal);
+                  if (nextVal) setShowArchived(false);
+                  setSelectedUserIds(new Set());
+                  setCurrentPage(1);
+                }}
+              />
+              <span className="text-xs sm:text-sm text-slate-700 font-semibold">Disabled Only</span>
+            </div>
+
             {/* Show Archived Users Only checkbox using CustomCheckbox */}
             <div className="flex items-center gap-2 select-none cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
               <CustomCheckbox 
                 checked={showArchived}
                 onChange={() => {
-                  setShowArchived(!showArchived);
+                  const nextVal = !showArchived;
+                  setShowArchived(nextVal);
+                  if (nextVal) setStatusFilter('');
                   setSelectedUserIds(new Set());
                   setCurrentPage(1);
                 }}
               />
-              <span className="text-xs sm:text-sm text-slate-655 font-semibold">Archived Only</span>
+              <span className="text-xs sm:text-sm text-slate-700 font-semibold">Archived Only</span>
             </div>
 
             <div className="w-px h-5 bg-slate-200 hidden md:block" />
@@ -1184,6 +1216,18 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 <X className="h-2.5 w-2.5 cursor-pointer" onClick={() => setYearFilter('')} />
               </span>
             )}
+            {statusFilter === 'inactive' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                Disabled
+                <X className="h-2.5 w-2.5 cursor-pointer" onClick={() => setStatusFilter('')} />
+              </span>
+            )}
+            {statusFilter === 'active' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                Active
+                <X className="h-2.5 w-2.5 cursor-pointer" onClick={() => setStatusFilter('')} />
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -1191,16 +1235,16 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
               onClick={() => setIsMobileFilterOpen(true)}
               className={cn(
                 "px-2.5 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs",
-                (deptFilter || programFilter || yearFilter || sectionFilter || showArchived)
+                activeFilterCount > 0
                   ? "bg-sage-600 text-white border-sage-600"
                   : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
               )}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
               <span>Filters</span>
-              {(deptFilter || programFilter || yearFilter || sectionFilter || showArchived) && (
+              {activeFilterCount > 0 && (
                 <span className="w-4 h-4 rounded-full bg-white text-sage-700 text-[9px] font-bold flex items-center justify-center">
-                  {[deptFilter, programFilter, yearFilter, sectionFilter, showArchived ? '1' : ''].filter(Boolean).length}
+                  {activeFilterCount}
                 </span>
               )}
             </button>
@@ -1263,6 +1307,24 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
               <option value="faculty">Faculty</option>
               <option value="office">Office</option>
               <option value="student">Student</option>
+            </select>
+          </div>
+
+          {/* Status Filter */}
+          <div className="flex flex-col gap-0.5 min-w-[100px] flex-1 sm:flex-none">
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Status</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                if (e.target.value) setShowArchived(false);
+                setCurrentPage(1);
+              }}
+              className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer w-full"
+            >
+              <option value="">All Statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Disabled</option>
             </select>
           </div>
 
@@ -1840,6 +1902,24 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
             {/* Filter Form Body */}
             <div className="p-5 space-y-4 overflow-y-auto flex-1 text-left">
+              {/* Account Status Filter */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Account Status</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value);
+                    if (e.target.value) setShowArchived(false);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium text-slate-800 outline-none focus:ring-1 focus:ring-sage-500"
+                >
+                  <option value="">All Statuses (Active & Disabled)</option>
+                  <option value="active">Active Accounts Only</option>
+                  <option value="inactive">Disabled Accounts Only</option>
+                </select>
+              </div>
+
               {/* College Filter */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">College / Department</label>
@@ -1918,14 +1998,36 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 </div>
               </div>
 
-              {/* Show Archived Toggle */}
-              <div className="pt-2 border-t border-slate-100">
+              {/* Status Toggles */}
+              <div className="pt-2 border-t border-slate-100 space-y-2">
                 <label className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
-                  <span className="text-xs font-bold text-slate-800">Show Archived Only</span>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-800">Show Disabled Only</span>
+                    <span className="text-[10px] text-slate-500 font-medium">Filter accounts marked as inactive</span>
+                  </div>
+                  <CustomCheckbox 
+                    checked={statusFilter === 'inactive'}
+                    onChange={() => {
+                      const nextVal = statusFilter === 'inactive' ? '' : 'inactive';
+                      setStatusFilter(nextVal);
+                      if (nextVal) setShowArchived(false);
+                      setSelectedUserIds(new Set());
+                      setCurrentPage(1);
+                    }}
+                  />
+                </label>
+
+                <label className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-800">Show Archived Only</span>
+                    <span className="text-[10px] text-slate-500 font-medium">Filter accounts moved to archive</span>
+                  </div>
                   <CustomCheckbox 
                     checked={showArchived}
                     onChange={() => {
-                      setShowArchived(!showArchived);
+                      const nextVal = !showArchived;
+                      setShowArchived(nextVal);
+                      if (nextVal) setStatusFilter('');
                       setSelectedUserIds(new Set());
                       setCurrentPage(1);
                     }}

@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
-import { LocalNotifications } from '@capacitor/local-notifications';
 import { useAuth } from '../../lib/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { sendTestNotification } from '../../lib/notificationService';
 import { usePwaInstall } from '../../lib/usePwaInstall';
 import PageHeader from '../../components/layout/PageHeader';
 import SmartInstallModal from '../../components/layout/SmartInstallModal';
@@ -21,9 +19,6 @@ import {
   Mail,
   Volume2,
   Bell,
-  BellRing,
-  Smartphone,
-  Sparkles,
   BrainCircuit,
   Award,
   Shield,
@@ -62,35 +57,6 @@ export default function Settings() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [submittingPassword, setSubmittingPassword] = useState(false);
-  const [testSending, setTestSending] = useState(false);
-  const [testFeedback, setTestFeedback] = useState('');
-  const [deviceNotifState, setDeviceNotifState] = useState({
-    checked: false,
-    permission: 'unknown',
-    areEnabled: true
-  });
-
-  const checkDeviceStatus = async () => {
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const perm = await LocalNotifications.checkPermissions();
-        const enabled = await LocalNotifications.areEnabled();
-        setDeviceNotifState({
-          checked: true,
-          permission: perm.display,
-          areEnabled: enabled.value
-        });
-      } catch (err) {
-        console.warn('Could not query device notification status:', err);
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (activeTab === 'preferences') {
-      checkDeviceStatus();
-    }
-  }, [activeTab]);
 
   // Role metadata default configs
   const roleMeta = {
@@ -247,30 +213,6 @@ export default function Settings() {
       setSaveError(err.message || 'An unexpected error occurred.');
     } finally {
       setSubmittingPassword(false);
-    }
-  };
-
-  const handleTriggerTestNotification = async (delayMs = 0) => {
-    setTestSending(true);
-    setTestFeedback('');
-    try {
-      const success = await sendTestNotification(role, delayMs);
-      if (success) {
-        if (delayMs > 0) {
-          setTestFeedback('Notification scheduled in 5s! You can lock your screen now to see the lock-screen banner.');
-        } else {
-          setTestFeedback('Native notification triggered! Check your status bar & notification shade.');
-        }
-      } else {
-        setTestFeedback('Notification permission not granted. Please allow notification permission in your phone settings.');
-      }
-      setTimeout(() => setTestFeedback(''), 6000);
-    } catch (err) {
-      console.error('Test notification failed:', err);
-      setTestFeedback('Could not trigger notification: ' + (err?.message || 'Check device permissions.'));
-      setTimeout(() => setTestFeedback(''), 5000);
-    } finally {
-      setTestSending(false);
     }
   };
 
@@ -624,93 +566,6 @@ export default function Settings() {
                     </div>
                   </>
                 )}
-
-                {/* Native Device Popup Demonstration Card */}
-                <div className="mt-6 p-4 sm:p-5 rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 via-blue-50/40 to-slate-50 space-y-3.5 shadow-2xs">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
-                      <Smartphone className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-xs sm:text-sm font-bold text-slate-900 font-display">Native Device Pop-up Demonstration</h4>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200">
-                          <Sparkles className="h-3 w-3" /> Live Demo
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
-                        Test real Android heads-up popup banners and lock-screen alerts directly on your device without server delays.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Real-time Device System Status */}
-                  {deviceNotifState.checked && (
-                    <div className="flex flex-wrap items-center gap-2 pt-0.5 text-[11px]">
-                      <span className="font-semibold text-slate-500">Device Status:</span>
-                      <span className={cn(
-                        "px-2 py-0.5 rounded-md font-mono font-medium",
-                        deviceNotifState.permission === 'granted' 
-                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200" 
-                          : "bg-rose-100 text-rose-800 border border-rose-200"
-                      )}>
-                        Permission: {deviceNotifState.permission}
-                      </span>
-                      <span className={cn(
-                        "px-2 py-0.5 rounded-md font-mono font-medium",
-                        deviceNotifState.areEnabled 
-                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200" 
-                          : "bg-rose-100 text-rose-800 border border-rose-200"
-                      )}>
-                        OS Channel: {deviceNotifState.areEnabled ? 'Enabled' : 'Blocked'}
-                      </span>
-                    </div>
-                  )}
-
-                  {testFeedback && (
-                    <div className="px-3.5 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2 shadow-2xs">
-                      <Check className="h-4 w-4 text-emerald-600 flex-shrink-0" />
-                      <span>{testFeedback}</span>
-                    </div>
-                  )}
-
-                  <div className="flex flex-wrap gap-2.5 pt-1">
-                    <button
-                      type="button"
-                      disabled={testSending}
-                      onClick={() => handleTriggerTestNotification(0)}
-                      className="flex-1 min-w-[130px] px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-50"
-                    >
-                      <BellRing className="h-3.5 w-3.5" />
-                      <span>{testSending ? 'Triggering...' : 'Trigger Now'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={testSending}
-                      onClick={() => handleTriggerTestNotification(5000)}
-                      className="flex-1 min-w-[170px] px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 active:bg-slate-100 text-indigo-700 font-semibold text-xs border border-indigo-200 transition-all flex items-center justify-center gap-2 shadow-2xs cursor-pointer disabled:opacity-50"
-                    >
-                      <Lock className="h-3.5 w-3.5 text-indigo-600" />
-                      <span>Lock Screen Test (5s Delay)</span>
-                    </button>
-                  </div>
-
-                  {/* Xiaomi / Redmi / POCO / OEM Floating Banner Guidance */}
-                  <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200/80 text-[11px] text-amber-900 space-y-1 mt-2">
-                    <div className="font-bold flex items-center gap-1.5 text-amber-950">
-                      <AlertCircle className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
-                      <span>Note for Xiaomi / Redmi / POCO / Vivo / Oppo phones:</span>
-                    </div>
-                    <p className="text-amber-800 leading-relaxed">
-                      Android automatically delivers notifications to your <strong>Notification Drawer</strong> (swipe down from top of your screen to see it). If you want <strong>floating popup banners</strong> sliding from the top, turn on floating alerts in:
-                      <br />
-                      <span className="font-mono text-[10px] bg-amber-100/90 px-1.5 py-0.5 rounded text-amber-950 inline-block mt-1">
-                        Phone Settings ➔ Apps ➔ Manage Apps ➔ SAGE ➔ Notifications ➔ Turn ON "Floating notifications"
-                      </span>
-                    </p>
-                  </div>
-                </div>
 
               </div>
             </div>

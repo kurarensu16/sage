@@ -4,8 +4,9 @@ import { supabase } from './supabase';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { PushNotifications } from '@capacitor/push-notifications';
-import { initLocalNotifications } from './notificationService';
-
+import { initLocalNotifications, showLocalNotification } from './notificationService';
+import { NOTIFICATION_TITLES } from './notificationDispatcher';
+import { invalidateCache } from './dataCache';
 
 const AuthContext = createContext({});
 
@@ -84,10 +85,11 @@ export const AuthProvider = ({ children }) => {
       if (error) {
         console.error('Error fetching user profile:', error);
       } else {
-        if (data?.status === 'archived') {
-          // Force sign out archived user session in background
+        if (data?.status === 'archived' || data?.status === 'inactive') {
+          // Force sign out disabled or archived user session in background
           await supabase.auth.signOut();
           setUserProfile(null);
+          invalidateCache();
         } else {
           setUserProfile(data);
           registerPushNotifications(userId);
@@ -205,30 +207,52 @@ export const AuthProvider = ({ children }) => {
     };
     initBaseline();
 
-    // 2. Active Sync Engine: Regularly polls the database to keep the unread badge count fresh.
-    // NOTE: Native popup notification is the responsibility of each action handler (UserList, etc.).
-    // This poller only updates the badge count to avoid racing with direct showLocalNotification calls.
+    const triggerInboundLocalNotification = async (notif) => {
+      if (!notif || !notif.notification_id || !notif.message) return;
+      if (displayedNotificationIds.current.has(notif.notification_id)) return;
+      displayedNotificationIds.current.add(notif.notification_id);
+
+      try {
+        const rawTitle = NOTIFICATION_TITLES[notif.type] || 'SAGE Notification';
+        // Clean title (no emoji in title) for Android/MIUI system banner stability
+        const cleanTitle = rawTitle.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim() || 'Institutional Alert';
+        const prefixEmoji = (rawTitle.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u) || ['🔔'])[0];
+
+        await showLocalNotification({
+          title: cleanTitle,
+          body: `${prefixEmoji} ${notif.message}`,
+          payload: notif
+        });
+      } catch (alertErr) {
+        console.warn('Inbound notification alert error:', alertErr);
+      }
+    };
+
+    // 2. Active Sync Engine: Regularly checks database for newly inserted unread notifications
     const syncUnreadNotifications = async () => {
       if (!initialLoadDone.current) return;
       try {
         const { data: unreadNotifs, error } = await supabase
           .from('notifications')
-          .select('notification_id')
+          .select('*')
           .eq('recipient_id', userId)
           .eq('is_read', false)
           .order('created_at', { ascending: false })
-          .limit(50);
+          .limit(20);
 
         if (!error && unreadNotifs) {
           setUnreadCount(unreadNotifs.length);
+          for (const n of unreadNotifs) {
+            await triggerInboundLocalNotification(n);
+          }
         }
       } catch (err) {
         console.warn('Active notification poller error:', err);
       }
     };
 
-    // Poll every 3 seconds for instant on-device notification delivery
-    const pollerInterval = setInterval(syncUnreadNotifications, 3000);
+    // Poll every 4 seconds for instant on-device notification delivery
+    const pollerInterval = setInterval(syncUnreadNotifications, 4000);
 
     // Sync immediately when app is brought to the foreground
     let appStateListener = null;
@@ -238,18 +262,19 @@ export const AuthProvider = ({ children }) => {
       }).then(l => { appStateListener = l; });
     }
 
-    // A. Realtime Broadcast channel — updates badge count only (native popup is handled by page action handlers)
+    // A. Realtime Broadcast channel (sub-second cross-device push)
     const broadcastChannel = supabase
       .channel('sage-realtime-alerts', { config: { broadcast: { self: true } } })
       .on('broadcast', { event: 'notification' }, async (event) => {
         const notif = event.payload;
         if (notif && notif.recipient_id === userId) {
           setUnreadCount((prev) => prev + 1);
+          await triggerInboundLocalNotification(notif);
         }
       })
       .subscribe();
 
-    // B. Postgres changes channel — updates badge count for any other device's actions
+    // B. Postgres changes channel (database persistence listener fallback)
     const dbChannel = supabase
       .channel(`realtime-notifications-${userId}`)
       .on(
@@ -262,8 +287,9 @@ export const AuthProvider = ({ children }) => {
         },
         async (payload) => {
           const n = payload.new;
-          if (n) {
+          if (n && n.recipient_id === userId) {
             setUnreadCount((prev) => prev + 1);
+            await triggerInboundLocalNotification(n);
           }
         }
       )
@@ -282,6 +308,7 @@ export const AuthProvider = ({ children }) => {
     setUserProfile(null);
     setSession(null);
     setUnreadCount(0);
+    invalidateCache(); // Purge all cached memory and session storage
     await supabase.auth.signOut();
     setLoading(false);
   };

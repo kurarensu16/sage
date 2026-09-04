@@ -9,6 +9,8 @@ import {
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { getCachedData, setCachedData } from '../../lib/dataCache';
+import { CardListSkeleton } from '../../components/common/Skeleton';
 
 // Helper to compute SHA-256 hash for evaluation anonymity token
 async function sha256(message) {
@@ -41,8 +43,22 @@ export default function EvalList() {
         return;
       }
 
-      try {
+      const cacheKey = `student_evals_${user.id}`;
+      const cached = getCachedData(cacheKey, 180000);
+      if (cached) {
+        setActiveEvaluations(cached.activeEvaluations || []);
+        setArchivedEvaluations(cached.archivedEvaluations || []);
+        setActiveTerm(cached.activeTerm || null);
+        setIsOfficeSigned(cached.isOfficeSigned || false);
+        if (cached.archivedEvaluations?.length > 0) {
+          setExpandedGroups({ [cached.archivedEvaluations[0].groupKey]: true });
+        }
+        setLoading(false);
+      } else {
         setLoading(true);
+      }
+
+      try {
 
         // 1. Fetch active academic term
         const { data: termData } = await supabase
@@ -270,6 +286,13 @@ export default function EvalList() {
           setExpandedGroups({ [firstKey]: true });
         }
 
+        setCachedData(cacheKey, {
+          activeEvaluations: activeList,
+          archivedEvaluations: archivedList,
+          activeTerm: termData || null,
+          isOfficeSigned: officeSigned
+        });
+
       } catch (err) {
         console.error('Error loading active evaluations:', err);
       } finally {
@@ -307,14 +330,7 @@ export default function EvalList() {
   }, [archivedEvaluations]);
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-sm text-slate-500 font-medium font-sans">Loading faculty evaluations...</p>
-        </div>
-      </div>
-    );
+    return <CardListSkeleton count={4} />;
   }
 
   const activePendingCount = activeEvaluations.filter(e => !e.hasSubmitted).length;

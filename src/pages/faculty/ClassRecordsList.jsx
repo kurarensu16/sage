@@ -4,6 +4,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Search, Filter, Users, Calendar, BookOpen, Settings, Edit3, Lock, FileSpreadsheet, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { CardListSkeleton } from '../../components/common/Skeleton';
 
 export default function ClassRecordsList() {
   const { user } = useAuth();
@@ -190,6 +191,10 @@ export default function ClassRecordsList() {
     );
   });
 
+  if (loading) {
+    return <CardListSkeleton count={4} />;
+  }
+
   return (
     <>
       <PageHeader title="My Class Records" breadcrumb="Faculty Portal" />
@@ -240,14 +245,7 @@ export default function ClassRecordsList() {
         </div>
 
         {/* Classes Grid */}
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center py-20 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-            <div className="flex flex-col items-center gap-3">
-              <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-sage-600"></div>
-              <p className="text-sm text-slate-500 font-medium font-sans">Loading class records...</p>
-            </div>
-          </div>
-        ) : filteredClasses.length === 0 ? (
+        {filteredClasses.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center max-w-xl mx-auto shadow-2xs">
             <BookOpen className="h-10 w-10 text-slate-400 mx-auto mb-3" />
             <h3 className="text-base font-bold text-slate-900 font-display">No classes found</h3>

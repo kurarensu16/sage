@@ -101,12 +101,12 @@ export async function showLocalNotification({
     } else if (typeof window !== 'undefined' && 'Notification' in window) {
       // Browser fallback when running on desktop web
       if (Notification.permission === 'granted') {
-        new Notification(title, { body });
+        new Notification(title, { body, icon: '/favicon.svg' });
         return true;
       } else if (Notification.permission !== 'denied') {
         const perm = await Notification.requestPermission();
         if (perm === 'granted') {
-          new Notification(title, { body });
+          new Notification(title, { body, icon: '/favicon.svg' });
           return true;
         }
       }

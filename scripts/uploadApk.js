@@ -55,11 +55,15 @@ async function main() {
     console.log(`Bucket "${bucketName}" already exists.`);
   }
 
-  let apkPath = path.resolve('android/app/build/outputs/apk/debug/sage.apk');
-  if (!fs.existsSync(apkPath)) {
-    apkPath = path.resolve('android/app/build/outputs/apk/debug/app-debug.apk');
+  const debugApk = path.resolve('android/app/build/outputs/apk/debug/app-debug.apk');
+  const targetSageApk = path.resolve('android/app/build/outputs/apk/debug/sage.apk');
+
+  if (fs.existsSync(debugApk)) {
+    console.log('Syncing fresh app-debug.apk -> sage.apk locally...');
+    fs.copyFileSync(debugApk, targetSageApk);
   }
 
+  const apkPath = fs.existsSync(targetSageApk) ? targetSageApk : debugApk;
   console.log('3. Reading APK from:', apkPath);
 
   if (!fs.existsSync(apkPath)) {
@@ -70,29 +74,56 @@ async function main() {
   const fileBuffer = fs.readFileSync(apkPath);
   console.log(`APK File Size: ${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB`);
 
-  const fileNames = ['sage.apk', 'sage-latest.apk', 'app-debug.apk'];
+  console.log('4. Cleaning other files from bucket to keep only "sage.apk"...');
+  const { data: existingFiles, error: listErr } = await supabase.storage
+    .from(bucketName)
+    .list();
 
-  console.log('4. Uploading APK aliases to Supabase Storage...');
-  for (const name of fileNames) {
-    const { data: uploadData, error: upErr } = await supabase.storage
-      .from(bucketName)
-      .upload(name, fileBuffer, {
-        contentType: 'application/vnd.android.package-archive',
-        upsert: true
-      });
+  if (listErr) {
+    console.warn('Warning: Could not list bucket files:', listErr.message);
+  } else if (existingFiles && existingFiles.length > 0) {
+    const filesToRemove = existingFiles
+      .filter(f => f.name !== 'sage.apk')
+      .map(f => f.name);
 
-    if (upErr) {
-      console.error(`Upload of ${name} failed:`, upErr);
-    } else {
-      console.log(`Uploaded ${name} successfully:`, uploadData.path);
+    if (filesToRemove.length > 0) {
+      console.log('Removing legacy/alias files from bucket:', filesToRemove);
+      const { data: delData, error: delErr } = await supabase.storage
+        .from(bucketName)
+        .remove(filesToRemove);
+      if (delErr) {
+        console.error('Failed to remove extra files:', delErr);
+      } else {
+        console.log('Removed extra files successfully:', delData);
+      }
     }
-
-    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucketName}/${name}`;
-    const res = await fetch(publicUrl, { method: 'HEAD' });
-    console.log(`  -> ${name} HTTP status:`, res.status, res.statusText);
   }
 
-  console.log('ALL APK endpoints are live and verified.');
+  const fileName = 'sage.apk';
+  console.log(`5. Uploading "${fileName}" to Supabase Storage...`);
+  const { data: uploadData, error: upErr } = await supabase.storage
+    .from(bucketName)
+    .upload(fileName, fileBuffer, {
+      contentType: 'application/vnd.android.package-archive',
+      cacheControl: '3600',
+      upsert: true
+    });
+
+  if (upErr) {
+    console.error(`Upload of ${fileName} failed:`, upErr);
+    process.exit(1);
+  } else {
+    console.log(`Uploaded ${fileName} successfully:`, uploadData.path);
+  }
+
+  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucketName}/${fileName}`;
+  const res = await fetch(publicUrl, { method: 'HEAD' });
+  console.log(`  -> ${fileName} HTTP status:`, res.status, res.statusText);
+
+  // List final bucket contents to verify only sage.apk exists
+  const { data: finalFiles } = await supabase.storage.from(bucketName).list();
+  console.log('Final bucket contents:', finalFiles?.map(f => `${f.name} (${(f.metadata?.size / (1024 * 1024) || 0).toFixed(2)} MB)`));
+  console.log(`Public Download URL: ${publicUrl}`);
 }
 
 main().catch(err => {

@@ -3,7 +3,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Calendar, RefreshCw, AlertTriangle, CheckCircle, ShieldAlert, Database, ArrowRight, Check, X, ClipboardList } from 'lucide-react';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { notifyAdminActivity } from '../../lib/notificationDispatcher';
+import { notifyAdminActivity, notifyTermActivated } from '../../lib/notificationDispatcher';
 import { supabase } from '../../lib/supabase';
 import { cn } from '../../lib/utils';
 import SuccessModal from '../../components/SuccessModal';
@@ -324,6 +324,14 @@ export default function TermManagement() {
       await notifyAdminActivity({
         type: 'system',
         message: `Academic Term Management: Institutional term transitioned to AY ${targetSy} (${targetSem} Semester) by ${actorName}.`,
+        actorName
+      });
+
+      // Notify all active Faculty and Deans of the term activation
+      await notifyTermActivated({
+        termName: `${targetSem} Semester`,
+        schoolYear: targetSy,
+        semester: targetSem,
         actorName
       });
 

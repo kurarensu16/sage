@@ -3,6 +3,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Search, Filter, Loader2, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { notifyUnlockApproved } from '../../lib/notificationDispatcher';
 
 export default function GradePostingStatus() {
   const { user, profile } = useAuth();
@@ -155,6 +156,18 @@ export default function GradePostingStatus() {
         .from('posted_grades')
         .update({ is_locked: false })
         .eq('class_record_id', classRecordId);
+
+      // 3. Dispatch notification to class faculty
+      const targetClass = classrooms.find(c => c.id === classRecordId);
+      if (targetClass?.facultyId) {
+        const actorName = profile ? `${profile.first_name} ${profile.last_name}` : 'Dean';
+        await notifyUnlockApproved({
+          facultyId: targetClass.facultyId,
+          subjectName: `${targetClass.subjectCode} (${targetClass.section})`,
+          milestone: 'Semestral Grade',
+          actorName
+        });
+      }
 
       // Refresh data
       await loadPostingData();

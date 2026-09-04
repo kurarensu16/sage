@@ -6,6 +6,8 @@ import { ChevronDown, Eye, CheckCircle, Award, ChevronRight, Lock, ShieldCheck, 
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { getCachedData, setCachedData } from '../../lib/dataCache';
+import { TableSkeleton } from '../../components/common/Skeleton';
 
 // Helper to check pending evaluations for clearance sign-off
 const checkPendingEvals = async (studentId, sectionId) => {
@@ -118,6 +120,16 @@ export default function MyGradesList() {
   useEffect(() => {
     async function loadSemesters() {
       if (!user) return;
+      
+      const semsCacheKey = `student_semesters_${user.id}`;
+      const cachedSems = getCachedData(semsCacheKey, 300000);
+      if (cachedSems && cachedSems.options?.length > 0) {
+        setSemestersList(cachedSems.options);
+        if (!selectedSemLabel && cachedSems.defaultLabel) {
+          setSelectedSemLabel(cachedSems.defaultLabel);
+        }
+      }
+
       try {
         // 1. Fetch active term from central academic_terms registry
         const { data: activeTerm } = await supabase
@@ -200,6 +212,10 @@ export default function MyGradesList() {
           const matchedProfile = options.find(o => o.section_id === profile?.section_id);
           const defaultOpt = matchedActive || matchedProfile || options[0];
           setSelectedSemLabel(defaultOpt.label);
+          setCachedData(semsCacheKey, {
+            options,
+            defaultLabel: defaultOpt.label
+          });
         } else {
           setLoading(false);
         }
@@ -215,7 +231,19 @@ export default function MyGradesList() {
   useEffect(() => {
     async function loadGradesForSem() {
       if (!user || !selectedSemLabel) return;
-      setLoading(true);
+      
+      const semCacheKey = `student_grades_${user.id}_${selectedSemLabel}`;
+      const cached = getCachedData(semCacheKey, 180000);
+      if (cached) {
+        setGrades(cached.grades || []);
+        setEvalClearance(cached.evalClearance || { totalWindows: 0, pendingCount: 0, isSigned: false });
+        setOfficialGwa(cached.officialGwa ?? null);
+        setOfficialStanding(cached.officialStanding || 'No grades posted yet');
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
       try {
         const activeOpt = semestersList.find(o => o.label === selectedSemLabel);
         if (!activeOpt) return;
@@ -418,7 +446,15 @@ export default function MyGradesList() {
           return 'Academic warning';
         };
 
-        setOfficialStanding(getStanding(offGwa));
+        const standing = getStanding(offGwa);
+        setOfficialStanding(standing);
+
+        setCachedData(semCacheKey, {
+          grades: mappedGrades,
+          evalClearance: clearanceInfo,
+          officialGwa: offGwa,
+          officialStanding: standing
+        });
 
       } catch (err) {
         console.error('Error loading grades details:', err);
@@ -431,14 +467,7 @@ export default function MyGradesList() {
   }, [user, selectedSemLabel, semestersList]);
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-xs text-slate-500 font-medium font-sans">Loading academic grades...</p>
-        </div>
-      </div>
-    );
+    return <TableSkeleton rows={5} />;
   }
 
   return (
@@ -471,7 +500,7 @@ export default function MyGradesList() {
             ? "bg-amber-50 border-amber-200 text-amber-950"
             : "bg-slate-50 border-slate-200 text-slate-900"
         )}>
-          <div className="flex items-start sm:items-center gap-3.5">
+          <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
             <div className={cn(
               "p-2.5 rounded-xl flex-shrink-0 mt-0.5 sm:mt-0",
               evalClearance.isOfficeSigned 
@@ -490,8 +519,8 @@ export default function MyGradesList() {
                 <Clock className="h-6 w-6" />
               )}
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
                 <h4 className="font-extrabold text-sm sm:text-base font-display">
                   Term Clearance: {
                     evalClearance.isOfficeSigned 
@@ -504,7 +533,7 @@ export default function MyGradesList() {
                   }
                 </h4>
                 <span className={cn(
-                  "px-2 py-0.5 rounded-full text-[10px] font-extrabold border",
+                  "inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border whitespace-nowrap flex-shrink-0",
                   evalClearance.isOfficeSigned
                     ? "bg-emerald-100 text-emerald-800 border-emerald-200"
                     : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0

@@ -6,11 +6,14 @@ import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Min
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyGradesPosted } from '../../lib/notificationDispatcher';
+import { showLocalNotification } from '../../lib/notificationService';
 import { getTransmutedGrade } from '../../lib/gradingMath';
 import { triggerExcelExport } from '../../lib/excelExport';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
 import { cn } from '../../lib/utils';
+import { TableSkeleton } from '../../components/common/Skeleton';
 
 export default function ScoreInput() {
   const navigate = useNavigate();
@@ -1149,6 +1152,23 @@ export default function ScoreInput() {
         actorName
       );
 
+      // Trigger immediate local notification for faculty
+      await showLocalNotification({
+        title: 'Grades Finalized',
+        body: `📊 Semestral grades finalized and locked for ${classInfo?.subjects?.code || 'subject'} (${classInfo?.sections?.name || ''}).`
+      });
+
+      // Dispatch notifications to enrolled students in section
+      const targetSectionId = classInfo?.sections?.section_id || classInfo?.section_id;
+      if (targetSectionId) {
+        await notifyGradesPosted({
+          sectionId: targetSectionId,
+          subjectCode: classInfo?.subjects?.code || '',
+          termName: 'Semestral',
+          facultyName: actorName
+        });
+      }
+
       setShowPostModal(false);
 
       setPopupTitle('Grades Posted!');
@@ -1170,14 +1190,7 @@ export default function ScoreInput() {
   }, [isFullScreen]);
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-sm text-slate-500 font-medium font-sans">Loading spreadsheet data...</p>
-        </div>
-      </div>
-    );
+    return <TableSkeleton rows={7} />;
   }
 
   if (!classRecordId) {

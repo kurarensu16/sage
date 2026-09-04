@@ -22,7 +22,9 @@ import {
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { TableSkeleton } from '../../components/common/Skeleton';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyUnlockRequested, notifyOverrideRequested } from '../../lib/notificationDispatcher';
 import { triggerExcelExport } from '../../lib/excelExport';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
@@ -704,6 +706,13 @@ export default function PostedGradesView() {
         actorName
       );
 
+      // Dispatch notification to Dean
+      await notifyUnlockRequested({
+        facultyName: actorName,
+        subjectName: `${classInfo?.subjects?.code || 'Subject'} (${classInfo?.sections?.name || 'Section'})`,
+        milestone: milestone
+      });
+
       setPopupTitle('Unlock Requested');
       setPopupDesc(`Request to unlock ${milestone} has been sent to the Dean. Modifying scores will be enabled once approved.`);
       setShowPopup(true);
@@ -792,6 +801,15 @@ export default function PostedGradesView() {
         actorName
       );
 
+      // Dispatch notification to Dean
+      await notifyOverrideRequested({
+        facultyName: actorName,
+        studentName: remarkReqStudent,
+        subjectName: `${subjCode} - ${subjName}`,
+        currentRemark: remarkReqFrom,
+        requestedRemark: remarkReqTo
+      });
+
       setRemarkReqSent(true);
       setTimeout(() => {
         setShowRemarkModal(false);
@@ -819,14 +837,7 @@ export default function PostedGradesView() {
   }, [isFullScreen]);
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-sm text-slate-500 font-medium font-sans">Loading locked grade logs...</p>
-        </div>
-      </div>
-    );
+    return <TableSkeleton rows={6} />;
   }
 
   const subjectCode = classInfo?.subjects?.code || '';

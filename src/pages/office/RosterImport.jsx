@@ -12,7 +12,10 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyRosterImported } from '../../lib/notificationDispatcher';
+import { showLocalNotification } from '../../lib/notificationService';
 import { cn } from '../../lib/utils';
+import { TableSkeleton } from '../../components/common/Skeleton';
 
 export default function RosterImport() {
   const { user, profile } = useAuth();
@@ -662,6 +665,19 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,Bachelor of Science in Informa
         actorName
       );
 
+      if (successCount > 0) {
+        await showLocalNotification({
+          title: 'Roster Synchronization Complete',
+          body: `📊 Successfully imported ${successCount} member(s) into ${userDepartmentName}.`
+        });
+
+        await notifyRosterImported({
+          count: successCount,
+          departmentName: userDepartmentName,
+          actorName
+        });
+      }
+
       setImportSuccess(`Import completed! Successfully registered ${successCount} members. Failed: ${failCount}`);
       
       setTimeout(() => {
@@ -691,14 +707,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,Bachelor of Science in Informa
   };
 
   if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sage-600"></div>
-          <p className="text-sm text-slate-500 font-medium font-sans">Loading department roster...</p>
-        </div>
-      </div>
-    );
+    return <TableSkeleton rows={8} />;
   }
 
   return (
