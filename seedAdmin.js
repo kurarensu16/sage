@@ -36,11 +36,11 @@ const defaultUsers = [
 ];
 
 async function seed() {
-  console.log("Fetching CCS department...");
-  const { data: ccs } = await supabase.from('departments').select('department_id').eq('name', 'College of Computer Studies').single();
+  console.log("Fetching TECH department...");
+  const { data: tech } = await supabase.from('departments').select('department_id').eq('name', 'Technology and Engineering College for Humanity').single();
   
-  if (!ccs) {
-    console.error("Department not found. Did you run the seed script from the UI first?");
+  if (!tech) {
+    console.error("Department not found. Did you run the migration script first?");
     return;
   }
 
@@ -81,7 +81,7 @@ async function seed() {
       password_hash: 'managed_by_supabase_auth',
       role: u.role,
       year_level: u.year_level || null,
-      department_id: ccs.department_id,
+      department_id: tech.department_id,
       must_change_password: true,
       user_number: u.user_number
     }, { onConflict: 'email' });
