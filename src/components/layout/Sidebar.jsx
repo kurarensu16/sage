@@ -1,10 +1,242 @@
+import { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { BookOpen, LayoutDashboard, Users, FileText, LogOut, Calendar, AlertCircle, BarChart3, Star, FileDown, Layers, BookMarked, Shield, ClipboardList, BrainCircuit, Download, X, Smartphone, Monitor, Settings, GraduationCap } from 'lucide-react';
+import { 
+  BookOpen, 
+  LayoutDashboard, 
+  Users, 
+  FileText, 
+  LogOut, 
+  Calendar, 
+  AlertCircle, 
+  BarChart3, 
+  FileDown, 
+  Layers, 
+  BookMarked, 
+  Shield, 
+  ClipboardList, 
+  BrainCircuit, 
+  Download, 
+  X, 
+  Smartphone, 
+  Settings, 
+  GraduationCap,
+  ChevronDown,
+  ChevronRight,
+  MessageSquare,
+  ClipboardCheck,
+  CheckCircle2,
+  FileSpreadsheet,
+  Building2
+} from 'lucide-react';
 import { cn } from '../../lib/utils';
 import SageLogo from './SageLogo';
 import SmartInstallModal from './SmartInstallModal';
 import { useAuth } from '../../lib/AuthContext';
 import { usePwaInstall } from '../../lib/usePwaInstall';
+
+// Navigation configuration conforming to ASPIRE Sidebar Navigation Developer Documentation (§4 & §6)
+const PORTAL_NAVIGATION = {
+  student: [
+    {
+      standalone: true,
+      to: '/student/dashboard',
+      label: 'Dashboard',
+      icon: LayoutDashboard
+    },
+    {
+      id: 'grades',
+      label: 'My Grades',
+      icon: BookOpen,
+      items: [
+        { to: '/student/mysubjects', label: 'My Subjects', icon: BookMarked },
+        { to: '/student/mygradeslist', label: 'Grade Report', icon: FileText },
+        { to: '/student/mygradesdetail', label: 'Score Breakdown', icon: Layers }
+      ]
+    },
+    {
+      id: 'attendance',
+      label: 'My Attendance',
+      icon: Calendar,
+      items: [
+        { to: '/student/attendance', label: 'Attendance & Warnings', icon: Calendar }
+      ]
+    },
+    {
+      id: 'academic_support',
+      label: 'Academic Support',
+      icon: BrainCircuit,
+      items: [
+        { to: '/student/advising-inbox', label: 'Advisories & Study Plans', icon: ClipboardList },
+        { to: '/student/academic-insights', label: 'AI Study Advisor', icon: BrainCircuit }
+      ]
+    },
+    {
+      id: 'consultations',
+      label: 'Consultations',
+      icon: MessageSquare,
+      items: [
+        { to: '/student/academic-insights?tab=consultations', label: 'Request a Consultation', icon: MessageSquare }
+      ]
+    }
+  ],
+
+  faculty: [
+    {
+      standalone: true,
+      to: '/faculty/dashboard',
+      label: 'Dashboard',
+      icon: LayoutDashboard
+    },
+    {
+      id: 'grades',
+      label: 'Grades',
+      icon: FileText,
+      items: [
+        { to: '/faculty/gradecomputationpreview', label: 'Preview & Post Grades', icon: Layers },
+        { to: '/faculty/scoreinput', label: 'Log Class Scores', icon: FileText }
+      ]
+    },
+    {
+      id: 'classes',
+      label: 'Classes',
+      icon: GraduationCap,
+      items: [
+        { to: '/faculty/classrecordslist', label: 'My Class Records', icon: BookOpen },
+        { to: '/faculty/enrollmentrequests', label: 'Enrollment Requests', icon: Users }
+      ]
+    },
+    {
+      id: 'student_risk',
+      label: 'Student Risk',
+      icon: AlertCircle,
+      items: [
+        { to: '/faculty/atriskstudents', label: 'At-Risk Students', icon: AlertCircle },
+        { to: '/faculty/evaluatestudent', label: 'Evaluate Student', icon: ClipboardCheck }
+      ]
+    },
+    {
+      id: 'attendance',
+      label: 'Attendance',
+      icon: Calendar,
+      items: [
+        { to: '/faculty/classattendance', label: 'Attendance Monitoring', icon: Calendar }
+      ]
+    },
+    {
+      id: 'consultations',
+      label: 'Consultations',
+      icon: MessageSquare,
+      items: [
+        { to: '/faculty/consultations', label: 'Consultation Requests', icon: MessageSquare }
+      ]
+    }
+  ],
+
+  dean: [
+    {
+      standalone: true,
+      to: '/dean/dashboard',
+      label: 'Dashboard',
+      icon: LayoutDashboard
+    },
+    {
+      id: 'grades',
+      label: 'Grades',
+      icon: FileText,
+      items: [
+        { to: '/dean/gradepostingstatus', label: 'Grade Submission Status', icon: BookOpen },
+        { to: '/dean/remarkoverriderequests', label: 'Grade Corrections', icon: ClipboardList },
+        { to: '/dean/gradedistribution', label: 'Grade Distribution', icon: BarChart3 }
+      ]
+    },
+    {
+      id: 'student_risk',
+      label: 'Student Risk',
+      icon: AlertCircle,
+      items: [
+        { to: '/dean/atriskstudents', label: 'Risk & Honors Overview', icon: AlertCircle },
+        { to: '/dean/escalatedcases', label: 'Escalated Cases', icon: Users },
+        { to: '/dean/interventionresults', label: 'Intervention Results', icon: CheckCircle2 }
+      ]
+    },
+    {
+      id: 'reports',
+      label: 'Reports',
+      icon: FileDown,
+      items: [
+        { to: '/dean/summaryreports', label: 'Generate Reports', icon: FileDown }
+      ]
+    }
+  ],
+
+  admin: [
+    {
+      standalone: true,
+      to: '/admin/dashboard',
+      label: 'Dashboard',
+      icon: LayoutDashboard
+    },
+    {
+      id: 'user_accounts',
+      label: 'User Accounts',
+      icon: Users,
+      items: [
+        { to: '/admin/userlist', label: 'Manage Users', icon: Users },
+        { to: '/admin/userlist?action=import', label: 'Import Users (CSV)', icon: FileSpreadsheet }
+      ]
+    },
+    {
+      id: 'academic_setup',
+      label: 'Academic Setup',
+      icon: BookMarked,
+      items: [
+        { to: '/admin/subjectlist', label: 'Subjects', icon: BookMarked },
+        { to: '/admin/gradecomputationslist', label: 'Grading Formulas', icon: Settings },
+        { to: '/admin/sectionlist', label: 'Sections', icon: Layers },
+        { to: '/admin/departmentslist', label: 'Departments & Programs', icon: Building2 },
+        { to: '/admin/classrooms', label: 'Classrooms', icon: GraduationCap }
+      ]
+    },
+    {
+      id: 'system',
+      label: 'System',
+      icon: Shield,
+      items: [
+        { to: '/admin/auditlog', label: 'Activity Logs', icon: Shield },
+        { to: '/admin/termmanagement', label: 'Term Settings', icon: Calendar },
+        { to: '/admin/gradeoverride', label: 'Grade Override', icon: AlertCircle }
+      ]
+    }
+  ]
+};
+
+// Helper to determine if a sub-item is active based on path and query parameters
+function isItemActive(item, location) {
+  const [targetPath, targetQuery] = item.to.split('?');
+  const [targetPathClean] = targetPath.split('#');
+
+  if (location.pathname !== targetPathClean) return false;
+
+  if (!targetQuery) {
+    // If target has no query params, but location has specific distinct query params, don't match
+    if (location.search && (
+      location.search.includes('tab=consultations') ||
+      location.search.includes('action=import') ||
+      location.search.includes('tab=discussion_queue') ||
+      location.search.includes('tab=outcomes_tracker')
+    )) {
+      return false;
+    }
+    return true;
+  }
+
+  const targetParams = new URLSearchParams(targetQuery);
+  const currentParams = new URLSearchParams(location.search);
+  for (const [key, val] of targetParams.entries()) {
+    if (currentParams.get(key) !== val) return false;
+  }
+  return true;
+}
 
 export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
   const location = useLocation();
@@ -21,48 +253,47 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
     activeTab,
     setActiveTab
   } = usePwaInstall();
-  const path = location.pathname;
   
+  const path = location.pathname;
   const role = path.split('/')[1] || 'faculty';
   const actorName = profile?.first_name ? `${profile.first_name} ${profile.last_name}` : (user?.email || 'Institutional User');
 
-  const links = {
-    admin: [
-      { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/admin/classrooms', icon: GraduationCap, label: 'Classrooms' },
-      { to: '/admin/userlist', icon: Users, label: 'User Management' },
-      { to: '/admin/subjectlist', icon: BookMarked, label: 'Subjects Database' },
-      { to: '/admin/sectionlist', icon: Layers, label: 'Sections Database' },
-      { to: '/admin/gradecomputationslist', icon: Settings, label: 'Grading Templates' },
-      { to: '/admin/departmentslist', icon: Layers, label: 'Colleges Directory' },
-      { to: '/admin/gradeoverride', icon: AlertCircle, label: 'Grade Override' },
-      { to: '/admin/termmanagement', icon: Calendar, label: 'Term Management' },
-      { to: '/admin/auditlog', icon: Shield, label: 'Audit Logs' },
-    ],
-    faculty: [
-      { to: '/faculty/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/faculty/classrecordslist', icon: BookOpen, label: 'Class Records' },
-      { to: '/faculty/scoreinput', icon: FileText, label: 'Score Input' },
-      { to: '/faculty/classattendance', icon: Calendar, label: 'Class Attendance' },
-    ],
-    dean: [
-      { to: '/dean/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/dean/gradepostingstatus', icon: BookOpen, label: 'Grading Status' },
-      { to: '/dean/remarkoverriderequests', icon: ClipboardList, label: 'Remark Requests' },
-      { to: '/dean/gradedistribution', icon: BarChart3, label: 'Grade Distribution' },
-      { to: '/dean/atriskstudents', icon: AlertCircle, label: 'At-Risk & Interventions' },
-      { to: '/dean/summaryreports', icon: FileDown, label: 'Summary Reports' },
-    ],
-    student: [
-      { to: '/student/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/student/mygradeslist', icon: FileText, label: 'My Grades' },
-      { to: '/student/advising-inbox', icon: ClipboardList, label: 'Advising Tasks' },
-      { to: '/student/academic-insights', icon: BrainCircuit, label: 'Academic Insights' },
-      { to: '/student/attendance', icon: Calendar, label: 'Attendance Log' },
-    ]
-  };
+  const groups = PORTAL_NAVIGATION[role] || PORTAL_NAVIGATION.faculty;
 
-  const currentLinks = links[role] || links.faculty;
+  const standaloneTop = groups.find(g => g.standalone);
+  const regularGroups = groups.filter(g => !g.standalone);
+
+  // Auto-expand all groups by default, or auto-expand the active section
+  const [expandedGroups, setExpandedGroups] = useState(() => {
+    const allGroupIds = groups.filter(g => !g.standalone).map(g => g.id);
+    return new Set(allGroupIds);
+  });
+
+  // Ensure the section containing the active route is always expanded
+  useEffect(() => {
+    groups.forEach(group => {
+      if (group.items?.some(item => isItemActive(item, location))) {
+        setExpandedGroups(prev => {
+          if (prev.has(group.id)) return prev;
+          const next = new Set(prev);
+          next.add(group.id);
+          return next;
+        });
+      }
+    });
+  }, [location, groups]);
+
+  const toggleGroup = (groupId) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
 
   const handleSignOut = async () => {
     navigate('/login', { replace: true });
@@ -97,106 +328,177 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
   const sidebarInner = (
     <aside className={cn(
       "bg-sage-900 h-full flex flex-col flex-shrink-0 transition-all duration-300 w-full",
-      isCollapsed ? "lg:w-16" : "lg:w-56"
+      isCollapsed ? "lg:w-16" : "lg:w-60"
     )}>
-        {/* Header section */}
-        <div className={cn(
-          "border-b border-sage-800 flex items-center justify-between transition-all duration-300 flex-shrink-0",
-          isCollapsed ? "p-4 justify-center h-16" : "px-6 py-4 h-20"
-        )}>
-            {isCollapsed ? (
-              <SageLogo variant="white" className="h-7 w-7" title="ASPIRE" />
-            ) : (
-              <div>
-                <h1 className="text-xl font-bold font-display text-white tracking-tight flex items-center gap-2">
-                    <SageLogo variant="white" className="h-6 w-6" /> ASPIRE
-                </h1>
-                <p className="text-xs text-slate-300 mt-0.5 capitalize">{role} Portal</p>
-              </div>
-            )}
+      {/* Header section */}
+      <div className={cn(
+        "border-b border-sage-800 flex items-center justify-between transition-all duration-300 flex-shrink-0",
+        isCollapsed ? "p-4 justify-center h-16" : "px-5 py-4 h-20"
+      )}>
+        {isCollapsed ? (
+          <SageLogo variant="white" className="h-7 w-7" title="ASPIRE" />
+        ) : (
+          <div>
+            <h1 className="text-xl font-bold font-display text-white tracking-tight flex items-center gap-2">
+              <SageLogo variant="white" className="h-6 w-6" /> ASPIRE
+            </h1>
+            <p className="text-[11px] font-semibold text-slate-400 mt-0.5 tracking-wider uppercase font-mono">
+              {role.toUpperCase()} PORTAL
+            </p>
+          </div>
+        )}
 
-            {/* Mobile close button */}
-            {mobileOpen && (
-              <button 
-                onClick={() => setMobileOpen && setMobileOpen(false)}
-                className="lg:hidden p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-sage-800 cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
+        {/* Mobile close button */}
+        {mobileOpen && (
+          <button 
+            onClick={() => setMobileOpen && setMobileOpen(false)}
+            className="lg:hidden p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-sage-800 cursor-pointer"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
+      </div>
+      
+      {/* Navigation list */}
+      <nav className="flex-1 p-2.5 space-y-2 overflow-y-auto min-h-0 text-left">
+        {/* Standalone Dashboard */}
+        {standaloneTop && (
+          <NavLink 
+            to={standaloneTop.to}
+            onClick={() => setMobileOpen && setMobileOpen(false)}
+            title={isCollapsed ? standaloneTop.label : undefined}
+            className={({ isActive }) => cn(
+              "flex items-center rounded-lg transition-all",
+              isCollapsed ? "justify-center p-2.5" : "gap-3 px-3.5 py-2.5 text-sm font-medium",
+              isActive 
+                ? "bg-sage-800 text-white font-semibold border-l-2 border-sage-400 shadow-xs" 
+                : "text-slate-300 hover:bg-sage-800/80 hover:text-white"
             )}
-        </div>
-        
-        {/* Navigation list */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto min-h-0">
-            {currentLinks.map((link) => (
-                <NavLink 
-                    key={link.to}
-                    to={link.to}
-                    onClick={() => setMobileOpen && setMobileOpen(false)}
-                    title={isCollapsed ? link.label : undefined}
-                    className={({ isActive }) => cn(
-                        "flex items-center rounded-lg transition-all",
-                        isCollapsed ? "justify-center p-2.5" : "gap-3 px-4 py-2.5 text-sm font-medium",
-                        isActive 
-                            ? "bg-sage-800 text-white border-l-2 border-sage-400" 
-                            : "text-slate-300 hover:bg-sage-800 hover:text-white"
-                    )}
-                >
-                    <link.icon className={cn("flex-shrink-0", isCollapsed ? "h-5 w-5" : "h-4 w-4")} /> 
-                    {(!isCollapsed || mobileOpen) && <span>{link.label}</span>}
-                </NavLink>
-            ))}
-        </nav>
-        
-        {/* Footer section (Settings, Adaptive Install & Sign Out) */}
-        <div className="p-3 border-t border-sage-800 space-y-1 flex-shrink-0">
-            {/* Account Settings Link */}
-            <NavLink
-              to={`/${role}/settings`}
-              onClick={() => setMobileOpen && setMobileOpen(false)}
-              title={isCollapsed ? "Account Settings" : undefined}
-              className={({ isActive }) => cn(
-                "w-full flex items-center rounded-lg transition-colors border-0 bg-transparent text-left",
-                isCollapsed ? "justify-center p-2.5" : "gap-3 px-4 py-2 text-xs font-medium",
-                isActive 
-                  ? "bg-sage-800 text-white font-semibold" 
-                  : "text-slate-300 hover:bg-sage-800 hover:text-white"
-              )}
-            >
-              <Settings className="h-4 w-4 flex-shrink-0 text-slate-400" />
-              {(!isCollapsed || mobileOpen) && <span>Account Settings</span>}
-            </NavLink>
+          >
+            <standaloneTop.icon className={cn("flex-shrink-0", isCollapsed ? "h-5 w-5" : "h-4 w-4 text-sage-300")} /> 
+            {(!isCollapsed || mobileOpen) && <span>{standaloneTop.label}</span>}
+          </NavLink>
+        )}
 
-            {/* Adaptive Device-Aware Install Button (Suppressed if running in Standalone/Native app) */}
-            {!isInstalled && (
-              <button
-                type="button"
-                onClick={promptInstall}
-                title={isCollapsed ? installButtonConfig.label : undefined}
+        {/* Grouped Collapsible Modules */}
+        {regularGroups.map((group) => {
+          const isExpanded = expandedGroups.has(group.id);
+          const hasActiveChild = group.items.some(item => isItemActive(item, location));
+
+          if (isCollapsed && !mobileOpen) {
+            // Icon-only view when collapsed on desktop: show first item or group icon
+            const primaryItem = group.items[0];
+            return (
+              <NavLink
+                key={group.id}
+                to={primaryItem.to}
+                title={`${group.label}: ${primaryItem.label}`}
                 className={cn(
-                  "w-full flex items-center bg-sage-800/90 hover:bg-sage-700 text-sage-100 hover:text-white rounded-lg transition-all border border-sage-700/60 font-medium cursor-pointer text-left shadow-sm group",
-                  isCollapsed ? "justify-center p-2.5" : "gap-3 px-3.5 py-2 text-xs"
+                  "flex items-center justify-center p-2.5 rounded-lg transition-all",
+                  hasActiveChild
+                    ? "bg-sage-800 text-white font-semibold border-l-2 border-sage-400"
+                    : "text-slate-300 hover:bg-sage-800/80 hover:text-white"
                 )}
               >
-                <InstallIcon className={cn("h-4 w-4 flex-shrink-0 group-hover:scale-110 transition-transform", installButtonConfig.iconColor)} />
-                {(!isCollapsed || mobileOpen) && <span>{installButtonConfig.label}</span>}
-              </button>
-            )}
+                <group.icon className="h-5 w-5 flex-shrink-0" />
+              </NavLink>
+            );
+          }
 
-            {/* Sign Out Button */}
-            <button 
-              type="button"
-              onClick={handleSignOut}
-              title={isCollapsed ? "Sign Out" : undefined}
-              className={cn(
-                "w-full flex items-center text-slate-400 hover:text-white cursor-pointer transition-colors border-0 bg-transparent text-left rounded-lg",
-                isCollapsed ? "justify-center p-2.5" : "gap-3 px-4 py-2 text-xs font-medium"
+          return (
+            <div key={group.id} className="space-y-0.5">
+              {/* Collapsible Group Header */}
+              <button
+                type="button"
+                onClick={() => toggleGroup(group.id)}
+                className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-extrabold text-slate-400 hover:text-slate-200 tracking-wider uppercase rounded-md hover:bg-sage-800/40 transition-colors select-none cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  {isExpanded ? (
+                    <ChevronDown className="h-3 w-3 text-sage-400 shrink-0" />
+                  ) : (
+                    <ChevronRight className="h-3 w-3 text-slate-500 shrink-0" />
+                  )}
+                  <span>{group.label}</span>
+                </div>
+              </button>
+
+              {/* Sub-Pages List */}
+              {isExpanded && (
+                <div className="pl-3 space-y-0.5">
+                  {group.items.map((item) => {
+                    const active = isItemActive(item, location);
+                    return (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        onClick={() => setMobileOpen && setMobileOpen(false)}
+                        className={cn(
+                          "flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs transition-all",
+                          active
+                            ? "bg-sage-800 text-white font-semibold border-l-2 border-sage-400 shadow-xs"
+                            : "text-slate-300 hover:text-white hover:bg-sage-800/60"
+                        )}
+                      >
+                        <item.icon className={cn("h-3.5 w-3.5 flex-shrink-0", active ? "text-sage-300" : "text-slate-400")} />
+                        <span className="truncate">{item.label}</span>
+                      </NavLink>
+                    );
+                  })}
+                </div>
               )}
-            >
-                <LogOut className="h-4 w-4 flex-shrink-0" />
-                {(!isCollapsed || mobileOpen) && <span>Sign Out</span>}
-            </button>
-        </div>
+            </div>
+          );
+        })}
+      </nav>
+      
+      {/* Footer section (Settings, Adaptive Install & Sign Out) */}
+      <div className="p-2.5 border-t border-sage-800 space-y-1.5 flex-shrink-0 text-left">
+        {/* Settings */}
+        <NavLink
+          to={`/${role}/settings`}
+          title={isCollapsed ? "Settings" : undefined}
+          onClick={() => setMobileOpen && setMobileOpen(false)}
+          className={({ isActive }) => cn(
+            "w-full flex items-center text-slate-300 hover:text-white hover:bg-sage-800 rounded-lg transition-colors cursor-pointer",
+            isCollapsed ? "justify-center p-2.5" : "gap-2.5 px-3 py-1.5 text-xs font-medium",
+            isActive && "bg-sage-800 text-white font-semibold border-l-2 border-sage-400"
+          )}
+        >
+          <Settings className={cn("flex-shrink-0", isCollapsed ? "h-5 w-5" : "h-3.5 w-3.5")} />
+          {(!isCollapsed || mobileOpen) && <span>Settings</span>}
+        </NavLink>
+
+        {/* Adaptive Device-Aware Install Button */}
+        {!isInstalled && (
+          <button
+            type="button"
+            onClick={promptInstall}
+            title={isCollapsed ? installButtonConfig.label : undefined}
+            className={cn(
+              "w-full flex items-center bg-sage-800/90 hover:bg-sage-700 text-sage-100 hover:text-white rounded-lg transition-all border border-sage-700/60 font-medium cursor-pointer text-left shadow-2xs group",
+              isCollapsed ? "justify-center p-2.5" : "gap-2.5 px-3 py-1.5 text-xs"
+            )}
+          >
+            <InstallIcon className={cn("h-3.5 w-3.5 flex-shrink-0 group-hover:scale-110 transition-transform", installButtonConfig.iconColor)} />
+            {(!isCollapsed || mobileOpen) && <span className="truncate">{installButtonConfig.label}</span>}
+          </button>
+        )}
+
+        {/* Sign Out Button */}
+        <button 
+          type="button"
+          onClick={handleSignOut}
+          title={isCollapsed ? "Sign Out" : undefined}
+          className={cn(
+            "w-full flex items-center text-slate-400 hover:text-rose-300 hover:bg-rose-950/20 cursor-pointer transition-colors border-0 bg-transparent text-left rounded-lg",
+            isCollapsed ? "justify-center p-2.5" : "gap-2.5 px-3 py-1.5 text-xs font-medium"
+          )}
+        >
+          <LogOut className="h-3.5 w-3.5 flex-shrink-0" />
+          {(!isCollapsed || mobileOpen) && <span>Sign Out</span>}
+        </button>
+      </div>
     </aside>
   );
 
@@ -235,4 +537,3 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
     </>
   );
 }
-

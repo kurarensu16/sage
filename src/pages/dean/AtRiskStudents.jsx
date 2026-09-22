@@ -85,7 +85,7 @@ function SeverityBadge({ severity, score }) {
   );
 }
 
-export default function AtRiskStudents() {
+export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalone = false }) {
   const { user, profile } = useAuth();
 
   const [students, setStudents] = useState([]);
@@ -97,7 +97,7 @@ export default function AtRiskStudents() {
 
   // ASPIRE v3.1 Navigation Tabs:
   // 'tier1_at_risk' | 'tier2_pl_risk' | 'discussion_queue' | 'outcomes_tracker'
-  const [activeTab, setActiveTab] = useState('tier1_at_risk');
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [severityFilter, setSeverityFilter] = useState('');
   const [sectionFilter, setSectionFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -584,7 +584,10 @@ export default function AtRiskStudents() {
 
   return (
     <>
-      <PageHeader title="At-Risk Students & Academic Risk Matrix" breadcrumb="Dean Portal" />
+      <PageHeader
+        title={activeTab === 'discussion_queue' ? 'Escalated Cases' : activeTab === 'outcomes_tracker' ? 'Intervention Results' : 'Risk & Honors Overview'}
+        breadcrumb="Dean Portal"
+      />
 
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
 
@@ -658,7 +661,7 @@ export default function AtRiskStudents() {
         )}
 
         {/* ASPIRE v3.1 Matrix 4 Tabs */}
-        <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto scrollbar-none">
+        {!standalone && <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto scrollbar-none">
           <button
             onClick={() => setActiveTab('tier1_at_risk')}
             className={cn(
@@ -738,7 +741,7 @@ export default function AtRiskStudents() {
               {outcomesList.length}
             </span>
           </button>
-        </div>
+        </div>}
 
         {/* Loading skeleton */}
         {loading && (

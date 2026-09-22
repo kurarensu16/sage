@@ -8,6 +8,7 @@ import {
   BookOpen, 
   Settings, 
   Edit3, 
+  FileText,
   X, 
   Copy, 
   Check, 
@@ -362,9 +363,15 @@ export default function ClassRecordsList() {
                         >
                           <Edit3 className="h-3.5 w-3.5" /> Input Scores
                         </Link>
+                        <Link
+                          to={`/faculty/gradecomputationpreview?id=${cls.id}`}
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-sage-200 bg-sage-50 hover:bg-sage-100 text-sage-700 rounded-md transition-all shadow-xs"
+                        >
+                          <FileText className="h-3.5 w-3.5" /> Preview Grades
+                        </Link>
                         <Link 
                           to={`/faculty/classattendance?classId=${cls.id}`} 
-                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-md transition-all shadow-xs"
+                          className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-md transition-all shadow-xs"
                         >
                           <Calendar className="h-3.5 w-3.5 text-slate-500" /> Attendance
                         </Link>

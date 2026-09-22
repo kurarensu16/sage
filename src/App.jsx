@@ -44,9 +44,13 @@ import FacultyGradeComputationPreview from './pages/faculty/GradeComputationPrev
 import FacultyPostedGradesView from './pages/faculty/PostedGradesView';
 import FacultyClassAttendance from './pages/faculty/ClassAttendance';
 import FacultyNotifications from './pages/faculty/Notifications';
+import FacultyStudentRisk from './pages/faculty/StudentRisk';
+import FacultyConsultationRequests from './pages/faculty/ConsultationRequests';
+import FacultyEnrollmentRequests from './pages/faculty/EnrollmentRequests';
 
 // Student Pages
 import StudentDashboard from './pages/student/Dashboard';
+import StudentMySubjects from './pages/student/MySubjects';
 import StudentMyGradesList from './pages/student/MyGradesList';
 import StudentMyGradesDetail from './pages/student/MyGradesDetail';
 import StudentAdvisingInbox from './pages/student/FacultyAdvisingInbox';
@@ -126,6 +130,8 @@ function App() {
               <Route path="/dean/remarkoverriderequests" element={<DeanRemarkOverrideRequests />} />
               <Route path="/dean/gradedistribution" element={<DeanGradeDistribution />} />
               <Route path="/dean/atriskstudents" element={<DeanAtRiskStudents />} />
+              <Route path="/dean/escalatedcases" element={<DeanAtRiskStudents initialTab="discussion_queue" standalone />} />
+              <Route path="/dean/interventionresults" element={<DeanAtRiskStudents initialTab="outcomes_tracker" standalone />} />
               <Route path="/dean/summaryreports" element={<DeanSummaryReports />} />
               <Route path="/dean/notifications" element={<DeanNotifications />} />
               <Route path="/dean/settings" element={<Settings />} />
@@ -139,6 +145,10 @@ function App() {
               <Route path="/faculty/scoreinput" element={<FacultyScoreInput />} />
               <Route path="/faculty/gradecomputationpreview" element={<FacultyGradeComputationPreview />} />
               <Route path="/faculty/postedgradesview" element={<FacultyPostedGradesView />} />
+              <Route path="/faculty/atriskstudents" element={<FacultyStudentRisk mode="risk" />} />
+              <Route path="/faculty/evaluatestudent" element={<FacultyStudentRisk mode="evaluate" />} />
+              <Route path="/faculty/consultations" element={<FacultyConsultationRequests />} />
+              <Route path="/faculty/enrollmentrequests" element={<FacultyEnrollmentRequests />} />
               <Route path="/faculty/classattendance" element={<FacultyClassAttendance />} />
               <Route path="/faculty/notifications" element={<FacultyNotifications />} />
               <Route path="/faculty/settings" element={<Settings />} />
@@ -147,6 +157,7 @@ function App() {
             {/* Student Routes */}
             <Route element={<RoleGuard allowedRoles={['student']} />}>
               <Route path="/student/dashboard" element={<StudentDashboard />} />
+              <Route path="/student/mysubjects" element={<StudentMySubjects />} />
               <Route path="/student/mygradeslist" element={<StudentMyGradesList />} />
               <Route path="/student/mygradesdetail" element={<StudentMyGradesDetail />} />
               <Route path="/student/advising-inbox" element={<StudentAdvisingInbox />} />

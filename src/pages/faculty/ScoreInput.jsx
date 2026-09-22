@@ -21,7 +21,7 @@ export default function ScoreInput() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, profile } = useAuth();
-  const classRecordId = new URLSearchParams(location.search).get('id') || '35d248d1-ef72-4569-8f40-ca0dfe141941';
+  const classRecordId = new URLSearchParams(location.search).get('id') || '';
 
   const [classInfo, setClassInfo] = useState(null);
   const [students, setStudents] = useState([]);
@@ -346,8 +346,10 @@ export default function ScoreInput() {
 
   useEffect(() => {
     async function fetchMyClasses() {
-      if (!user) return;
-      setLoading(true);
+      if (!user) {
+        if (!classRecordId) setLoading(false);
+        return;
+      }
       try {
         const { data, error } = await supabase
           .from('class_records')
@@ -366,7 +368,9 @@ export default function ScoreInput() {
       } catch (err) {
         console.error('Error fetching classes:', err);
       } finally {
-        setLoading(false);
+        if (!classRecordId) {
+          setLoading(false);
+        }
       }
     }
 
@@ -720,10 +724,10 @@ export default function ScoreInput() {
       }
     }
 
+    fetchMyClasses();
+
     if (classRecordId) {
       loadScoreInputData();
-    } else {
-      fetchMyClasses();
     }
   }, [classRecordId, user]);
 
@@ -1229,7 +1233,7 @@ export default function ScoreInput() {
   if (!classRecordId) {
     return (
       <>
-        <PageHeader title="Select Class Record" breadcrumb="Faculty Portal" />
+        <PageHeader title="Log Class Scores" breadcrumb="Faculty Portal" />
         <div className="p-8 overflow-y-auto flex-1 space-y-6">
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
@@ -1246,7 +1250,7 @@ export default function ScoreInput() {
                 </p>
                 <button
                   onClick={() => navigate('/faculty/classrecordslist')}
-                  className="mt-4 px-4 py-2 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm"
+                  className="mt-4 px-4 py-2 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm cursor-pointer"
                 >
                   Go to Class Records
                 </button>
@@ -1292,6 +1296,31 @@ export default function ScoreInput() {
     );
   }
 
+  if (!classInfo) {
+    return (
+      <>
+        <PageHeader title="Log Class Scores" breadcrumb="Faculty Portal" />
+        <div className="p-8 overflow-y-auto flex-1 space-y-6">
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-sm">
+              <FileSpreadsheet className="h-12 w-12 text-slate-400 mx-auto mb-4" />
+              <h3 className="text-base font-bold text-slate-900">Class Record Not Found</h3>
+              <p className="text-sm text-slate-500 mt-2">
+                The requested class record could not be found or you do not have permission to view it.
+              </p>
+              <button
+                onClick={() => navigate('/faculty/scoreinput')}
+                className="mt-4 px-4 py-2 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm cursor-pointer"
+              >
+                Select Another Class
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   const subjectCode = classInfo?.subjects?.code || '';
   const subjectName = classInfo?.subjects?.name || '';
   const sectionName = classInfo?.sections?.name || '';
@@ -1325,23 +1354,25 @@ export default function ScoreInput() {
             <span className="hidden sm:inline">View Posted</span>
             <span className="sm:hidden">Posted</span>
           </button>
-          <button 
-            onClick={() => setShowPostModal(true)}
-            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          <button
+            disabled={students.length === 0}
+            onClick={() => navigate(`/faculty/gradecomputationpreview?id=${classRecordId}`)}
+            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-sage-200 bg-sage-50 hover:bg-sage-100 text-sage-700 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
           >
-            <Lock className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Post Grades</span>
-            <span className="sm:hidden">Post</span>
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Preview Grades</span>
+            <span className="sm:hidden">Preview</span>
           </button>
           <button 
+            disabled={students.length === 0}
             onClick={() => setShowExportModal(true)}
-            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
           >
             <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
             <span className="hidden sm:inline">Export</span>
           </button>
           <button 
-            disabled={savingDrafts}
+            disabled={savingDrafts || students.length === 0}
             onClick={handleBulkSave}
             className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer whitespace-nowrap"
           >
@@ -1362,7 +1393,7 @@ export default function ScoreInput() {
           </span>
           <ChevronRight className="h-3 w-3 text-slate-400" />
           <span className="font-medium text-slate-900 truncate">
-            Score Spreadsheet — {subjectCode} ({sectionName})
+            Score Spreadsheet — {subjectCode} ({sectionName}){subjectName ? ` - ${subjectName}` : ''}
           </span>
         </div>
 
@@ -1391,11 +1422,29 @@ export default function ScoreInput() {
 
             {/* Selectors Bar Section (Embedded directly inside the spreadsheet card) */}
             <div className="flex flex-col sm:flex-row flex-wrap sm:items-center gap-3 sm:gap-4 p-3.5 sm:p-4 border-b border-slate-200/90 bg-white shadow-2xs">
-              {/* Class Record Display */}
+              {/* Class Record Selector */}
               <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
                 <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
-                <div className="text-xs font-bold text-slate-800 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 truncate">
-                  {subjectCode} - {sectionName} ({subjectName})
+                <div className="relative">
+                  <select
+                    value={classRecordId || ''}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        navigate(`/faculty/scoreinput?id=${e.target.value}`);
+                      } else {
+                        navigate('/faculty/scoreinput');
+                      }
+                    }}
+                    className="appearance-none w-full bg-white border border-slate-200 hover:border-sage-300 px-3 py-2 pr-8 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer text-slate-700 shadow-2xs truncate"
+                  >
+                    <option value="">-- Select Class Record --</option>
+                    {classesList.map(c => (
+                      <option key={c.class_record_id} value={c.class_record_id}>
+                        {c.subjects?.code} - {c.sections?.name} ({c.subjects?.name})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
                 </div>
               </div>
 
@@ -1866,27 +1915,42 @@ export default function ScoreInput() {
                           )}
                         </tr>
 
-                        {displayedStudents.map((student, idx) => (
-                          <StudentRow 
-                            key={student.id} 
-                            student={student} 
-                            rowNo={idx + 1}
-                            initialPeriods={{
-                              Prelim: {},
-                              Midterm: {},
-                              'Semi-Final': {},
-                              Final: {}
-                            }}
-                            viewMode={viewMode}
-                            classCode={classRecordId}
-                            maxItems={maxItems}
-                            activities={activities}
-                            lockedMilestones={lockedMilestones}
-                            studentLocked={studentLocks[student.id]}
-                            periodsList={periodsList}
-                            onSelectRiskStudent={(st) => setEvaluatingStudent(st)}
-                          />
-                        ))}
+                        {displayedStudents.length === 0 ? (
+                          <tr>
+                            <td 
+                              colSpan={100} 
+                              className="px-6 py-12 text-center text-slate-400 bg-white"
+                            >
+                              <div className="flex flex-col items-center justify-center gap-2">
+                                <FileSpreadsheet className="w-8 h-8 text-slate-300" />
+                                <p className="text-sm font-bold text-slate-600">No students enrolled</p>
+                                <p className="text-xs text-slate-400">There are no students currently enrolled in this class section.</p>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : (
+                          displayedStudents.map((student, idx) => (
+                            <StudentRow 
+                              key={student.id} 
+                              student={student} 
+                              rowNo={idx + 1}
+                              initialPeriods={{
+                                Prelim: {},
+                                Midterm: {},
+                                'Semi-Final': {},
+                                Final: {}
+                              }}
+                              viewMode={viewMode}
+                              classCode={classRecordId}
+                              maxItems={maxItems}
+                              activities={activities}
+                              lockedMilestones={lockedMilestones}
+                              studentLocked={studentLocks[student.id]}
+                              periodsList={periodsList}
+                              onSelectRiskStudent={(st) => setEvaluatingStudent(st)}
+                            />
+                          ))
+                        )}
                     </tbody>
                 </table>
             </div>
