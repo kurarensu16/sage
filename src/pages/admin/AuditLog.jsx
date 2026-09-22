@@ -1,29 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, Clock, Shield, RefreshCw, DownloadCloud } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 const ACTION_BADGE_MAP = {
-  'Grade Override':       'bg-rose-50 text-rose-700 border-rose-200',
-  'Faculty Reassignment': 'bg-amber-50 text-amber-700 border-amber-200',
-  'Classroom Archive':    'bg-slate-100 text-slate-600 border-slate-200',
-  'Classroom Creation':   'bg-blue-50 text-blue-700 border-blue-200',
-  'User Creation':        'bg-emerald-50 text-emerald-700 border-emerald-200',
-  'User Update':          'bg-teal-50 text-teal-700 border-teal-200',
-  'User Status Change':   'bg-indigo-50 text-indigo-700 border-indigo-200',
-  'User Deletion':        'bg-rose-100 text-rose-800 border-rose-300',
-  'Batch User Import':    'bg-violet-50 text-violet-700 border-violet-200',
-  'Section Creation':     'bg-cyan-50 text-cyan-700 border-cyan-200',
-  'Section Update':       'bg-cyan-50 text-cyan-600 border-cyan-100',
-  'Subject Creation':     'bg-sky-50 text-sky-700 border-sky-200',
-  'Subject Update':       'bg-sky-50 text-sky-600 border-sky-100',
-  'Eval Window Creation': 'bg-orange-50 text-orange-700 border-orange-200',
-  'Eval Window Update':   'bg-orange-50 text-orange-600 border-orange-100',
-  'Eval Form Creation':   'bg-pink-50 text-pink-700 border-pink-200',
-  'Eval Form Update':     'bg-pink-50 text-pink-600 border-pink-100',
-  'APK Download':         'bg-emerald-50 text-emerald-700 border-emerald-200',
-  'Mobile App Distribution': 'bg-teal-50 text-teal-700 border-teal-200',
+  'Grade Override':            'bg-rose-50 text-rose-700 border-rose-200',
+  'Faculty Reassignment':      'bg-amber-50 text-amber-700 border-amber-200',
+  'Classroom Archive':         'bg-slate-100 text-slate-600 border-slate-200',
+  'Classroom Creation':        'bg-blue-50 text-blue-700 border-blue-200',
+  'Classroom Provisioning':    'bg-blue-50 text-blue-700 border-blue-200',
+  'User Creation':             'bg-emerald-50 text-emerald-700 border-emerald-200',
+  'User Update':               'bg-teal-50 text-teal-700 border-teal-200',
+  'User Status Change':        'bg-indigo-50 text-indigo-700 border-indigo-200',
+  'User Deletion':             'bg-rose-100 text-rose-800 border-rose-300',
+  'Batch User Import':         'bg-violet-50 text-violet-700 border-violet-200',
+  'Section Creation':          'bg-cyan-50 text-cyan-700 border-cyan-200',
+  'Section Update':            'bg-cyan-50 text-cyan-600 border-cyan-100',
+  'Subject Creation':          'bg-sky-50 text-sky-700 border-sky-200',
+  'Subject Update':            'bg-sky-50 text-sky-600 border-sky-100',
+  'Semester Transition':       'bg-indigo-50 text-indigo-700 border-indigo-200',
+  'Grading Template Creation': 'bg-teal-50 text-teal-700 border-teal-200',
+  'Grading Template Update':   'bg-teal-50 text-teal-600 border-teal-100',
+  'Grading Template Deletion': 'bg-rose-50 text-rose-700 border-rose-200',
+  'Intervention Plan Generated':'bg-purple-50 text-purple-700 border-purple-200',
+  'Risk Evaluation':           'bg-amber-50 text-amber-700 border-amber-200',
+  'Join Code Generated':       'bg-cyan-50 text-cyan-700 border-cyan-200',
+  'Dean Remark Approval':      'bg-emerald-50 text-emerald-700 border-emerald-200',
+  'APK Download':              'bg-emerald-50 text-emerald-700 border-emerald-200',
+  'Mobile App Distribution':   'bg-teal-50 text-teal-700 border-teal-200',
 };
 
 const getActionBadgeColor = (action) =>

@@ -1,10 +1,57 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
-import { Plus, Trash2, Edit2, Save, X, Settings, ListCollapse, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, Settings, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { notifyAdminActivity } from '../../lib/notificationDispatcher';
+
+const OFFICIAL_DYCI_PRESETS = [
+  {
+    name: 'General Education Core',
+    description: 'Standard institutional lecture scale: 50% Class Standing, 40% Major Examination, 10% Character Rating.',
+    components: [
+      { name: 'Class Standing (Formative)', weight: 50, max_score: 20, is_multiple: true },
+      { name: 'Major Examination', weight: 40, max_score: 40, is_multiple: false },
+      { name: 'Character Rating', weight: 10, max_score: 100, is_multiple: false }
+    ]
+  },
+  {
+    name: 'Health Sciences (Theory)',
+    description: 'Theoretical lecture scale: 30% Class Standing, 60% Major Examination, 10% Character Rating.',
+    components: [
+      { name: 'Class Standing (Formative)', weight: 30, max_score: 20, is_multiple: true },
+      { name: 'Major Examination', weight: 60, max_score: 100, is_multiple: false },
+      { name: 'Character Rating', weight: 10, max_score: 100, is_multiple: false }
+    ]
+  },
+  {
+    name: 'Health Sciences (RLE / Clinical Practicum)',
+    description: 'Clinical practicum: 50% Checklist Rating, 20% NCP & Case Study, 20% Rubrics, 10% Quizzes.',
+    components: [
+      { name: 'Checklist Rating', weight: 50, max_score: 100, is_multiple: true },
+      { name: 'Nursing Care Plan & Case Study', weight: 20, max_score: 100, is_multiple: true },
+      { name: 'Rubric Assessment', weight: 20, max_score: 100, is_multiple: false },
+      { name: 'Quizzes & Written Outputs', weight: 10, max_score: 50, is_multiple: true }
+    ]
+  },
+  {
+    name: 'Maritime Studies (Lecture)',
+    description: 'Maritime theoretical lecture scale: 60% Class Standing and 40% Major Examination.',
+    components: [
+      { name: 'Class Standing', weight: 60, max_score: 100, is_multiple: true },
+      { name: 'Major Examination', weight: 40, max_score: 100, is_multiple: false }
+    ]
+  },
+  {
+    name: 'Maritime Studies (Laboratory / Simulator)',
+    description: 'Maritime simulator/practical scale: 40% Systematic Exercises, 60% Demonstration of Competence.',
+    components: [
+      { name: 'Systematic Exercises', weight: 40, max_score: 100, is_multiple: true },
+      { name: 'Demonstration of Competence', weight: 60, max_score: 100, is_multiple: false }
+    ]
+  }
+];
 
 export default function GradeComputationsList() {
   const { user, profile } = useAuth();
@@ -99,6 +146,13 @@ export default function GradeComputationsList() {
     const updated = [...components];
     updated[index][field] = value;
     setComponents(updated);
+  };
+
+  const handleApplyPreset = (preset) => {
+    setName(preset.name);
+    setDescription(preset.description);
+    setComponents(preset.components.map(c => ({ ...c })));
+    setErrorMsg('');
   };
 
   // Calculate sum of weights reactively
@@ -398,6 +452,28 @@ export default function GradeComputationsList() {
                     <span>{successMsg}</span>
                   </div>
                 )}
+
+                {/* Official Presets Quick-Select */}
+                <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                      <Sparkles className="h-3 w-3 text-sage-600" /> Official DYCI Presets
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-medium">Click to populate</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {OFFICIAL_DYCI_PRESETS.map((p) => (
+                      <button
+                        key={p.name}
+                        type="button"
+                        onClick={() => handleApplyPreset(p)}
+                        className="px-2.5 py-1 text-[11px] font-medium bg-white hover:bg-sage-50 text-slate-700 hover:text-sage-700 border border-slate-200 hover:border-sage-300 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                      >
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 {/* General Info */}
                 <div className="space-y-3 sm:space-y-4">

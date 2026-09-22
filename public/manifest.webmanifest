@@ -1,12 +1,12 @@
 {
-  "name": "SAGE - Smart Academic Grading & Evaluation System",
-  "short_name": "SAGE",
-  "description": "Automated academic grading, evaluation, and student performance portal.",
+  "name": "ASPIRE - Academic Support & Performance Advising System",
+  "short_name": "ASPIRE",
+  "description": "Academic Support and Performance Advising with Intervention, Risk, and Evaluation portal.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#f8fafc",
-  "theme_color": "#0f172a",
+  "theme_color": "#09132b",
   "icons": [
     {
       "src": "/favicon.svg",

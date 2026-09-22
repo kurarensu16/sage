@@ -9,6 +9,8 @@ import ForceChangePassword from './pages/public/ForceChangePassword';
 import Forbidden from './pages/public/Forbidden';
 import NotFound from './pages/public/NotFound';
 import RoleGuard from './components/layout/RoleGuard';
+
+// Admin Pages
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminUserList from './pages/admin/UserList';
 import AdminUserForm from './pages/admin/UserForm';
@@ -20,48 +22,42 @@ import AdminSectionList from './pages/admin/SectionList';
 import AdminSectionForm from './pages/admin/SectionForm';
 import AdminNotifications from './pages/admin/Notifications';
 import AdminTermManagement from './pages/admin/TermManagement';
-import OfficeDashboard from './pages/office/Dashboard';
-import OfficeRosterImport from './pages/office/RosterImport';
-import OfficeComplianceAudit from './pages/office/ComplianceAudit';
-import OfficeSubjectAssignmentList from './pages/office/SubjectAssignmentList';
-import OfficeSubjectAssignmentForm from './pages/office/SubjectAssignmentForm';
-import OfficeEvalBuilder from './pages/office/EvalBuilder';
-import OfficeEvalFormsList from './pages/office/EvalFormsList';
-import OfficeEvalWindowList from './pages/office/EvalWindowList';
-import OfficeEvalWindowForm from './pages/office/EvalWindowForm';
-import OfficeStudentSections from './pages/office/StudentSections';
-import OfficeNotifications from './pages/office/Notifications';
+import AdminGradeComputationsList from './pages/admin/GradeComputationsList';
+import AdminDepartmentsList from './pages/admin/DepartmentsList';
+import AdminClassroomProvisioning from './pages/admin/ClassroomProvisioning';
+
+// Dean Pages
 import DeanDashboard from './pages/dean/Dashboard';
 import DeanGradePostingStatus from './pages/dean/GradePostingStatus';
 import DeanGradeDistribution from './pages/dean/GradeDistribution';
-import DeanEvalResultsOverview from './pages/dean/EvalResultsOverview';
-import DeanEvalResultsFaculty from './pages/dean/EvalResultsFaculty';
 import DeanAtRiskStudents from './pages/dean/AtRiskStudents';
 import DeanSummaryReports from './pages/dean/SummaryReports';
 import DeanNotifications from './pages/dean/Notifications';
 import DeanRemarkOverrideRequests from './pages/dean/RemarkOverrideRequests';
+
+// Faculty Pages
 import FacultyDashboard from './pages/faculty/Dashboard';
 import FacultyClassRecordsList from './pages/faculty/ClassRecordsList';
 import FacultyGradeComponentsSetup from './pages/faculty/GradeComponentsSetup';
 import FacultyScoreInput from './pages/faculty/ScoreInput';
 import FacultyGradeComputationPreview from './pages/faculty/GradeComputationPreview';
 import FacultyPostedGradesView from './pages/faculty/PostedGradesView';
-import FacultyEvalResultsMy from './pages/faculty/EvalResultsMy';
 import FacultyClassAttendance from './pages/faculty/ClassAttendance';
 import FacultyNotifications from './pages/faculty/Notifications';
+
+// Student Pages
 import StudentDashboard from './pages/student/Dashboard';
 import StudentMyGradesList from './pages/student/MyGradesList';
 import StudentMyGradesDetail from './pages/student/MyGradesDetail';
-import StudentEvalList from './pages/student/EvalList';
-import StudentEvalForm from './pages/student/EvalForm';
+import StudentAdvisingInbox from './pages/student/FacultyAdvisingInbox';
 import StudentAcademicInsights from './pages/student/AcademicInsights';
 import StudentNotifications from './pages/student/Notifications';
-import AdminGradeComputationsList from './pages/admin/GradeComputationsList';
-import React, { useEffect } from 'react';
-import AdminDepartmentsList from './pages/admin/DepartmentsList';
 import StudentAttendance from './pages/student/Attendance';
+
+// Shared Pages
 import Settings from './pages/shared/Settings';
 import NetworkBanner from './components/layout/NetworkBanner';
+import React, { useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 
@@ -119,24 +115,8 @@ function App() {
               <Route path="/admin/termmanagement" element={<AdminTermManagement />} />
               <Route path="/admin/gradecomputationslist" element={<AdminGradeComputationsList />} />
               <Route path="/admin/departmentslist" element={<AdminDepartmentsList />} />
+              <Route path="/admin/classrooms" element={<AdminClassroomProvisioning />} />
               <Route path="/admin/settings" element={<Settings />} />
-            </Route>
-
-            {/* Office Routes */}
-            <Route element={<RoleGuard allowedRoles={['office']} />}>
-              <Route path="/office/dashboard" element={<OfficeDashboard />} />
-              <Route path="/office/roster" element={<OfficeRosterImport />} />
-              <Route path="/office/rosterimport" element={<OfficeRosterImport />} />
-              <Route path="/office/complianceaudit" element={<OfficeComplianceAudit />} />
-              <Route path="/office/subjectassignmentlist" element={<OfficeSubjectAssignmentList />} />
-              <Route path="/office/subjectassignmentform" element={<OfficeSubjectAssignmentForm />} />
-              <Route path="/office/evalbuilder" element={<OfficeEvalBuilder />} />
-              <Route path="/office/evalformslist" element={<OfficeEvalFormsList />} />
-              <Route path="/office/evalwindowlist" element={<OfficeEvalWindowList />} />
-              <Route path="/office/evalwindowform" element={<OfficeEvalWindowForm />} />
-              <Route path="/office/studentsections" element={<OfficeStudentSections />} />
-              <Route path="/office/notifications" element={<OfficeNotifications />} />
-              <Route path="/office/settings" element={<Settings />} />
             </Route>
 
             {/* Dean Routes */}
@@ -145,8 +125,6 @@ function App() {
               <Route path="/dean/gradepostingstatus" element={<DeanGradePostingStatus />} />
               <Route path="/dean/remarkoverriderequests" element={<DeanRemarkOverrideRequests />} />
               <Route path="/dean/gradedistribution" element={<DeanGradeDistribution />} />
-              <Route path="/dean/evalresultsoverview" element={<DeanEvalResultsOverview />} />
-              <Route path="/dean/evalresultsfaculty" element={<DeanEvalResultsFaculty />} />
               <Route path="/dean/atriskstudents" element={<DeanAtRiskStudents />} />
               <Route path="/dean/summaryreports" element={<DeanSummaryReports />} />
               <Route path="/dean/notifications" element={<DeanNotifications />} />
@@ -162,7 +140,6 @@ function App() {
               <Route path="/faculty/gradecomputationpreview" element={<FacultyGradeComputationPreview />} />
               <Route path="/faculty/postedgradesview" element={<FacultyPostedGradesView />} />
               <Route path="/faculty/classattendance" element={<FacultyClassAttendance />} />
-              <Route path="/faculty/evalresultsmy" element={<FacultyEvalResultsMy />} />
               <Route path="/faculty/notifications" element={<FacultyNotifications />} />
               <Route path="/faculty/settings" element={<Settings />} />
             </Route>
@@ -172,8 +149,7 @@ function App() {
               <Route path="/student/dashboard" element={<StudentDashboard />} />
               <Route path="/student/mygradeslist" element={<StudentMyGradesList />} />
               <Route path="/student/mygradesdetail" element={<StudentMyGradesDetail />} />
-              <Route path="/student/evallist" element={<StudentEvalList />} />
-              <Route path="/student/evalform" element={<StudentEvalForm />} />
+              <Route path="/student/advising-inbox" element={<StudentAdvisingInbox />} />
               <Route path="/student/academic-insights" element={<StudentAcademicInsights />} />
               <Route path="/student/airecommendation" element={<Navigate to="/student/academic-insights" replace />} />
               <Route path="/student/notifications" element={<StudentNotifications />} />

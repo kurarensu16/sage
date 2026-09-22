@@ -61,14 +61,14 @@ export default function SmartInstallModal({
           <div className="min-w-0 pr-6">
             <div className="flex items-center gap-2">
               <h3 id="install-modal-title" className="font-bold font-display text-slate-900 text-lg leading-tight">
-                Install SAGE App
+                Install ASPIRE App
               </h3>
               <span className="bg-sage-100 text-sage-800 text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full">
                 v1.0.0
               </span>
             </div>
             <p className="text-xs text-slate-500 truncate mt-0.5">
-              Smart Academic Grading & Evaluation System • DYCI
+              Academic Support & Performance Advising System • DYCI
             </p>
           </div>
         </div>
@@ -141,7 +141,7 @@ export default function SmartInstallModal({
                       <Download className="h-5 w-5" />
                     </div>
                     <div>
-                      <h4 className="font-bold text-slate-900 text-sm">SAGE Android APK</h4>
+                      <h4 className="font-bold text-slate-900 text-sm">ASPIRE Android APK</h4>
                       <p className="text-[11px] text-slate-500 font-mono">ph.edu.dyci.sage • Release Build</p>
                     </div>
                   </div>
@@ -156,14 +156,14 @@ export default function SmartInstallModal({
                   className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl font-semibold text-xs transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Download className="h-4 w-4" />
-                  <span>Download SAGE APK (.apk)</span>
+                  <span>Download ASPIRE APK (.apk)</span>
                 </button>
               </div>
 
               {/* 3-Step Sideloading Walkthrough */}
               <div className="space-y-2.5">
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  How to Install SAGE on Android
+                  How to Install ASPIRE on Android
                 </h4>
                 
                 <div className="space-y-2 text-xs">
@@ -175,7 +175,7 @@ export default function SmartInstallModal({
                     <div className="min-w-0">
                       <p className="font-semibold text-slate-900">Download the APK</p>
                       <p className="text-slate-500 text-[11px] mt-0.5">
-                        Tap the <strong>Download SAGE APK</strong> button above. If Chrome shows <em>"File might be harmful"</em>, tap <strong>Download anyway</strong>.
+                        Tap the <strong>Download ASPIRE APK</strong> button above. If Chrome shows <em>"File might be harmful"</em>, tap <strong>Download anyway</strong>.
                       </p>
                     </div>
                   </div>
@@ -237,7 +237,7 @@ export default function SmartInstallModal({
                   <div className="min-w-0">
                     <p className="font-semibold text-slate-900">Open in Safari</p>
                     <p className="text-slate-500 text-[11px] mt-0.5">
-                      Ensure you are viewing SAGE inside Apple's <strong>Safari</strong> browser (iOS PWA installation is not supported inside Chrome/Firefox).
+                      Ensure you are viewing ASPIRE inside Apple's <strong>Safari</strong> browser (iOS PWA installation is not supported inside Chrome/Firefox).
                     </p>
                   </div>
                 </div>
@@ -280,7 +280,7 @@ export default function SmartInstallModal({
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center gap-2.5 text-[11px] text-slate-600">
                 <CheckCircle2 className="h-4 w-4 text-indigo-600 flex-shrink-0" />
                 <span>
-                  SAGE will launch full-screen directly from your Home Screen with instant portal access.
+                  ASPIRE will launch full-screen directly from your Home Screen with instant portal access.
                 </span>
               </div>
             </div>
@@ -292,8 +292,8 @@ export default function SmartInstallModal({
               {canNativeInstall && (
                 <div className="p-4 bg-sage-50 rounded-2xl border border-sage-200 flex items-center justify-between gap-3">
                   <div>
-                    <h4 className="font-bold text-slate-900 text-sm">Install SAGE Desktop App</h4>
-                    <p className="text-[11px] text-slate-500">Run SAGE in a dedicated window without browser tabs.</p>
+                    <h4 className="font-bold text-slate-900 text-sm">Install ASPIRE Desktop App</h4>
+                    <p className="text-[11px] text-slate-500">Run ASPIRE in a dedicated window without browser tabs.</p>
                   </div>
                   <button
                     type="button"
@@ -326,7 +326,7 @@ export default function SmartInstallModal({
                   <div className="min-w-0">
                     <p className="font-semibold text-slate-900">Pin to Taskbar / Start Menu</p>
                     <p className="text-slate-500 text-[11px] mt-0.5">
-                      Click <strong>Install</strong> to add SAGE to your Applications, Windows Taskbar, or macOS Dock.
+                      Click <strong>Install</strong> to add ASPIRE to your Applications, Windows Taskbar, or macOS Dock.
                     </p>
                   </div>
                 </div>

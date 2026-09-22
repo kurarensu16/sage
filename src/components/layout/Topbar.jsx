@@ -77,7 +77,7 @@ export default function Topbar({ toggleSidebar }) {
         {/* Mobile Brand Logo */}
         <div className="lg:hidden flex items-center gap-2">
           <SageLogo className="h-6 w-6 text-sage-600" />
-          <span className="font-bold font-display text-slate-900 tracking-tight text-base">SAGE</span>
+          <span className="font-bold font-display text-slate-900 tracking-tight text-base">ASPIRE</span>
         </div>
 
         {/* Desktop Search Bar */}

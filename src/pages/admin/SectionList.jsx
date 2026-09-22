@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, Plus, Edit2, Trash2, Layers, Upload, X, Check, FileSpreadsheet, AlertCircle, CheckCircle, SlidersHorizontal } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import * as XLSX from 'xlsx';
-import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
 
 const PROGRAM_NAMES = {
   "BSA": "Bachelor of Science in Accountancy",
@@ -50,7 +49,7 @@ export default function SectionList() {
   const [parsedSections, setParsedSections] = useState([]);
   const [importError, setImportError] = useState('');
   const [importSuccess, setImportSuccess] = useState('');
-  const fileInputRef = React.useRef(null);
+  const fileInputRef = useRef(null);
 
   const sampleCSV = `BSIT-1B,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Information Technology
 BSIT-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Information Technology
@@ -151,7 +150,7 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
         const csv = XLSX.utils.sheet_to_csv(worksheet);
         setCsvText(csv);
         handleParseCSV(csv);
-      } catch (err) {
+      } catch {
         setImportError('Failed to parse file. Please verify it is a valid Excel or CSV file.');
       }
     };
@@ -394,8 +393,15 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
           </div>
         </div>
 
-        {/* ── Mobile Card List View (md:hidden) ── */}
-        <div className="md:hidden space-y-3">
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-sage-600"></div>
+            <p className="text-sm text-slate-500 font-medium">Loading sections directory...</p>
+          </div>
+        ) : (
+          <>
+            {/* ── Mobile Card List View (md:hidden) ── */}
+            <div className="md:hidden space-y-3">
           {filteredSections.length > 0 ? (
             filteredSections.map((sec) => (
               <div 
@@ -515,6 +521,8 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
             </table>
           </div>
         </div>
+        </>
+        )}
       </div>
 
       {/* CSV Import Modal */}

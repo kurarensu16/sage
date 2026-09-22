@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { BookOpen, LayoutDashboard, Users, FileText, LogOut, Calendar, AlertCircle, BarChart3, Star, FileDown, Layers, BookMarked, Shield, ClipboardList, BrainCircuit, Download, X, Smartphone, Monitor, Settings } from 'lucide-react';
+import { BookOpen, LayoutDashboard, Users, FileText, LogOut, Calendar, AlertCircle, BarChart3, Star, FileDown, Layers, BookMarked, Shield, ClipboardList, BrainCircuit, Download, X, Smartphone, Monitor, Settings, GraduationCap } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import SageLogo from './SageLogo';
 import SmartInstallModal from './SmartInstallModal';
@@ -29,6 +29,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
   const links = {
     admin: [
       { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+      { to: '/admin/classrooms', icon: GraduationCap, label: 'Classrooms' },
       { to: '/admin/userlist', icon: Users, label: 'User Management' },
       { to: '/admin/subjectlist', icon: BookMarked, label: 'Subjects Database' },
       { to: '/admin/sectionlist', icon: Layers, label: 'Sections Database' },
@@ -38,37 +39,26 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
       { to: '/admin/termmanagement', icon: Calendar, label: 'Term Management' },
       { to: '/admin/auditlog', icon: Shield, label: 'Audit Logs' },
     ],
-    office: [
-      { to: '/office/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/office/rosterimport', icon: Users, label: 'Department Roster' },
-      { to: '/office/complianceaudit', icon: ClipboardList, label: 'Clearance Audit' },
-      { to: '/office/subjectassignmentlist', icon: BookOpen, label: 'Subject Assignments' },
-      { to: '/office/evalformslist', icon: FileText, label: 'Evaluation Forms' },
-      { to: '/office/evalwindowlist', icon: Calendar, label: 'Evaluation Windows' },
-      { to: '/office/studentsections', icon: Layers, label: 'Student Sections' },
-    ],
     faculty: [
       { to: '/faculty/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/faculty/classrecordslist', icon: BookOpen, label: 'Class Records' },
       { to: '/faculty/scoreinput', icon: FileText, label: 'Score Input' },
       { to: '/faculty/classattendance', icon: Calendar, label: 'Class Attendance' },
-      { to: '/faculty/evalresultsmy', icon: FileText, label: 'Eval Results' },
     ],
     dean: [
       { to: '/dean/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/dean/gradepostingstatus', icon: BookOpen, label: 'Grading Status' },
       { to: '/dean/remarkoverriderequests', icon: ClipboardList, label: 'Remark Requests' },
       { to: '/dean/gradedistribution', icon: BarChart3, label: 'Grade Distribution' },
-      { to: '/dean/evalresultsoverview', icon: Star, label: 'Faculty Evaluations' },
-      { to: '/dean/atriskstudents', icon: AlertCircle, label: 'At-Risk Students' },
+      { to: '/dean/atriskstudents', icon: AlertCircle, label: 'At-Risk & Interventions' },
       { to: '/dean/summaryreports', icon: FileDown, label: 'Summary Reports' },
     ],
     student: [
       { to: '/student/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       { to: '/student/mygradeslist', icon: FileText, label: 'My Grades' },
+      { to: '/student/advising-inbox', icon: ClipboardList, label: 'Advising Tasks' },
       { to: '/student/academic-insights', icon: BrainCircuit, label: 'Academic Insights' },
       { to: '/student/attendance', icon: Calendar, label: 'Attendance Log' },
-      { to: '/student/evallist', icon: BookOpen, label: 'Evaluations' },
     ]
   };
 
@@ -97,7 +87,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
       iconColor: 'text-emerald-400'
     }
   }[platform] || {
-    label: 'Install SAGE App',
+    label: 'Install ASPIRE App',
     icon: Download,
     iconColor: 'text-emerald-400'
   };
@@ -115,13 +105,13 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
           isCollapsed ? "p-4 justify-center h-16" : "px-6 py-4 h-20"
         )}>
             {isCollapsed ? (
-              <SageLogo className="h-7 w-7 text-sage-400" title="SAGE" />
+              <SageLogo variant="white" className="h-7 w-7" title="ASPIRE" />
             ) : (
               <div>
                 <h1 className="text-xl font-bold font-display text-white tracking-tight flex items-center gap-2">
-                    <SageLogo className="h-6 w-6 text-sage-400" /> SAGE
+                    <SageLogo variant="white" className="h-6 w-6" /> ASPIRE
                 </h1>
-                <p className="text-xs text-slate-400 mt-0.5 capitalize">{role} Portal</p>
+                <p className="text-xs text-slate-300 mt-0.5 capitalize">{role} Portal</p>
               </div>
             )}
 

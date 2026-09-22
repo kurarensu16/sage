@@ -13,6 +13,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [loading, setLoading] = useState(false);
 
   // If already authenticated with a valid role, redirect to appropriate portal dashboard
   useEffect(() => {
@@ -30,6 +31,7 @@ export default function Login() {
       return;
     }
 
+    setLoading(true);
     try {
       // Authenticate with Supabase
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -39,6 +41,7 @@ export default function Login() {
 
       if (error) {
         setErrorMsg(error.message);
+        setLoading(false);
         return;
       }
 
@@ -48,21 +51,24 @@ export default function Login() {
         .select('first_name, last_name, role, must_change_password, status')
         .eq('user_id', data.user.id)
         .single();
-      
+
       if (profileErr || !profile) {
         setErrorMsg('Account profile not found in public tables.');
+        setLoading(false);
         return;
       }
 
       if (profile.status === 'inactive') {
         setErrorMsg('This account has been temporarily disabled. Please contact the administrator.');
         await supabase.auth.signOut();
+        setLoading(false);
         return;
       }
 
       if (profile.status === 'archived') {
         setErrorMsg('This account has been archived. Please contact system support.');
         await supabase.auth.signOut();
+        setLoading(false);
         return;
       }
 
@@ -86,19 +92,21 @@ export default function Login() {
     } catch (err) {
       setErrorMsg('An unexpected error occurred during login.');
       console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-slate-50">
-      
+
       {/* Left Pane: Form (Welcome back & credentials) */}
       <div className="flex flex-col justify-between p-8 lg:p-12 xl:p-16 bg-white min-h-screen">
-        
+
         {/* Header Branding (Mobile view only) */}
         <div className="flex lg:hidden items-center gap-3">
           <SageLogo className="h-8 w-8 text-sage-600" />
-          <span className="text-xl font-bold font-display text-sage-700 tracking-tight">SAGE</span>
+          <span className="text-xl font-bold font-display text-sage-700 tracking-tight">ASPIRE</span>
         </div>
 
         {/* Form Container */}
@@ -125,13 +133,13 @@ export default function Login() {
                 Email Address
               </label>
               <div className="relative">
-                <input 
+                <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@sage.edu.ph"
-                  className="block w-full border border-slate-200 rounded-xl p-3 pl-10 text-sm focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all"
+                  className="block w-full border border-slate-200 rounded-xl p-3 pl-10 text-sm focus:ring-2 focus:ring-sage-500/20 focus:border-sage-500 outline-none transition-all"
                 />
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
               </div>
@@ -142,18 +150,18 @@ export default function Login() {
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Password
                 </label>
-                <Link to="/forgotpassword" className="text-xs text-sage-600 hover:underline font-medium">
+                <Link to="/forgotpassword" className="text-xs text-sage-600 hover:text-sage-700 font-medium">
                   Forgot password?
                 </Link>
               </div>
               <div className="relative">
-                <input 
+                <input
                   type={showPassword ? "text" : "password"}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="block w-full border border-slate-200 rounded-xl p-3 pl-10 pr-10 text-sm focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all"
+                  className="block w-full border border-slate-200 rounded-xl p-3 pl-10 pr-10 text-sm focus:ring-2 focus:ring-sage-500/20 focus:border-sage-500 outline-none transition-all"
                 />
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                 <button
@@ -168,15 +176,23 @@ export default function Login() {
 
             <button
               type="submit"
-              className="w-full py-3 bg-sage-800 hover:bg-sage-900 text-white rounded-xl font-semibold text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              disabled={loading}
+              className="w-full py-3.5 bg-sage-600 hover:bg-sage-700 disabled:opacity-50 text-white rounded-xl font-semibold text-sm transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
-              Sign in to Portal <ArrowRight className="h-4 w-4" />
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <span>Sign in to Portal</span>
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
             </button>
           </form>
         </div>
 
         {/* Footer info */}
-        <div className="text-xs text-slate-400">
+        <div className="text-xs text-slate-400 text-center py-4 border-t border-slate-100">
           &copy; {new Date().getFullYear()} Dr. Yanga's Colleges, Inc. All rights reserved.
         </div>
 
@@ -188,15 +204,15 @@ export default function Login() {
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-sage-800/20 rounded-full blur-3xl -ml-20 -mb-20 pointer-events-none" />
 
         <div className="max-w-md text-center space-y-6 z-10">
-          <div className="inline-flex text-sage-200">
-            <SageLogo className="h-44 w-44" />
+          <div className="inline-flex">
+            <SageLogo variant="white" className="h-44 w-44 drop-shadow-sm" />
           </div>
           <div className="space-y-3">
             <h1 className="text-4xl font-bold font-display tracking-tight text-white">
-              SAGE
+              ASPIRE
             </h1>
             <p className="text-sage-200/90 text-sm leading-relaxed max-w-sm mx-auto">
-              Smart Academic Grading and Evaluation System. Seamless grades oversight, evaluation workflows, and analytical tracking.
+              Academic Support and Performance Advising with Intervention, Risk, and Evaluation.
             </p>
           </div>
         </div>

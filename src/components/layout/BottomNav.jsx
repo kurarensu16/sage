@@ -18,7 +18,8 @@ import {
   FileDown, 
   MoreHorizontal, 
   X, 
-  ChevronRight
+  ChevronRight,
+  GraduationCap
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -35,7 +36,7 @@ export default function BottomNav() {
   }, [location.pathname]);
 
   // If outside known portals, do not render
-  if (!['student', 'faculty', 'dean', 'office', 'admin'].includes(role)) {
+  if (!['student', 'faculty', 'dean', 'admin'].includes(role)) {
     return null;
   }
 
@@ -45,9 +46,9 @@ export default function BottomNav() {
       primary: [
         { to: '/student/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/student/dashboard' || p === '/student' },
         { to: '/student/mygradeslist', label: 'Grades', icon: FileText, match: (p) => p.startsWith('/student/mygrades') },
+        { to: '/student/advising-inbox', label: 'Advising', icon: ClipboardList, match: (p) => p.startsWith('/student/advising-inbox') },
         { to: '/student/academic-insights', label: 'Insights', icon: BrainCircuit, match: (p) => p.startsWith('/student/academic-insights') || p.startsWith('/student/airecommendation') },
         { to: '/student/attendance', label: 'Attendance', icon: Calendar, match: (p) => p.startsWith('/student/attendance') },
-        { to: '/student/evallist', label: 'Evaluations', icon: BookOpen, match: (p) => p.startsWith('/student/eval') },
       ],
       more: []
     },
@@ -57,7 +58,6 @@ export default function BottomNav() {
         { to: '/faculty/classrecordslist', label: 'Classes', icon: BookOpen, match: (p) => p.startsWith('/faculty/classrecords') || p.startsWith('/faculty/gradecomponents') || p.startsWith('/faculty/postedgrades') },
         { to: '/faculty/scoreinput', label: 'Scores', icon: FileText, match: (p) => p.startsWith('/faculty/scoreinput') || p.startsWith('/faculty/gradecomputation') },
         { to: '/faculty/classattendance', label: 'Attendance', icon: Calendar, match: (p) => p.startsWith('/faculty/classattendance') },
-        { to: '/faculty/evalresultsmy', label: 'Eval Results', icon: FileText, match: (p) => p.startsWith('/faculty/evalresults') },
       ],
       more: []
     },
@@ -65,28 +65,15 @@ export default function BottomNav() {
       primary: [
         { to: '/dean/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/dean/dashboard' || p === '/dean' },
         { to: '/dean/gradepostingstatus', label: 'Grading', icon: BookOpen, match: (p) => p.startsWith('/dean/gradeposting') },
-        { to: '/dean/remarkoverriderequests', label: 'Remarks', icon: ClipboardList, match: (p) => p.startsWith('/dean/remarkoverride') },
+        { to: '/dean/atriskstudents', label: 'At-Risk Matrix', icon: AlertCircle, match: (p) => p.startsWith('/dean/atriskstudents') },
         { to: '/dean/gradedistribution', label: 'Analytics', icon: BarChart3, match: (p) => p.startsWith('/dean/gradedistribution') },
       ],
       more: [
-        { to: '/dean/evalresultsoverview', label: 'Faculty Evaluations', description: 'Monitor dean & student ratings', icon: Star },
-        { to: '/dean/atriskstudents', label: 'At-Risk Students', description: 'Early warning indicators & intervention', icon: AlertCircle },
+        { to: '/dean/remarkoverriderequests', label: 'Remark Requests', description: 'Faculty remark approvals', icon: ClipboardList },
         { to: '/dean/summaryreports', label: 'Summary Reports', description: 'Export grade summaries & dean lists', icon: FileDown },
       ]
     },
-    office: {
-      primary: [
-        { to: '/office/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/office/dashboard' || p === '/office' },
-        { to: '/office/rosterimport', label: 'Roster', icon: Users, match: (p) => p.startsWith('/office/roster') },
-        { to: '/office/subjectassignmentlist', label: 'Subjects', icon: BookOpen, match: (p) => p.startsWith('/office/subjectassignment') },
-        { to: '/office/complianceaudit', label: 'Clearance', icon: ClipboardList, match: (p) => p.startsWith('/office/compliance') },
-      ],
-      more: [
-        { to: '/office/evalformslist', label: 'Evaluation Forms', description: 'Build and manage survey instruments', icon: FileText },
-        { to: '/office/evalwindowlist', label: 'Evaluation Windows', description: 'Open/close evaluation timelines', icon: Calendar },
-        { to: '/office/studentsections', label: 'Student Sections', description: 'Academic load & section assignments', icon: Layers },
-      ]
-    },
+
     admin: {
       primary: [
         { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/admin/dashboard' || p === '/admin' },
@@ -95,6 +82,7 @@ export default function BottomNav() {
         { to: '/admin/gradeoverride', label: 'Overrides', icon: AlertCircle, match: (p) => p.startsWith('/admin/gradeoverride') },
       ],
       more: [
+        { to: '/admin/classrooms', label: 'Classrooms', description: 'Provision courses & join codes', icon: GraduationCap },
         { to: '/admin/sectionlist', label: 'Sections Database', description: 'Manage class sections & capacities', icon: Layers },
         { to: '/admin/gradecomputationslist', label: 'Grading Templates', description: 'Configure dynamic component formulas', icon: SettingsIcon },
         { to: '/admin/departmentslist', label: 'Colleges & Depts', description: 'Manage academic divisions', icon: Layers },

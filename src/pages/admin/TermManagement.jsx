@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { Calendar, RefreshCw, AlertTriangle, CheckCircle, ShieldAlert, Database, ArrowRight, Check, X, ClipboardList } from 'lucide-react';
 import { useAuth } from '../../lib/AuthContext';
@@ -300,17 +300,7 @@ export default function TermManagement() {
 
       if (transitionErr) throw transitionErr;
 
-      // 3. Auto-close all active evaluation windows upon semester transition
-      try {
-        await supabase
-          .from('evaluation_windows')
-          .update({ is_closed: true })
-          .eq('is_closed', false);
-      } catch (winCloseErr) {
-        console.warn('Evaluation windows auto-close warning:', winCloseErr);
-      }
-
-      // 4. Write transition records to the activity_logs table
+      // 3. Write transition records to the activity_logs table
       const actorName = resolveActorName(userProfile, user);
       await supabase.from('activity_logs').insert({
         action: 'Semester Transition',
@@ -319,7 +309,7 @@ export default function TermManagement() {
       });
 
       // Write to audit log helper if present
-      await logActivity('Semester Transition', `Transitioned academic term from AY ${activeTerm.schoolYear} (${activeTerm.semester} Sem) to AY ${targetSy} (${targetSem} Sem). All old classrooms archived and evaluation windows sealed.`, actorName);
+      await logActivity('Semester Transition', `Transitioned academic term from AY ${activeTerm.schoolYear} (${activeTerm.semester} Sem) to AY ${targetSy} (${targetSem} Sem). All old classrooms archived.`, actorName);
 
       await notifyAdminActivity({
         type: 'system',

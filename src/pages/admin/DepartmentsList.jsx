@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
-import { Plus, Edit2, Save, X, Building, UserCheck, UserX, CheckCircle2, AlertCircle, Search, ChevronRight, Users, Layers } from 'lucide-react';
+import { Plus, Edit2, Save, X, Building, UserCheck, UserX, CheckCircle2, AlertCircle, Search } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
