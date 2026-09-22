@@ -250,7 +250,7 @@ export default function GradePostingStatus() {
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
         
         {/* 🔑 Dean's Administrative Registry Override Dashboard */}
-        <div className="bg-amber-50/45 border border-amber-200 rounded-xl p-5 space-y-4 shadow-sm">
+        {false && <div className="bg-amber-50/45 border border-amber-200 rounded-xl p-5 space-y-4 shadow-sm">
           <div className="flex flex-wrap justify-between items-start gap-4">
             <div>
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
@@ -318,7 +318,7 @@ export default function GradePostingStatus() {
               </div>
             )}
           </div>
-        </div>
+        </div>}
 
         {/* Filters Toolbar */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">

@@ -656,9 +656,9 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
           
           {/* Left 2 Cols: Class Performance Trajectory */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 sm:p-6 lg:col-span-2 space-y-4 text-left">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
+          <div className="min-w-0 bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 sm:p-6 lg:col-span-2 space-y-4 text-left">
+            <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 pb-3">
+              <div className="min-w-0 flex-1">
                 <h3 className="text-sm sm:text-base font-bold font-display text-slate-900 flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-sage-600" />
                   <span>Class Performance Progression Trajectory</span>
@@ -667,7 +667,7 @@ export default function Dashboard() {
                   Term-by-term score trajectory across your handled courses (AY 2026-2027).
                 </p>
               </div>
-              <span className="text-[10px] font-mono font-bold bg-sage-50 text-sage-700 px-2 py-0.5 rounded-md border border-sage-200">
+              <span className="shrink-0 text-[10px] font-mono font-bold bg-sage-50 text-sage-700 px-2 py-0.5 rounded-md border border-sage-200">
                 Multi-Term
               </span>
             </div>
@@ -676,9 +676,9 @@ export default function Dashboard() {
           </div>
 
           {/* Right 1 Col: Student Risk & Intervention Donut */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 sm:p-6 space-y-4 text-left">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
+          <div className="min-w-0 bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 sm:p-6 space-y-4 text-left">
+            <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
+              <div className="min-w-0">
                 <h3 className="text-sm sm:text-base font-bold font-display text-slate-900 flex items-center gap-2">
                   <PieChartIcon className="h-4 w-4 text-sage-600" />
                   <span>Cohort Risk &amp; Interventions</span>

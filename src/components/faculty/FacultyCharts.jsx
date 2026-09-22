@@ -232,7 +232,7 @@ export function FacultyPerformanceTrajectoryChart({ trajectoryData = [] }) {
                 {/* Outer halo */}
                 <circle 
                   cx={pt.x} 
-                  y={pt.y} 
+                  cy={pt.y} 
                   r={isHovered ? 7 : 4} 
                   fill="#ffffff" 
                   stroke={PALETTE.sage} 
@@ -330,9 +330,9 @@ export function StudentRiskInterventionDonut({ riskData = {} }) {
   const activeSegment = hoveredKey ? arcs.find(a => a.key === hoveredKey) : null;
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+    <div className="flex min-w-0 flex-col items-center justify-between gap-5">
       {/* Donut Graphic */}
-      <div className="relative shrink-0 flex items-center justify-center">
+      <div className="relative flex h-[190px] w-full shrink-0 items-center justify-center">
         <svg width={size} height={size} className="overflow-visible -rotate-90">
           {arcs.map((arc) => (
             <circle
@@ -370,7 +370,7 @@ export function StudentRiskInterventionDonut({ riskData = {} }) {
       </div>
 
       {/* Legend & Breakdown Strip */}
-      <div className="flex-1 w-full space-y-2 text-xs">
+      <div className="w-full min-w-0 space-y-2 text-xs">
         {arcs.map((arc) => {
           const isHovered = hoveredKey === arc.key;
           return (
