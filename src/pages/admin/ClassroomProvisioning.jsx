@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   Search, 
@@ -39,6 +39,7 @@ export default function ClassroomProvisioning() {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDeptId, setSelectedDeptId] = useState('');
+  const [selectedTargetDeptId, setSelectedTargetDeptId] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
   const [selectedSectionId, setSelectedSectionId] = useState('');
   const [selectedFacultyId, setSelectedFacultyId] = useState('');
@@ -50,6 +51,10 @@ export default function ClassroomProvisioning() {
   const [successBanner, setSuccessBanner] = useState(null);
   const [copiedCodeMap, setCopiedCodeMap] = useState({});
 
+  // Identify colleges that have degree block sections
+  const collegeDeptsWithSections = useMemo(() => {
+    return departments.filter(d => sections.some(sec => sec.department_id === d.department_id));
+  }, [departments, sections]);
   const loadData = async () => {
     setLoading(true);
     try {
@@ -179,33 +184,50 @@ export default function ClassroomProvisioning() {
     if (departments.length > 0) {
       const firstDept = departments[0];
       setSelectedDeptId(firstDept.department_id);
+      setSelectedTargetDeptId('');
     }
     setIsModalOpen(true);
   };
+
+  // Determine if selected department is a service department without dedicated sections (e.g., General Education)
+  const isCrossDept = selectedDeptId
+    ? sections.filter(sec => sec.department_id === selectedDeptId).length === 0
+    : false;
+
+  const targetDeptIdForSections = isCrossDept
+    ? (selectedTargetDeptId || (collegeDeptsWithSections[0]?.department_id || ''))
+    : selectedDeptId;
 
   // Cascading dropdown filters for Modal
   const modalFilteredSubjects = selectedDeptId 
     ? subjects.filter(s => s.department_id === selectedDeptId)
     : subjects;
 
-  const modalFilteredSections = selectedDeptId
-    ? sections.filter(s => s.department_id === selectedDeptId)
+  const modalFilteredSections = targetDeptIdForSections
+    ? sections.filter(s => s.department_id === targetDeptIdForSections)
     : sections;
 
-  const modalFilteredFaculty = selectedDeptId
-    ? facultyUsers.filter(f => f.department_id === selectedDeptId)
-    : facultyUsers;
+  const matchedFaculty = selectedDeptId ? facultyUsers.filter(f => f.department_id === selectedDeptId) : facultyUsers;
+  const modalFilteredFaculty = matchedFaculty.length > 0 ? matchedFaculty : facultyUsers;
 
-  // Auto-select first matching option when department changes
+  // Auto-select first matching target college when General Education or service dept is picked
+  useEffect(() => {
+    if (isCrossDept && !selectedTargetDeptId && collegeDeptsWithSections.length > 0) {
+      setSelectedTargetDeptId(collegeDeptsWithSections[0].department_id);
+    }
+  }, [selectedDeptId, isCrossDept, collegeDeptsWithSections, selectedTargetDeptId]);
+
+  // Auto-select first matching option when department or target college changes
   useEffect(() => {
     const filteredSubs = selectedDeptId ? subjects.filter(s => s.department_id === selectedDeptId) : subjects;
-    const filteredSecs = selectedDeptId ? sections.filter(s => s.department_id === selectedDeptId) : sections;
-    const filteredFacs = selectedDeptId ? facultyUsers.filter(f => f.department_id === selectedDeptId) : facultyUsers;
+    const filteredSecs = targetDeptIdForSections ? sections.filter(s => s.department_id === targetDeptIdForSections) : sections;
+    const deptFacs = selectedDeptId ? facultyUsers.filter(f => f.department_id === selectedDeptId) : facultyUsers;
+    const filteredFacs = deptFacs.length > 0 ? deptFacs : facultyUsers;
 
-    setSelectedSubjectId(filteredSubs.length > 0 ? filteredSubs[0].subject_id : '');
-    setSelectedSectionId(filteredSecs.length > 0 ? filteredSecs[0].section_id : '');
-    setSelectedFacultyId(filteredFacs.length > 0 ? filteredFacs[0].user_id : '');
-  }, [selectedDeptId, subjects, sections, facultyUsers]);
+    setSelectedSubjectId(filteredSubs.length > 0 ? filteredSubs[0].subject_id : (subjects[0]?.subject_id || ''));
+    setSelectedSectionId(filteredSecs.length > 0 ? filteredSecs[0].section_id : (sections[0]?.section_id || ''));
+    setSelectedFacultyId(filteredFacs.length > 0 ? filteredFacs[0].user_id : (facultyUsers[0]?.user_id || ''));
+  }, [selectedDeptId, targetDeptIdForSections, subjects, sections, facultyUsers]);
 
   const handleProvisionSubmit = async (e) => {
     e.preventDefault();
@@ -600,6 +622,28 @@ export default function ClassroomProvisioning() {
                 </select>
               </div>
 
+              {/* Secondary Target College Selector for Cross-Department / General Education */}
+              {isCrossDept && (
+                <div className="space-y-1.5 p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-amber-900 uppercase tracking-wide">
+                      Target College for Block Section <span className="text-rose-500">*</span>
+                    </label>
+                    <span className="text-[9px] bg-amber-200/80 text-amber-900 px-2 py-0.5 rounded font-semibold">
+                      General Education / Service Course
+                    </span>
+                  </div>
+                  <select
+                    value={targetDeptIdForSections}
+                    onChange={e => setSelectedTargetDeptId(e.target.value)}
+                    className="w-full border border-amber-300 px-3 py-2 rounded-lg text-xs bg-white outline-none cursor-pointer focus:border-sage-600 font-medium"
+                  >
+                    {collegeDeptsWithSections.map(d => (
+                      <option key={d.department_id} value={d.department_id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {/* Section Selector */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">

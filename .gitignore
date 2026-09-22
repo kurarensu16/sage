@@ -38,3 +38,8 @@ comparison-report.md
 *.njsproj
 *.sln
 *.sw?
+
+# Android Gradle build cache
+android/.gradle/
+android/build/
+android/app/build/

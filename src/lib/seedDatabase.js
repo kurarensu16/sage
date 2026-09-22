@@ -2,27 +2,27 @@ import { supabase } from './supabase';
 
 // Seed data
 const defaultDepartments = [
-  { name: 'College of Computer Studies' }
+  { name: 'Technology and Engineering College for Humanity' }
 ];
 
 const defaultSubjects = [
-  { code: 'IT101', name: 'Introduction to Computing', units: 3, departmentName: 'College of Computer Studies' },
-  { code: 'IT201', name: 'Data Structures and Algorithms', units: 3, departmentName: 'College of Computer Studies' },
-  { code: 'CS301', name: 'Artificial Intelligence', units: 3, departmentName: 'College of Computer Studies' },
-  { code: 'IT401', name: 'Capstone Project 1', units: 3, departmentName: 'College of Computer Studies' }
+  { code: 'IT101', name: 'Introduction to Computing', units: 3, departmentName: 'Technology and Engineering College for Humanity' },
+  { code: 'IT201', name: 'Data Structures and Algorithms', units: 3, departmentName: 'Technology and Engineering College for Humanity' },
+  { code: 'CS301', name: 'Artificial Intelligence', units: 3, departmentName: 'Technology and Engineering College for Humanity' },
+  { code: 'IT401', name: 'Capstone Project 1', units: 3, departmentName: 'Technology and Engineering College for Humanity' }
 ];
 
 const defaultSections = [
-  { name: 'BSIT-1A', school_year: 'AY 2025-2026', semester: '2nd', departmentName: 'College of Computer Studies' },
-  { name: 'BSIT-2B', school_year: 'AY 2025-2026', semester: '2nd', departmentName: 'College of Computer Studies' },
-  { name: 'BSCS-3A', school_year: 'AY 2025-2026', semester: '2nd', departmentName: 'College of Computer Studies' }
+  { name: 'BSIT-1A', school_year: 'AY 2025-2026', semester: '2nd', departmentName: 'Technology and Engineering College for Humanity' },
+  { name: 'BSIT-2B', school_year: 'AY 2025-2026', semester: '2nd', departmentName: 'Technology and Engineering College for Humanity' },
+  { name: 'BSCS-3A', school_year: 'AY 2025-2026', semester: '2nd', departmentName: 'Technology and Engineering College for Humanity' }
 ];
 
 const defaultUsers = [
-  { lastName: 'System', firstName: 'Admin', middleName: 'Control', email: 'admin@sage.edu.ph', role: 'admin', user_number: 'ADM-2026-00001', departmentName: 'College of Computer Studies' },
-  { lastName: 'Valdes', firstName: 'Carlos', middleName: 'Mendoza', email: 'c.valdes@sage.edu.ph', role: 'dean', user_number: 'DN-2026-00002', departmentName: 'College of Computer Studies' },
-  { lastName: 'Rivera', firstName: 'Amanda', middleName: 'Santos', email: 'a.rivera@sage.edu.ph', role: 'faculty', user_number: 'FAC-2026-00003', departmentName: 'College of Computer Studies' },
-  { lastName: 'Jenkins', firstName: 'Sarah', middleName: 'Lee', email: 's.jenkins@student.sage.edu', role: 'student', user_number: '2026-00005', year_level: '1st Year', departmentName: 'College of Computer Studies' }
+  { lastName: 'System', firstName: 'Admin', middleName: 'Control', email: 'admin@sage.edu.ph', role: 'admin', user_number: 'ADM-2026-00001', departmentName: 'Technology and Engineering College for Humanity' },
+  { lastName: 'Valdes', firstName: 'Carlos', middleName: 'Mendoza', email: 'c.valdes@sage.edu.ph', role: 'dean', user_number: 'DN-2026-00002', departmentName: 'Technology and Engineering College for Humanity' },
+  { lastName: 'Rivera', firstName: 'Amanda', middleName: 'Santos', email: 'a.rivera@sage.edu.ph', role: 'faculty', user_number: 'FAC-2026-00003', departmentName: 'Technology and Engineering College for Humanity' },
+  { lastName: 'Jenkins', firstName: 'Sarah', middleName: 'Lee', email: 's.jenkins@student.sage.edu', role: 'student', user_number: '2026-00005', year_level: '1st Year', departmentName: 'Technology and Engineering College for Humanity' }
 ];
 
 export async function seedDatabase() {
@@ -30,7 +30,7 @@ export async function seedDatabase() {
   try {
     // 1. Seed Departments (Check if exists first to avoid duplicates)
     let ccsId;
-    const { data: existingDept } = await supabase.from('departments').select('department_id').eq('name', 'College of Computer Studies').maybeSingle();
+    const { data: existingDept } = await supabase.from('departments').select('department_id').or('name.eq.Technology and Engineering College for Humanity,name.eq.College of Computer Studies').maybeSingle();
     
     if (existingDept) {
       ccsId = existingDept.department_id;
