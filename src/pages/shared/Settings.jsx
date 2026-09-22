@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Capacitor } from '@capacitor/core';
 import { useAuth } from '../../lib/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { usePwaInstall } from '../../lib/usePwaInstall';
@@ -57,6 +56,23 @@ export default function Settings() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [submittingPassword, setSubmittingPassword] = useState(false);
+
+  // Sync activeTab with URL search param ?tab=...
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tabParam = params.get('tab');
+    if (tabParam) {
+      if (tabParam === 'password' || tabParam === 'security') {
+        setActiveTab('security');
+      } else if (tabParam === 'notifications' || tabParam === 'preferences') {
+        setActiveTab('preferences');
+      } else if (tabParam === 'profile') {
+        setActiveTab('profile');
+      } else if (tabParam === 'database') {
+        setActiveTab('database');
+      }
+    }
+  }, [location.search]);
 
   // Role metadata default configs
   const roleMeta = {

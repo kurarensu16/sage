@@ -4,7 +4,9 @@ import PageHeader from '../../components/layout/PageHeader';
 import { 
   ChevronRight, 
   ChevronDown, 
-  AlertCircle 
+  AlertCircle,
+  Layers,
+  BookOpen
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
@@ -45,37 +47,16 @@ export default function MyGradesDetail() {
     async function loadGradeBreakdown() {
       if (!user) return;
 
-      let targetClassRecordId = classRecordId;
-      
+      // If no classRecordId provided via URL query (?id=...), keep page in empty selection state
+      if (!classRecordId) {
+        setClassInfo(null);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       try {
-        // If no classRecordId provided, try to find the student's first active enrollment
-        if (!targetClassRecordId) {
-          const { data: enrolls } = await supabase
-            .from('enrollments')
-            .select('section_id, subject_id')
-            .eq('student_id', user.id)
-            .limit(1);
-
-          if (enrolls && enrolls.length > 0) {
-            const { data: cr } = await supabase
-              .from('class_records')
-              .select('class_record_id')
-              .eq('section_id', enrolls[0].section_id)
-              .eq('subject_id', enrolls[0].subject_id)
-              .eq('status', 'active')
-              .limit(1);
-
-            if (cr && cr.length > 0) {
-              targetClassRecordId = cr[0].class_record_id;
-            }
-          }
-        }
-
-        if (!targetClassRecordId) {
-          setLoading(false);
-          return;
-        }
+        const targetClassRecordId = classRecordId;
 
         // 1. Fetch Class Record Details
         const { data: crInfo, error: crErr } = await supabase
@@ -363,11 +344,43 @@ export default function MyGradesDetail() {
     return <DetailSkeleton />;
   }
 
-  if (!classInfo) {
+  if (!classRecordId || !classInfo) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-slate-50">
-        <p className="text-sm text-slate-500 font-sans">No enrolled class records found.</p>
-      </div>
+      <>
+        <PageHeader title="Grade Breakdown" breadcrumb="Student Portal" />
+        <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 text-left">
+          <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center max-w-lg mx-auto space-y-4 shadow-xs">
+            <div className="w-12 h-12 rounded-2xl bg-sage-50 text-sage-600 flex items-center justify-center mx-auto">
+              <Layers className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold font-display text-slate-900">
+                No Subject Selected
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                Please select a course from your <strong className="text-slate-700">Grade Report</strong> or <strong className="text-slate-700">My Subjects</strong> to inspect detailed activity scores and formula breakdowns.
+              </p>
+            </div>
+            <div className="pt-2 flex items-center justify-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => navigate('/student/mygradeslist')}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                <span>View Grade Report</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/student/mysubjects')}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                <span>My Subjects</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
     );
   }
 
