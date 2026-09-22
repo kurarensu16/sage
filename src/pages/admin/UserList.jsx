@@ -720,7 +720,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
     const lines = textToParse.split('\n');
     const list = [];
-    let hasError = false;
 
     let startIndex = 0;
     if (lines.length > 0) {
@@ -1000,10 +999,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       setIsImporting(false);
       setImportProgress('');
     }
-  };
-
-  const handleSaveImport = () => {
-    setShowConfirmModal(true);
   };
 
   const getRoleBadge = (role) => {

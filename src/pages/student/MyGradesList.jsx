@@ -2,109 +2,16 @@ import { getTransmutedGrade } from '../../lib/gradingMath';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronDown, Eye, CheckCircle, Award, ChevronRight, Lock, ShieldCheck, MessageSquare, Clock } from 'lucide-react';
+import { ChevronDown, Eye, CheckCircle, Award, ChevronRight, ShieldCheck, Clock, Plus, X, Printer } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { TableSkeleton } from '../../components/common/Skeleton';
+import { submitJoinRequest } from '../../lib/classRoomService';
 
-// Helper to check pending evaluations for clearance sign-off
-const checkPendingEvals = async (studentId, sectionId) => {
-  let isOfficeSigned = false;
+// ASPIRE v3.1: Transparent Official Milestone Ledger (No clearance locks)
 
-  // 1. Check if explicit clearance record is signed by Office in clearance_records
-  try {
-    const { data: activeTerm } = await supabase
-      .from('academic_terms')
-      .select('term_id')
-      .eq('is_active', true)
-      .maybeSingle();
-
-    let clrQuery = supabase
-      .from('clearance_records')
-      .select('status')
-      .eq('student_id', studentId);
-
-    if (activeTerm?.term_id) {
-      clrQuery = clrQuery.eq('term_id', activeTerm.term_id);
-    }
-
-    const { data: clr } = await clrQuery.maybeSingle();
-    if (clr && clr.status === 'SIGNED') {
-      isOfficeSigned = true;
-    }
-  } catch {
-    // Ignore error if table not queried
-  }
-
-  if (!sectionId) return { totalWindows: 0, pendingCount: 0, isOfficeSigned };
-  const now = new Date().toISOString();
-
-  // 2. Query active evaluation windows for section
-  const { data: windows } = await supabase
-    .from('evaluation_windows')
-    .select('window_id')
-    .eq('section_id', sectionId)
-    .lte('open_at', now)
-    .gte('close_at', now)
-    .eq('is_closed', false);
-
-  if (!windows || windows.length === 0) {
-    return { totalWindows: 0, pendingCount: 0, isOfficeSigned };
-  }
-
-  const { data: responses } = await supabase
-    .from('evaluation_responses')
-    .select('window_id')
-    .eq('student_id', studentId);
-
-  const submittedWindowIds = new Set(responses?.map(r => r.window_id) || []);
-  let pendingCount = 0;
-  for (let i = 0; i < windows.length; i++) {
-    if (!submittedWindowIds.has(windows[i].window_id)) {
-      pendingCount++;
-    }
-  }
-
-  return {
-    totalWindows: windows.length,
-    pendingCount,
-    isOfficeSigned
-  };
-};
-
-// Helper to transmute raw scores to DYCI standard grades
-
-
-// Helper to calculate term ratings from draft scores
-const calculateTermRating = (draftScores, maxSetup) => {
-  if (!draftScores) return null;
-  const max = maxSetup || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
-
-  const act1 = draftScores.act1 !== null ? draftScores.act1 : 0;
-  const act2 = draftScores.act2 !== null ? draftScores.act2 : 0;
-  const act3 = draftScores.act3 !== null ? draftScores.act3 : 0;
-  const act4 = draftScores.act4 !== null ? draftScores.act4 : 0;
-  const act5 = draftScores.act5 !== null ? draftScores.act5 : 0;
-  const act6 = draftScores.act6 !== null ? draftScores.act6 : 0;
-  const char = draftScores.char_rating !== null ? draftScores.char_rating : 0;
-  const exam = draftScores.exam !== null ? draftScores.exam : 0;
-
-  // Class Standing (50%)
-  const csSum = act1 + act2 + act3 + act4 + act5 + act6;
-  const csMax = max.act1 + max.act2 + max.act3 + max.act4 + max.act5 + max.act6;
-  const csPct = csMax > 0 ? (csSum / csMax) * 50 : 0;
-
-  // Character Rating (10%)
-  const charPct = char * 0.1;
-
-  // Term Exam (40%)
-  const examMax = max.exam;
-  const examPct = examMax > 0 ? (exam / examMax) * 40 : 0;
-
-  return Math.min(100, Math.max(0, Math.round(csPct + charPct + examPct)));
-};
 
 export default function MyGradesList() {
   const { user, profile } = useAuth();
@@ -112,10 +19,38 @@ export default function MyGradesList() {
   const [semestersList, setSemestersList] = useState([]);
   const [selectedSemLabel, setSelectedSemLabel] = useState('');
   const [grades, setGrades] = useState([]);
-  const [evalClearance, setEvalClearance] = useState({ totalWindows: 0, pendingCount: 0, isSigned: false });
-
   const [officialGwa, setOfficialGwa] = useState(null);
   const [officialStanding, setOfficialStanding] = useState('No grades posted yet');
+
+  // Classroom Join Code State
+  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
+  const [joinCodeInput, setJoinCodeInput] = useState('');
+  const [joining, setJoining] = useState(false);
+  const [joinFeedback, setJoinFeedback] = useState(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const handleJoinClassSubmit = async (e) => {
+    e.preventDefault();
+    if (!joinCodeInput.trim()) return;
+    setJoining(true);
+    setJoinFeedback(null);
+    try {
+      const res = await submitJoinRequest(user.id, joinCodeInput);
+      setJoinFeedback({
+        type: 'success',
+        message: `Successfully enrolled in ${res.classRecord?.subjects?.code || 'Course'} (${res.classRecord?.sections?.name || 'Section'})! You now have access to this classroom.`
+      });
+      setJoinCodeInput('');
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err) {
+      setJoinFeedback({
+        type: 'error',
+        message: err.message || 'Failed to join classroom. Please check your code and try again.'
+      });
+    } finally {
+      setJoining(false);
+    }
+  };
 
   useEffect(() => {
     async function loadSemesters() {
@@ -226,7 +161,7 @@ export default function MyGradesList() {
     }
 
     loadSemesters();
-  }, [user, profile]);
+  }, [user, profile, refreshTrigger]);
 
   useEffect(() => {
     async function loadGradesForSem() {
@@ -236,7 +171,6 @@ export default function MyGradesList() {
       const cached = getCachedData(semCacheKey, 180000);
       if (cached) {
         setGrades(cached.grades || []);
-        setEvalClearance(cached.evalClearance || { totalWindows: 0, pendingCount: 0, isSigned: false });
         setOfficialGwa(cached.officialGwa ?? null);
         setOfficialStanding(cached.officialStanding || 'No grades posted yet');
         setLoading(false);
@@ -247,10 +181,6 @@ export default function MyGradesList() {
       try {
         const activeOpt = semestersList.find(o => o.label === selectedSemLabel);
         if (!activeOpt) return;
-
-        // Fetch pending evaluation count for clearance gating
-        const clearanceInfo = await checkPendingEvals(user.id, activeOpt.section_id);
-        setEvalClearance(clearanceInfo);
 
         // 1. Fetch enrollments for the selected semester
         let enrollsQuery = supabase
@@ -372,43 +302,78 @@ export default function MyGradesList() {
             const semifinalRating = getTermRating('Semi-Final');
             const finalRating = getTermRating('Final');
 
-            // Compute running rating
-            let runningRating = null;
-            let runningLatestPeriod = '—';
-            if (finalRating !== null) {
-              const mr = Math.round(((prelimRating || 0) + (midtermRating || 0)) / 2);
-              const tfr = Math.round(((semifinalRating || 0) + finalRating) / 2);
-              runningRating = Math.round((mr + tfr) / 2);
-              runningLatestPeriod = 'Final';
-            } else if (semifinalRating !== null) {
-              const mr = Math.round(((prelimRating || 0) + (midtermRating || 0)) / 2);
-              const tfr = semifinalRating;
-              runningRating = Math.round((mr + tfr) / 2);
-              runningLatestPeriod = 'Semi-Final';
-            } else if (midtermRating !== null) {
-              runningRating = Math.round(((prelimRating || 0) + midtermRating) / 2);
-              runningLatestPeriod = 'Midterm';
-            } else if (prelimRating !== null) {
-              runningRating = prelimRating;
-              runningLatestPeriod = 'Prelim';
+            // 1. Midterm Rating (MR) = ROUND((Prelim + Midterm) / 2)
+            const mrPostedRow = crPosted.find(p => p.grade_period === 'midterm_rating' || p.grade_period === 'mr');
+            let mrGwa = '—';
+            let mrRating = null;
+            if (mrPostedRow) {
+              mrRating = parseFloat(mrPostedRow.computed_grade);
+              mrGwa = mrPostedRow.effective_grade !== null 
+                ? Number(mrPostedRow.effective_grade).toFixed(2) 
+                : getTransmutedGrade(mrRating).toFixed(2);
+            } else if (prelimRating !== null && midtermRating !== null) {
+              mrRating = Math.round((prelimRating + midtermRating) / 2);
+              mrGwa = getTransmutedGrade(mrRating).toFixed(2);
             }
 
-            const runningGrade = runningRating !== null ? getTransmutedGrade(runningRating).toFixed(2) : '—';
+            // 2. Tentative Final Rating (TFR) = ROUND((Semi-Final + Final) / 2)
+            const tfrPostedRow = crPosted.find(p => p.grade_period === 'tentative_final_rating' || p.grade_period === 'tfr');
+            let tfrGwa = '—';
+            let tfrRating = null;
+            if (tfrPostedRow) {
+              tfrRating = parseFloat(tfrPostedRow.computed_grade);
+              tfrGwa = tfrPostedRow.effective_grade !== null 
+                ? Number(tfrPostedRow.effective_grade).toFixed(2) 
+                : getTransmutedGrade(tfrRating).toFixed(2);
+            } else if (semifinalRating !== null && finalRating !== null) {
+              tfrRating = Math.round((semifinalRating + finalRating) / 2);
+              tfrGwa = getTransmutedGrade(tfrRating).toFixed(2);
+            }
 
-            // Compute official grade
+            // 3. Semestral Grade (SG) = ROUND((MR + TFR) / 2)
+            const sgPostedRow = crPosted.find(p => p.grade_period === 'semestral_grade' || p.grade_period === 'sg');
+            let sgGwa = '—';
+            let sgRating = null;
+            if (sgPostedRow) {
+              sgRating = parseFloat(sgPostedRow.computed_grade);
+              sgGwa = sgPostedRow.effective_grade !== null 
+                ? Number(sgPostedRow.effective_grade).toFixed(2) 
+                : getTransmutedGrade(sgRating).toFixed(2);
+            } else if (mrRating !== null && tfrRating !== null) {
+              sgRating = Math.round((mrRating + tfrRating) / 2);
+              sgGwa = getTransmutedGrade(sgRating).toFixed(2);
+            }
+
+            // Official Grade & Latest Period
             let officialGrade = '—';
             let officialLatestPeriod = '—';
-            const postedTermsOrder = ['Final', 'Semi-Final', 'Midterm', 'Prelim'];
-            for (const t of postedTermsOrder) {
-              const dbTermKey = t.toLowerCase().replace('-', '_');
-              const postRow = crPosted.find(p => p.grade_period === dbTermKey);
-              if (postRow) {
-                officialGrade = postRow.effective_grade !== null 
-                  ? postRow.effective_grade.toFixed(2) 
-                  : getTransmutedGrade(parseFloat(postRow.computed_grade)).toFixed(2);
-                officialLatestPeriod = t;
-                break;
+
+            if (sgGwa !== '—') {
+              officialGrade = sgGwa;
+              officialLatestPeriod = 'Semestral Grade (SG)';
+            } else {
+              const postedTermsOrder = ['Final', 'Semi-Final', 'Midterm', 'Prelim'];
+              for (const t of postedTermsOrder) {
+                const dbTermKey = t.toLowerCase().replace('-', '_');
+                const postRow = crPosted.find(p => p.grade_period === dbTermKey);
+                if (postRow) {
+                  officialGrade = postRow.effective_grade !== null 
+                    ? Number(postRow.effective_grade).toFixed(2) 
+                    : getTransmutedGrade(parseFloat(postRow.computed_grade)).toFixed(2);
+                  officialLatestPeriod = t;
+                  break;
+                }
               }
+            }
+
+            // Official Remarks
+            let remarks = 'Ongoing';
+            if (sgGwa !== '—') {
+              const numSg = parseFloat(sgGwa);
+              remarks = numSg <= 3.00 ? 'Passed' : 'Failed';
+            } else if (finalRating !== null) {
+              const numFinal = parseFloat(getTransmutedGrade(finalRating).toFixed(2));
+              remarks = numFinal <= 3.00 ? 'Passed' : 'Failed';
             }
 
             if (officialGrade !== '—') {
@@ -425,10 +390,15 @@ export default function MyGradesList() {
               name: subj.name,
               credits: subj.units,
               instructor: cr.faculty ? `Prof. ${cr.faculty.first_name} ${cr.faculty.last_name}` : 'TBA',
+              mrGwa,
+              mrRating,
+              tfrGwa,
+              tfrRating,
+              sgGwa,
+              sgRating,
+              remarks,
               officialLatestPeriod,
-              officialGrade,
-              runningLatestPeriod,
-              runningGrade
+              officialGrade
             };
           });
 
@@ -451,7 +421,6 @@ export default function MyGradesList() {
 
         setCachedData(semCacheKey, {
           grades: mappedGrades,
-          evalClearance: clearanceInfo,
           officialGwa: offGwa,
           officialStanding: standing
         });
@@ -464,7 +433,7 @@ export default function MyGradesList() {
     }
 
     loadGradesForSem();
-  }, [user, selectedSemLabel, semestersList]);
+  }, [user, selectedSemLabel, semestersList, refreshTrigger]);
 
   if (loading) {
     return <TableSkeleton rows={5} />;
@@ -472,107 +441,159 @@ export default function MyGradesList() {
 
   return (
     <>
-      <PageHeader title="My Grades" breadcrumb="Student Portal">
-        <div className="relative w-full sm:w-auto">
-          <select 
-            value={selectedSemLabel}
-            onChange={(e) => setSelectedSemLabel(e.target.value)}
-            className="w-full sm:w-auto appearance-none bg-white border border-slate-200 hover:border-sage-300 text-slate-700 px-3.5 py-2 pr-9 rounded-xl text-xs font-medium focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer shadow-sm"
-          >
-            {semestersList.map((sem, idx) => (
-              <option key={idx} value={sem.label}>{sem.label}</option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-        </div>
-      </PageHeader>
-
-      <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
-        
-        {/* Term Clearance & Evaluation Lock Status Banner */}
-        <div className={cn(
-          "rounded-2xl p-4 sm:p-5 border shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4",
-          evalClearance.isOfficeSigned
-            ? "bg-emerald-50 border-emerald-200 text-emerald-950"
-            : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0
-            ? "bg-sky-50 border-sky-200 text-sky-950"
-            : evalClearance.pendingCount > 0
-            ? "bg-amber-50 border-amber-200 text-amber-950"
-            : "bg-slate-50 border-slate-200 text-slate-900"
-        )}>
-          <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
-            <div className={cn(
-              "p-2.5 rounded-xl flex-shrink-0 mt-0.5 sm:mt-0",
-              evalClearance.isOfficeSigned 
-                ? "bg-emerald-100 text-emerald-700" 
-                : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0
-                ? "bg-sky-100 text-sky-700"
-                : evalClearance.pendingCount > 0 
-                ? "bg-amber-100 text-amber-700" 
-                : "bg-slate-200/70 text-slate-600"
-            )}>
-              {evalClearance.isOfficeSigned ? (
-                <ShieldCheck className="h-6 w-6" />
-              ) : evalClearance.pendingCount > 0 ? (
-                <Lock className="h-6 w-6" />
-              ) : (
-                <Clock className="h-6 w-6" />
-              )}
+      <div className="print:hidden">
+        <PageHeader title="My Grades" breadcrumb="Student Portal">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:flex-initial">
+              <select 
+                value={selectedSemLabel}
+                onChange={(e) => setSelectedSemLabel(e.target.value)}
+                className="w-full sm:w-auto appearance-none bg-white border border-slate-200 hover:border-sage-300 text-slate-700 px-3.5 py-2 pr-9 rounded-xl text-xs font-medium focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer shadow-sm"
+              >
+                {semestersList.map((sem, idx) => (
+                  <option key={idx} value={sem.label}>{sem.label}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h4 className="font-extrabold text-sm sm:text-base font-display">
-                  Term Clearance: {
-                    evalClearance.isOfficeSigned 
-                      ? 'SIGNED & CLEARED' 
-                      : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0
-                      ? 'AWAITING OFFICE SIGN-OFF'
-                      : evalClearance.pendingCount > 0 
-                      ? 'UNSIGNED (PENDING EVALUATION)' 
-                      : 'PENDING EVALUATION PERIOD'
-                  }
-                </h4>
-                <span className={cn(
-                  "inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border whitespace-nowrap flex-shrink-0",
-                  evalClearance.isOfficeSigned
-                    ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-                    : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0
-                    ? "bg-sky-100 text-sky-800 border-sky-200"
-                    : evalClearance.pendingCount > 0
-                    ? "bg-amber-100 text-amber-800 border-amber-200"
-                    : "bg-slate-200/80 text-slate-700 border-slate-300"
-                )}>
-                  {evalClearance.isOfficeSigned 
-                    ? 'Clearance Signed by Office' 
-                    : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0
-                    ? 'Surveys Completed'
-                    : evalClearance.pendingCount > 0 
-                    ? `${evalClearance.pendingCount} Pending Eval(s)` 
-                    : 'Evaluation Period Not Active'
-                  }
-                </span>
-              </div>
-              <p className="text-xs mt-1 text-slate-600">
-                {evalClearance.isOfficeSigned
-                  ? "Your semester clearance has been officially verified and signed off by the College Office."
-                  : evalClearance.totalWindows > 0 && evalClearance.pendingCount === 0
-                  ? "You have completed all faculty evaluation surveys. Your official clearance is currently being audited and finalized by the College Office."
-                  : evalClearance.pendingCount > 0
-                  ? `You have ${evalClearance.pendingCount} pending faculty evaluation survey(s). Complete all evaluations to qualify for clearance sign-off.`
-                  : "Faculty evaluation survey period is not currently active for this semester. Clearance sign-off is pending until evaluation windows open and are completed."
-                }
+
+            <button
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap"
+              title="Print or export unofficial grade slip"
+            >
+              <Printer className="w-4 h-4 text-slate-600" />
+              <span className="hidden sm:inline">Print Grade Slip</span>
+              <span className="sm:hidden">Print</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setIsJoinModalOpen(true);
+                setJoinFeedback(null);
+                setJoinCodeInput('');
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors cursor-pointer whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Join Class with Code</span>
+            </button>
+          </div>
+        </PageHeader>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* PRINT-ONLY UNOFFICIAL GRADE SLIP (DYCI Standard)                         */}
+      {/* ========================================================================= */}
+      <div className="hidden print:block p-8 bg-white text-slate-900 font-sans text-xs">
+        <div className="text-center border-b-2 border-slate-900 pb-4 mb-6">
+          <h1 className="text-base font-bold uppercase tracking-wider text-slate-900">Dr. Yanga's Colleges, Inc.</h1>
+          <p className="text-xs text-slate-600">Wakas, Bocaue, Bulacan • Office of the College Registrar</p>
+          <h2 className="text-sm font-extrabold uppercase tracking-widest text-slate-900 mt-3">Student Unofficial Grade Slip</h2>
+          <p className="text-[11px] text-slate-500 font-mono mt-0.5">{selectedSemLabel}</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mb-6 text-xs border border-slate-200 rounded-lg p-3 bg-slate-50/50">
+          <div>
+            <p><span className="font-bold text-slate-600">Student Name:</span> {profile?.first_name} {profile?.last_name}</p>
+            <p className="mt-1"><span className="font-bold text-slate-600">Student ID:</span> {profile?.student_id || user?.id?.substring(0, 8).toUpperCase()}</p>
+          </div>
+          <div>
+            <p><span className="font-bold text-slate-600">Program / Degree:</span> {profile?.course || 'BS Information Technology'}</p>
+            <p className="mt-1"><span className="font-bold text-slate-600">Date Generated:</span> {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          </div>
+        </div>
+
+        <table className="w-full text-left border-collapse border border-slate-300 mb-6 text-xs">
+          <thead>
+            <tr className="bg-slate-100 border-b border-slate-300 font-bold text-slate-800 text-[11px]">
+              <th className="p-2 border border-slate-300">Course Code</th>
+              <th className="p-2 border border-slate-300">Course Title</th>
+              <th className="p-2 text-center border border-slate-300">Units</th>
+              <th className="p-2 text-center border border-slate-300">Midterm (MR)</th>
+              <th className="p-2 text-center border border-slate-300">Tentative Final (TFR)</th>
+              <th className="p-2 text-center border border-slate-300">Semestral Grade (SG)</th>
+              <th className="p-2 text-center border border-slate-300">GWA</th>
+              <th className="p-2 text-center border border-slate-300">Remarks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {grades.map((item) => (
+              <tr key={`print-${item.class_record_id}`} className="border-b border-slate-200">
+                <td className="p-2 font-mono font-bold border border-slate-300">{item.code}</td>
+                <td className="p-2 border border-slate-300">{item.name}</td>
+                <td className="p-2 text-center font-mono border border-slate-300">{item.credits.toFixed(1)}</td>
+                <td className="p-2 text-center font-mono border border-slate-300">{item.mrGwa}</td>
+                <td className="p-2 text-center font-mono border border-slate-300">{item.tfrGwa}</td>
+                <td className="p-2 text-center font-mono border border-slate-300">{item.sgGwa}</td>
+                <td className="p-2 text-center font-mono font-bold border border-slate-300">{item.officialGrade}</td>
+                <td className="p-2 text-center font-semibold uppercase text-[10px] border border-slate-300">
+                  {item.remarks}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-slate-50 font-bold border-t-2 border-slate-300">
+              <td colSpan="2" className="p-2 text-right border border-slate-300">Total Enrolled Units:</td>
+              <td className="p-2 text-center font-mono border border-slate-300">
+                {grades.reduce((sum, g) => sum + g.credits, 0).toFixed(1)}
+              </td>
+              <td colSpan="3" className="p-2 text-right border border-slate-300">Official Semestral GWA:</td>
+              <td className="p-2 text-center font-mono text-sm border border-slate-300">
+                {officialGwa !== null ? officialGwa.toFixed(2) : '—'}
+              </td>
+              <td className="p-2 text-center text-[10px] uppercase border border-slate-300">{officialStanding}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div className="text-[10px] text-slate-500 border-t border-slate-300 pt-3 mb-8 leading-relaxed">
+          <strong>NOTICE:</strong> This document is an unofficial student grade slip generated via the ASPIRE Academic Portal for academic advising and tracking purposes only. It is not an official transcript of records (OTR). Any unauthorized alteration or erasure renders this slip void.
+        </div>
+
+        <div className="grid grid-cols-2 gap-12 pt-6 text-center text-xs">
+          <div>
+            <div className="border-b border-slate-400 pb-1 mb-1 font-bold text-slate-800">
+              {profile?.first_name} {profile?.last_name}
+            </div>
+            <span className="text-[10px] text-slate-500 uppercase tracking-wider">Student Signature</span>
+          </div>
+          <div>
+            <div className="border-b border-slate-400 pb-1 mb-1 font-bold text-slate-800">
+              Office of the College Registrar
+            </div>
+            <span className="text-[10px] text-slate-500 uppercase tracking-wider">Verified Official Copy</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SCREEN VIEW (DESKTOP & MOBILE)                                            */}
+      {/* ========================================================================= */}
+      <div className="print:hidden p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
+        
+        {/* Institutional Milestone Notice */}
+        <div className="rounded-xl p-4 border border-slate-200 bg-white shadow-xs flex items-center justify-between gap-4 text-left">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-slate-100 text-slate-600 rounded-lg shrink-0">
+              <ShieldCheck className="h-5 w-5 text-sage-600" />
+            </div>
+            <div>
+              <h4 className="font-bold text-xs sm:text-sm text-slate-900 font-display">
+                Official Academic Milestone Ledger
+              </h4>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Displays official Midterm Rating (MR), Tentative Final Rating (TFR), and Semestral Grade (SG) milestones.
               </p>
             </div>
           </div>
-
-          {evalClearance.pendingCount > 0 && (
-            <Link
-              to="/student/evallist"
-              className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm whitespace-nowrap self-end sm:self-auto cursor-pointer"
-            >
-              <MessageSquare className="h-4 w-4" /> Evaluate Faculty Now
-            </Link>
-          )}
+          <Link
+            to="/student/advising-inbox"
+            className="text-xs font-semibold text-sage-600 hover:text-sage-700 whitespace-nowrap"
+          >
+            View Advising Inbox →
+          </Link>
         </div>
         
         {/* Single Official GWA Summary Metric Card */}
@@ -580,16 +601,16 @@ export default function MyGradesList() {
           <div className="space-y-1 text-left">
             <span className="text-[10px] sm:text-xs font-bold text-emerald-800 uppercase tracking-wider block">Official Cumulative GWA</span>
             <div className="text-3xl sm:text-4xl font-extrabold font-mono text-emerald-950">
-              {evalClearance.pendingCount > 0 ? '🔒.🔒🔒' : (officialGwa !== null ? officialGwa.toFixed(2) : '—')}
+              {officialGwa !== null ? officialGwa.toFixed(2) : '—'}
             </div>
-            <p className="text-xs sm:text-sm text-emerald-700 font-medium">Official Academic Standing: <strong className="font-bold">{evalClearance.pendingCount > 0 ? 'Locked (Complete Evaluations)' : officialStanding}</strong></p>
+            <p className="text-xs sm:text-sm text-emerald-700 font-medium">Official Academic Standing: <strong className="font-bold">{officialStanding}</strong></p>
           </div>
           <div className="p-3.5 sm:p-4 bg-emerald-100 text-emerald-700 rounded-2xl shadow-sm flex-shrink-0">
             <Award className="h-6 w-6 sm:h-8 sm:w-8" />
           </div>
         </div>
 
-        {/* MOBILE VIEW ($\le 768px$): Single Official Course Cards List */}
+        {/* MOBILE VIEW (<= 768px): Single Official Course Cards List */}
         <div className="block md:hidden space-y-3">
           {grades.map((item) => {
             const hasGrade = item.officialGrade !== '—';
@@ -597,7 +618,7 @@ export default function MyGradesList() {
             return (
               <div 
                 key={`mob-${item.class_record_id}`}
-                className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-sm space-y-3 hover:border-sage-300 transition-all"
+                className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-sm space-y-3 hover:border-sage-300 transition-all text-left"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -620,22 +641,37 @@ export default function MyGradesList() {
                       GWA
                     </span>
                     <span className="font-mono text-base font-extrabold block">
-                      {evalClearance.pendingCount > 0 ? '🔒' : item.officialGrade}
+                      {item.officialGrade}
                     </span>
+                  </div>
+                </div>
+
+                {/* Milestone Summary Grid */}
+                <div className="grid grid-cols-3 gap-2 py-2 border-y border-slate-100 text-center text-xs">
+                  <div className="bg-slate-50 rounded-lg p-1.5">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Midterm (MR)</span>
+                    <span className="font-mono font-bold text-slate-800">{item.mrGwa}</span>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-1.5">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Tent. Final (TFR)</span>
+                    <span className="font-mono font-bold text-slate-800">{item.tfrGwa}</span>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-1.5">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Sem. Grade (SG)</span>
+                    <span className="font-mono font-bold text-slate-800">{item.sgGwa}</span>
                   </div>
                 </div>
 
                 <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between">
                   <div>
-                    {item.officialLatestPeriod !== '—' ? (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border bg-emerald-50 text-emerald-700 border-emerald-100">
-                        {item.officialLatestPeriod} Posted
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-50 text-slate-400 border border-slate-100">
-                        No Grades Posted
-                      </span>
-                    )}
+                    <span className={cn(
+                      "inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase",
+                      item.remarks === 'Passed' && "bg-emerald-50 text-emerald-700 border-emerald-200",
+                      item.remarks === 'Failed' && "bg-rose-50 text-rose-700 border-rose-200",
+                      item.remarks === 'Ongoing' && "bg-slate-50 text-slate-600 border-slate-200"
+                    )}>
+                      {item.remarks}
+                    </span>
                   </div>
 
                   <Link 
@@ -656,29 +692,32 @@ export default function MyGradesList() {
           )}
         </div>
 
-        {/* DESKTOP VIEW ($\ge 768px$): Single Full-Width Official Grades Ledger */}
+        {/* DESKTOP VIEW (>= 768px): Single Full-Width Official Grades Ledger */}
         <div className="hidden md:block">
-          <div className="bg-white rounded-xl border border-emerald-100 shadow-sm overflow-hidden flex flex-col">
-            <div className="bg-emerald-50/50 px-6 py-4 border-b border-emerald-100 flex items-center justify-between">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-5 w-5 text-emerald-600" />
-                <h3 className="text-sm font-bold text-emerald-900 uppercase tracking-wider font-display text-left">
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider font-display text-left">
                   Official Academic Grades Ledger
                 </h3>
               </div>
-              <span className="text-xs text-emerald-700 font-semibold">
-                Official Registrar Grades
+              <span className="text-xs text-slate-500 font-semibold font-mono">
+                DYCI Institutional Standards
               </span>
             </div>
             <div className="table-container overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-450 text-[10px] font-bold uppercase tracking-wider">
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                     <th className="px-6 py-3.5 font-medium">Subject Code & Course Title</th>
                     <th className="px-4 py-3.5 font-medium">Faculty Instructor</th>
                     <th className="px-3 py-3.5 text-center font-medium">Units</th>
-                    <th className="px-4 py-3.5 text-center font-medium">Latest Milestone Posted</th>
-                    <th className="px-4 py-3.5 text-center font-medium">Official Grade</th>
+                    <th className="px-3 py-3.5 text-center font-medium">Midterm (MR)</th>
+                    <th className="px-3 py-3.5 text-center font-medium">Tentative Final (TFR)</th>
+                    <th className="px-3 py-3.5 text-center font-medium">Semestral Grade (SG)</th>
+                    <th className="px-4 py-3.5 text-center font-medium">Transmuted GWA</th>
+                    <th className="px-3 py-3.5 text-center font-medium">Remarks</th>
                     <th className="px-6 py-3.5 text-right font-medium">Action</th>
                   </tr>
                 </thead>
@@ -691,23 +730,43 @@ export default function MyGradesList() {
                       </td>
                       <td className="px-4 py-4 text-slate-600 font-medium">{item.instructor}</td>
                       <td className="px-3 py-4 text-center font-mono text-slate-650">{item.credits.toFixed(1)}</td>
-                      <td className="px-4 py-4 text-center">
-                        {item.officialLatestPeriod !== '—' ? (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
-                            {item.officialLatestPeriod} Posted
-                          </span>
+                      <td className="px-3 py-4 text-center font-mono text-slate-700">
+                        {item.mrGwa !== '—' ? (
+                          <span className="font-bold text-slate-800">{item.mrGwa}</span>
                         ) : (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-50 text-slate-400 border border-slate-100">
-                            No Grades Posted
-                          </span>
+                          <span className="text-slate-350">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-4 text-center font-mono text-slate-700">
+                        {item.tfrGwa !== '—' ? (
+                          <span className="font-bold text-slate-800">{item.tfrGwa}</span>
+                        ) : (
+                          <span className="text-slate-350">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-4 text-center font-mono text-slate-700">
+                        {item.sgGwa !== '—' ? (
+                          <span className="font-bold text-slate-800">{item.sgGwa}</span>
+                        ) : (
+                          <span className="text-slate-350">—</span>
                         )}
                       </td>
                       <td className="px-4 py-4 text-center">
                         <span className={cn(
                           "font-mono text-base font-extrabold",
-                          evalClearance.pendingCount > 0 ? 'text-amber-600' : (item.officialGrade === '—' ? 'text-slate-350' : 'text-emerald-700')
+                          item.officialGrade === '—' ? 'text-slate-350' : 'text-emerald-700'
                         )}>
-                          {evalClearance.pendingCount > 0 ? '🔒' : item.officialGrade}
+                          {item.officialGrade}
+                        </span>
+                      </td>
+                      <td className="px-3 py-4 text-center">
+                        <span className={cn(
+                          "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",
+                          item.remarks === 'Passed' && "bg-emerald-50 text-emerald-700 border border-emerald-200",
+                          item.remarks === 'Failed' && "bg-rose-50 text-rose-700 border border-rose-200",
+                          item.remarks === 'Ongoing' && "bg-slate-100 text-slate-600 border border-slate-200"
+                        )}>
+                          {item.remarks}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
@@ -722,7 +781,7 @@ export default function MyGradesList() {
                   ))}
                   {grades.length === 0 && (
                     <tr>
-                      <td colSpan="6" className="px-6 py-12 text-center text-slate-400 text-sm">
+                      <td colSpan="9" className="px-6 py-12 text-center text-slate-400 text-sm">
                         No official grades found for this semester.
                       </td>
                     </tr>
@@ -733,6 +792,82 @@ export default function MyGradesList() {
           </div>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* JOIN CLASSROOM WITH CODE MODAL                                            */}
+      {/* ========================================================================= */}
+      {isJoinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs text-left animate-in fade-in duration-150">
+          <div className="bg-white rounded-lg border border-slate-200 shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-sm font-bold font-display text-slate-900 flex items-center gap-2">
+                <Plus className="w-4 h-4 text-sage-600" />
+                <span>Join Classroom with Code</span>
+              </h3>
+              <button
+                onClick={() => setIsJoinModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-md transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleJoinClassSubmit} className="p-5 space-y-4 text-xs font-sans">
+              {joinFeedback && (
+                <div className={cn(
+                  "p-3 rounded-md text-xs flex items-center gap-2",
+                  joinFeedback.type === 'success' 
+                    ? "bg-emerald-50 border border-emerald-200 text-emerald-800"
+                    : "bg-rose-50 border border-rose-200 text-rose-700"
+                )}>
+                  {joinFeedback.type === 'success' ? (
+                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <Clock className="w-4 h-4 text-rose-500 shrink-0" />
+                  )}
+                  <span>{joinFeedback.message}</span>
+                </div>
+              )}
+
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-[11px] text-slate-600 leading-relaxed">
+                Enter the official <strong>Classroom Code</strong> provided by your professor. Regular block students and irregular students will be immediately enrolled into the official class record.
+              </div>
+
+              <div className="space-y-1">
+                <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
+                  Classroom Code <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={joinCodeInput}
+                  onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                  placeholder="e.g. CS3A-8X92"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md bg-white text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-sage-600 tracking-wider"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsJoinModalOpen(false)}
+                  className="px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-md transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={joining || !joinCodeInput.trim()}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-sage-600 hover:bg-sage-700 active:bg-sage-800 disabled:opacity-50 rounded-md shadow-xs transition-colors cursor-pointer"
+                >
+                  {joining ? 'Enrolling...' : 'Enroll with Code'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }
+

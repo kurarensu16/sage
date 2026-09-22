@@ -223,7 +223,7 @@ export default function MyGradesDetail() {
                 csSum += score;
                 csMax += (parseFloat(act.max_score) || 20);
                 return {
-                  name: act.name,
+                  name: act.title || act.name || 'Activity',
                   obtained: score,
                   max: parseFloat(act.max_score) || 20,
                   description: act.description || ''
@@ -291,7 +291,7 @@ export default function MyGradesDetail() {
             if (termActs.length > 0) {
               termActs.forEach(act => {
                 if (studentScoresByActivity[act.activity_id] === undefined || studentScoresByActivity[act.activity_id] === null) {
-                  missingScores.push(act.name);
+                  missingScores.push(act.title || act.name || 'Activity');
                 }
               });
             } else {

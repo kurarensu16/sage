@@ -20,7 +20,7 @@ export default function Forbidden() {
         <div className="inline-flex p-4 bg-rose-50 text-rose-600 rounded-2xl border border-rose-100">
           <ShieldAlert className="h-10 w-10" />
         </div>
-        
+
         <div className="space-y-2">
           <h1 className="text-3xl font-bold font-display text-slate-900 tracking-tight">
             Access Denied
@@ -46,7 +46,7 @@ export default function Forbidden() {
           {profile?.role ? 'Return to Dashboard' : 'Back to Login'}
         </button>
       </div>
-      
+
       <div className="text-xs text-slate-400 mt-6">
         &copy; {new Date().getFullYear()} Dr. Yanga's Colleges, Inc. All rights reserved.
       </div>

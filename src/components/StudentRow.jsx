@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { cn } from "../lib/utils";
-import { Check, MessageSquare, CloudUpload } from 'lucide-react';
+import { Check, MessageSquare, CloudUpload, Lock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getTransmutedGrade } from '../lib/gradingMath';
 
@@ -25,7 +25,8 @@ export default function StudentRow({
     Midterm: [],
     'Semi-Final': [],
     Final: []
-  }
+  },
+  onSelectRiskStudent
 }) {
   const STORAGE_KEY = `sage_scores_${classCode}_${student?.id ?? rowNo}`;
 
@@ -253,7 +254,28 @@ export default function StudentRow({
         {student.studentNo || student.id}
       </td>
       <td className={cn("px-4 py-3 text-left font-semibold text-slate-900 sticky left-[136px] border-r border-slate-200 z-10 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]", stickyBgClass)}>
-        {student.name}
+        <div className="flex items-center justify-between gap-1.5">
+          <span className="truncate">{student.name}</span>
+          {student.risk_score >= 25 && (
+            <button
+              type="button"
+              onClick={() => onSelectRiskStudent && onSelectRiskStudent(student)}
+              className={cn(
+                "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold shrink-0 border transition-all",
+                student.risk_score >= 75 ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 cursor-pointer" :
+                student.risk_score >= 50 ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 cursor-pointer" :
+                "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 hover:border-amber-300 cursor-pointer"
+              )} 
+              title="Click to evaluate student risk & interventions"
+            >
+              <span className={cn(
+                "w-1.5 h-1.5 rounded-full",
+                student.risk_score >= 50 ? "bg-rose-500 animate-pulse" : "bg-amber-500"
+              )} />
+              {student.risk_score >= 75 ? 'Critical' : student.risk_score >= 50 ? 'High' : 'Watch'}
+            </button>
+          )}
+        </div>
       </td>
       
       {/* PRELIM */}
@@ -267,7 +289,7 @@ export default function StudentRow({
                 {renderInputCell('Prelim', act.id, act.max, cellLocked)}
                 {!isConfigured && !isLocked && (
                   <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
-                    <span className="text-[9px] text-slate-400 select-none">🔒</span>
+                    <Lock className="w-2.5 h-2.5 text-slate-400 select-none" />
                   </div>
                 )}
               </td>
@@ -293,7 +315,7 @@ export default function StudentRow({
                 {renderInputCell('Midterm', act.id, act.max, cellLocked)}
                 {!isConfigured && !isLocked && (
                   <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
-                    <span className="text-[9px] text-slate-400 select-none">🔒</span>
+                    <Lock className="w-2.5 h-2.5 text-slate-400 select-none" />
                   </div>
                 )}
               </td>
@@ -323,7 +345,7 @@ export default function StudentRow({
                 {renderInputCell('Semi-Final', act.id, act.max, cellLocked)}
                 {!isConfigured && !isLocked && (
                   <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
-                    <span className="text-[9px] text-slate-400 select-none">🔒</span>
+                    <Lock className="w-2.5 h-2.5 text-slate-400 select-none" />
                   </div>
                 )}
               </td>
@@ -349,7 +371,7 @@ export default function StudentRow({
                 {renderInputCell('Final', act.id, act.max, cellLocked)}
                 {!isConfigured && !isLocked && (
                   <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
-                    <span className="text-[9px] text-slate-400 select-none">🔒</span>
+                    <Lock className="w-2.5 h-2.5 text-slate-400 select-none" />
                   </div>
                 )}
               </td>

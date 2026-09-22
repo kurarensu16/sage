@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { ChevronRight, Save, BookOpen } from 'lucide-react';
@@ -155,7 +155,7 @@ export default function SubjectForm() {
         setFormData(prev => ({ ...prev, programName: '' }));
       }
     }
-  }, [formData.departmentId, allPrograms]);
+  }, [formData.departmentId, formData.programName, allPrograms]);
 
   // Update subject prefix when program changes
   useEffect(() => {

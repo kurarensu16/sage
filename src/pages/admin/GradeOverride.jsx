@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, ShieldAlert, Check, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';

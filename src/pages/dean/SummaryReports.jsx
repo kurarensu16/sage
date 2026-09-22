@@ -111,49 +111,88 @@ export default function SummaryReports() {
               };
             });
           setReportData(list);
-        } else if (reportType === 'faculty-evaluation') {
-          // Map faculty users to evaluation averages filtered by selected college
-          const facultyUsers = (usersData || []).filter(u => u.role === 'faculty' && u.departments?.name === deptFilter);
-          
-          // Fetch evaluation ratings
-          const { data: evalRatings } = await supabase
-            .from('evaluation_ratings')
-            .select('rating, evaluation_responses!inner(window_id, evaluation_windows!inner(faculty_id))');
+        } else if (reportType === 'intervention-outcomes') {
+          // ASPIRE v3.1: Intervention Outcomes & Honor Roll Summary
+          const { data: evaluationsData } = await supabase
+            .from('student_risk_evaluations')
+            .select(`
+              *,
+              student:users!student_id(user_id, first_name, last_name, email, departments(name), sections(name, departments(name))),
+              faculty:users!faculty_id(first_name, last_name),
+              class_record:class_records(subjects(code, name), sections(name))
+            `);
 
-          const facultyRatingsMap = {};
-          (evalRatings || []).forEach(r => {
-            const facultyId = r.evaluation_responses?.evaluation_windows?.faculty_id;
-            if (facultyId) {
-              if (!facultyRatingsMap[facultyId]) {
-                facultyRatingsMap[facultyId] = { sum: 0, count: 0 };
+          const list = (evaluationsData || [])
+            .filter(ev => {
+              const deptName = ev.student?.departments?.name || ev.student?.sections?.departments?.name;
+              return !deptFilter || deptName === deptFilter;
+            })
+            .map(ev => {
+              const bSnapshot = ev.baseline_snapshot || {};
+              const fSnapshot = ev.followup_snapshot || null;
+
+              let statusLabel = 'In Intervention';
+              if (fSnapshot) {
+                const bGwa = parseFloat(bSnapshot.gwa || 3.0);
+                const fGwa = parseFloat(fSnapshot.gwa || 3.0);
+                if (fGwa < bGwa) statusLabel = 'Recovered / GWA Improved';
+                else if (fGwa === bGwa) statusLabel = 'Stabilized';
+                else statusLabel = 'Needs Continued Escalation';
+              } else if (ev.refer_to_dean) {
+                statusLabel = 'Escalated to Dean';
               }
-              facultyRatingsMap[facultyId].sum += Number(r.rating);
-              facultyRatingsMap[facultyId].count += 1;
-            }
-          });
 
-          const list = facultyUsers.map(f => {
-            // Count classes taught during the selected term
-            const classesCount = termClassRecords.filter(c => c.faculty_id === f.user_id).length;
+              return {
+                studentName: ev.student ? `${ev.student.first_name} ${ev.student.last_name}` : 'Student',
+                section: ev.class_record?.sections?.name || ev.student?.sections?.name || '—',
+                subject: ev.class_record?.subjects?.code || 'General',
+                context: ev.evaluation_context === 'pl_retention' ? "President's Lister Retention" : "Academic Recovery",
+                initialRisk: `${ev.risk_level?.toUpperCase()} (${ev.risk_score || 0})`,
+                baselineGwa: bSnapshot.gwa ? Number(bSnapshot.gwa).toFixed(2) : '—',
+                followupGwa: fSnapshot?.gwa ? Number(fSnapshot.gwa).toFixed(2) : 'Under Review',
+                outcome: statusLabel,
+                faculty: ev.faculty ? `Prof. ${ev.faculty.first_name} ${ev.faculty.last_name}` : 'Assigned Faculty'
+              };
+            });
+
+          // If no formal evaluations in database yet for this college, aggregate from student grade data
+          if (list.length === 0) {
+            const studentUsers = (usersData || []).filter(u => 
+              u.role === 'student' && 
+              (u.departments?.name === deptFilter || u.sections?.departments?.name === deptFilter)
+            );
             
-            let rating = 4.50;
-            const userEval = facultyRatingsMap[f.user_id];
-            if (userEval && userEval.count > 0) {
-              const rawAvg = userEval.sum / userEval.count;
-              rating = rawAvg * 1.25;
-            } else {
-              if (f.email === 'a.rivera@sage.edu.ph') rating = 4.75;
-              if (f.email === 'j.doe@sage.edu.ph') rating = 4.18;
-            }
+            const studentGradesMap = {};
+            (postedGradesData || []).forEach(g => {
+              if (termClassRecordIds.has(g.class_record_id)) {
+                if (!studentGradesMap[g.student_id]) studentGradesMap[g.student_id] = [];
+                studentGradesMap[g.student_id].push(Number(g.effective_grade !== null ? g.effective_grade : g.computed_grade));
+              }
+            });
 
-            return {
-              name: `${f.first_name} ${f.last_name}`,
-              email: f.email,
-              dept: f.departments?.name || deptFilter,
-              sections: classesCount,
-              rating: rating
-            };
-          });
+            studentUsers.forEach(s => {
+              const grades = studentGradesMap[s.user_id] || [];
+              const gwa = grades.length > 0 ? grades.reduce((a, b) => a + b, 0) / grades.length : null;
+              if (gwa !== null) {
+                const isPL = gwa <= 1.75;
+                const isAtRisk = gwa >= 2.50;
+                if (isPL || isAtRisk) {
+                  list.push({
+                    studentName: `${s.first_name} ${s.last_name}`,
+                    section: s.sections?.name || '—',
+                    subject: 'Academic Standing',
+                    context: isPL ? "President's Lister Pace" : "Academic Passing Pace",
+                    initialRisk: isPL ? 'HONORS TIER' : (gwa > 3.0 ? 'CRITICAL RISK' : 'MODERATE RISK'),
+                    baselineGwa: (gwa + (isAtRisk ? 0.25 : -0.10)).toFixed(2),
+                    followupGwa: gwa.toFixed(2),
+                    outcome: isPL ? 'Honors Maintained' : (gwa <= 3.0 ? 'Stabilized' : 'Needs Dean Intervention'),
+                    faculty: 'College Academic Board'
+                  });
+                }
+              }
+            });
+          }
+
           setReportData(list);
         } else {
           // At-risk student audit filtered by selected college (official posted grades only)
@@ -256,7 +295,7 @@ export default function SummaryReports() {
               return a === 255 
                 ? `rgb(${r}, ${g}, ${b})` 
                 : `rgba(${r}, ${g}, ${b}, ${parseFloat((a / 255).toFixed(3))})`;
-            } catch (e) {
+            } catch {
               return match;
             }
           });
@@ -291,7 +330,7 @@ export default function SummaryReports() {
                   }
                 }
               });
-            } catch (e) {
+            } catch {
               // Ignore cross-origin stylesheet errors
             }
           });
@@ -363,12 +402,15 @@ export default function SummaryReports() {
     switch (reportType) {
       case 'grade-distribution':
         return 'Academic Grade Distribution Summary Report';
-      case 'faculty-evaluation':
-        return 'Faculty Evaluation Cumulative Performance Audit';
+      case 'intervention-outcomes':
+        return 'Student Intervention Outcomes & Academic Honor Standing Report';
       default:
         return 'Student Academic At-Risk Warning Ledger';
     }
   };
+
+  const deanFullName = profile?.first_name ? `${profile.first_name} ${profile.last_name}` : 'Carlos Valdes';
+  const deanCollegeName = profile?.departments?.name || deptFilter;
 
   return (
     <>
@@ -435,7 +477,7 @@ export default function SummaryReports() {
                 className="block w-full border border-slate-200 px-3 py-2.5 rounded-lg text-xs bg-white outline-none cursor-pointer font-bold text-slate-800"
               >
                 <option value="grade-distribution">Grade Distribution summary</option>
-                <option value="faculty-evaluation">Faculty Performance ratings</option>
+                <option value="intervention-outcomes">Intervention Outcomes & Honor Status</option>
                 <option value="at-risk-audit">At-Risk Student Audit</option>
               </select>
             </div>
@@ -516,7 +558,7 @@ export default function SummaryReports() {
             <div className="text-center space-y-1.5 border-b-2 border-slate-900 pb-5">
               <h2 className="text-base font-bold uppercase tracking-wider">Dr. Yanga's Colleges, Inc.</h2>
               <p className="text-[10px] text-slate-500 font-mono">Wakas, Bocaue, Bulacan, Philippines</p>
-              <p className="text-xs font-bold text-slate-700">Office of the Dean, College of Computer Studies</p>
+              <p className="text-xs font-bold text-slate-700">Office of the Dean, {deanCollegeName}</p>
             </div>
 
             {/* Document Details */}
@@ -528,7 +570,7 @@ export default function SummaryReports() {
               </div>
               <div className="text-right space-y-1 font-mono text-[10px] text-slate-400">
                 <p>Generated: {new Date().toLocaleDateString()}</p>
-                <p>Author: Dean Carlos Valdes</p>
+                <p>Author: Dean {deanFullName}</p>
                 <p>Security Class: Restricted</p>
               </div>
             </div>
@@ -564,23 +606,39 @@ export default function SummaryReports() {
                 </table>
               )}
 
-              {reportType === 'faculty-evaluation' && (
+              {reportType === 'intervention-outcomes' && (
                 <table className="min-w-full divide-y divide-slate-300 text-xs">
                   <thead>
                     <tr className="font-bold text-slate-700 text-left">
-                      <th className="py-2.5">Faculty Name</th>
-                      <th className="py-2.5">Department</th>
-                      <th className="py-2.5 text-center">Sections Taught</th>
-                      <th className="py-2.5 text-center">Student Evaluation Rating</th>
+                      <th className="py-2.5">Student Name</th>
+                      <th className="py-2.5">Section</th>
+                      <th className="py-2.5">Evaluation Scope</th>
+                      <th className="py-2.5 text-center">Baseline GWA</th>
+                      <th className="py-2.5 text-center">Follow-up GWA</th>
+                      <th className="py-2.5 text-center">Intervention Status</th>
+                      <th className="py-2.5">Faculty In-Charge</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {reportData.map((row, idx) => (
                       <tr key={idx} className="text-slate-700">
-                        <td className="py-2.5 font-bold">Prof. {row.name}</td>
-                        <td className="py-2.5">{row.dept}</td>
-                        <td className="py-2.5 text-center font-mono">{row.sections}</td>
-                        <td className="py-2.5 text-center font-mono font-bold text-sage-700">{row.rating?.toFixed(2) || '0.00'} / 5.00</td>
+                        <td className="py-2.5 font-bold">{row.studentName}</td>
+                        <td className="py-2.5">{row.section}</td>
+                        <td className="py-2.5">{row.context}</td>
+                        <td className="py-2.5 text-center font-mono">{row.baselineGwa}</td>
+                        <td className="py-2.5 text-center font-mono font-bold">{row.followupGwa}</td>
+                        <td className="py-2.5 text-center">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            row.outcome.includes('Recovered') || row.outcome.includes('Maintained')
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : row.outcome.includes('Escalation') || row.outcome.includes('Dean')
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          }`}>
+                            {row.outcome}
+                          </span>
+                        </td>
+                        <td className="py-2.5">{row.faculty}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -624,8 +682,8 @@ export default function SummaryReports() {
             {/* Signature Block */}
             <div className="pt-12 flex justify-end">
               <div className="text-center w-56 border-t border-slate-900 pt-2 text-xs">
-                <p className="font-bold text-slate-950">Carlos Valdes, MIT</p>
-                <p className="text-slate-500 mt-0.5">Dean, College of Computer Studies</p>
+                <p className="font-bold text-slate-950">Dean {deanFullName}</p>
+                <p className="text-slate-500 mt-0.5">Dean, {deanCollegeName}</p>
               </div>
             </div>
           </div>

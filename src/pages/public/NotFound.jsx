@@ -20,7 +20,7 @@ export default function NotFound() {
         <div className="inline-flex p-4 bg-sage-50 text-sage-600 rounded-2xl border border-sage-100">
           <HelpCircle className="h-10 w-10" />
         </div>
-        
+
         <div className="space-y-2">
           <h1 className="text-3xl font-bold font-display text-slate-900 tracking-tight">
             Page Not Found
@@ -38,7 +38,7 @@ export default function NotFound() {
           {profile?.role ? 'Return to Dashboard' : 'Back to Login'}
         </button>
       </div>
-      
+
       <div className="text-xs text-slate-400 mt-6">
         &copy; {new Date().getFullYear()} Dr. Yanga's Colleges, Inc. All rights reserved.
       </div>

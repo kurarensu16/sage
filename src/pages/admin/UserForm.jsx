@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronRight, Save, X, User } from 'lucide-react';
+import { ChevronRight, Save, User } from 'lucide-react';
 import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
 import { supabase } from '../../lib/supabase';
 import { logActivity, resolveActorName } from '../../lib/auditLog';

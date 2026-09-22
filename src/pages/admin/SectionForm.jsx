@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { ChevronRight, Save, Layers } from 'lucide-react';
@@ -154,7 +154,7 @@ export default function SectionForm() {
         setFormData(prev => ({ ...prev, programName: '' }));
       }
     }
-  }, [formData.departmentId, allPrograms]);
+  }, [formData.departmentId, formData.programName, allPrograms]);
 
   // Generate Section Name Preview reactively
   useEffect(() => {

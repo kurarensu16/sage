@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import StudentRow from '../../components/StudentRow';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus, X } from 'lucide-react';
+import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus, X, AlertTriangle, AlertCircle, Settings, Sliders } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
@@ -14,6 +14,8 @@ import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
 import { cn } from '../../lib/utils';
 import { TableSkeleton } from '../../components/common/Skeleton';
+import { getClassPriorityRoster } from '../../lib/classRoomService';
+import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
 
 export default function ScoreInput() {
   const navigate = useNavigate();
@@ -25,11 +27,13 @@ export default function ScoreInput() {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState('All');
+  const [sortMode, setSortMode] = useState('alphabetical'); // 'alphabetical' | 'risk_priority'
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lockedMilestones, setLockedMilestones] = useState([]);
   const [studentLocks, setStudentLocks] = useState({});
   const [savingDrafts, setSavingDrafts] = useState(false);
   const [classesList, setClassesList] = useState([]);
+  const [evaluatingStudent, setEvaluatingStudent] = useState(null);
 
   // Success and posting modals
   const [showPopup, setShowPopup] = useState(false);
@@ -223,7 +227,7 @@ export default function ScoreInput() {
           return a === 255 
             ? `rgb(${r}, ${g}, ${b})` 
             : `rgba(${r}, ${g}, ${b}, ${parseFloat((a / 255).toFixed(3))})`;
-        } catch (e) {
+        } catch (_e) {
           return match;
         }
       });
@@ -256,7 +260,7 @@ export default function ScoreInput() {
                 }
               }
             });
-          } catch (e) {
+          } catch (_e) {
             // Ignore cross-origin stylesheet errors
           }
         });
@@ -431,15 +435,33 @@ export default function ScoreInput() {
 
         if (studentErr) throw studentErr;
 
+        let priorityMap = {};
+        try {
+          const priorityList = await getClassPriorityRoster(classRecordId);
+          (priorityList || []).forEach(p => {
+            priorityMap[p.student_id] = p;
+          });
+        } catch (priErr) {
+          console.warn('Could not fetch priority roster for class:', priErr);
+        }
+
         const studentList = (enrolls || [])
           .map(e => e.users)
           .filter(Boolean)
-          .map((u, idx) => ({
-            id: u.user_id,
-            studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
-            name: `${u.last_name}, ${u.first_name}`,
-            email: u.email
-          }));
+          .map((u, idx) => {
+            const pInfo = priorityMap[u.user_id] || {};
+            return {
+              id: u.user_id,
+              studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
+              name: `${u.last_name}, ${u.first_name}`,
+              email: u.email,
+              risk_score: pInfo.risk_score || 0,
+              risk_level: pInfo.risk_level || 'low',
+              badge_color: pInfo.badge_color || 'emerald',
+              evaluation: pInfo.evaluation || null,
+              refer_to_dean: pInfo.evaluation?.refer_to_dean || false
+            };
+          });
         studentList.sort((a, b) => a.name.localeCompare(b.name));
         setStudents(studentList);
 
@@ -474,10 +496,6 @@ export default function ScoreInput() {
         }
         setMaxItems(newMax);
 
-        // Seed activities state from grade computations components if exists
-        const compList = cr.subjects?.grade_computations?.grade_computation_components || [];
-        const dynamicComps = compList.filter(c => c.is_multiple);
-        
         // Fetch dynamic custom activities from Supabase class_activities table
         try {
           const { data: dbActs } = await supabase
@@ -492,7 +510,7 @@ export default function ScoreInput() {
             if (termActs.length > 0) {
               loadedActivities[t] = termActs.map(a => ({
                 id: a.activity_id,
-                name: a.name,
+                name: a.name || a.title || '',
                 max: parseFloat(a.max_score) || 20,
                 description: a.description || ''
               }));
@@ -772,12 +790,17 @@ export default function ScoreInput() {
 
   const handleSaveConfig = async () => {
     const trimmedTitle = configTitle.trim();
+    const trimmedDesc = configDescription.trim();
     if (!trimmedTitle) {
-      alert('⚠️ Activity Title/Name is required.');
+      alert('Activity Title/Name is required.');
+      return;
+    }
+    if (!trimmedDesc) {
+      alert('Lesson Topic Scope / Description is mandatory for student AI diagnostics.');
       return;
     }
     if (configMaxScore <= 0) {
-      alert('⚠️ Maximum Score must be greater than 0.');
+      alert('Maximum Score must be greater than 0.');
       return;
     }
 
@@ -789,8 +812,9 @@ export default function ScoreInput() {
         class_record_id: classRecordId,
         term: configTerm,
         name: trimmedTitle,
+        title: trimmedTitle,
         max_score: configMaxScore,
-        description: configDescription.trim() || null
+        description: trimmedDesc
       };
 
       if (!isNew) {
@@ -867,12 +891,20 @@ export default function ScoreInput() {
 
   const handleAddActivitySubmit = async () => {
     const trimmedName = newActivityName.trim();
-    if (!trimmedName) return;
+    const trimmedDesc = newActivityDescription.trim();
+    if (!trimmedName) {
+      alert('Activity Title/Name is required.');
+      return;
+    }
+    if (!trimmedDesc) {
+      alert('Lesson Topic Scope / Description is mandatory for student AI diagnostics.');
+      return;
+    }
 
     const term = newActivityTerm;
     const list = activities[term] || [];
     if (list.length >= 6) {
-      alert('⚠️ Maximum of 6 formative assessments/activities is allowed per term.');
+      alert('Maximum of 6 formative assessments/activities is allowed per term.');
       return;
     }
 
@@ -883,7 +915,7 @@ export default function ScoreInput() {
     );
     
     if (isSingleColumnComponent) {
-      alert(`⚠️ "${trimmedName}" is configured as a single-column only component in the template. You cannot add multiple columns for this activity.`);
+      alert(`"${trimmedName}" is configured as a single-column only component in the template. You cannot add multiple columns for this activity.`);
       return;
     }
 
@@ -894,8 +926,9 @@ export default function ScoreInput() {
           class_record_id: classRecordId,
           term: term,
           name: trimmedName,
+          title: trimmedName,
           max_score: Number(newActivityMax) || 20,
-          description: newActivityDescription.trim() || null
+          description: trimmedDesc
         })
         .select()
         .single();
@@ -1269,6 +1302,16 @@ export default function ScoreInput() {
   const isSemiFinalLocked = isLocked;
   const isFinalLocked = isLocked;
 
+  const displayedStudents = [...students].sort((a, b) => {
+    if (sortMode === 'risk_priority') {
+      if ((b.risk_score || 0) !== (a.risk_score || 0)) {
+        return (b.risk_score || 0) - (a.risk_score || 0);
+      }
+      return a.name.localeCompare(b.name);
+    }
+    return a.name.localeCompare(b.name);
+  });
+
   return (
     <>
       {/* Header */}
@@ -1323,76 +1366,10 @@ export default function ScoreInput() {
           </span>
         </div>
 
-        {/* selectors bar */}
-        <div className="flex flex-col sm:flex-row flex-wrap sm:items-center gap-3 sm:gap-4 p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 bg-white shadow-2xs">
-          
-          {/* Class Record Display */}
-          <div className="flex flex-col gap-1 flex-1 min-w-0">
-            <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
-            <div className="text-xs font-bold text-slate-800 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 truncate">
-              {subjectCode} - {sectionName} ({subjectName})
-            </div>
-          </div>
-
-          <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
-
-          {/* View Mode Selector */}
-          <div className="flex flex-col gap-1 min-w-[180px]">
-            <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">View Period</label>
-            <div className="relative">
-              <select
-                value={viewMode}
-                onChange={(e) => setViewMode(e.target.value)}
-                className="appearance-none w-full bg-white border border-slate-200 hover:border-sage-300 px-3 py-2 pr-8 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer text-slate-700 shadow-2xs"
-              >
-                <option value="All">All Terms (Side-by-Side)</option>
-                {periodsList.includes('Prelim') && <option value="Prelim">Preliminary Grade (Only)</option>}
-                {periodsList.includes('Midterm') && <option value="Midterm">Midterm Grade (Only)</option>}
-                {periodsList.includes('Semi-Final') && <option value="Semi-Final">Semi-Final Grade (Only)</option>}
-                {periodsList.includes('Final') && <option value="Final">Final Grade (Only)</option>}
-                <option value="MidtermBatch">Midterm Evaluation (Prelim & Midterm)</option>
-                <option value="FinalBatch">Final Evaluation (Semis & Finals)</option>
-                <option value="Summary">Semestral Grade Summary</option>
-              </select>
-              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-            </div>
-          </div>
-
-          <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
-
-          {/* Add Activity Button */}
-          <div className="flex flex-col gap-1">
-            <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Grading Setup</label>
-            <button
-              onClick={() => setIsAddActivityModalOpen(true)}
-              className="px-3.5 py-2 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer whitespace-nowrap"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add Activity
-            </button>
-          </div>
-
-          <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
-
-          {/* Stats Overview */}
-          <div className="flex items-center gap-4 sm:gap-6 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
-            <div>
-              <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</p>
-              <p className="text-xs font-mono font-bold text-slate-800 mt-0.5">{students.length} Students</p>
-            </div>
-            <div>
-              <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Spreadsheet Mode</p>
-              <p className="text-xs font-mono font-bold text-emerald-700 mt-0.5 truncate max-w-[140px]">
-                {viewMode === 'All' ? 'All 4 Terms' : `${viewMode} View`}
-              </p>
-            </div>
-          </div>
-
-        </div>
-
         {/* Data Table Card */}
         {isFullScreen && <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsFullScreen(false)} />}
         <div className={isFullScreen ? "fixed inset-4 z-50 rounded-xl border border-slate-200 shadow-2xl bg-white overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200" : "rounded-xl border border-slate-200 shadow-sm bg-white overflow-hidden flex flex-col w-full max-w-full"}>
-            {/* Fullscreen header bar */}
+            {/* Header bar */}
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/80">
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="h-4 w-4 text-sage-600" />
@@ -1410,6 +1387,105 @@ export default function ScoreInput() {
               >
                 {isFullScreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
               </button>
+            </div>
+
+            {/* Selectors Bar Section (Embedded directly inside the spreadsheet card) */}
+            <div className="flex flex-col sm:flex-row flex-wrap sm:items-center gap-3 sm:gap-4 p-3.5 sm:p-4 border-b border-slate-200/90 bg-white shadow-2xs">
+              {/* Class Record Display */}
+              <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
+                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
+                <div className="text-xs font-bold text-slate-800 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 truncate">
+                  {subjectCode} - {sectionName} ({subjectName})
+                </div>
+              </div>
+
+              <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
+
+              {/* View Mode Selector */}
+              <div className="flex flex-col gap-1 min-w-[180px]">
+                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">View Period</label>
+                <div className="relative">
+                  <select
+                    value={viewMode}
+                    onChange={(e) => setViewMode(e.target.value)}
+                    className="appearance-none w-full bg-white border border-slate-200 hover:border-sage-300 px-3 py-2 pr-8 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all cursor-pointer text-slate-700 shadow-2xs"
+                  >
+                    <option value="All">All Terms (Side-by-Side)</option>
+                    {periodsList.includes('Prelim') && <option value="Prelim">Preliminary Grade (Only)</option>}
+                    {periodsList.includes('Midterm') && <option value="Midterm">Midterm Grade (Only)</option>}
+                    {periodsList.includes('Semi-Final') && <option value="Semi-Final">Semi-Final Grade (Only)</option>}
+                    {periodsList.includes('Final') && <option value="Final">Final Grade (Only)</option>}
+                    <option value="MidtermBatch">Midterm Evaluation (Prelim & Midterm)</option>
+                    <option value="FinalBatch">Final Evaluation (Semis & Finals)</option>
+                    <option value="Summary">Semestral Grade Summary</option>
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                </div>
+              </div>
+
+              <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
+
+              {/* Roster Ordering Toggle */}
+              <div className="flex flex-col gap-1 min-w-[210px]">
+                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Roster Ordering</label>
+                <div className="flex items-center p-0.5 bg-slate-100 rounded-xl border border-slate-200 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSortMode('alphabetical')}
+                    className={cn(
+                      "flex-1 px-2.5 py-1.5 font-semibold rounded-lg transition-all cursor-pointer text-center",
+                      sortMode === 'alphabetical'
+                        ? "bg-white text-slate-900 shadow-2xs"
+                        : "text-slate-500 hover:text-slate-800"
+                    )}
+                  >
+                    A–Z Standard
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSortMode('risk_priority')}
+                    className={cn(
+                      "flex-1 px-2.5 py-1.5 font-semibold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1",
+                      sortMode === 'risk_priority'
+                        ? "bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs"
+                        : "text-slate-500 hover:text-rose-600"
+                    )}
+                    title="Pin students flagged with academic risk / FDA proximity to the top"
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <span>Risk Priority</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
+
+              {/* Add Activity Button */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Grading Setup</label>
+                <button
+                  onClick={() => setIsAddActivityModalOpen(true)}
+                  className="px-3.5 py-2 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer whitespace-nowrap"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add Activity
+                </button>
+              </div>
+
+              <div className="w-px h-10 bg-slate-200 hidden md:block"></div>
+
+              {/* Stats Overview */}
+              <div className="flex items-center gap-4 sm:gap-6 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                <div>
+                  <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</p>
+                  <p className="text-xs font-mono font-bold text-slate-800 mt-0.5">{students.length} Students</p>
+                </div>
+                <div>
+                  <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Spreadsheet Mode</p>
+                  <p className="text-xs font-mono font-bold text-emerald-700 mt-0.5 truncate max-w-[140px]">
+                    {viewMode === 'All' ? 'All 4 Terms' : `${viewMode} View`}
+                  </p>
+                </div>
+              </div>
             </div>
             <div className={isFullScreen ? "table-container overflow-auto flex-1" : "table-container overflow-x-auto"}>
                 <table className={`w-full min-w-max text-left border-collapse ${isFullScreen ? 'fullscreen-table' : ''}`}>
@@ -1481,7 +1557,7 @@ export default function ScoreInput() {
                                     >
                                       <div className="flex flex-col items-center justify-center gap-0.5">
                                         <span>{index + 1}</span>
-                                        {!isConfigured && <span className="text-[7px] text-slate-400">⚙️</span>}
+                                        {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
                                         {isConfigured && <span className="text-[7px] text-sky-750 font-sans block max-w-[40px] truncate" title={act.name}>{act.name}</span>}
                                       </div>
                                     </th>
@@ -1514,7 +1590,7 @@ export default function ScoreInput() {
                                     >
                                       <div className="flex flex-col items-center justify-center gap-0.5">
                                         <span>{index + 1}</span>
-                                        {!isConfigured && <span className="text-[7px] text-slate-400">⚙️</span>}
+                                        {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
                                         {isConfigured && <span className="text-[7px] text-indigo-755 font-sans block max-w-[40px] truncate" title={act.name}>{act.name}</span>}
                                       </div>
                                     </th>
@@ -1547,7 +1623,7 @@ export default function ScoreInput() {
                                     >
                                       <div className="flex flex-col items-center justify-center gap-0.5">
                                         <span>{index + 1}</span>
-                                        {!isConfigured && <span className="text-[7px] text-slate-400">⚙️</span>}
+                                        {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
                                         {isConfigured && <span className="text-[7px] text-amber-755 font-sans block max-w-[40px] truncate" title={act.name}>{act.name}</span>}
                                       </div>
                                     </th>
@@ -1580,7 +1656,7 @@ export default function ScoreInput() {
                                     >
                                       <div className="flex flex-col items-center justify-center gap-0.5">
                                         <span>{index + 1}</span>
-                                        {!isConfigured && <span className="text-[7px] text-slate-400">⚙️</span>}
+                                        {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
                                         {isConfigured && <span className="text-[7px] text-orange-755 font-sans block max-w-[40px] truncate" title={act.name}>{act.name}</span>}
                                       </div>
                                     </th>
@@ -1602,8 +1678,9 @@ export default function ScoreInput() {
                           <td className="px-2 py-3 border-r border-slate-200 bg-slate-50 sticky left-0 z-10 w-10"></td>
                           <td className="px-2 py-3 border-r border-slate-200 bg-slate-50 sticky left-[40px] z-10 w-24"></td>
                           <td className="px-4 py-3 text-left font-bold text-slate-800 sticky left-[136px] bg-slate-50 border-r border-slate-200 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] w-60">
-                            <div className="flex items-center gap-1 text-sage-800 font-bold uppercase tracking-wider text-[10px]">
-                              📐 Max Column Items
+                            <div className="flex items-center gap-1.5 text-sage-800 font-bold uppercase tracking-wider text-[10px]">
+                              <Sliders className="w-3 h-3 text-sage-600" />
+                              <span>Max Column Items</span>
                             </div>
                           </td>
                           {/* Prelim Period */}
@@ -1789,7 +1866,7 @@ export default function ScoreInput() {
                           )}
                         </tr>
 
-                        {students.map((student, idx) => (
+                        {displayedStudents.map((student, idx) => (
                           <StudentRow 
                             key={student.id} 
                             student={student} 
@@ -1807,6 +1884,7 @@ export default function ScoreInput() {
                             lockedMilestones={lockedMilestones}
                             studentLocked={studentLocks[student.id]}
                             periodsList={periodsList}
+                            onSelectRiskStudent={(st) => setEvaluatingStudent(st)}
                           />
                         ))}
                     </tbody>
@@ -1929,7 +2007,9 @@ export default function ScoreInput() {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Activity Title / Name</label>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                  Activity Title / Name <span className="text-rose-500">*</span>
+                </label>
                 <input
                   type="text"
                   required
@@ -1941,18 +2021,24 @@ export default function ScoreInput() {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Description (Optional)</label>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between">
+                  <span>Lesson Topic Scope / Description <span className="text-rose-500">*</span></span>
+                  <span className="text-[11px] font-normal text-slate-500 lowercase">(Required for AI Advisor)</span>
+                </label>
                 <textarea
+                  required
                   value={configDescription}
                   onChange={(e) => setConfigDescription(e.target.value)}
-                  placeholder="Provide details about the coverage, instructions, or rubric of this activity..."
+                  placeholder="e.g. Chapter 3: Linked Lists & Pointer Manipulation Concepts..."
                   rows={3}
                   className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all resize-none font-sans"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Maximum Points / Score</label>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                  Maximum Points / Score <span className="text-rose-500">*</span>
+                </label>
                 <input
                   type="number"
                   min="1"
@@ -1976,10 +2062,11 @@ export default function ScoreInput() {
               <button 
                 type="button"
                 onClick={handleSaveConfig}
-                disabled={savingConfig}
-                className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-sage-400 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm flex items-center gap-1 cursor-pointer"
+                disabled={savingConfig || !configTitle.trim() || !configDescription.trim()}
+                className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
               >
-                {savingConfig ? 'Saving...' : '🔒 Save & Unlock'}
+                <Lock className="h-3.5 w-3.5" />
+                <span>{savingConfig ? 'Saving...' : 'Save & Unlock'}</span>
               </button>
             </div>
           </div>
@@ -2031,7 +2118,9 @@ export default function ScoreInput() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Activity Title / Name</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                    Activity Title / Name <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="text"
                     disabled={isTermFull}
@@ -2043,19 +2132,25 @@ export default function ScoreInput() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Description (Optional)</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between">
+                    <span>Lesson Topic Scope / Description <span className="text-rose-500">*</span></span>
+                    <span className="text-[11px] font-normal text-slate-500 lowercase">(Required for AI Advisor)</span>
+                  </label>
                   <textarea
                     disabled={isTermFull}
+                    required
                     value={newActivityDescription}
                     onChange={(e) => setNewActivityDescription(e.target.value)}
-                    placeholder="Provide details about the coverage, instructions, or rubric of this activity..."
+                    placeholder="e.g. Chapter 3: Linked Lists & Pointer Manipulation Concepts..."
                     rows={2}
                     className="block w-full px-3.5 py-2.5 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all resize-none font-sans disabled:bg-slate-50 disabled:text-slate-450 shadow-2xs"
                   />
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Maximum Points / Score</label>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                    Maximum Points / Score <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="number"
                     min="1"
@@ -2078,9 +2173,9 @@ export default function ScoreInput() {
                 </button>
                 <button 
                   type="button"
-                  disabled={isTermFull}
+                  disabled={isTermFull || !newActivityName.trim() || !newActivityDescription.trim()}
                   onClick={handleAddActivitySubmit}
-                  className="px-5 py-2.5 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:text-slate-450 text-white rounded-xl text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
+                  className="px-5 py-2.5 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
                 >
                   Add Column
                 </button>
@@ -2110,7 +2205,10 @@ export default function ScoreInput() {
             
             <div className="p-4 sm:p-6 space-y-4">
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-xs text-amber-800 leading-relaxed space-y-2">
-                <p><strong>⚠️ Action is irreversible:</strong> Finalizing and posting will lock this class record across all periods (Prelim, Midterm, Semi-Final, and Final).</p>
+                <p className="flex items-start gap-1.5">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                  <span><strong>Action is irreversible:</strong> Finalizing and posting will lock this class record across all periods (Prelim, Midterm, Semi-Final, and Final).</span>
+                </p>
                 <p>The grades will be officially posted to the Dean's Office and released to students. Any subsequent adjustments will require formal Dean override approval.</p>
               </div>
             </div>
@@ -2156,6 +2254,28 @@ export default function ScoreInput() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* HITL Student Risk Evaluation Modal */}
+      {evaluatingStudent && (
+        <StudentRiskEvaluationModal
+          isOpen={Boolean(evaluatingStudent)}
+          onClose={() => setEvaluatingStudent(null)}
+          student={evaluatingStudent}
+          classRecordId={classRecordId}
+          currentTerm={viewMode !== 'All' && viewMode !== 'Summary' && periodsList.includes(viewMode) ? viewMode : 'Midterm'}
+          subjectCode={classInfo?.subjects?.code}
+          subjectName={classInfo?.subjects?.name}
+          onSaveSuccess={(saved) => {
+            setStudents(prev => prev.map(s => s.id === evaluatingStudent.id ? { 
+              ...s, 
+              evaluation: saved, 
+              risk_score: saved.risk_score !== undefined ? saved.risk_score : s.risk_score, 
+              risk_level: saved.risk_level || s.risk_level,
+              refer_to_dean: saved.refer_to_dean !== undefined ? saved.refer_to_dean : s.refer_to_dean
+            } : s));
+          }}
+        />
       )}
     </>
   );

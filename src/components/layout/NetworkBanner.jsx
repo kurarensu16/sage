@@ -10,7 +10,7 @@ export const NetworkBanner = () => {
   return (
     <div className="bg-amber-600 text-white px-4 py-2 text-xs sm:text-sm font-medium flex items-center justify-center gap-2 sticky top-0 z-50 shadow-md animate-in slide-in-from-top duration-200">
       <WifiOff className="w-4 h-4 shrink-0 animate-pulse" />
-      <span>No Internet Connection. SAGE requires active network connectivity to sync grades and academic records.</span>
+      <span>No Internet Connection. ASPIRE requires active network connectivity to sync academic records and interventions.</span>
     </div>
   );
 };
