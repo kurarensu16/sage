@@ -449,23 +449,28 @@ export default function ScoreInput() {
           console.warn('Could not fetch priority roster for class:', priErr);
         }
 
-        const studentList = (enrolls || [])
-          .map(e => e.users)
-          .filter(Boolean)
-          .map((u, idx) => {
-            const pInfo = priorityMap[u.user_id] || {};
-            return {
-              id: u.user_id,
-              studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
-              name: `${u.last_name}, ${u.first_name}`,
-              email: u.email,
-              risk_score: pInfo.risk_score || 0,
-              risk_level: pInfo.risk_level || 'low',
-              badge_color: pInfo.badge_color || 'emerald',
-              evaluation: pInfo.evaluation || null,
-              refer_to_dean: pInfo.evaluation?.refer_to_dean || false
-            };
-          });
+        // Deduplicate enrolled users by user_id
+        const uniqueUsersMap = new Map();
+        (enrolls || []).forEach(e => {
+          if (e.users && e.users.user_id && !uniqueUsersMap.has(e.users.user_id)) {
+            uniqueUsersMap.set(e.users.user_id, e.users);
+          }
+        });
+
+        const studentList = Array.from(uniqueUsersMap.values()).map((u, idx) => {
+          const pInfo = priorityMap[u.user_id] || {};
+          return {
+            id: u.user_id,
+            studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
+            name: `${u.last_name}, ${u.first_name}`,
+            email: u.email,
+            risk_score: pInfo.risk_score || 0,
+            risk_level: pInfo.risk_level || 'low',
+            badge_color: pInfo.badge_color || 'emerald',
+            evaluation: pInfo.evaluation || null,
+            refer_to_dean: pInfo.evaluation?.refer_to_dean || false
+          };
+        });
         studentList.sort((a, b) => a.name.localeCompare(b.name));
         setStudents(studentList);
 
@@ -1158,8 +1163,8 @@ export default function ScoreInput() {
           remarks_set_at: new Date().toISOString(),
           posted_by: user.id,
           posted_at: new Date().toISOString(),
-          is_locked: true,
-          locked_milestones: ['Semestral Grade']
+          is_locked: false,
+          locked_milestones: []
         };
 
         const existingId = existingMap[stud.id];
@@ -1234,63 +1239,61 @@ export default function ScoreInput() {
     return (
       <>
         <PageHeader title="Log Class Scores" breadcrumb="Faculty Portal" />
-        <div className="p-8 overflow-y-auto flex-1 space-y-6">
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-900 font-display">Select a Class to Input Scores</h2>
-              <p className="text-sm text-slate-500 mt-1">Please select one of your active classes to load its grading spreadsheet.</p>
-            </div>
+        <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 text-left">
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-6 shadow-2xs space-y-1">
+            <h2 className="text-base sm:text-lg font-bold text-slate-900 font-display">Select a Class to Input Scores</h2>
+            <p className="text-xs sm:text-sm text-slate-500">Please select one of your active classes to load its grading spreadsheet.</p>
+          </div>
 
-            {classesList.length === 0 ? (
-              <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-                <FileSpreadsheet className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                <h3 className="text-base font-bold text-slate-900">No Active Class Records Found</h3>
-                <p className="text-sm text-slate-500 mt-2">
-                  You do not have any active class records. Please create or configure class records first.
-                </p>
-                <button
-                  onClick={() => navigate('/faculty/classrecordslist')}
-                  className="mt-4 px-4 py-2 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm cursor-pointer"
+          {classesList.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200/90 p-8 sm:p-12 text-center shadow-2xs max-w-xl mx-auto">
+              <FileSpreadsheet className="h-10 w-10 text-slate-400 mx-auto mb-3" />
+              <h3 className="text-base font-bold text-slate-900 font-display">No Active Class Records Found</h3>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                You do not have any active class records assigned for this term. Please create or configure class records first.
+              </p>
+              <button
+                onClick={() => navigate('/faculty/classrecordslist')}
+                className="mt-4 px-4 py-2 text-xs sm:text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all shadow-xs cursor-pointer"
+              >
+                Go to Class Records
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {classesList.map(cls => (
+                <div
+                  key={cls.class_record_id}
+                  onClick={() => navigate(`/faculty/scoreinput?id=${cls.class_record_id}`)}
+                  className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs hover:border-sage-400 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between overflow-hidden text-left group"
                 >
-                  Go to Class Records
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {classesList.map(cls => (
-                  <div
-                    key={cls.class_record_id}
-                    onClick={() => navigate(`/faculty/scoreinput?id=${cls.class_record_id}`)}
-                    className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:border-sage-500 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
-                  >
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                          {cls.school_year} · Sem {cls.semester}
-                        </span>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-50 border border-slate-100 text-slate-600">
-                          {cls.sections?.name}
-                        </span>
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-extrabold text-slate-950 font-display group-hover:text-sage-700 transition-colors">
-                          {cls.subjects?.code}
-                        </h3>
-                        <p className="text-xs text-slate-500 font-medium mt-0.5 line-clamp-1">
-                          {cls.subjects?.name}
-                        </p>
-                      </div>
+                  <div className="p-4 sm:p-5 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                        {cls.sections?.name || 'Section'}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+                        AY {cls.school_year} · {cls.semester} Sem
+                      </span>
                     </div>
-                    
-                    <div className="border-t border-slate-100 pt-3 mt-4 flex items-center justify-between text-xs font-semibold text-sage-700">
-                      <span>Open Spreadsheet</span>
-                      <ChevronRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
+                    <div>
+                      <h3 className="text-base font-bold font-display text-slate-900 group-hover:text-sage-700 transition-colors leading-tight">
+                        {cls.subjects?.code}
+                      </h3>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5 line-clamp-1">
+                        {cls.subjects?.name}
+                      </p>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  
+                  <div className="px-4 sm:px-5 py-3 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-sage-600 group-hover:text-sage-700 transition-colors">
+                    <span>Open Spreadsheet</span>
+                    <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform text-sage-600" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </>
     );
@@ -1300,21 +1303,19 @@ export default function ScoreInput() {
     return (
       <>
         <PageHeader title="Log Class Scores" breadcrumb="Faculty Portal" />
-        <div className="p-8 overflow-y-auto flex-1 space-y-6">
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-sm">
-              <FileSpreadsheet className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-              <h3 className="text-base font-bold text-slate-900">Class Record Not Found</h3>
-              <p className="text-sm text-slate-500 mt-2">
-                The requested class record could not be found or you do not have permission to view it.
-              </p>
-              <button
-                onClick={() => navigate('/faculty/scoreinput')}
-                className="mt-4 px-4 py-2 text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm cursor-pointer"
-              >
-                Select Another Class
-              </button>
-            </div>
+        <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 text-left">
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-8 sm:p-12 text-center shadow-2xs max-w-xl mx-auto">
+            <FileSpreadsheet className="h-10 w-10 text-slate-400 mx-auto mb-3" />
+            <h3 className="text-base font-bold text-slate-900 font-display">Class Record Not Found</h3>
+            <p className="text-xs sm:text-sm text-slate-500 mt-1">
+              The requested class record could not be found or you do not have permission to view it.
+            </p>
+            <button
+              onClick={() => navigate('/faculty/scoreinput')}
+              className="mt-4 px-4 py-2 text-xs sm:text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all shadow-xs cursor-pointer"
+            >
+              Select Another Class
+            </button>
           </div>
         </div>
       </>

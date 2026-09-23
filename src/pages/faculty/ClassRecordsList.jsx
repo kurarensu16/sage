@@ -17,7 +17,8 @@ import {
   TrendingUp,
   Plus,
   PlusCircle,
-  CheckCircle2
+  CheckCircle2,
+  MoreVertical
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -51,6 +52,19 @@ export default function ClassRecordsList() {
 
   // HITL Risk Evaluation Modal State
   const [evaluatingStudent, setEvaluatingStudent] = useState(null);
+
+  // Card Quick Menu Dropdown State
+  const [activeMenuId, setActiveMenuId] = useState(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (!e.target.closest('.card-quick-menu-container')) {
+        setActiveMenuId(null);
+      }
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => document.removeEventListener('click', handleOutsideClick);
+  }, []);
 
   useEffect(() => {
     if (location.search.includes('action=create')) {
@@ -99,16 +113,65 @@ export default function ClassRecordsList() {
         .select('class_record_id, grade_period, is_locked')
         .in('class_record_id', classIds);
 
+      // Auto-sync regular block section students into enrollments for active classes
+      const sectionIds = Array.from(new Set(classesData.map(c => c.section_id).filter(Boolean)));
+      if (sectionIds.length > 0) {
+        try {
+          const { data: sectionStudents } = await supabase
+            .from('users')
+            .select('user_id, section_id')
+            .eq('role', 'student')
+            .in('section_id', sectionIds);
+
+          if (sectionStudents && sectionStudents.length > 0) {
+            const { data: existingEnrolls } = await supabase
+              .from('enrollments')
+              .select('student_id, subject_id')
+              .in('section_id', sectionIds);
+
+            const existingSet = new Set((existingEnrolls || []).map(e => `${e.student_id}|${e.subject_id}`));
+
+            const autoEnrollments = [];
+            classesData.forEach(cls => {
+              const stds = sectionStudents.filter(s => s.section_id === cls.section_id);
+              stds.forEach(s => {
+                if (!existingSet.has(`${s.user_id}|${cls.subject_id}`)) {
+                  autoEnrollments.push({
+                    student_id: s.user_id,
+                    subject_id: cls.subject_id,
+                    section_id: cls.section_id,
+                    status: 'active'
+                  });
+                }
+              });
+            });
+
+            if (autoEnrollments.length > 0) {
+              await supabase
+                .from('enrollments')
+                .insert(autoEnrollments);
+            }
+          }
+        } catch (syncErr) {
+          console.warn('Auto-sync section students notice:', syncErr);
+        }
+      }
+
       // Fetch active enrollments count
       const { data: enrollments } = await supabase
         .from('enrollments')
-        .select('section_id, subject_id')
+        .select('student_id, section_id, subject_id')
         .in('section_id', classesData.map(c => c.section_id));
 
       const enrolledCountsMap = {};
+      const uniqueEnrollmentKeys = new Set();
       (enrollments || []).forEach(e => {
-        const key = `${e.section_id}|${e.subject_id}`;
-        enrolledCountsMap[key] = (enrolledCountsMap[key] || 0) + 1;
+        const uniqueStudentKey = `${e.student_id}|${e.section_id}|${e.subject_id}`;
+        if (!uniqueEnrollmentKeys.has(uniqueStudentKey)) {
+          uniqueEnrollmentKeys.add(uniqueStudentKey);
+          const classKey = `${e.section_id}|${e.subject_id}`;
+          enrolledCountsMap[classKey] = (enrolledCountsMap[classKey] || 0) + 1;
+        }
       });
 
       // Load join codes
@@ -131,10 +194,10 @@ export default function ClassRecordsList() {
       // Map classes
       const mappedClasses = classesData.map((cls) => {
         const matchingCols = (gradingCols || []).filter(col => col.class_record_id === cls.class_record_id);
-        const matchingPosted = (postedGrades || []).filter(g => g.class_record_id === cls.class_record_id && g.is_locked);
+        const matchingPosted = (postedGrades || []).filter(g => g.class_record_id === cls.class_record_id);
         const hasSetup = matchingCols.length > 0;
         
-        let statusLabel = 'Pending Setup';
+        let statusLabel = 'Active';
         let gradingPeriod = 'Prelim';
 
         if (hasSetup) {
@@ -305,21 +368,16 @@ export default function ClassRecordsList() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filteredClasses.map((cls) => (
-              <div key={cls.id} className="bg-white rounded-lg border border-slate-200 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between overflow-hidden text-left">
+              <div key={cls.id} className="bg-white rounded-lg border border-slate-200 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between overflow-visible text-left relative">
                 
                 {/* Card Header */}
                 <div className="p-4 border-b border-slate-100 space-y-2.5">
-                  <div className="flex justify-between items-start gap-2">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
-                      {cls.section}
-                    </span>
-
+                  <div className="flex justify-between items-center gap-2">
                     <div className="flex items-center gap-1.5">
-                      {cls.status === 'Pending Setup' && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                          {cls.status}
-                        </span>
-                      )}
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                        {cls.section}
+                      </span>
+
                       {cls.status === 'Ongoing' && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                           {cls.gradingPeriod} Ongoing
@@ -329,6 +387,64 @@ export default function ClassRecordsList() {
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           {cls.gradingPeriod} Posted
                         </span>
+                      )}
+                    </div>
+
+                    {/* Three Dots Quick Actions Menu */}
+                    <div className="relative card-quick-menu-container">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveMenuId(activeMenuId === cls.id ? null : cls.id);
+                        }}
+                        className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                        title="Quick Actions Menu"
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+
+                      {activeMenuId === cls.id && (
+                        <div className="absolute right-0 mt-1 w-56 bg-white rounded-lg shadow-xl border border-slate-200 py-1.5 z-40 text-xs text-slate-700">
+                          <button
+                            onClick={() => {
+                              setActiveMenuId(null);
+                              handleOpenRiskReview(cls);
+                            }}
+                            className="w-full text-left px-3.5 py-2 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2.5 transition-colors font-semibold cursor-pointer"
+                          >
+                            <Target className="h-4 w-4 text-rose-600 shrink-0" />
+                            <span>Student Priority List &amp; Advising</span>
+                          </button>
+
+                          <Link
+                            to={`/faculty/gradecomputationpreview?id=${cls.id}`}
+                            onClick={() => setActiveMenuId(null)}
+                            className="w-full text-left px-3.5 py-2 hover:bg-sage-50 hover:text-sage-700 flex items-center gap-2.5 transition-colors"
+                          >
+                            <FileText className="h-4 w-4 text-sage-600 shrink-0" />
+                            <span>Preview &amp; Post Grades</span>
+                          </Link>
+
+                          <Link
+                            to={`/faculty/classattendance?classId=${cls.id}`}
+                            onClick={() => setActiveMenuId(null)}
+                            className="w-full text-left px-3.5 py-2 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors"
+                          >
+                            <Calendar className="h-4 w-4 text-slate-500 shrink-0" />
+                            <span>Attendance Monitoring</span>
+                          </Link>
+
+                          <div className="border-t border-slate-100 my-1"></div>
+
+                          <Link
+                            to={`/faculty/gradecomponentssetup?id=${cls.id}`}
+                            onClick={() => setActiveMenuId(null)}
+                            className="w-full text-left px-3.5 py-2 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors text-slate-600"
+                          >
+                            <Settings className="h-4 w-4 text-slate-400 shrink-0" />
+                            <span>View Grade Weights</span>
+                          </Link>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -378,49 +494,14 @@ export default function ClassRecordsList() {
                   </div>
                 </div>
                 
-                {/* Card Actions (Footer) */}
-                <div className="p-3 bg-slate-50 border-t border-slate-100 flex flex-col gap-2">
-                  
-                  {/* Primary ASPIRE Action: Student Priority List & Risk Advising */}
-                  <button
-                    onClick={() => handleOpenRiskReview(cls)}
-                    className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-md shadow-xs transition-all cursor-pointer"
+                {/* Card Actions (Footer) - Streamlined Single Primary Action */}
+                <div className="p-3 bg-slate-50 border-t border-slate-100">
+                  <Link 
+                    to={`/faculty/scoreinput?id=${cls.id}`} 
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold bg-sage-600 hover:bg-sage-700 text-white rounded-md transition-all shadow-xs"
                   >
-                    <Target className="w-3.5 h-3.5 text-rose-600" />
-                    <span>Student Priority List &amp; Advising</span>
-                  </button>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    {cls.status === 'Pending Setup' ? (
-                      <Link 
-                        to={`/faculty/gradecomponentssetup?id=${cls.id}`} 
-                        className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-md transition-all shadow-xs"
-                      >
-                        <Settings className="h-3.5 w-3.5" /> Setup Grade Weights
-                      </Link>
-                    ) : (
-                      <>
-                        <Link 
-                          to={`/faculty/scoreinput?id=${cls.id}`} 
-                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-md transition-all shadow-xs"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" /> Input Scores
-                        </Link>
-                        <Link
-                          to={`/faculty/gradecomputationpreview?id=${cls.id}`}
-                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-sage-200 bg-sage-50 hover:bg-sage-100 text-sage-700 rounded-md transition-all shadow-xs"
-                        >
-                          <FileText className="h-3.5 w-3.5" /> Preview Grades
-                        </Link>
-                        <Link 
-                          to={`/faculty/classattendance?classId=${cls.id}`} 
-                          className="col-span-2 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-md transition-all shadow-xs"
-                        >
-                          <Calendar className="h-3.5 w-3.5 text-slate-500" /> Attendance
-                        </Link>
-                      </>
-                    )}
-                  </div>
+                    <Edit3 className="h-4 w-4" /> Input Scores
+                  </Link>
                 </div>
               </div>
             ))}

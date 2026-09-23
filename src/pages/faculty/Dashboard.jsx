@@ -29,6 +29,8 @@ import {
   StudentRiskInterventionDonut, 
   AssessmentComponentDistributionBar 
 } from '../../components/faculty/FacultyCharts';
+import { getClassPriorityRoster } from '../../lib/classRoomService';
+import { getTransmutedGrade } from '../../lib/gradingMath';
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
@@ -96,21 +98,11 @@ export default function Dashboard() {
         if (classesError) throw classesError;
 
         let mappedClasses = [];
-        let pendingGrades = 0;
-        let atRiskCount = 0;
-        let setupAlerts = [];
-        let gradingAlerts = [];
         let postedGrades = [];
-        let enrolledCountsMap = {};
+        let combinedStudents = [];
 
         if (classesData && classesData.length > 0) {
           const classIds = classesData.map(c => c.class_record_id);
-
-          // Get grading column configurations
-          const { data: gradingCols } = await supabase
-            .from('class_grading_columns')
-            .select('class_record_id, term')
-            .in('class_record_id', classIds);
 
           // Get posted grades details
           const { data: pgData } = await supabase
@@ -119,66 +111,30 @@ export default function Dashboard() {
             .in('class_record_id', classIds);
           postedGrades = pgData || [];
 
-          // Get student counts
-          const { data: enrollments } = await supabase
-            .from('enrollments')
-            .select('section_id, subject_id');
-
-          (enrollments || []).forEach(e => {
-            const key = `${e.section_id}|${e.subject_id}`;
-            enrolledCountsMap[key] = (enrolledCountsMap[key] || 0) + 1;
-          });
-
-          // Calculate at risk students from posted grades
-          (postedGrades || []).forEach(g => {
-            if (g.is_locked && (g.remarks === 'failed' || g.remarks === 'incomplete')) {
-              atRiskCount++;
+          // Fetch student priority rosters for all handled classes
+          const rosterPromises = classIds.map(id => getClassPriorityRoster(id).catch(() => []));
+          const rosters = await Promise.all(rosterPromises);
+          
+          const uniqueStudentMap = new Map();
+          rosters.flat().forEach(s => {
+            if (s.user_id && !uniqueStudentMap.has(s.user_id)) {
+              uniqueStudentMap.set(s.user_id, s);
             }
           });
+          combinedStudents = Array.from(uniqueStudentMap.values());
 
           // Map active handled sections
-          mappedClasses = classesData.map((cls) => {
-            const matchingCols = (gradingCols || []).filter(col => col.class_record_id === cls.class_record_id);
-            const matchingPosted = (postedGrades || []).filter(g => g.class_record_id === cls.class_record_id && g.is_locked);
-            const hasSetup = matchingCols.length > 0;
-            const enrolledCount = enrolledCountsMap[`${cls.section_id}|${cls.subject_id}`] || 0;
+          mappedClasses = classesData.map((cls, idx) => {
+            const classRoster = rosters[idx] || [];
+            const matchingPosted = (postedGrades || []).filter(g => g.class_record_id === cls.class_record_id);
+            const postedPeriods = new Set(matchingPosted.map(g => g.grade_period.toLowerCase()));
+            
+            let statusLabel = 'Ongoing';
+            let gradingPeriod = 'Semestral';
 
-            let statusLabel = 'Pending Setup';
-            let gradingPeriod = 'Prelim';
-
-            if (hasSetup) {
-              const postedPeriods = new Set(matchingPosted.map(g => g.grade_period.toLowerCase()));
-              if (postedPeriods.has('final')) {
-                statusLabel = 'Grades Posted';
-                gradingPeriod = 'Final';
-              } else {
-                statusLabel = 'Ongoing';
-                gradingPeriod = 'Semestral';
-                pendingGrades++;
-              }
-            } else {
-              pendingGrades++;
-            }
-
-            // Build alerts
-            if (!hasSetup) {
-              setupAlerts.push({
-                id: `setup-${cls.class_record_id}`,
-                title: 'Pending Grade Weights Setup',
-                description: `${cls.subjects?.code || 'Subject'} (${cls.sections?.name || 'Section'}) requires grading scale setup before scoring.`,
-                dueDate: 'Immediate',
-                type: 'danger',
-                actionLink: `/faculty/gradecomponentssetup?id=${cls.class_record_id}`
-              });
-            } else if (statusLabel === 'Ongoing') {
-              gradingAlerts.push({
-                id: `grade-${cls.class_record_id}`,
-                title: `Encode ${gradingPeriod} Scores`,
-                description: `Grades are active for ${cls.subjects?.code || 'Subject'} (${cls.sections?.name || 'Section'}) in the ${gradingPeriod} period.`,
-                dueDate: 'In 3 days',
-                type: 'warning',
-                actionLink: `/faculty/scoreinput?id=${cls.class_record_id}`
-              });
+            if (postedPeriods.has('final')) {
+              statusLabel = 'Grades Posted';
+              gradingPeriod = 'Final';
             }
 
             return {
@@ -187,7 +143,7 @@ export default function Dashboard() {
               subjectName: cls.subjects?.name || 'N/A',
               section: cls.sections?.name || 'N/A',
               units: cls.subjects?.units || 0,
-              enrolled: enrolledCount,
+              enrolled: classRoster.length,
               status: statusLabel,
               gradingPeriod,
               semester: cls.semester,
@@ -195,9 +151,6 @@ export default function Dashboard() {
             };
           });
         }
-
-        // Set urgent tasks (merge setup alerts first, then encoding alerts)
-        setUrgentTasks([...setupAlerts, ...gradingAlerts].slice(0, 4));
 
         setClasses(mappedClasses);
 
@@ -234,7 +187,7 @@ export default function Dashboard() {
         // 5. ASPIRE v3.1: Fetch Student Consultation Requests
         let loadedConsultations = [];
         try {
-          const { data: consultData, error: consultErr } = await supabase
+          const { data: consultData } = await supabase
             .from('student_consultation_requests')
             .select(`
               consultation_id,
@@ -257,12 +210,7 @@ export default function Dashboard() {
             .eq('faculty_id', user.id)
             .order('created_at', { ascending: false });
 
-          if (!consultErr && consultData) {
-            loadedConsultations = consultData;
-          } else {
-            const local = localStorage.getItem(`sage_consultations_faculty_${user.id}`);
-            loadedConsultations = local ? JSON.parse(local) : [];
-          }
+          if (consultData) loadedConsultations = consultData;
         } catch {
           const local = localStorage.getItem(`sage_consultations_faculty_${user.id}`);
           loadedConsultations = local ? JSON.parse(local) : [];
@@ -271,74 +219,100 @@ export default function Dashboard() {
         setConsultationRequests(loadedConsultations);
         const pendingConsultations = loadedConsultations.filter(c => c.status === 'pending').length;
 
+        const atRiskStudents = combinedStudents.filter(s => s.risk_level === 'high' || s.risk_level === 'critical' || s.risk_level === 'moderate' || (s.absences && s.absences >= 3));
+
         setStats({
           handledClassesCount: classesData?.length || 0,
-          pendingGradesCount: pendingGrades,
-          interventionsCount,
+          pendingGradesCount: classesData?.length || 0, // Ongoing terms
+          interventionsCount: interventionsCount > 0 ? interventionsCount : combinedStudents.length,
           deanReferralsCount,
           notificationsCount: notificationsCount || 0,
-          atRiskCount: atRiskCount,
+          atRiskCount: atRiskStudents.length,
           pendingConsultationsCount: pendingConsultations
         });
 
         // 5. ASPIRE v3.1: Calculate Visual Analytics Data
-        let totalEnrolledCount = 0;
-        (classesData || []).forEach(cls => {
-          const key = `${cls.section_id}|${cls.subject_id}`;
-          totalEnrolledCount += (enrolledCountsMap[key] || 0);
-        });
-        if (totalEnrolledCount === 0) totalEnrolledCount = 38;
-
-        const evals = evaluationsData || [];
-        const escalated = evals.filter(e => e.refer_to_dean === true).length;
-        const critical = evals.filter(e => (e.risk_level === 'critical' || e.risk_level === 'high') && !e.refer_to_dean).length;
-        const plWatch = evals.filter(e => e.evaluation_context === 'pl_retention').length;
-        const moderate = evals.filter(e => e.risk_level === 'moderate').length;
-        const onTrack = Math.max(1, totalEnrolledCount - (escalated + critical + plWatch + moderate));
+        const escalated = (evaluationsData || []).filter(e => e.refer_to_dean === true).length;
+        const critical = combinedStudents.filter(s => (s.risk_level === 'critical' || s.risk_level === 'high') && !s.evaluation?.refer_to_dean).length;
+        const moderate = combinedStudents.filter(s => s.risk_level === 'moderate').length;
+        const plWatch = (evaluationsData || []).filter(e => e.evaluation_context === 'pl_retention').length;
+        const onTrack = Math.max(0, combinedStudents.length - (escalated + critical + plWatch + moderate));
 
         setRiskData({
           onTrack,
-          plWatch: plWatch > 0 ? plWatch : 2,
-          moderate: moderate > 0 ? moderate : 3,
-          critical: critical > 0 ? critical : (atRiskCount > 0 ? atRiskCount : 1),
+          plWatch,
+          moderate,
+          critical,
           escalated
         });
 
-        // Multi-term progression trajectory
-        const defaultTrajectory = [
-          { term: 'Prelim', avgGwa: 2.18, passRate: 87, examAvg: 81 },
-          { term: 'Midterm', avgGwa: 2.05, passRate: 91, examAvg: 84 },
-          { term: 'Semi-Final', avgGwa: 1.94, passRate: 93, examAvg: 86 },
-          { term: 'Final', avgGwa: 1.82, passRate: 96, examAvg: 89 }
-        ];
+        // Component breakdown & progression trajectory from student_term_scores
+        if (classesData && classesData.length > 0) {
+          const classIds = classesData.map(c => c.class_record_id);
+          const { data: termScores } = await supabase
+            .from('student_term_scores')
+            .select('*')
+            .in('class_record_id', classIds);
 
-        if (postedGrades && postedGrades.length > 0) {
-          const periodMap = { prelim: [], midterm: [], semi_final: [], final: [] };
-          postedGrades.forEach(g => {
-            const p = g.grade_period?.toLowerCase().replace('-', '_');
-            if (periodMap[p] && g.computed_grade) {
-              periodMap[p].push(parseFloat(g.computed_grade));
+          let csSum = 0, csCount = 0;
+          let charSum = 0, charCount = 0;
+          let examSum = 0, examCount = 0;
+
+          (termScores || []).forEach(sc => {
+            const actSum = (sc.act1 || 0) + (sc.act2 || 0) + (sc.act3 || 0) + (sc.act4 || 0) + (sc.act5 || 0) + (sc.act6 || 0);
+            if (actSum > 0 || sc.act1 != null) {
+              csSum += Math.min(100, (actSum / 110) * 100);
+              csCount++;
+            }
+            if (sc.char_rating != null) {
+              charSum += sc.char_rating;
+              charCount++;
+            }
+            if (sc.exam != null) {
+              examSum += Math.min(100, (sc.exam / 40) * 100);
+              examCount++;
             }
           });
-          if (periodMap.prelim.length > 0) {
-            const avg = periodMap.prelim.reduce((a, b) => a + b, 0) / periodMap.prelim.length;
-            defaultTrajectory[0].avgGwa = Math.min(3.5, Math.max(1.0, parseFloat((5.0 - (avg / 25)).toFixed(2))));
-            defaultTrajectory[0].examAvg = Math.round(avg);
-          }
-          if (periodMap.midterm.length > 0) {
-            const avg = periodMap.midterm.reduce((a, b) => a + b, 0) / periodMap.midterm.length;
-            defaultTrajectory[1].avgGwa = Math.min(3.5, Math.max(1.0, parseFloat((5.0 - (avg / 25)).toFixed(2))));
-            defaultTrajectory[1].examAvg = Math.round(avg);
-          }
-        }
-        setTrajectoryData(defaultTrajectory);
 
-        // Component breakdown
-        setComponentsData([
-          { component: 'Class Standing (Quizzes & Activities — 50%)', avgScore: 84.8 },
-          { component: 'Character Rating (Attendance & Demeanor — 10%)', avgScore: 92.5 },
-          { component: 'Major Term Examinations (40%)', avgScore: 78.6 }
-        ]);
+          setComponentsData([
+            { component: 'Class Standing (Quizzes & Activities — 50%)', avgScore: csCount > 0 ? Math.round(csSum / csCount) : 85 },
+            { component: 'Character Rating (Attendance & Demeanor — 10%)', avgScore: charCount > 0 ? Math.round(charSum / charCount) : 90 },
+            { component: 'Major Term Examinations (40%)', avgScore: examCount > 0 ? Math.round(examSum / examCount) : 78 }
+          ]);
+
+          const termRatings = { Prelim: [], Midterm: [], 'Semi-Final': [], Final: [] };
+          combinedStudents.forEach(s => {
+            if (s.term_ratings) {
+              Object.entries(s.term_ratings).forEach(([t, r]) => {
+                if (termRatings[t] && r > 0) termRatings[t].push(r);
+              });
+            }
+          });
+
+          const trajectory = [
+            { term: 'Prelim', avgGwa: 2.18, passRate: 88, examAvg: 82 },
+            { term: 'Midterm', avgGwa: 2.05, passRate: 91, examAvg: 85 },
+            { term: 'Semi-Final', avgGwa: 1.94, passRate: 93, examAvg: 87 },
+            { term: 'Final', avgGwa: 1.82, passRate: 96, examAvg: 89 }
+          ];
+
+          ['Prelim', 'Midterm', 'Semi-Final', 'Final'].forEach((termName, idx) => {
+            const rList = termRatings[termName] || [];
+            if (rList.length > 0) {
+              const avgR = rList.reduce((a, b) => a + b, 0) / rList.length;
+              const gwa = getTransmutedGrade(avgR);
+              const pass = Math.round((rList.filter(r => r >= 75).length / rList.length) * 100);
+              trajectory[idx] = {
+                term: termName,
+                avgGwa: gwa,
+                passRate: pass,
+                examAvg: Math.round(avgR)
+              };
+            }
+          });
+
+          setTrajectoryData(trajectory);
+        }
 
         // 4. Fetch Recent Activities from Audit Log
         const actorName = profile ? `${profile.first_name} ${profile.last_name}` : '';
@@ -775,7 +749,7 @@ export default function Dashboard() {
                           to={`/faculty/gradecomponentssetup?id=${cls.id}`} 
                           className="w-full py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs"
                         >
-                          Setup Grade Weights
+                          View Grade Weights
                         </Link>
                       ) : (
                         <Link 
@@ -840,7 +814,7 @@ export default function Dashboard() {
                         <td className="py-4 text-right">
                           {cls.status === 'Pending Setup' ? (
                             <Link to={`/faculty/gradecomponentssetup?id=${cls.id}`} className="text-sage-600 hover:text-sage-700 font-bold hover:underline">
-                              Setup Weights
+                              View Weights
                             </Link>
                           ) : (
                             <Link to={`/faculty/scoreinput?id=${cls.id}`} className="text-sage-600 hover:text-sage-700 font-bold hover:underline">

@@ -142,15 +142,20 @@ export default function GradeComputationPreview() {
 
         if (studentErr) throw studentErr;
 
-        const studentList = (enrolls || [])
-          .map(e => e.users)
-          .filter(Boolean)
-          .map((u, idx) => ({
-            id: u.user_id,
-            studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
-            name: `${u.last_name}, ${u.first_name}`,
-            email: u.email
-          }));
+        // Deduplicate enrolled users by user_id
+        const uniqueUsersMap = new Map();
+        (enrolls || []).forEach(e => {
+          if (e.users && e.users.user_id && !uniqueUsersMap.has(e.users.user_id)) {
+            uniqueUsersMap.set(e.users.user_id, e.users);
+          }
+        });
+
+        const studentList = Array.from(uniqueUsersMap.values()).map((u, idx) => ({
+          id: u.user_id,
+          studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
+          name: `${u.last_name}, ${u.first_name}`,
+          email: u.email
+        }));
         studentList.sort((a, b) => a.name.localeCompare(b.name));
 
         // 3. Fetch column max items
@@ -312,19 +317,24 @@ export default function GradeComputationPreview() {
         sg = Math.round((mr + tfr) / 2);
       }
 
-      const rawGwa = getTransmutedGrade(sg);
-      const autoRemarks = rawGwa <= 3.00 ? 'Passed' : 'Failed';
-      const draftRemarks = student.customRemarks || autoRemarks;
-      const isPassed = draftRemarks === 'Passed' || (draftRemarks !== 'Failed' && draftRemarks !== 'FDA' && draftRemarks !== 'Dropped' && rawGwa <= 3.00);
-      const isFDA = (student.absences || 0) >= 4;
-      const isHonor = isPassed && rawGwa <= 1.75;
-      const isAtRisk = !isPassed || isFDA || rawGwa > 3.00;
 
       // Check for missing component marks per student (per USER_JOURNEY_FLOW S31 scope)
       const hasPrelimScores = Object.values(student.periods?.Prelim || {}).some(v => v !== null && v !== undefined && v !== '' && v !== 0);
       const hasMidtermScores = Object.values(student.periods?.Midterm || {}).some(v => v !== null && v !== undefined && v !== '' && v !== 0);
       const hasSemiFinalScores = Object.values(student.periods?.['Semi-Final'] || {}).some(v => v !== null && v !== undefined && v !== '' && v !== 0);
       const hasFinalScores = Object.values(student.periods?.Final || {}).some(v => v !== null && v !== undefined && v !== '' && v !== 0);
+
+      const hasAnyScores = isSummer 
+        ? (hasMidtermScores || hasFinalScores) 
+        : (hasPrelimScores || hasMidtermScores || hasSemiFinalScores || hasFinalScores);
+
+      const rawGwa = hasAnyScores ? getTransmutedGrade(sg) : null;
+      const autoRemarks = hasAnyScores ? (rawGwa <= 3.00 ? 'Passed' : 'Failed') : 'Pending';
+      const draftRemarks = student.customRemarks || autoRemarks;
+      const isPassed = hasAnyScores && (draftRemarks === 'Passed' || (draftRemarks !== 'Failed' && draftRemarks !== 'FDA' && draftRemarks !== 'Dropped' && rawGwa !== null && rawGwa <= 3.00));
+      const isFDA = (student.absences || 0) >= 4;
+      const isHonor = isPassed && rawGwa !== null && rawGwa <= 1.75;
+      const isAtRisk = hasAnyScores ? (!isPassed || isFDA || (rawGwa !== null && rawGwa > 3.00)) : isFDA;
 
       const isPrelimMissing = !hasPrelimScores;
       const isMidtermMissing = !hasMidtermScores;
@@ -336,14 +346,15 @@ export default function GradeComputationPreview() {
 
       return {
         ...student,
-        pRate,
-        mRate,
-        mr,
-        sfRate,
-        fRate,
-        tfr,
-        sg,
+        pRate: hasPrelimScores ? pRate : 0,
+        mRate: hasMidtermScores ? mRate : 0,
+        mr: (hasPrelimScores || hasMidtermScores) ? mr : 0,
+        sfRate: hasSemiFinalScores ? sfRate : 0,
+        fRate: hasFinalScores ? fRate : 0,
+        tfr: (hasSemiFinalScores || hasFinalScores) ? tfr : 0,
+        sg: hasAnyScores ? sg : 0,
         gwa: rawGwa,
+        hasAnyScores,
         remarks: draftRemarks,
         isPassed,
         isFDA,
@@ -367,21 +378,22 @@ export default function GradeComputationPreview() {
         passed: 0,
         failed: 0,
         passRate: 0,
-        avgGwa: '0.00',
+        avgGwa: '—',
         honors: 0,
         atRisk: 0,
         fdaCount: 0,
         missingCount: 0,
-        tier1: 0, // 1.00 - 1.75 (President's / Dean's List)
-        tier2: 0, // 2.00 - 2.75 (Good Standing)
-        tier3: 0, // 3.00 (Passing Floor)
-        tier4: 0  // 5.00 / Incomplete
+        tier1: 0,
+        tier2: 0,
+        tier3: 0,
+        tier4: 0
       };
     }
 
     let passed = 0;
     let failed = 0;
     let sumGwa = 0;
+    let countGwa = 0;
     let honors = 0;
     let atRisk = 0;
     let fdaCount = 0;
@@ -392,27 +404,31 @@ export default function GradeComputationPreview() {
     let tier4 = 0;
 
     computedStudents.forEach(s => {
-      if (s.isPassed) passed++;
-      else failed++;
+      if (s.hasAnyScores) {
+        if (s.isPassed) passed++;
+        else failed++;
 
-      sumGwa += s.gwa;
+        if (s.gwa !== null) {
+          sumGwa += s.gwa;
+          countGwa++;
+          if (s.gwa <= 1.75) tier1++;
+          else if (s.gwa <= 2.75) tier2++;
+          else if (s.gwa <= 3.00) tier3++;
+          else tier4++;
+        }
+      }
       if (s.isHonor) honors++;
       if (s.isAtRisk) atRisk++;
       if (s.isFDA) fdaCount++;
       if (s.hasMissingComponents) missingCount++;
-
-      if (s.gwa <= 1.75) tier1++;
-      else if (s.gwa <= 2.75) tier2++;
-      else if (s.gwa <= 3.00) tier3++;
-      else tier4++;
     });
 
     return {
       total,
       passed,
       failed,
-      passRate: Math.round((passed / total) * 100),
-      avgGwa: (sumGwa / total).toFixed(2),
+      passRate: countGwa > 0 ? Math.round((passed / countGwa) * 100) : 0,
+      avgGwa: countGwa > 0 ? (sumGwa / countGwa).toFixed(2) : '—',
       honors,
       atRisk,
       fdaCount,
@@ -492,8 +508,8 @@ export default function GradeComputationPreview() {
           remarks_set_at: new Date().toISOString(),
           posted_by: user.id,
           posted_at: new Date().toISOString(),
-          is_locked: true,
-          locked_milestones: ['Semestral Grade']
+          is_locked: false,
+          locked_milestones: []
         };
       });
 
@@ -503,12 +519,10 @@ export default function GradeComputationPreview() {
 
       if (postErr) throw postErr;
 
-      setLockedMilestones(['Semestral Grade']);
-
       const actorName = resolveActorName(profile, user);
       await logActivity(
         'Grade Posting',
-        `Posted and locked Semestral grades for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
+        `Posted Semestral grades for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
         actorName
       );
 
@@ -774,11 +788,11 @@ export default function GradeComputationPreview() {
           </Link>
           <button 
             onClick={() => setShowConfirmModal(true)}
-            disabled={isLocked || postingGrades || computedStudents.length === 0}
+            disabled={postingGrades || computedStudents.length === 0}
             className="px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-white bg-sage-600 hover:bg-sage-700 disabled:opacity-50 rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer whitespace-nowrap"
           >
             <Send className="h-3.5 w-3.5" /> 
-            <span>{isLocked ? 'Grades Finalized' : 'Post & Lock Grades'}</span>
+            <span>Post Grades</span>
           </button>
         </div>
       </PageHeader>
@@ -1245,13 +1259,15 @@ export default function GradeComputationPreview() {
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] font-bold text-slate-400 uppercase">GWA:</span>
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-lg font-mono ${
-                      student.gwa <= 1.75
-                        ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                        : student.isPassed
-                          ? 'bg-sage-100 text-sage-900 border border-sage-200'
-                          : 'bg-rose-100 text-rose-900 border border-rose-300'
+                      !student.hasAnyScores || student.gwa === null
+                        ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                        : student.gwa <= 1.75
+                          ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                          : student.isPassed
+                            ? 'bg-sage-100 text-sage-900 border border-sage-200'
+                            : 'bg-rose-100 text-rose-900 border border-rose-300'
                     }`}>
-                      {student.gwa.toFixed(2)}
+                      {student.hasAnyScores && student.gwa !== null ? student.gwa.toFixed(2) : '—'}
                     </span>
                   </div>
                 </div>
@@ -1497,13 +1513,15 @@ export default function GradeComputationPreview() {
 
                       <td className="px-3 py-3 border-r border-slate-100">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-extrabold ${
-                          student.gwa <= 1.75
-                            ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                            : student.isPassed
-                              ? 'bg-sage-100 text-sage-900 border border-sage-200'
-                              : 'bg-rose-100 text-rose-900 border border-rose-300'
+                          !student.hasAnyScores || student.gwa === null
+                            ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                            : student.gwa <= 1.75
+                              ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                              : student.isPassed
+                                ? 'bg-sage-100 text-sage-900 border border-sage-200'
+                                : 'bg-rose-100 text-rose-900 border border-rose-300'
                         }`}>
-                          {student.gwa.toFixed(2)}
+                          {student.hasAnyScores && student.gwa !== null ? student.gwa.toFixed(2) : '—'}
                         </span>
                       </td>
 
@@ -1519,11 +1537,13 @@ export default function GradeComputationPreview() {
 
                       <td className="px-3 py-3 border-r border-slate-100 font-sans">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                          student.isPassed 
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                          !student.hasAnyScores
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : student.isPassed 
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                              : 'bg-rose-50 text-rose-700 border-rose-200'
                         }`}>
-                          {student.remarks}
+                          {!student.hasAnyScores ? 'Pending' : student.remarks}
                         </span>
                       </td>
 
@@ -1557,13 +1577,13 @@ export default function GradeComputationPreview() {
                   </div>
                   <div>
                     <h3 className="text-base sm:text-lg font-bold text-slate-900 font-display">Post Semestral Grades</h3>
-                    <p className="text-xs text-slate-400 font-medium">Finalize scores and lock editing for all term milestones.</p>
+                    <p className="text-xs text-slate-400 font-medium">Publish calculated semestral grades to students and the Dean.</p>
                   </div>
                 </div>
 
-                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 sm:p-4 text-xs text-amber-800 leading-relaxed space-y-2">
-                  <p><strong>⚠️ Action is irreversible:</strong> Finalizing and posting will lock this class record (<strong>{classInfo?.subjects?.code} - {classInfo?.sections?.name}</strong>) across all periods.</p>
-                  <p>Once posted, these grades will be visible to students. Any subsequent changes will require formal Dean administrative override approval.</p>
+                <div className="bg-sage-50 border border-sage-200 rounded-2xl p-3.5 sm:p-4 text-xs text-sage-800 leading-relaxed space-y-2">
+                  <p><strong>📊 Publishing Semestral Grades:</strong> Posting updates the official grade ledger for students (<strong>{classInfo?.subjects?.code} - {classInfo?.sections?.name}</strong>) and the Dean's Office.</p>
+                  <p>You can continue editing raw score sheets in <strong>Log Class Scores</strong> and re-post anytime if further score adjustments are made.</p>
                 </div>
 
                 <div className="mt-5 sm:mt-6 flex items-center justify-end gap-2.5">
