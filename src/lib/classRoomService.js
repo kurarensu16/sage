@@ -97,7 +97,7 @@ export async function submitJoinRequest(studentId, joinCode) {
         student_id: studentId,
         subject_id: subjectId,
         section_id: sectionId,
-        status: 'enrolled'
+        status: 'active'
       });
 
     if (enrollErr) {
@@ -172,6 +172,46 @@ export async function provisionClassroomByAdmin({
     .single();
 
   if (insErr) throw insErr;
+
+  // 3.5 Auto-enroll regular block section students assigned to this section
+  try {
+    const { data: sectionStudents } = await supabase
+      .from('users')
+      .select('user_id')
+      .eq('role', 'student')
+      .eq('section_id', sectionId);
+
+    if (sectionStudents && sectionStudents.length > 0) {
+      const studentIds = sectionStudents.map(s => s.user_id);
+      const { data: existingEnrolls } = await supabase
+        .from('enrollments')
+        .select('student_id')
+        .eq('subject_id', subjectId)
+        .in('student_id', studentIds);
+
+      const existingStudentIds = new Set((existingEnrolls || []).map(e => e.student_id));
+      const enrollmentsToInsert = sectionStudents
+        .filter(std => !existingStudentIds.has(std.user_id))
+        .map(std => ({
+          student_id: std.user_id,
+          subject_id: subjectId,
+          section_id: sectionId,
+          status: 'active'
+        }));
+
+      if (enrollmentsToInsert.length > 0) {
+        const { error: enrollErr } = await supabase
+          .from('enrollments')
+          .insert(enrollmentsToInsert);
+
+        if (enrollErr) {
+          console.warn('Block section auto-enroll notice:', enrollErr.message);
+        }
+      }
+    }
+  } catch (autoErr) {
+    console.warn('Auto-enrollment background error:', autoErr);
+  }
 
   // 4. Generate unique join code
   const joinCode = await getOrCreateJoinCode(
@@ -311,14 +351,23 @@ export async function resolveJoinRequest(requestId, classRecordId, studentId, ne
         .single();
 
       if (cls) {
-        await supabase
+        const { data: existingEnc } = await supabase
           .from('enrollments')
-          .upsert({
-            student_id: studentId,
-            subject_id: cls.subject_id,
-            section_id: cls.section_id,
-            status: 'enrolled'
-          }, { onConflict: 'student_id,subject_id' });
+          .select('enrollment_id')
+          .eq('student_id', studentId)
+          .eq('subject_id', cls.subject_id)
+          .maybeSingle();
+
+        if (!existingEnc) {
+          await supabase
+            .from('enrollments')
+            .insert({
+              student_id: studentId,
+              subject_id: cls.subject_id,
+              section_id: cls.section_id,
+              status: 'active'
+            });
+        }
       }
     }
 
@@ -360,21 +409,35 @@ export async function getClassPriorityRoster(classRecordId) {
       .eq('section_id', cr.section_id)
       .eq('subject_id', cr.subject_id);
 
-    const students = (enrolls || []).map(e => e.users).filter(Boolean);
+    // Deduplicate enrolled users by user_id
+    const uniqueMap = new Map();
+    (enrolls || []).forEach(e => {
+      if (e.users && e.users.user_id && !uniqueMap.has(e.users.user_id)) {
+        uniqueMap.set(e.users.user_id, e.users);
+      }
+    });
+    const students = Array.from(uniqueMap.values());
     if (students.length === 0) return [];
 
     const studentIds = students.map(s => s.user_id);
 
-    // 3. Fetch scores
+    // 3. Fetch scores from student_term_scores
     const { data: scores } = await supabase
-      .from('class_record_scores')
+      .from('student_term_scores')
+      .select('*')
+      .eq('class_record_id', classRecordId)
+      .in('student_id', studentIds);
+
+    // 3b. Fetch posted grades
+    const { data: postedGrades } = await supabase
+      .from('posted_grades')
       .select('*')
       .eq('class_record_id', classRecordId)
       .in('student_id', studentIds);
 
     // 4. Fetch attendance records
     const { data: attendances } = await supabase
-      .from('student_attendances')
+      .from('attendance_records')
       .select('student_id, status')
       .eq('class_record_id', classRecordId)
       .in('student_id', studentIds);
@@ -393,7 +456,11 @@ export async function getClassPriorityRoster(classRecordId) {
     // 6. Calculate risk score for each student
     const priorityList = students.map(stud => {
       const studScores = (scores || []).filter(sc => sc.student_id === stud.user_id);
-      const studAbsences = (attendances || []).filter(at => at.student_id === stud.user_id && at.status === 'absent').length;
+      const studAbsences = (attendances || []).filter(
+        at => at.student_id === stud.user_id && (at.status === 'Absent' || at.status?.toLowerCase() === 'absent')
+      ).length;
+      const studPosted = (postedGrades || []).filter(pg => pg.student_id === stud.user_id);
+      const finalPosted = studPosted.find(pg => pg.grade_period === 'final');
 
       // Extract term ratings
       const termRatings = {};
@@ -401,41 +468,57 @@ export async function getClassPriorityRoster(classRecordId) {
       let midtermRating = null;
       let examSum = 0;
       let examCount = 0;
+      let hasValidScores = false;
 
       studScores.forEach(sc => {
         if (sc.term) {
-          const actSum = (sc.act1 || 0) + (sc.act2 || 0) + (sc.act3 || 0) + (sc.act4 || 0) + (sc.act5 || 0) + (sc.act6 || 0);
-          const char = (sc.char_rating || 0) * 0.1;
-          const ex = sc.exam || 0;
-          if (sc.exam !== null && sc.exam !== undefined) {
-            examSum += sc.exam;
-            examCount++;
+          const hasData = sc.act1 != null || sc.act2 != null || sc.act3 != null || sc.act4 != null || sc.act5 != null || sc.act6 != null || sc.char_rating != null || sc.exam != null;
+          if (hasData) {
+            hasValidScores = true;
+            const actSum = (sc.act1 || 0) + (sc.act2 || 0) + (sc.act3 || 0) + (sc.act4 || 0) + (sc.act5 || 0) + (sc.act6 || 0);
+            const char = (sc.char_rating || 0) * 0.1;
+            const ex = sc.exam || 0;
+            if (sc.exam !== null && sc.exam !== undefined) {
+              examSum += sc.exam;
+              examCount++;
+            }
+            const csPct = Math.min(50, actSum * 0.5);
+            const exPct = Math.min(40, ex * 0.4);
+            const totalRating = Math.round(csPct + char + exPct);
+            termRatings[sc.term] = totalRating;
+            if (sc.term === 'Prelim') prelimRating = totalRating;
+            if (sc.term === 'Midterm') midtermRating = totalRating;
           }
-          // Default CS max ~100
-          const csPct = Math.min(50, actSum * 0.5);
-          const exPct = Math.min(40, ex * 0.4);
-          const totalRating = Math.round(csPct + char + exPct);
-          termRatings[sc.term] = totalRating;
-          if (sc.term === 'Prelim') prelimRating = totalRating;
-          if (sc.term === 'Midterm') midtermRating = totalRating;
         }
       });
 
-      // Tentative GWA
-      let approxGwa = 2.50;
-      if (midtermRating !== null) {
-        approxGwa = getTransmutedGrade(midtermRating);
-      } else if (prelimRating !== null) {
-        approxGwa = getTransmutedGrade(prelimRating);
+      // Tentative GWA computation
+      let approxGwa = null;
+      if (finalPosted && finalPosted.effective_grade != null) {
+        approxGwa = parseFloat(finalPosted.effective_grade);
+      } else if (finalPosted && finalPosted.computed_grade != null) {
+        approxGwa = getTransmutedGrade(parseFloat(finalPosted.computed_grade));
+      } else if (hasValidScores) {
+        if (midtermRating !== null) {
+          approxGwa = getTransmutedGrade(midtermRating);
+        } else if (prelimRating !== null) {
+          approxGwa = getTransmutedGrade(prelimRating);
+        } else {
+          const available = Object.values(termRatings);
+          if (available.length > 0) {
+            const avgRating = Math.round(available.reduce((a, b) => a + b, 0) / available.length);
+            approxGwa = getTransmutedGrade(avgRating);
+          }
+        }
       }
 
-      const examAvg = examCount > 0 ? Math.round(examSum / examCount) : 75;
-      const failingCount = (approxGwa > 3.00) ? 1 : 0;
+      const examAvg = examCount > 0 ? Math.round(examSum / examCount) : null;
+      const failingCount = (approxGwa !== null && approxGwa > 3.00) ? 1 : 0;
 
       const riskData = calculateAcademicRisk({
         currentGwa: approxGwa,
         failingSubjectsCount: failingCount,
-        majorExamAverage: examAvg,
+        majorExamAverage: examAvg !== null ? examAvg : 100,
         absenceCount: studAbsences,
         previousTermRating: prelimRating,
         currentTermRating: midtermRating
@@ -451,7 +534,7 @@ export async function getClassPriorityRoster(classRecordId) {
         current_gwa: approxGwa,
         failing_count: failingCount,
         absences: studAbsences,
-        exam_average: examAvg,
+        exam_average: examAvg !== null ? examAvg : 100,
         term_ratings: termRatings,
         risk_score: riskData.composite_score,
         risk_level: riskData.risk_level,

@@ -17,7 +17,8 @@ import {
   X,
   Check,
   Paperclip,
-  Edit3
+  Edit3,
+  FileText
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
@@ -890,40 +891,20 @@ export default function PostedGradesView() {
           <span className="font-medium text-slate-900 truncate">{subjectCode} ({sectionName}) — Locked Grades</span>
         </div>
 
-        {/* Dynamic Lock Alert Banner with Dean's Override Panel */}
+        {/* Dynamic Registry Management Banner with Dean's Override Panel */}
         <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 sm:p-5 space-y-3.5 sm:space-y-4 shadow-2xs text-left">
           <div className="flex flex-col sm:flex-row justify-between items-start gap-3 sm:gap-4">
             <div className="flex gap-3">
-              <Lock className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
+              <FileText className="h-5 w-5 text-sage-600 mt-0.5 flex-shrink-0" />
               <div>
-                <h4 className="font-bold text-xs sm:text-sm text-slate-800">Class Record Registry Lock</h4>
+                <h4 className="font-bold text-xs sm:text-sm text-slate-800">Class Record Registry &amp; Remark Management</h4>
                 <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  Active registry locks are applied dynamically based on posted term milestones. To modify locked records, Dean approval is required.
+                  Posted semestral grades are active. Score sheets can be updated and re-posted by faculty anytime. For formal administrative remark overrides (e.g. clearing INC status), submit a Request Remark Change for Dean review.
                 </p>
                 <div className="flex flex-wrap gap-2 mt-2.5 sm:mt-3">
-                  {!(lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final')) ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 border border-emerald-250 text-emerald-700">
-                      Draft Mode (Fully Editable)
-                    </span>
-                  ) : (
-                    <div className="inline-flex items-center gap-2 bg-rose-50/50 border border-rose-200 rounded-xl p-1.5 pr-2.5">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-rose-50 border border-rose-200 text-rose-700 font-mono">
-                        Semestral Grades Locked
-                      </span>
-                      {unlockRequests.includes('Semestral Grade') || unlockRequests.includes('Final') ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-bold bg-amber-50 border border-amber-250 text-amber-700">
-                          Unlock Requested
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => handleRequestUnlock('Semestral Grade')}
-                          className="px-2 py-0.5 text-[9px] font-bold bg-white border border-slate-200 hover:border-sage-300 text-slate-650 hover:text-sage-700 rounded-lg transition-colors outline-none cursor-pointer"
-                        >
-                          Request Unlock
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 border border-emerald-250 text-emerald-700">
+                    Posted Ledger (Active)
+                  </span>
                 </div>
               </div>
             </div>

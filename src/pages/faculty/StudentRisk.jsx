@@ -70,9 +70,17 @@ export default function StudentRisk({ mode = 'risk' }) {
     [classes, selectedClassId]
   );
 
+  const uniqueStudentsMap = new Map();
+  (students || []).forEach(s => {
+    if (s.user_id && !uniqueStudentsMap.has(s.user_id)) {
+      uniqueStudentsMap.set(s.user_id, s);
+    }
+  });
+  const uniqueStudents = Array.from(uniqueStudentsMap.values());
+
   const visibleStudents = isEvaluateMode
-    ? students
-    : students.filter(student => (student.risk_score || 0) >= 25 || student.risk_level === 'high' || student.risk_level === 'critical');
+    ? uniqueStudents
+    : uniqueStudents.filter(student => (student.risk_score || 0) >= 20 || student.risk_level === 'high' || student.risk_level === 'critical' || student.risk_level === 'moderate');
 
   const handleEvaluationSaved = (saved) => {
     setStudents(prev => prev.map(student => (
@@ -87,9 +95,9 @@ export default function StudentRisk({ mode = 'risk' }) {
   return (
     <>
       <PageHeader title={title} breadcrumb="Faculty Portal" />
-      <div className="p-4 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-5">
+      <div className="p-4 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-5 text-left">
         <div className="max-w-6xl mx-auto space-y-5">
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-2xs">
+          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-2xs">
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Student Risk Monitoring</p>
@@ -121,7 +129,7 @@ export default function StudentRisk({ mode = 'risk' }) {
 
           {error && <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div>}
 
-          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+          <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-2xs">
             <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {isEvaluateMode ? <ClipboardCheck className="h-4 w-4 text-sage-600" /> : <AlertCircle className="h-4 w-4 text-rose-600" />}
@@ -131,12 +139,18 @@ export default function StudentRisk({ mode = 'risk' }) {
             </div>
 
             {loadingRoster ? (
-              <div className="p-10 flex items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Calculating risk roster...</div>
+              <div className="p-10 flex items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin text-sage-600" /> Calculating risk roster...</div>
             ) : visibleStudents.length === 0 ? (
               <div className="p-12 text-center">
                 <Users className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm font-semibold text-slate-700">{isEvaluateMode ? 'No enrolled students found.' : 'No at-risk students found.'}</p>
-                <p className="text-xs text-slate-500 mt-1">Select another class or return to My Class Records.</p>
+                <p className="text-sm font-semibold text-slate-700">
+                  {isEvaluateMode ? 'No enrolled students found.' : 'All students on track!'}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {isEvaluateMode
+                    ? 'No enrolled students found in this class section.'
+                    : 'No students in this class currently require urgent risk intervention. Select another class record to review.'}
+                </p>
                 <button onClick={() => navigate('/faculty/classrecordslist')} className="mt-4 px-4 py-2 rounded-xl bg-sage-600 text-white text-xs font-semibold hover:bg-sage-700 cursor-pointer">My Class Records</button>
               </div>
             ) : (
@@ -152,20 +166,36 @@ export default function StudentRisk({ mode = 'risk' }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {visibleStudents.map(student => (
-                      <tr key={student.user_id} className="hover:bg-slate-50/70">
-                        <td className="px-4 py-3">
-                          <p className="text-xs font-bold text-slate-800">{student.last_name}, {student.first_name}</p>
-                          <p className="text-[10px] text-slate-400">{student.student_id_number}</p>
-                        </td>
-                        <td className="px-4 py-3"><span className="inline-flex px-2 py-1 rounded-full text-[10px] font-bold uppercase bg-rose-50 text-rose-700">{student.risk_level} · {student.risk_score}</span></td>
-                        <td className="px-4 py-3 text-xs font-mono font-bold text-slate-700">{Number(student.current_gwa || 0).toFixed(2)}</td>
-                        <td className="px-4 py-3 text-xs font-mono text-slate-700">{student.absences || 0}</td>
-                        <td className="px-4 py-3 text-right">
-                          <button onClick={() => setSelectedStudent(student)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sage-600 hover:bg-sage-700 text-white text-[10px] font-semibold cursor-pointer"><ClipboardCheck className="h-3.5 w-3.5" /> Evaluate</button>
-                        </td>
-                      </tr>
-                    ))}
+                    {visibleStudents.map(student => {
+                      const isLow = student.risk_level === 'low';
+                      const isMod = student.risk_level === 'moderate';
+                      const badgeClass = isLow
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : isMod
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-rose-50 text-rose-700 border-rose-200';
+
+                      return (
+                        <tr key={student.user_id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="px-4 py-3">
+                            <p className="text-xs font-bold text-slate-800">{student.last_name}, {student.first_name}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">{student.student_id_number}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${badgeClass}`}>
+                              {student.risk_level} · {student.risk_score}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-xs font-mono font-bold text-slate-700">
+                            {student.current_gwa !== null && student.current_gwa !== undefined && Number(student.current_gwa) > 0 ? Number(student.current_gwa).toFixed(2) : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-xs font-mono text-slate-700">{student.absences || 0}</td>
+                          <td className="px-4 py-3 text-right">
+                            <button onClick={() => setSelectedStudent(student)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sage-600 hover:bg-sage-700 text-white text-[10px] font-semibold cursor-pointer shadow-2xs transition-colors"><ClipboardCheck className="h-3.5 w-3.5" /> Evaluate</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
