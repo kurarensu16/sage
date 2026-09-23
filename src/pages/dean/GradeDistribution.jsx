@@ -158,7 +158,7 @@ export default function GradeDistribution() {
 
   // Derived unique program abbreviations (fallback to section parsing if dbPrograms is empty/loading)
   const uniquePrograms = dbPrograms.length > 0
-    ? Array.from(new Set(dbPrograms.map(p => PROGRAM_ABBREVIATIONS[p.name] || p.name))).filter(Boolean).sort()
+    ? Array.from(new Set(dbPrograms.map(p => p.abbreviation || PROGRAM_ABBREVIATIONS[p.name] || p.name))).filter(Boolean).sort()
     : Array.from(new Set(classrooms.map(c => getProgramFromSection(c.section)))).filter(Boolean).sort();
 
   // Filter classrooms based on selected Program and Year Level

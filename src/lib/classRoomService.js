@@ -189,6 +189,72 @@ export async function provisionClassroomByAdmin({
 }
 
 /**
+ * Faculty Self-Service Provisioning / Creation of a single Classroom
+ */
+export async function provisionClassroomByFaculty({
+  subjectId,
+  sectionId,
+  facultyId,
+  schoolYear,
+  semester
+}) {
+  return provisionClassroomByAdmin({
+    subjectId,
+    sectionId,
+    facultyId,
+    schoolYear,
+    semester
+  });
+}
+
+/**
+ * Faculty Self-Service Batch Creation of Multiple Classrooms (Teaching Load)
+ */
+export async function provisionBatchClassroomsByFaculty({
+  facultyId,
+  classroomEntries,
+  schoolYear,
+  semester
+}) {
+  if (!classroomEntries || classroomEntries.length === 0) {
+    throw new Error('Please add at least one classroom assignment.');
+  }
+
+  const results = [];
+  const errors = [];
+
+  for (let i = 0; i < classroomEntries.length; i++) {
+    const entry = classroomEntries[i];
+    if (!entry.subjectId || !entry.sectionId) {
+      errors.push(`Row #${i + 1}: Please select both a Subject and a Section.`);
+      continue;
+    }
+
+    try {
+      const res = await provisionClassroomByAdmin({
+        subjectId: entry.subjectId,
+        sectionId: entry.sectionId,
+        facultyId,
+        schoolYear,
+        semester
+      });
+      results.push(res);
+    } catch (err) {
+      errors.push(`Row #${i + 1}: ${err.message}`);
+    }
+  }
+
+  if (results.length === 0 && errors.length > 0) {
+    throw new Error(errors.join(' '));
+  }
+
+  return {
+    results,
+    errors
+  };
+}
+
+/**
  * Gets pending irregular join requests for a class record.
  */
 export async function getPendingJoinRequests(classRecordId) {

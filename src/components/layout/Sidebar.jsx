@@ -26,7 +26,8 @@ import {
   ClipboardCheck,
   CheckCircle2,
   FileSpreadsheet,
-  Building2
+  Building2,
+  PlusCircle
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import SageLogo from './SageLogo';
@@ -102,6 +103,7 @@ const PORTAL_NAVIGATION = {
       icon: GraduationCap,
       items: [
         { to: '/faculty/classrecordslist', label: 'My Class Records', icon: BookOpen },
+        { to: '/faculty/classrecordslist?action=create', label: 'Create Classrooms', icon: PlusCircle },
         { to: '/faculty/enrollmentrequests', label: 'Enrollment Requests', icon: Users }
       ]
     },
