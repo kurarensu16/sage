@@ -12,7 +12,8 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   X, 
-  Loader2
+  Loader2,
+  Filter
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -20,11 +21,32 @@ import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { provisionClassroomByAdmin, getOrCreateJoinCode } from '../../lib/classRoomService';
 import { cn } from '../../lib/utils';
 
+function getProgramAbbreviation(program) {
+  if (!program) return '';
+  if (typeof program === 'object' && program.abbreviation) return program.abbreviation;
+  const programName = typeof program === 'string' ? program : (program.name || '');
+  if (!programName) return '';
+  if (programName.includes('Psychology')) return 'BAPSYCH';
+  if (programName.includes('Computer Engineering')) return 'BSCpE';
+  if (programName.includes('Human Resource')) return 'BSBA-HRDM';
+  if (programName.includes('Financial Management')) return 'BSBA-FM';
+  if (programName.includes('Operations Management')) return 'BSBA-OM';
+  if (programName.includes('Marketing Management')) return 'BSBA-MM';
+  if (programName.includes('Accounting Information')) return 'BSAIS';
+  const stopWords = new Set(['of', 'in', 'and', 'for', 'major', 'the']);
+  return programName
+    .split(/\s+/)
+    .filter(w => !stopWords.has(w.toLowerCase()))
+    .map(w => w[0].toUpperCase())
+    .join('');
+}
+
 export default function ClassroomProvisioning() {
   const { user, profile } = useAuth();
 
   const [classrooms, setClassrooms] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [programs, setPrograms] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [sections, setSections] = useState([]);
   const [facultyUsers, setFacultyUsers] = useState([]);
@@ -46,6 +68,10 @@ export default function ClassroomProvisioning() {
   const [selectedSchoolYear, setSelectedSchoolYear] = useState('2025-2026');
   const [selectedSemester, setSelectedSemester] = useState('1st Semester');
   
+  // Program & Year Level Filters for Admin Provisioning
+  const [selectedProgramFilter, setSelectedProgramFilter] = useState('');
+  const [selectedYearFilter, setSelectedYearFilter] = useState('');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalError, setModalError] = useState(null);
   const [successBanner, setSuccessBanner] = useState(null);
@@ -61,6 +87,7 @@ export default function ClassroomProvisioning() {
       // 1. Fetch Base Reference Catalogs
       const [
         { data: deptsData },
+        { data: progsData },
         { data: termsData },
         { data: subjectsData },
         { data: sectionsData },
@@ -70,6 +97,7 @@ export default function ClassroomProvisioning() {
         { data: postedGradesData }
       ] = await Promise.all([
         supabase.from('departments').select('*').order('name'),
+        supabase.from('programs').select('*').order('name'),
         supabase.from('academic_terms').select('*').order('created_at', { ascending: false }),
         supabase.from('subjects').select('subject_id, code, name, units, department_id').order('code'),
         supabase.from('sections').select('section_id, name, department_id, school_year, semester').order('name'),
@@ -80,6 +108,7 @@ export default function ClassroomProvisioning() {
       ]);
 
       setDepartments(deptsData || []);
+      setPrograms(progsData || []);
       setSubjects(subjectsData || []);
       setSections(sectionsData || []);
       setFacultyUsers(usersData || []);
@@ -198,14 +227,122 @@ export default function ClassroomProvisioning() {
     ? (selectedTargetDeptId || (collegeDeptsWithSections[0]?.department_id || ''))
     : selectedDeptId;
 
-  // Cascading dropdown filters for Modal
-  const modalFilteredSubjects = selectedDeptId 
-    ? subjects.filter(s => s.department_id === selectedDeptId)
-    : subjects;
+  // Derived programs for the target section college
+  const deptPrograms = useMemo(() => {
+    if (!targetDeptIdForSections) return programs;
+    return programs.filter(p => p.department_id === targetDeptIdForSections);
+  }, [programs, targetDeptIdForSections]);
 
-  const modalFilteredSections = targetDeptIdForSections
-    ? sections.filter(s => s.department_id === targetDeptIdForSections)
-    : sections;
+  // Active program abbreviation for filtering
+  const activeProgramAbbr = useMemo(() => {
+    if (!selectedProgramFilter) return '';
+    return getProgramAbbreviation(selectedProgramFilter) || selectedProgramFilter;
+  }, [selectedProgramFilter]);
+
+  // Reset filters when department or target department changes
+  useEffect(() => {
+    setSelectedProgramFilter('');
+    setSelectedYearFilter('');
+  }, [selectedDeptId, targetDeptIdForSections]);
+
+  // Cascading dropdown filters for Modal
+  const modalFilteredSubjects = useMemo(() => {
+    let list = selectedDeptId 
+      ? subjects.filter(s => s.department_id === selectedDeptId)
+      : subjects;
+
+    // 1. Program-specific Course Filtering
+    if (activeProgramAbbr) {
+      const abbrUpper = activeProgramAbbr.toUpperCase();
+      const matches = list.filter(s => {
+        const codeUpper = (s.code || '').toUpperCase();
+        const nameUpper = (s.name || '').toUpperCase();
+
+        // Always keep General Education (GE) subjects available
+        if (codeUpper.startsWith('GE')) return true;
+
+        if (abbrUpper === 'BSME') {
+          // Mechanical Engineering specific
+          return codeUpper.startsWith('ME') || codeUpper.startsWith('THE') || codeUpper.startsWith('MACH') || codeUpper.startsWith('PHY') || codeUpper.startsWith('CAL');
+        } else if (abbrUpper === 'BSCS' || abbrUpper === 'BSIT' || abbrUpper === 'ACT' || abbrUpper === 'BSCPE') {
+          // Computing & Engineering specific
+          return (
+            codeUpper.startsWith('CS') || 
+            codeUpper.startsWith('IT') || 
+            codeUpper.startsWith('ITC') || 
+            codeUpper.startsWith('ITP') || 
+            codeUpper.startsWith('WEB') || 
+            codeUpper.startsWith('CAL') || 
+            codeUpper.startsWith('DMS') || 
+            codeUpper.startsWith('DSA') || 
+            codeUpper.startsWith('DBMS') || 
+            codeUpper.startsWith('SOE') || 
+            codeUpper.startsWith('CPR') || 
+            codeUpper.startsWith('SAD') || 
+            codeUpper.startsWith('IAS') || 
+            codeUpper.startsWith('PRO') || 
+            codeUpper.startsWith('FRE') || 
+            codeUpper.startsWith('OOP') || 
+            codeUpper.startsWith('NAC') ||
+            codeUpper.startsWith('ICT')
+          );
+        }
+
+        return codeUpper.includes(abbrUpper) || nameUpper.includes(abbrUpper);
+      });
+
+      if (matches.length > 0) list = matches;
+    }
+
+    // 2. Year Level Course Filter
+    if (selectedYearFilter) {
+      const yearDigit = 
+        selectedYearFilter === '1st Year' ? '1' :
+        selectedYearFilter === '2nd Year' ? '2' :
+        selectedYearFilter === '3rd Year' ? '3' :
+        selectedYearFilter === '4th Year' ? '4' : selectedYearFilter;
+      
+      if (yearDigit) {
+        const yrMatched = list.filter(s => {
+          const numbers = (s.code || '').replace(/[^0-9]/g, '');
+          return numbers.length > 0 ? numbers.startsWith(yearDigit) : true;
+        });
+        if (yrMatched.length > 0) list = yrMatched;
+      }
+    }
+
+    return list;
+  }, [subjects, selectedDeptId, activeProgramAbbr, selectedYearFilter]);
+
+  const modalFilteredSections = useMemo(() => {
+    let list = targetDeptIdForSections
+      ? sections.filter(s => s.department_id === targetDeptIdForSections)
+      : sections;
+
+    if (activeProgramAbbr) {
+      const progAbbrUpper = activeProgramAbbr.toUpperCase();
+      const progMatched = list.filter(sec => 
+        sec.name.toUpperCase().startsWith(`${progAbbrUpper}-`) || 
+        sec.name.toUpperCase().startsWith(progAbbrUpper)
+      );
+      if (progMatched.length > 0) list = progMatched;
+    }
+
+    if (selectedYearFilter) {
+      const yearDigit = 
+        selectedYearFilter === '1st Year' ? '1' :
+        selectedYearFilter === '2nd Year' ? '2' :
+        selectedYearFilter === '3rd Year' ? '3' :
+        selectedYearFilter === '4th Year' ? '4' : selectedYearFilter;
+      
+      if (yearDigit) {
+        const yrMatched = list.filter(sec => sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit));
+        if (yrMatched.length > 0) list = yrMatched;
+      }
+    }
+
+    return list;
+  }, [sections, targetDeptIdForSections, activeProgramAbbr, selectedYearFilter]);
 
   const matchedFaculty = selectedDeptId ? facultyUsers.filter(f => f.department_id === selectedDeptId) : facultyUsers;
   const modalFilteredFaculty = matchedFaculty.length > 0 ? matchedFaculty : facultyUsers;
@@ -606,6 +743,68 @@ export default function ClassroomProvisioning() {
                 </select>
               </div>
 
+              {/* Program & Year Level Filters */}
+              <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+                    <Filter className="h-3.5 w-3.5 text-sage-600" />
+                    Refine Catalog Filters
+                  </span>
+                  {(selectedProgramFilter || selectedYearFilter) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProgramFilter('');
+                        setSelectedYearFilter('');
+                      }}
+                      className="text-[10px] font-semibold text-rose-600 hover:text-rose-800 cursor-pointer"
+                    >
+                      Clear Filters
+                    </button>
+                  )}
+                </div>
+
+                <div className={deptPrograms.length > 1 ? "grid grid-cols-1 sm:grid-cols-2 gap-2" : "block"}>
+                  {/* Program Filter (Only rendered if college offers > 1 program) */}
+                  {deptPrograms.length > 1 && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-semibold text-slate-500">Filter by Program</label>
+                      <select
+                        value={selectedProgramFilter}
+                        onChange={e => setSelectedProgramFilter(e.target.value)}
+                        className="w-full border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs bg-white outline-none focus:border-sage-600 font-medium cursor-pointer"
+                      >
+                        <option value="">All Programs ({deptPrograms.length})</option>
+                        {deptPrograms.map(p => {
+                          const abbr = getProgramAbbreviation(p);
+                          return (
+                            <option key={p.program_id} value={p.name}>
+                              {abbr ? `[${abbr}] ${p.name}` : p.name}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Year Level Filter */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-slate-500">Filter by Year Level</label>
+                    <select
+                      value={selectedYearFilter}
+                      onChange={e => setSelectedYearFilter(e.target.value)}
+                      className="w-full border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs bg-white outline-none focus:border-sage-600 font-medium cursor-pointer"
+                    >
+                      <option value="">All Year Levels</option>
+                      <option value="1">1st Year</option>
+                      <option value="2">2nd Year</option>
+                      <option value="3">3rd Year</option>
+                      <option value="4">4th Year</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               {/* Course / Subject Selector */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">
@@ -644,6 +843,7 @@ export default function ClassroomProvisioning() {
                   </select>
                 </div>
               )}
+
               {/* Section Selector */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">
@@ -676,28 +876,18 @@ export default function ClassroomProvisioning() {
                 </select>
               </div>
 
-              {/* Term Selector */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Academic Year</label>
-                  <input
-                    type="text"
-                    value={selectedSchoolYear}
-                    onChange={e => setSelectedSchoolYear(e.target.value)}
-                    className="w-full border border-slate-200 px-3 py-2 rounded-lg text-xs font-mono outline-none"
-                  />
+              {/* Active Term Indicator (Locked to Active Academic Term) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">Target Academic Term</label>
+                  <span className="text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-semibold font-mono flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Locked to Active Term
+                  </span>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Semester</label>
-                  <select
-                    value={selectedSemester}
-                    onChange={e => setSelectedSemester(e.target.value)}
-                    className="w-full border border-slate-200 px-3 py-2 rounded-lg text-xs bg-white outline-none cursor-pointer"
-                  >
-                    <option value="1st Semester">1st Semester</option>
-                    <option value="2nd Semester">2nd Semester</option>
-                    <option value="Summer Term">Summer Term</option>
-                  </select>
+                <div className="w-full border border-slate-200 px-3 py-2 rounded-lg text-xs bg-slate-50 font-mono text-slate-800 flex items-center justify-between">
+                  <span>AY {selectedSchoolYear} • {selectedSemester}</span>
+                  <span className="text-[10px] text-slate-400 font-sans">Active Term</span>
                 </div>
               </div>
 

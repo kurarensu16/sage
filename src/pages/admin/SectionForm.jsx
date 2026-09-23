@@ -114,9 +114,15 @@ export default function SectionForm() {
             }
           }
           
-          const matchedProgramName = Object.keys(PROGRAM_ABBREVIATIONS).find(
-            key => PROGRAM_ABBREVIATIONS[key] === programAbbr.toUpperCase()
-          ) || '';
+          const matchedProgram = allPrograms.find(p => 
+            (p.abbreviation && p.abbreviation.toUpperCase() === programAbbr.toUpperCase()) ||
+            (PROGRAM_ABBREVIATIONS[p.name] && PROGRAM_ABBREVIATIONS[p.name].toUpperCase() === programAbbr.toUpperCase())
+          );
+          const matchedProgramName = matchedProgram ? matchedProgram.name : (
+            Object.keys(PROGRAM_ABBREVIATIONS).find(
+              key => PROGRAM_ABBREVIATIONS[key] === programAbbr.toUpperCase()
+            ) || ''
+          );
 
           const yearLevelText = 
             yearDigit === '1' ? '1st Year' :
@@ -139,7 +145,7 @@ export default function SectionForm() {
       }
       loadSection();
     }
-  }, [sectionId]);
+  }, [sectionId, allPrograms]);
 
   // Set default program if college is selected
   useEffect(() => {
@@ -159,7 +165,8 @@ export default function SectionForm() {
   // Generate Section Name Preview reactively
   useEffect(() => {
     if (!isEditMode || (isEditMode && formData.programName && formData.yearLevel && formData.suffix)) {
-      const programAbbr = PROGRAM_ABBREVIATIONS[formData.programName] || '';
+      const progObj = allPrograms.find(p => p.name === formData.programName);
+      const programAbbr = progObj?.abbreviation || PROGRAM_ABBREVIATIONS[formData.programName] || '';
       const yearDigit = 
         formData.yearLevel === '1st Year' ? '1' :
         formData.yearLevel === '2nd Year' ? '2' :

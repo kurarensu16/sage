@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   Search, 
@@ -14,7 +14,10 @@ import {
   Check, 
   Target, 
   TrendingDown, 
-  TrendingUp 
+  TrendingUp,
+  Plus,
+  PlusCircle,
+  CheckCircle2
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -24,15 +27,21 @@ import {
   getClassPriorityRoster 
 } from '../../lib/classRoomService';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
+import FacultyCreateClassroomModal from './FacultyCreateClassroomModal';
 import { cn } from '../../lib/utils';
 
 export default function ClassRecordsList() {
   const { user } = useAuth();
+  const location = useLocation();
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('current'); // 'current' or 'past'
   const [copiedCode, setCopiedCode] = useState(null);
+
+  // Faculty Classroom Self-Service Creation Modal State
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [creationBanner, setCreationBanner] = useState(null);
 
   // Student Risk Review & Priority Roster Modal State
   const [isRiskReviewModalOpen, setIsRiskReviewModalOpen] = useState(false);
@@ -42,6 +51,12 @@ export default function ClassRecordsList() {
 
   // HITL Risk Evaluation Modal State
   const [evaluatingStudent, setEvaluatingStudent] = useState(null);
+
+  useEffect(() => {
+    if (location.search.includes('action=create')) {
+      setIsCreateModalOpen(true);
+    }
+  }, [location.search]);
 
   const fetchClasses = async () => {
     if (!user) return;
@@ -203,6 +218,25 @@ export default function ClassRecordsList() {
       
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6">
         
+        {/* Success Creation Banner */}
+        {creationBanner && (
+          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center justify-between shadow-xs animate-in fade-in">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+              <div>
+                <strong className="block text-sm">Classroom(s) Created Successfully!</strong>
+                <span className="text-xs text-emerald-800">{creationBanner.message}</span>
+              </div>
+            </div>
+            <button 
+              onClick={() => setCreationBanner(null)}
+              className="text-emerald-700 hover:text-emerald-900 p-1 cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
         {/* Toolbar: Search, Semester Filter & Create Room Action */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           <div className="relative max-w-md w-full">
@@ -247,6 +281,15 @@ export default function ClassRecordsList() {
                 Past Archives
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setIsCreateModalOpen(true)}
+              className="px-3.5 py-1.5 bg-sage-800 hover:bg-sage-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition-all shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Create Classrooms</span>
+            </button>
           </div>
         </div>
 
@@ -548,6 +591,22 @@ export default function ClassRecordsList() {
           }}
         />
       )}
+
+      {/* ========================================================================= */}
+      {/* 5. FACULTY CLASSROOM SELF-SERVICE CREATION MODAL                           */}
+      {/* ========================================================================= */}
+      <FacultyCreateClassroomModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={({ count, results }) => {
+          fetchClasses();
+          const listStr = results.map(r => `${r.subject?.code} (${r.section?.name}) [Join Code: ${r.join_code}]`).join(', ');
+          setCreationBanner({
+            message: `Created ${count} active classroom(s): ${listStr}`
+          });
+          setTimeout(() => setCreationBanner(null), 8000);
+        }}
+      />
     </>
   );
 }
