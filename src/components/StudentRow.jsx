@@ -2,16 +2,18 @@ import { useState, useEffect, useRef } from 'react';
 import { cn } from "../lib/utils";
 import { Check, MessageSquare, CloudUpload, Lock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getTransmutedGrade } from '../lib/gradingMath';
+import { getTransmutedGrade, calculateSemestralGrade } from '../lib/gradingMath';
+import { calculateAcademicRisk } from '../lib/riskEngine';
 
-export default function StudentRow({ 
-  student, 
-  rowNo, 
-  initialPeriods, 
-  readOnly = false, 
+export default function StudentRow({
+  student,
+  rowNo,
+  initialPeriods,
+  readOnly = false,
   lockedMilestones = [],
   viewMode = 'All',
   classCode = 'default',
+  classRecordId,
   studentLocked,
   periodsList,
   maxItems = {
@@ -26,9 +28,10 @@ export default function StudentRow({
     'Semi-Final': [],
     Final: []
   },
-  onSelectRiskStudent
+  onSelectRiskStudent,
+  onSaveStatusChange
 }) {
-  const STORAGE_KEY = `sage_scores_${classCode}_${student?.id ?? rowNo}`;
+  const STORAGE_KEY = `sage_scores_${classRecordId || classCode}_${student?.id ?? rowNo}`;
 
   // Restore from localStorage if available, else fall back to initialPeriods
   const [scores, setScores] = useState(() => {
@@ -59,54 +62,83 @@ export default function StudentRow({
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    
+
     debounceRef.current = setTimeout(async () => {
       setSaveStatus('saving');
+      onSaveStatusChange?.('saving');
       localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
 
       try {
         const { data: authUser } = await supabase.auth.getUser();
         const savedByUuid = authUser?.user?.id || null;
-        
+
         const upsertRows = [];
         const periods = periodsList || ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
-        
+
         periods.forEach(term => {
           const tScores = scores[term] || {};
-          // Maintain compatibility with core Supabase schema act1-act6 columns
-          upsertRows.push({
-            class_record_id: classCode,
-            student_id: student.id,
-            term: term,
-            act1: Number(tScores.act1) || 0,
-            act2: Number(tScores.act2) || 0,
-            act3: Number(tScores.act3) || 0,
-            act4: Number(tScores.act4) || 0,
-            act5: Number(tScores.act5) || 0,
-            act6: Number(tScores.act6) || 0,
-            char_rating: Number(tScores.char) || 0,
-            exam: Number(tScores.exam) || 0,
-            saved_by: savedByUuid
-          });
+          const tActs = activities[term] || [];
+
+          const getActVal = (index) => {
+            const actObj = tActs[index];
+            const rawVal = actObj
+              ? (tScores[actObj.id] !== undefined ? tScores[actObj.id] : (tScores[actObj.dbId] !== undefined ? tScores[actObj.dbId] : tScores[`act${index + 1}`]))
+              : tScores[`act${index + 1}`];
+            if (rawVal === undefined || rawVal === null || rawVal === '') return null;
+            return Number(rawVal) || 0;
+          };
+
+          const charVal = (tScores.char !== undefined && tScores.char !== null && tScores.char !== '') ? Number(tScores.char) : null;
+          const examVal = (tScores.exam !== undefined && tScores.exam !== null && tScores.exam !== '') ? Number(tScores.exam) : null;
+
+          const act1 = getActVal(0);
+          const act2 = getActVal(1);
+          const act3 = getActVal(2);
+          const act4 = getActVal(3);
+          const act5 = getActVal(4);
+          const act6 = getActVal(5);
+
+          const hasAnyScore = act1 !== null || act2 !== null || act3 !== null || act4 !== null || act5 !== null || act6 !== null || charVal !== null || examVal !== null;
+
+          if (hasAnyScore) {
+            upsertRows.push({
+              class_record_id: classRecordId || classCode,
+              student_id: student.id,
+              term: term,
+              act1,
+              act2,
+              act3,
+              act4,
+              act5,
+              act6,
+              char_rating: charVal,
+              exam: examVal,
+              saved_by: savedByUuid
+            });
+          }
         });
 
-        const { error } = await supabase
-          .from('student_term_scores')
-          .upsert(upsertRows, { onConflict: 'class_record_id,student_id,term' });
+        if (upsertRows.length > 0) {
+          const { error } = await supabase
+            .from('student_term_scores')
+            .upsert(upsertRows, { onConflict: 'class_record_id,student_id,term' });
 
-        if (error) throw error;
+          if (error) throw error;
+        }
 
         // Also sync dynamic activities to student_activity_scores table if UUIDs exist
         const dynamicScoreUpserts = [];
         periods.forEach(term => {
           const tScores = scores[term] || {};
           const tActs = activities[term] || [];
-          tActs.forEach(act => {
-            if (act.id && typeof act.id === 'string' && act.id.length > 20) {
+          tActs.forEach((act, idx) => {
+            const actUuid = act.dbId || act.id;
+            if (actUuid && typeof actUuid === 'string' && actUuid.length > 20) {
+              const val = tScores[act.id] !== undefined ? tScores[act.id] : (tScores[actUuid] !== undefined ? tScores[actUuid] : tScores[`act${idx + 1}`]);
               dynamicScoreUpserts.push({
                 student_id: student.id,
-                activity_id: act.id,
-                score: Number(tScores[act.id]) || 0
+                activity_id: actUuid,
+                score: Number(val) || 0
               });
             }
           });
@@ -117,15 +149,17 @@ export default function StudentRow({
             await supabase
               .from('student_activity_scores')
               .upsert(dynamicScoreUpserts, { onConflict: 'student_id,activity_id' });
-          } catch(scoreErr) {
+          } catch (scoreErr) {
             console.warn('Could not sync to student_activity_scores:', scoreErr);
           }
         }
 
         setSaveStatus('saved');
+        onSaveStatusChange?.('saved');
       } catch (err) {
         console.error('Failed to sync scores draft:', err);
         setSaveStatus('idle');
+        onSaveStatusChange?.('idle');
       }
     }, 1200);
   }, [scores]);
@@ -144,21 +178,41 @@ export default function StudentRow({
   const calcPeriodRating = (term) => {
     const termScores = scores[term] || {};
     const termActivities = activities[term] || [];
-    
+
+    let hasEnteredScore = false;
     let csTotal = 0;
     let totalActMax = 0;
     termActivities.forEach(act => {
-      const score = Number(termScores[act.id]) || 0;
-      csTotal += score;
+      const val = termScores[act.id];
+      if (val !== undefined && val !== null && val !== '') {
+        hasEnteredScore = true;
+      }
+      csTotal += Number(val) || 0;
       totalActMax += (act.max || 0);
     });
 
-    const csPercent = totalActMax > 0 ? (csTotal / totalActMax) * 50 : 0;
-    
-    const charVal = Number(termScores.char) || 0;
-    const charPercent = (charVal / 100) * 10;
+    if (termScores.char !== undefined && termScores.char !== null && termScores.char !== '') {
+      hasEnteredScore = true;
+    }
+    if (termScores.exam !== undefined && termScores.exam !== null && termScores.exam !== '') {
+      hasEnteredScore = true;
+    }
 
+    const charVal = Number(termScores.char) || 0;
     const examVal = Number(termScores.exam) || 0;
+
+    const isTermEmpty = csTotal === 0 && charVal === 0 && examVal === 0;
+    if (isTermEmpty || !hasEnteredScore) {
+      return {
+        csTotal: 0,
+        csPercent: 0,
+        examPercent: 0,
+        rating: null
+      };
+    }
+
+    const csPercent = totalActMax > 0 ? (csTotal / totalActMax) * 50 : 0;
+    const charPercent = (charVal / 100) * 10;
     const examMax = Number(maxItems[term]?.exam) || 40;
     const examPercent = examMax > 0 ? (examVal / examMax) * 40 : 0;
 
@@ -178,16 +232,25 @@ export default function StudentRow({
   const semiFinalResult = calcPeriodRating('Semi-Final');
   const finalResult = calcPeriodRating('Final');
 
-  const mr = Math.round((prelimResult.rating + midtermResult.rating) / 2);
-  const tfr = Math.round((semiFinalResult.rating + finalResult.rating) / 2);
-  const sg = Math.round((mr + tfr) / 2);
+  const isSummer = periodsList && !periodsList.includes('Prelim');
+  const semestralCalc = calculateSemestralGrade({
+    prelim: prelimResult.rating,
+    midterm: midtermResult.rating,
+    semiFinal: semiFinalResult.rating,
+    final: finalResult.rating,
+    isSummer
+  });
+
+  const mr = semestralCalc.mr !== null ? semestralCalc.mr : '—';
+  const tfr = semestralCalc.tfr !== null ? semestralCalc.tfr : '—';
+  const sg = semestralCalc.sg !== null ? semestralCalc.sg : '—';
 
   const storedAbsences = localStorage.getItem(`sage_absences_${classCode}_${student.id}`);
   const absences = storedAbsences !== null ? parseInt(storedAbsences) : 0;
   const isFDA = absences >= 4;
 
-  const rawGrade = getTransmutedGrade(sg).toFixed(2);
-  const autoRemarks = isFDA ? 'FDA' : (parseFloat(rawGrade) <= 3.00 ? 'Passed' : 'Failed');
+  const rawGrade = semestralCalc.sg !== null ? semestralCalc.gwa : '—';
+  const autoRemarks = isFDA ? 'FDA' : (semestralCalc.sg !== null ? (parseFloat(rawGrade) <= 3.00 ? 'Passed' : 'Failed') : '—');
   const remarks = isFDA ? 'FDA' : (scores.customRemarks || autoRemarks);
 
   const grade = (() => {
@@ -201,6 +264,7 @@ export default function StudentRow({
 
   const getStatus = (score) => {
     if (remarks === 'FDA') return { label: 'Failing', color: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500 shadow-rose-500/40 animate-pulse' };
+    if (score === '—' || score === null || score === undefined) return { label: 'Safe', color: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500 shadow-emerald-500/40' };
     if (score >= 80) return { label: 'Safe', color: 'text-emerald-700 bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500 shadow-emerald-500/40' };
     if (score >= 75) return { label: 'At-Risk', color: 'text-amber-700 bg-amber-50 border-amber-200', dot: 'bg-emerald-500 shadow-emerald-500/40' };
     return { label: 'Failing', color: 'text-rose-700 bg-rose-50 border-rose-200', dot: 'bg-rose-500 shadow-rose-500/40 animate-pulse' };
@@ -208,9 +272,13 @@ export default function StudentRow({
 
   const statusInfo = getStatus(sg);
 
-  const isLocked = readOnly || (studentLocked !== undefined ? studentLocked : (lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final')));
+  const isLocked = readOnly || (studentLocked !== undefined ? studentLocked : false);
+  const isPrelimCellLocked = isLocked;
+  const isMidtermCellLocked = isLocked;
+  const isSemiFinalCellLocked = isLocked;
+  const isFinalCellLocked = isLocked;
 
-  const renderInputCell = (term, key, maxVal, isTermLocked, widthClass = "w-12") => {
+  const renderInputCell = (term, key, maxVal, isTermLocked, widthClass = "w-full") => {
     const value = scores[term]?.[key] ?? '';
     if (isTermLocked) {
       return <span className="font-mono text-xs">{value === '' ? '0' : value}</span>;
@@ -234,6 +302,19 @@ export default function StudentRow({
     );
   };
 
+  const currentGwaNum = semestralCalc.sg !== null ? parseFloat(semestralCalc.gwa) : null;
+  const liveRiskData = calculateAcademicRisk({
+    currentGwa: currentGwaNum,
+    failingSubjectsCount: (currentGwaNum !== null && currentGwaNum > 3.00) ? 1 : 0,
+    majorExamAverage: 85,
+    absenceCount: absences,
+    previousTermRating: prelimResult.rating,
+    currentTermRating: midtermResult.rating,
+    hasGradeBelow200: false // Scholarship floor breach is NOT a general risk factor (see riskUtils.js)
+  });
+
+  const effectiveRiskScore = liveRiskData.composite_score;
+
   const stickyBgClass = cn(
     statusInfo.label === 'Safe' && "bg-white group-hover:bg-slate-50",
     statusInfo.label === 'At-Risk' && "bg-[#fffdf5] group-hover:bg-[#fff9e6]",
@@ -256,38 +337,38 @@ export default function StudentRow({
       <td className={cn("px-4 py-3 text-left font-semibold text-slate-900 sticky left-[136px] border-r border-slate-200 z-10 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]", stickyBgClass)}>
         <div className="flex items-center justify-between gap-1.5">
           <span className="truncate">{student.name}</span>
-          {student.risk_score >= 25 && (
+          {effectiveRiskScore >= 25 && (
             <button
               type="button"
               onClick={() => onSelectRiskStudent && onSelectRiskStudent(student)}
               className={cn(
                 "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold shrink-0 border transition-all",
-                student.risk_score >= 75 ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 cursor-pointer" :
-                student.risk_score >= 50 ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 cursor-pointer" :
-                "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 hover:border-amber-300 cursor-pointer"
-              )} 
+                effectiveRiskScore >= 75 ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 cursor-pointer" :
+                  effectiveRiskScore >= 50 ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 cursor-pointer" :
+                    "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 hover:border-amber-300 cursor-pointer"
+              )}
               title="Click to evaluate student risk & interventions"
             >
               <span className={cn(
                 "w-1.5 h-1.5 rounded-full",
-                student.risk_score >= 50 ? "bg-rose-500 animate-pulse" : "bg-amber-500"
+                effectiveRiskScore >= 50 ? "bg-rose-500 animate-pulse" : "bg-amber-500"
               )} />
-              {student.risk_score >= 75 ? 'Critical' : student.risk_score >= 50 ? 'High' : 'Watch'}
+              {effectiveRiskScore >= 75 ? 'Critical' : effectiveRiskScore >= 50 ? 'High' : 'Watch'}
             </button>
           )}
         </div>
       </td>
-      
+
       {/* PRELIM */}
       {((!periodsList || periodsList.includes('Prelim')) && (viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch')) && (
         <>
           {(activities.Prelim || []).map(act => {
             const isConfigured = !!act.name;
-            const cellLocked = isLocked || !isConfigured;
+            const cellLocked = isPrelimCellLocked || !isConfigured;
             return (
               <td key={act.id} className="p-1 border-r border-slate-100 w-12 relative">
                 {renderInputCell('Prelim', act.id, act.max, cellLocked)}
-                {!isConfigured && !isLocked && (
+                {!isConfigured && !isPrelimCellLocked && (
                   <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
                     <Lock className="w-2.5 h-2.5 text-slate-400 select-none" />
                   </div>
@@ -297,23 +378,23 @@ export default function StudentRow({
           })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{prelimResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Prelim', 'char', 100, isLocked, "w-16")}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell('Prelim', 'exam', maxItems.Prelim?.exam || 40, isLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Prelim', 'char', 100, isPrelimCellLocked, "w-16")}</td>
+          <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Prelim', 'exam', maxItems.Prelim?.exam || 40, isPrelimCellLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-sky-50 border-r border-slate-200 text-sky-850 w-14 text-center">{prelimResult.rating}</td>
         </>
       )}
- 
+
       {/* MIDTERM */}
-      {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch') && (
+      {((!periodsList || periodsList.includes('Midterm')) && (viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch')) && (
         <>
           {(activities.Midterm || []).map(act => {
             const isConfigured = !!act.name;
-            const cellLocked = isLocked || !isConfigured;
+            const cellLocked = isMidtermCellLocked || !isConfigured;
             return (
               <td key={act.id} className="p-1 border-r border-slate-100 w-12 relative">
                 {renderInputCell('Midterm', act.id, act.max, cellLocked)}
-                {!isConfigured && !isLocked && (
+                {!isConfigured && !isMidtermCellLocked && (
                   <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
                     <Lock className="w-2.5 h-2.5 text-slate-400 select-none" />
                   </div>
@@ -323,27 +404,27 @@ export default function StudentRow({
           })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{midtermResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Midterm', 'char', 100, isLocked, "w-16")}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell('Midterm', 'exam', maxItems.Midterm?.exam || 40, isLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Midterm', 'char', 100, isMidtermCellLocked, "w-16")}</td>
+          <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Midterm', 'exam', maxItems.Midterm?.exam || 40, isMidtermCellLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-indigo-50 border-r border-slate-200 text-indigo-800 w-14 text-center">{midtermResult.rating}</td>
         </>
       )}
- 
+
       {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch' || viewMode === 'Summary') && (
         <td className="px-3 py-3 font-mono font-extrabold bg-indigo-100 border-r border-slate-200 text-indigo-955 w-16 text-center text-sm">{mr}</td>
       )}
- 
+
       {/* SEMI-FINAL */}
       {((!periodsList || periodsList.includes('Semi-Final')) && (viewMode === 'All' || viewMode === 'Semi-Final' || viewMode === 'FinalBatch')) && (
         <>
           {(activities['Semi-Final'] || []).map(act => {
             const isConfigured = !!act.name;
-            const cellLocked = isLocked || !isConfigured;
+            const cellLocked = isSemiFinalCellLocked || !isConfigured;
             return (
               <td key={act.id} className="p-1 border-r border-slate-100 w-12 relative">
                 {renderInputCell('Semi-Final', act.id, act.max, cellLocked)}
-                {!isConfigured && !isLocked && (
+                {!isConfigured && !isSemiFinalCellLocked && (
                   <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
                     <Lock className="w-2.5 h-2.5 text-slate-400 select-none" />
                   </div>
@@ -353,23 +434,23 @@ export default function StudentRow({
           })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{semiFinalResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Semi-Final', 'char', 100, isLocked, "w-16")}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell('Semi-Final', 'exam', maxItems['Semi-Final']?.exam || 40, isLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Semi-Final', 'char', 100, isSemiFinalCellLocked, "w-16")}</td>
+          <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Semi-Final', 'exam', maxItems['Semi-Final']?.exam || 40, isSemiFinalCellLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-amber-50 border-r border-slate-200 text-amber-800 w-14 text-center">{semiFinalResult.rating}</td>
         </>
       )}
- 
+
       {/* FINAL */}
-      {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch') && (
+      {((!periodsList || periodsList.includes('Final')) && (viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch')) && (
         <>
           {(activities.Final || []).map(act => {
             const isConfigured = !!act.name;
-            const cellLocked = isLocked || !isConfigured;
+            const cellLocked = isFinalCellLocked || !isConfigured;
             return (
               <td key={act.id} className="p-1 border-r border-slate-100 w-12 relative">
                 {renderInputCell('Final', act.id, act.max, cellLocked)}
-                {!isConfigured && !isLocked && (
+                {!isConfigured && !isFinalCellLocked && (
                   <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
                     <Lock className="w-2.5 h-2.5 text-slate-400 select-none" />
                   </div>
@@ -379,8 +460,8 @@ export default function StudentRow({
           })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{finalResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Final', 'char', 100, isLocked, "w-16")}</td>
-          <td className="p-1 border-r border-slate-100 w-12">{renderInputCell('Final', 'exam', maxItems.Final?.exam || 40, isLocked)}</td>
+          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Final', 'char', 100, isFinalCellLocked, "w-16")}</td>
+          <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Final', 'exam', maxItems.Final?.exam || 40, isFinalCellLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-orange-50 border-r border-slate-200 text-orange-850 w-14 text-center">{finalResult.rating}</td>
         </>

@@ -210,7 +210,7 @@ export default function StudentRisk({ mode = 'risk' }) {
           onClose={() => setSelectedStudent(null)}
           student={selectedStudent}
           classRecordId={selectedClassId}
-          currentTerm={selectedClass?.sections?.semester || 'Midterm'}
+          currentTerm='Midterm'
           subjectCode={selectedClass?.subjects?.code || ''}
           subjectName={selectedClass?.subjects?.name || ''}
           onSaveSuccess={handleEvaluationSaved}

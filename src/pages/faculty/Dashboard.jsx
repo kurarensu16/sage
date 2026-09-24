@@ -219,7 +219,8 @@ export default function Dashboard() {
         setConsultationRequests(loadedConsultations);
         const pendingConsultations = loadedConsultations.filter(c => c.status === 'pending').length;
 
-        const atRiskStudents = combinedStudents.filter(s => s.risk_level === 'high' || s.risk_level === 'critical' || s.risk_level === 'moderate' || (s.absences && s.absences >= 3));
+        // Unified risk threshold: Only HIGH and CRITICAL count as "At-Risk" (single source of truth via riskUtils.js)
+        const atRiskStudents = combinedStudents.filter(s => s.risk_level === 'high' || s.risk_level === 'critical');
 
         setStats({
           handledClassesCount: classesData?.length || 0,
@@ -231,11 +232,18 @@ export default function Dashboard() {
           pendingConsultationsCount: pendingConsultations
         });
 
-        // 5. ASPIRE v3.1: Calculate Visual Analytics Data
+        // 5. ASPIRE v4.0: Calculate Visual Analytics Data + PL Eligibility Tracking
         const escalated = (evaluationsData || []).filter(e => e.refer_to_dean === true).length;
         const critical = combinedStudents.filter(s => (s.risk_level === 'critical' || s.risk_level === 'high') && !s.evaluation?.refer_to_dean).length;
         const moderate = combinedStudents.filter(s => s.risk_level === 'moderate').length;
-        const plWatch = (evaluationsData || []).filter(e => e.evaluation_context === 'pl_retention').length;
+        
+        // PL Tracking: Identify students eligible for President's List per DYCI Handbook Sec 3.8
+        // Sapientia (1.00-1.25), Excellentia (1.26-1.50), Virtus (1.51-1.75)
+        const plCandidates = combinedStudents.filter(s => 
+          s.current_gwa !== null && s.current_gwa !== undefined && 
+          !isNaN(s.current_gwa) && s.current_gwa > 0 && s.current_gwa <= 1.75
+        );
+        const plWatch = plCandidates.length;
         const onTrack = Math.max(0, combinedStudents.length - (escalated + critical + plWatch + moderate));
 
         setRiskData({
@@ -260,15 +268,15 @@ export default function Dashboard() {
 
           (termScores || []).forEach(sc => {
             const actSum = (sc.act1 || 0) + (sc.act2 || 0) + (sc.act3 || 0) + (sc.act4 || 0) + (sc.act5 || 0) + (sc.act6 || 0);
-            if (actSum > 0 || sc.act1 != null) {
+            if (actSum > 0) {
               csSum += Math.min(100, (actSum / 110) * 100);
               csCount++;
             }
-            if (sc.char_rating != null) {
+            if (sc.char_rating != null && sc.char_rating > 0) {
               charSum += sc.char_rating;
               charCount++;
             }
-            if (sc.exam != null) {
+            if (sc.exam != null && sc.exam > 0) {
               examSum += Math.min(100, (sc.exam / 40) * 100);
               examCount++;
             }
@@ -280,7 +288,17 @@ export default function Dashboard() {
             { component: 'Major Term Examinations (40%)', avgScore: examCount > 0 ? Math.round(examSum / examCount) : 78 }
           ]);
 
-          const termRatings = { Prelim: [], Midterm: [], 'Semi-Final': [], Final: [] };
+          // Detect if current semester is Summer (compressed 2-term: Midterm + Final)
+          const isSummerSemester = (activeTerm?.semester || '').toLowerCase().includes('summer') ||
+            classesData.some(c => (c.semester || '').toLowerCase().includes('summer'));
+          
+          const termNames = isSummerSemester 
+            ? ['Midterm', 'Final'] 
+            : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+
+          const termRatings = {};
+          termNames.forEach(t => { termRatings[t] = []; });
+          
           combinedStudents.forEach(s => {
             if (s.term_ratings) {
               Object.entries(s.term_ratings).forEach(([t, r]) => {
@@ -289,27 +307,16 @@ export default function Dashboard() {
             }
           });
 
-          const trajectory = [
-            { term: 'Prelim', avgGwa: 2.18, passRate: 88, examAvg: 82 },
-            { term: 'Midterm', avgGwa: 2.05, passRate: 91, examAvg: 85 },
-            { term: 'Semi-Final', avgGwa: 1.94, passRate: 93, examAvg: 87 },
-            { term: 'Final', avgGwa: 1.82, passRate: 96, examAvg: 89 }
-          ];
-
-          ['Prelim', 'Midterm', 'Semi-Final', 'Final'].forEach((termName, idx) => {
+          const trajectory = termNames.map(termName => {
             const rList = termRatings[termName] || [];
             if (rList.length > 0) {
               const avgR = rList.reduce((a, b) => a + b, 0) / rList.length;
               const gwa = getTransmutedGrade(avgR);
               const pass = Math.round((rList.filter(r => r >= 75).length / rList.length) * 100);
-              trajectory[idx] = {
-                term: termName,
-                avgGwa: gwa,
-                passRate: pass,
-                examAvg: Math.round(avgR)
-              };
+              return { term: termName, avgGwa: gwa, passRate: pass, examAvg: Math.round(avgR) };
             }
-          });
+            return { term: termName, avgGwa: null, passRate: null, examAvg: null };
+          }).filter(d => d.avgGwa !== null); // Only include terms with actual data
 
           setTrajectoryData(trajectory);
         }

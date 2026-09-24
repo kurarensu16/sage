@@ -198,22 +198,32 @@ export default function MyGradesDetail() {
           const compList = crInfo?.subjects?.grade_computations?.grade_computation_components || [];
           const templateActs = compList.filter(c => c.is_multiple);
 
-          const csBreakdown = termActs.length > 0 
-            ? termActs.map(act => {
-                const score = studentScoresByActivity[act.activity_id] ?? 0;
-                csSum += score;
-                csMax += (parseFloat(act.max_score) || 20);
-                return {
-                  name: act.title || act.name || 'Activity',
-                  obtained: score,
-                  max: parseFloat(act.max_score) || 20,
-                  description: act.description || ''
-                };
-              })
-            : (() => {
-                // Keep formative list blank unless the instructor has officially configured custom activities in DB
-                return [];
-              })();
+          let csBreakdown = [];
+          if (termActs.length > 0) {
+            csBreakdown = termActs.map(act => {
+              const score = studentScoresByActivity[act.activity_id] ?? 0;
+              csSum += score;
+              csMax += (parseFloat(act.max_score) || 20);
+              return {
+                name: act.title || act.name || 'Activity',
+                obtained: score,
+                max: parseFloat(act.max_score) || 20,
+                description: act.description || ''
+              };
+            });
+          } else {
+            // Fallback to core act1-act6 columns from student_term_scores and colsMap
+            ['act1', 'act2', 'act3', 'act4', 'act5', 'act6'].forEach(actKey => {
+              const val = studScores[actKey];
+              if (val !== null && val !== undefined) {
+                csSum += Number(val) || 0;
+                csMax += Number(max[actKey]) || 20;
+              }
+            });
+            if (csMax === 0) {
+              csMax = (max.act1 || 20) + (max.act2 || 20) + (max.act3 || 20) + (max.act4 || 20) + (max.act5 || 20) + (max.act6 || 10);
+            }
+          }
 
           const csPct = csMax > 0 ? (csSum / csMax) * 50 : 0;
 
@@ -221,7 +231,7 @@ export default function MyGradesDetail() {
           const charPct = char * 0.1;
 
           // Exam
-          const examMax = max.exam;
+          const examMax = max.exam || 40;
           const examPct = examMax > 0 ? (exam / examMax) * 40 : 0;
 
           // Total Raw computed Rating

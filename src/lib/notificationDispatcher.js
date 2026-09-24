@@ -182,10 +182,16 @@ export async function notifyGradesPosted({
   sectionId,
   subjectCode = '',
   termName = 'Final',
-  facultyName = ''
+  facultyName = '',
+  studentIds = null,
+  isUpdate = false
 }) {
   try {
-    if (sectionId) {
+    let targetUserIds = [];
+
+    if (studentIds && Array.isArray(studentIds) && studentIds.length > 0) {
+      targetUserIds = studentIds;
+    } else if (sectionId) {
       const { data: students } = await supabase
         .from('users')
         .select('user_id')
@@ -193,14 +199,19 @@ export async function notifyGradesPosted({
         .eq('status', 'active')
         .eq('section_id', sectionId);
 
-      if (students && students.length > 0) {
-        const list = students.map(st => ({
-          recipient_id: st.user_id,
-          type: 'grade_posted',
-          message: `Your ${termName} grades for ${subjectCode || 'your class'} have been officially posted by Prof. ${facultyName || 'your instructor'}.`
-        }));
-        await dispatchNotifications(list);
+      if (students) {
+        targetUserIds = students.map(st => st.user_id);
       }
+    }
+
+    if (targetUserIds.length > 0) {
+      const actionText = isUpdate ? 'updated' : 'posted';
+      const list = targetUserIds.map(uid => ({
+        recipient_id: uid,
+        type: 'grade_posted',
+        message: `Your ${termName} grades for ${subjectCode || 'your class'} have been ${actionText} by Prof. ${facultyName || 'your instructor'} for consultation.`
+      }));
+      await dispatchNotifications(list);
     }
   } catch (err) {
     console.warn('Error in notifyGradesPosted:', err);
