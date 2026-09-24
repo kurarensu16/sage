@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import StudentRow from '../../components/StudentRow';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus, X, AlertTriangle, AlertCircle, Settings, Sliders } from 'lucide-react';
+import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus, X, AlertTriangle, AlertCircle, Settings, Sliders, CloudUpload } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
@@ -32,6 +32,8 @@ export default function ScoreInput() {
   const [lockedMilestones, setLockedMilestones] = useState([]);
   const [studentLocks, setStudentLocks] = useState({});
   const [savingDrafts, setSavingDrafts] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState('saved'); // 'saving' | 'saved'
+  const [lastSavedAt, setLastSavedAt] = useState(null);
   const [classesList, setClassesList] = useState([]);
   const [evaluatingStudent, setEvaluatingStudent] = useState(null);
 
@@ -40,6 +42,7 @@ export default function ScoreInput() {
   const [popupTitle, setPopupTitle] = useState('');
   const [popupDesc, setPopupDesc] = useState('');
   const [showPostModal, setShowPostModal] = useState(false);
+  const [pendingPostMilestone, setPendingPostMilestone] = useState(null);
   const [postingGrades, setPostingGrades] = useState(false);
 
   // Maximum items configuration for activities and exams per period
@@ -50,38 +53,10 @@ export default function ScoreInput() {
     Final: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 }
   });
   const [activities, setActivities] = useState({
-    Prelim: [
-      { id: 'act1', name: 'FA 1', max: 20 },
-      { id: 'act2', name: 'FA 2', max: 20 },
-      { id: 'act3', name: 'FA 3', max: 20 },
-      { id: 'act4', name: 'FA 4', max: 20 },
-      { id: 'act5', name: 'FA 5', max: 20 },
-      { id: 'act6', name: 'FA 6', max: 10 }
-    ],
-    Midterm: [
-      { id: 'act1', name: 'FA 1', max: 20 },
-      { id: 'act2', name: 'FA 2', max: 20 },
-      { id: 'act3', name: 'FA 3', max: 20 },
-      { id: 'act4', name: 'FA 4', max: 20 },
-      { id: 'act5', name: 'FA 5', max: 20 },
-      { id: 'act6', name: 'FA 6', max: 10 }
-    ],
-    'Semi-Final': [
-      { id: 'act1', name: 'FA 1', max: 20 },
-      { id: 'act2', name: 'FA 2', max: 20 },
-      { id: 'act3', name: 'FA 3', max: 20 },
-      { id: 'act4', name: 'FA 4', max: 20 },
-      { id: 'act5', name: 'FA 5', max: 20 },
-      { id: 'act6', name: 'FA 6', max: 10 }
-    ],
-    Final: [
-      { id: 'act1', name: 'FA 1', max: 20 },
-      { id: 'act2', name: 'FA 2', max: 20 },
-      { id: 'act3', name: 'FA 3', max: 20 },
-      { id: 'act4', name: 'FA 4', max: 20 },
-      { id: 'act5', name: 'FA 5', max: 20 },
-      { id: 'act6', name: 'FA 6', max: 10 }
-    ]
+    Prelim: [],
+    Midterm: [],
+    'Semi-Final': [],
+    Final: []
   });
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
@@ -506,6 +481,7 @@ export default function ScoreInput() {
         setMaxItems(newMax);
 
         // Fetch dynamic custom activities from Supabase class_activities table
+        let fetchedDbActs = [];
         try {
           const { data: dbActs } = await supabase
             .from('class_activities')
@@ -513,12 +489,16 @@ export default function ScoreInput() {
             .eq('class_record_id', classRecordId)
             .order('created_at', { ascending: true });
 
+          fetchedDbActs = dbActs || [];
+
           const loadedActivities = { Prelim: [], Midterm: [], 'Semi-Final': [], Final: [] };
-          periodsList.forEach(t => {
-            const termActs = dbActs ? dbActs.filter(a => a.term === t) : [];
+          ['Prelim', 'Midterm', 'Semi-Final', 'Final'].forEach(t => {
+            const termActs = fetchedDbActs.filter(a => a.term === t);
             if (termActs.length > 0) {
-              loadedActivities[t] = termActs.map(a => ({
+              loadedActivities[t] = termActs.map((a, idx) => ({
                 id: a.activity_id,
+                dbId: a.activity_id,
+                slotKey: `act${idx + 1}`,
                 name: a.name || a.title || '',
                 max: parseFloat(a.max_score) || 20,
                 description: a.description || ''
@@ -603,6 +583,34 @@ export default function ScoreInput() {
             scoresByStudent[row.student_id].dbSavedAt = rowTime;
           }
         });
+
+        // 4b. Fetch granular activity scores from student_activity_scores table
+        if (fetchedDbActs && fetchedDbActs.length > 0) {
+          const actIds = fetchedDbActs.map(a => a.activity_id);
+          const { data: granularScores } = await supabase
+            .from('student_activity_scores')
+            .select('student_id, activity_id, score')
+            .in('activity_id', actIds);
+
+          if (granularScores && granularScores.length > 0) {
+            const actMap = new Map(fetchedDbActs.map(a => [a.activity_id, a.term]));
+            granularScores.forEach(gRow => {
+              const term = actMap.get(gRow.activity_id);
+              if (term) {
+                if (!scoresByStudent[gRow.student_id]) {
+                  scoresByStudent[gRow.student_id] = {
+                    Prelim: {}, Midterm: {}, 'Semi-Final': {}, Final: {},
+                    customRemarks: '', remarksNote: '', dbSavedAt: null
+                  };
+                }
+                if (!scoresByStudent[gRow.student_id][term]) {
+                  scoresByStudent[gRow.student_id][term] = {};
+                }
+                scoresByStudent[gRow.student_id][term][gRow.activity_id] = parseFloat(gRow.score) || 0;
+              }
+            });
+          }
+        }
 
         if (classRecordId === '35d248d1-ef72-4569-8f40-ca0dfe141941') {
           // Seed mock scores for Ocampo, Julia
@@ -839,10 +847,14 @@ export default function ScoreInput() {
       if (saveErr) throw saveErr;
 
       // Update state
+      const slotKey = `act${configSlotIndex + 1}`;
+      const actId = savedAct.activity_id;
       const updatedList = [...(activities[configTerm] || [])];
       updatedList[configSlotIndex] = {
-        id: savedAct.activity_id,
-        name: savedAct.name,
+        id: actId,
+        dbId: actId,
+        slotKey: slotKey,
+        name: savedAct.name || savedAct.title || trimmedTitle,
         max: parseFloat(savedAct.max_score),
         description: savedAct.description || ''
       };
@@ -856,31 +868,21 @@ export default function ScoreInput() {
       localStorage.setItem(`sage_activities_${classRecordId}`, JSON.stringify(updatedActivities));
       
       // Update max items columns count map to match the new score
-      const key = `act${configSlotIndex + 1}`;
+      const key = slotKey;
       const newMax = { ...maxItems };
       if (!newMax[configTerm]) newMax[configTerm] = {};
       newMax[configTerm][key] = parseFloat(savedAct.max_score);
       setMaxItems(newMax);
 
-      // Trigger update of max score columns in class_record_columns
-      const { data: existingCol } = await supabase
-        .from('class_record_columns')
-        .select('column_id')
-        .eq('class_record_id', classRecordId)
-        .eq('term', configTerm)
-        .maybeSingle();
-
+      // Trigger update of max score columns in class_grading_columns
       const colPayload = {
         class_record_id: classRecordId,
         term: configTerm,
         [`${key}_max`]: parseFloat(savedAct.max_score)
       };
-      if (existingCol) {
-        colPayload.column_id = existingCol.column_id;
-      }
 
       await supabase
-        .from('class_record_columns')
+        .from('class_grading_columns')
         .upsert(colPayload, { onConflict: 'class_record_id,term' });
 
       setIsConfigModalOpen(false);
@@ -912,7 +914,8 @@ export default function ScoreInput() {
 
     const term = newActivityTerm;
     const list = activities[term] || [];
-    if (list.length >= 6) {
+    const validList = list.filter(a => a && (a.name || a.dbId));
+    if (validList.length >= 6) {
       alert('Maximum of 6 formative assessments/activities is allowed per term.');
       return;
     }
@@ -944,21 +947,20 @@ export default function ScoreInput() {
 
       if (error) throw error;
 
+      const actId = savedAct.activity_id;
+      const nextIndex = validList.length + 1;
+      const actKey = `act${nextIndex}`;
+
       const newAct = {
-        id: savedAct.activity_id,
-        name: savedAct.name,
-        max: parseFloat(savedAct.max_score),
-        description: savedAct.description || ''
+        id: actId,
+        dbId: actId,
+        slotKey: actKey,
+        name: savedAct.name || savedAct.title || trimmedName,
+        max: parseFloat(savedAct.max_score) || Number(newActivityMax) || 20,
+        description: savedAct.description || trimmedDesc
       };
 
-      // If the first activity was completely unconfigured placeholder, overwrite it!
-      let updatedList = [];
-      if (list.length === 1 && !list[0].name) {
-        updatedList = [newAct];
-      } else {
-        updatedList = [...list, newAct];
-      }
-
+      const updatedList = [...validList, newAct];
       const updated = {
         ...activities,
         [term]: updatedList
@@ -966,32 +968,20 @@ export default function ScoreInput() {
       setActivities(updated);
       localStorage.setItem(`sage_activities_${classRecordId}`, JSON.stringify(updated));
 
-      // Trigger update of max score columns in class_record_columns
-      const nextIndex = updatedList.length;
-      const key = `act${nextIndex}`;
+      // Trigger update of max score columns in class_grading_columns
       const newMax = { ...maxItems };
       if (!newMax[term]) newMax[term] = {};
-      newMax[term][key] = parseFloat(savedAct.max_score);
+      newMax[term][actKey] = parseFloat(savedAct.max_score);
       setMaxItems(newMax);
-
-      const { data: existingCol } = await supabase
-        .from('class_record_columns')
-        .select('column_id')
-        .eq('class_record_id', classRecordId)
-        .eq('term', term)
-        .maybeSingle();
 
       const colPayload = {
         class_record_id: classRecordId,
         term: term,
-        [`${key}_max`]: parseFloat(savedAct.max_score)
+        [`${actKey}_max`]: parseFloat(savedAct.max_score)
       };
-      if (existingCol) {
-        colPayload.column_id = existingCol.column_id;
-      }
 
       await supabase
-        .from('class_record_columns')
+        .from('class_grading_columns')
         .upsert(colPayload, { onConflict: 'class_record_id,term' });
 
       setIsAddActivityModalOpen(false);
@@ -1013,6 +1003,7 @@ export default function ScoreInput() {
     setSavingDrafts(true);
     try {
       const upsertScoresRows = [];
+      const granularScoreUpserts = [];
 
       students.forEach(stud => {
         const STORAGE_KEY = `sage_scores_${classRecordId}_${stud.id}`;
@@ -1022,16 +1013,34 @@ export default function ScoreInput() {
           
           periodsList.forEach(term => {
             const termScores = draft[term] || {};
+            const termActs = activities[term] || [];
+
+            const legacyScores = { act1: 0, act2: 0, act3: 0, act4: 0, act5: 0, act6: 0 };
+            termActs.forEach((act, idx) => {
+              const val = Number(termScores[act.id]) ?? Number(termScores[act.dbId]) ?? Number(termScores[act.slotKey]) ?? Number(termScores[`act${idx+1}`]) ?? 0;
+              if (idx < 6) {
+                legacyScores[`act${idx+1}`] = val;
+              }
+              const actUuid = act.dbId || act.id;
+              if (actUuid && typeof actUuid === 'string' && actUuid.length > 20) {
+                granularScoreUpserts.push({
+                  student_id: stud.id,
+                  activity_id: actUuid,
+                  score: val
+                });
+              }
+            });
+
             upsertScoresRows.push({
               class_record_id: classRecordId,
               student_id: stud.id,
               term,
-              act1: termScores.act1 || 0,
-              act2: termScores.act2 || 0,
-              act3: termScores.act3 || 0,
-              act4: termScores.act4 || 0,
-              act5: termScores.act5 || 0,
-              act6: termScores.act6 || 0,
+              act1: legacyScores.act1,
+              act2: legacyScores.act2,
+              act3: legacyScores.act3,
+              act4: legacyScores.act4,
+              act5: legacyScores.act5,
+              act6: legacyScores.act6,
               char_rating: termScores.char || 0,
               exam: termScores.exam || 0,
               saved_by: user.id
@@ -1046,6 +1055,15 @@ export default function ScoreInput() {
         .upsert(upsertScoresRows, { onConflict: 'class_record_id,student_id,term' });
 
       if (scoresErr) throw scoresErr;
+
+      if (granularScoreUpserts.length > 0) {
+        await supabase
+          .from('student_activity_scores')
+          .upsert(granularScoreUpserts, { onConflict: 'student_id,activity_id' });
+      }
+
+      setAutoSaveStatus('saved');
+      setLastSavedAt(new Date());
 
       // Log activity
       const actorName = resolveActorName(profile, user);
@@ -1066,31 +1084,59 @@ export default function ScoreInput() {
     }
   };
 
-  const handlePostGrades = async () => {
+  const handlePostGrades = async (targetMilestone = 'semestral') => {
     if (!classRecordId || students.length === 0) return;
 
     setPostingGrades(true);
     try {
-      const periodParam = 'final';
+      let periodParam = 'final';
+      let termNotificationName = 'Official Semestral Grade (SG)';
+      let newMilestoneLock = 'Semestral Grade';
 
-      // 1. Fetch existing posted grades for this class record and period to match primary keys (prevent constraint errors)
+      if (targetMilestone === 'midterm') {
+        periodParam = 'midterm';
+        termNotificationName = isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)';
+        newMilestoneLock = 'Midterm Rating';
+      } else if (targetMilestone === 'tfr') {
+        periodParam = 'final';
+        termNotificationName = isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)';
+        newMilestoneLock = 'Tentative Final Rating';
+      } else {
+        periodParam = 'final';
+        termNotificationName = 'Official Semestral Grade (SG)';
+        newMilestoneLock = 'Semestral Grade';
+      }
+
+      // 1. Fetch existing posted grades for this class record and period to match primary keys & detect changes
       const { data: existingPg, error: fetchErr } = await supabase
         .from('posted_grades')
-        .select('posted_grade_id, student_id')
+        .select('posted_grade_id, student_id, computed_grade, effective_grade, remarks')
         .eq('class_record_id', classRecordId)
         .eq('grade_period', periodParam);
 
       if (fetchErr) throw fetchErr;
 
       const existingMap = {};
+      const isFirstPost = !existingPg || existingPg.length === 0;
+
       if (existingPg) {
         existingPg.forEach(row => {
-          existingMap[row.student_id] = row.posted_grade_id;
+          existingMap[row.student_id] = {
+            id: row.posted_grade_id,
+            computed_grade: row.computed_grade,
+            effective_grade: row.effective_grade,
+            remarks: row.remarks
+          };
         });
       }
 
       const postRows = [];
-      const updatedLockedMilestones = ['Semestral Grade'];
+      const changedStudentIds = [];
+      const updatedLockedMilestones = Array.from(new Set([
+        ...lockedMilestones, 
+        newMilestoneLock,
+        ...(targetMilestone === 'midterm' ? ['Prelim', 'Midterm'] : targetMilestone === 'tfr' ? ['Semi-Final', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final', 'Semestral Grade'])
+      ]));
 
       const mapRemarkToDb = (remarkStr) => {
         if (!remarkStr) return 'passed';
@@ -1102,24 +1148,6 @@ export default function ScoreInput() {
       students.forEach(stud => {
         const STORAGE_KEY = `sage_scores_${classRecordId}_${stud.id}`;
         const draft = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-        
-        const termScores = draft.Final || {};
-        const maxT = maxItems.Final || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
-        
-        // CS sum
-        const csSum = (termScores.act1 || 0) + (termScores.act2 || 0) + (termScores.act3 || 0) + (termScores.act4 || 0) + (termScores.act5 || 0) + (termScores.act6 || 0);
-        const csMax = maxT.act1 + maxT.act2 + maxT.act3 + maxT.act4 + maxT.act5 + maxT.act6;
-        const csPercent = csMax > 0 ? (csSum / csMax) * 50 : 0;
-        
-        // Char
-        const charRating = termScores.char || 0;
-        const charPercent = charRating * 0.1;
-        
-        // Exam
-        const examScore = termScores.exam || 0;
-        const examPercent = maxT.exam > 0 ? (examScore / maxT.exam) * 40 : 0;
-        
-        const computedTermGrade = Math.min(100, Math.max(0, Math.round(csPercent + charPercent + examPercent)));
         
         const getTermRating = (termName) => {
           const tSc = draft[termName] || {};
@@ -1135,12 +1163,19 @@ export default function ScoreInput() {
         const prelimRating = getTermRating('Prelim');
         const midtermRating = getTermRating('Midterm');
         const sfRating = getTermRating('Semi-Final');
-        const finalRating = computedTermGrade;
+        const finalRating = getTermRating('Final');
         
-        const mr = Math.round((prelimRating + midtermRating) / 2);
-        const tfr = Math.round((sfRating + finalRating) / 2);
+        const mr = isSummer ? midtermRating : Math.round((prelimRating + midtermRating) / 2);
+        const tfr = isSummer ? finalRating : Math.round((sfRating + finalRating) / 2);
         const finalSG = Math.round((mr + tfr) / 2);
         
+        let computedTermGrade = finalSG;
+        if (targetMilestone === 'midterm') {
+          computedTermGrade = mr;
+        } else if (targetMilestone === 'tfr') {
+          computedTermGrade = tfr;
+        }
+
         const rawGWA = getTransmutedGrade(finalSG);
         const autoRemarks = rawGWA <= 3.00 ? 'Passed' : 'Failed';
         const draftRemarks = draft.customRemarks || autoRemarks;
@@ -1151,23 +1186,37 @@ export default function ScoreInput() {
           computedGWA = 3.00;
         }
 
+        const effectiveGrade = targetMilestone === 'semestral' ? computedGWA : getTransmutedGrade(computedTermGrade);
+
+        const oldRecord = existingMap[stud.id];
+        if (!isFirstPost) {
+          if (
+            !oldRecord ||
+            Number(oldRecord.computed_grade) !== Number(computedTermGrade) ||
+            Number(oldRecord.effective_grade) !== Number(effectiveGrade) ||
+            oldRecord.remarks !== remarksLabel
+          ) {
+            changedStudentIds.push(stud.id);
+          }
+        }
+
         const payloadRow = {
           class_record_id: classRecordId,
           student_id: stud.id,
-          grade_period: 'final',
+          grade_period: periodParam,
           computed_grade: computedTermGrade,
-          effective_grade: computedGWA,
+          effective_grade: effectiveGrade,
           remarks: remarksLabel,
           remarks_note: draft.remarksNote || null,
           remarks_set_by: user.id,
           remarks_set_at: new Date().toISOString(),
           posted_by: user.id,
           posted_at: new Date().toISOString(),
-          is_locked: false,
-          locked_milestones: []
+          is_locked: true,
+          locked_milestones: updatedLockedMilestones
         };
 
-        const existingId = existingMap[stud.id];
+        const existingId = oldRecord?.id;
         payloadRow.posted_grade_id = existingId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
           const r = Math.random() * 16 | 0;
           return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
@@ -1190,35 +1239,55 @@ export default function ScoreInput() {
       const actorName = resolveActorName(profile, user);
       await logActivity(
         'Grade Posting',
-        `Posted and locked Semestral grades for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
+        `Posted ${termNotificationName} for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
         actorName
       );
 
       // Trigger immediate local notification for faculty
       await showLocalNotification({
-        title: 'Grades Finalized',
-        body: `📊 Semestral grades finalized and locked for ${classInfo?.subjects?.code || 'subject'} (${classInfo?.sections?.name || ''}).`
+        title: `${termNotificationName} Posted`,
+        body: `📊 ${termNotificationName} posted for ${classInfo?.subjects?.code || 'subject'} (${classInfo?.sections?.name || ''}).`
       });
 
       // Dispatch notifications to enrolled students in section
       const targetSectionId = classInfo?.sections?.section_id || classInfo?.section_id;
       if (targetSectionId) {
-        await notifyGradesPosted({
-          sectionId: targetSectionId,
-          subjectCode: classInfo?.subjects?.code || '',
-          termName: 'Semestral',
-          facultyName: actorName
-        });
+        if (isFirstPost) {
+          await notifyGradesPosted({
+            sectionId: targetSectionId,
+            subjectCode: classInfo?.subjects?.code || '',
+            termName: termNotificationName,
+            facultyName: actorName,
+            isUpdate: false
+          });
+        } else if (changedStudentIds.length > 0) {
+          await notifyGradesPosted({
+            sectionId: targetSectionId,
+            subjectCode: classInfo?.subjects?.code || '',
+            termName: termNotificationName,
+            facultyName: actorName,
+            studentIds: changedStudentIds,
+            isUpdate: true
+          });
+        }
       }
 
       setShowPostModal(false);
+      setPendingPostMilestone(null);
+
+      const notifDetailText = isFirstPost 
+        ? 'Enrolled students have been notified for consultation.'
+        : changedStudentIds.length > 0 
+          ? `${changedStudentIds.length} student(s) with updated grades have been notified.`
+          : 'Grades re-posted. No score changes detected for enrolled students.';
 
       setPopupTitle('Grades Posted!');
-      setPopupDesc(`Successfully finalized and posted Semestral grades for ${classInfo?.subjects?.code} (${classInfo?.sections?.name}) to the Dean's Office.`);
+      setPopupDesc(`Successfully posted ${termNotificationName} for ${classInfo?.subjects?.code} (${classInfo?.sections?.name}). ${notifDetailText}`);
       setShowPopup(true);
 
     } catch (err) {
       console.error('Error posting grades to database:', err);
+      alert('Failed to post grades: ' + (err.message || err));
     } finally {
       setPostingGrades(false);
     }
@@ -1365,14 +1434,6 @@ export default function ScoreInput() {
             <span className="sm:hidden">Preview</span>
           </button>
           <button 
-            disabled={students.length === 0}
-            onClick={() => setShowExportModal(true)}
-            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
-            <span className="hidden sm:inline">Export</span>
-          </button>
-          <button 
             disabled={savingDrafts || students.length === 0}
             onClick={handleBulkSave}
             className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer whitespace-nowrap"
@@ -1408,9 +1469,21 @@ export default function ScoreInput() {
                 <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                   {subjectCode} — {sectionName}
                 </span>
-                <span className="text-[10px] font-medium text-slate-400 ml-2">
+                <span className="text-[10px] font-medium text-slate-400 ml-1 hidden sm:inline">
                   {viewMode === 'All' ? 'All Terms' : `${viewMode} View`} · {students.length} students
                 </span>
+
+                {/* Auto-Save Live Status Indicator */}
+                {savingDrafts || autoSaveStatus === 'saving' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200/80 animate-pulse ml-2 shadow-2xs">
+                    <CloudUpload className="h-3 w-3 text-amber-500 animate-spin" /> Saving grades...
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 ml-2 shadow-2xs">
+                    <Check className="h-3 w-3 text-emerald-600" />
+                    {lastSavedAt ? `Saved at ${lastSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'All grades saved'}
+                  </span>
+                )}
               </div>
               <button
                 onClick={() => setIsFullScreen(!isFullScreen)}
@@ -1514,7 +1587,12 @@ export default function ScoreInput() {
               <div className="flex flex-col gap-1">
                 <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Grading Setup</label>
                 <button
-                  onClick={() => setIsAddActivityModalOpen(true)}
+                  onClick={() => {
+                    if (!periodsList.includes(newActivityTerm)) {
+                      setNewActivityTerm(periodsList[0] || 'Prelim');
+                    }
+                    setIsAddActivityModalOpen(true);
+                  }}
                   className="px-3.5 py-2 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer whitespace-nowrap"
                 >
                   <Plus className="h-3.5 w-3.5" /> Add Activity
@@ -1532,7 +1610,7 @@ export default function ScoreInput() {
                 <div>
                   <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Spreadsheet Mode</p>
                   <p className="text-xs font-mono font-bold text-emerald-700 mt-0.5 truncate max-w-[140px]">
-                    {viewMode === 'All' ? 'All 4 Terms' : `${viewMode} View`}
+                    {viewMode === 'All' ? (isSummer ? 'All 2 Terms' : 'All 4 Terms') : `${viewMode} View`}
                   </p>
                 </div>
               </div>
@@ -1545,12 +1623,12 @@ export default function ScoreInput() {
                             <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24 sticky left-[40px] bg-slate-50 z-30">Student No.</th>
                             <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-[136px] bg-slate-50 border-r border-slate-200 z-30 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
                             {/* Prelim Period */}
-                            {(viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch') && (
+                            {(periodsList.includes('Prelim') && (viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch')) && (
                               <th colSpan={(activities.Prelim?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
                             )}
                             
                             {/* Midterm Period */}
-                            {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch') && (
+                            {(periodsList.includes('Midterm') && (viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch')) && (
                               <th colSpan={(activities.Midterm?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">MIDTERM GRADE</th>
                             )}
                             
@@ -1560,12 +1638,12 @@ export default function ScoreInput() {
                             )}
                             
                             {/* Semi-Final Period */}
-                            {(viewMode === 'All' || viewMode === 'Semi-Final' || viewMode === 'FinalBatch') && (
+                            {(periodsList.includes('Semi-Final') && (viewMode === 'All' || viewMode === 'Semi-Final' || viewMode === 'FinalBatch')) && (
                               <th colSpan={(activities['Semi-Final']?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-amber-50 text-amber-850">SEMI-FINAL GRADE</th>
                             )}
                             
                             {/* Final Period */}
-                            {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch') && (
+                            {(periodsList.includes('Final') && (viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch')) && (
                               <th colSpan={(activities.Final?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-orange-50 text-orange-850">FINAL GRADE</th>
                             )}
                             
@@ -1617,7 +1695,7 @@ export default function ScoreInput() {
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-14">Exam</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-sky-100/30 font-bold w-14 text-slate-800">Rating</th>
                               </>
@@ -1650,7 +1728,7 @@ export default function ScoreInput() {
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-14">Exam</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-indigo-100/30 font-bold w-14 text-slate-800">Rating</th>
                               </>
@@ -1683,7 +1761,7 @@ export default function ScoreInput() {
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-14">Exam</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-amber-100/30 font-bold w-14 text-slate-800">Rating</th>
                               </>
@@ -1716,7 +1794,7 @@ export default function ScoreInput() {
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-14">Exam</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-orange-100/30 font-bold w-14 text-slate-800">Rating</th>
                               </>
@@ -1733,8 +1811,8 @@ export default function ScoreInput() {
                               <span>Max Column Items</span>
                             </div>
                           </td>
-                          {/* Prelim Period */}
-                          {(viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch') && (
+                                              {/* Prelim Period */}
+                          {(periodsList.includes('Prelim') && (viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch')) && (
                             <>
                               {(activities.Prelim || []).map(act => (
                                 <td 
@@ -1759,7 +1837,7 @@ export default function ScoreInput() {
                               </td>
                               <td 
                                 onClick={isPrelimLocked ? undefined : () => setEditingColumn({ period: 'Prelim', key: 'exam', label: 'Exam Max Score', value: maxItems.Prelim.exam })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
+                                className={`p-1 border-r border-slate-100 w-14 text-center font-mono text-xs font-bold transition-colors ${
                                   isPrelimLocked 
                                     ? 'bg-slate-100/50 text-slate-400' 
                                     : 'bg-sky-50/30 hover:bg-sky-100/50 hover:text-sky-900 cursor-pointer text-slate-800'
@@ -1773,7 +1851,7 @@ export default function ScoreInput() {
                           )}
 
                           {/* Midterm Period */}
-                          {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch') && (
+                          {(periodsList.includes('Midterm') && (viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch')) && (
                             <>
                               {(activities.Midterm || []).map(act => (
                                 <td 
@@ -1792,12 +1870,12 @@ export default function ScoreInput() {
                                 {(activities.Midterm || []).reduce((acc, c) => acc + (c.max || 0), 0)}
                               </td>
                               <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">50%</td>
-                              <td className="p-1 border-r border-slate-100 w-16 bg-slate-100/50 text-center font-mono text-xs font-bold text-slate-400">
-                                {maxItems.Midterm.char}
+                              <td className="p-1 border-r border-slate-100 w-16 bg-indigo-50/50 text-center font-mono text-xs font-bold text-indigo-900">
+                                {maxItems.Midterm.char || 100}
                               </td>
                               <td 
                                 onClick={isMidtermLocked ? undefined : () => setEditingColumn({ period: 'Midterm', key: 'exam', label: 'Exam Max Score', value: maxItems.Midterm.exam })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
+                                className={`p-1 border-r border-slate-100 w-14 text-center font-mono text-xs font-bold transition-colors ${
                                   isMidtermLocked 
                                     ? 'bg-slate-100/50 text-slate-400' 
                                     : 'bg-indigo-50/30 hover:bg-indigo-100/55 hover:text-indigo-900 cursor-pointer text-slate-800'
@@ -1811,12 +1889,12 @@ export default function ScoreInput() {
                           )}
 
                           {/* Midterm Rating (MR) */}
-                          {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch' || viewMode === 'Summary') && (
+                          {((!isSummer || viewMode === 'Midterm') && (viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch' || viewMode === 'Summary')) && (
                             <td className="px-3 py-3 border-r border-slate-200 bg-indigo-100/40 text-center"></td>
                           )}
 
                           {/* Semi-Final Period */}
-                          {(viewMode === 'All' || viewMode === 'Semi-Final' || viewMode === 'FinalBatch') && (
+                          {(periodsList.includes('Semi-Final') && (viewMode === 'All' || viewMode === 'Semi-Final' || viewMode === 'FinalBatch')) && (
                             <>
                               {(activities['Semi-Final'] || []).map(act => (
                                 <td 
@@ -1832,7 +1910,6 @@ export default function ScoreInput() {
                                 </td>
                               ))}
 
-
                               <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
                                 {(activities['Semi-Final'] || []).reduce((acc, c) => acc + (c.max || 0), 0)}
                               </td>
@@ -1842,7 +1919,7 @@ export default function ScoreInput() {
                               </td>
                               <td 
                                 onClick={isSemiFinalLocked ? undefined : () => setEditingColumn({ period: 'Semi-Final', key: 'exam', label: 'Exam Max Score', value: maxItems['Semi-Final'].exam })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
+                                className={`p-1 border-r border-slate-100 w-14 text-center font-mono text-xs font-bold transition-colors ${
                                   isSemiFinalLocked 
                                     ? 'bg-slate-100/50 text-slate-400' 
                                     : 'bg-amber-50/30 hover:bg-amber-100/50 hover:text-amber-900 cursor-pointer text-slate-800'
@@ -1856,7 +1933,7 @@ export default function ScoreInput() {
                           )}
 
                           {/* Final Period */}
-                          {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch') && (
+                          {(periodsList.includes('Final') && (viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch')) && (
                             <>
                               {(activities.Final || []).map(act => (
                                 <td 
@@ -1882,7 +1959,7 @@ export default function ScoreInput() {
                               </td>
                               <td 
                                 onClick={isFinalLocked ? undefined : () => setEditingColumn({ period: 'Final', key: 'exam', label: 'Exam Max Score', value: maxItems.Final.exam })} 
-                                className={`p-1 border-r border-slate-100 w-12 text-center font-mono text-xs font-bold transition-colors ${
+                                className={`p-1 border-r border-slate-100 w-14 text-center font-mono text-xs font-bold transition-colors ${
                                   isFinalLocked 
                                     ? 'bg-slate-100/50 text-slate-400' 
                                     : 'bg-orange-50/30 hover:bg-orange-100/50 hover:text-orange-900 cursor-pointer text-slate-800'
@@ -1949,6 +2026,10 @@ export default function ScoreInput() {
                               studentLocked={studentLocks[student.id]}
                               periodsList={periodsList}
                               onSelectRiskStudent={(st) => setEvaluatingStudent(st)}
+                              onSaveStatusChange={(st) => {
+                                setAutoSaveStatus(st);
+                                if (st === 'saved') setLastSavedAt(new Date());
+                              }}
                             />
                           ))
                         )}
@@ -2140,7 +2221,8 @@ export default function ScoreInput() {
       
       {/* ➕ Add Activity Modal */}
       {(() => {
-        const isTermFull = (activities[newActivityTerm] || []).length >= 6;
+        const validActs = (activities[newActivityTerm] || []).filter(a => a && (a.name || a.dbId));
+        const isTermFull = validActs.length >= 6;
         return isAddActivityModalOpen && (
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-xs text-left animate-in fade-in duration-200">
             <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
@@ -2250,16 +2332,21 @@ export default function ScoreInput() {
         );
       })()}
 
-      {/* 🔒 Post Grades Term Picker and Confirmation Modal */}
+      {/* 🔒 Post Grades Term Picker & Gradual Milestone Modal */}
       {showPostModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200 text-left">
-          <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
             <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
             <div className="px-5 sm:px-6 py-3.5 sm:py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 font-sans">
-                <Lock className="h-4 w-4 text-emerald-600" />
-                <span>Post Semestral Grades</span>
-              </h3>
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 font-sans">
+                  <Lock className="h-4 w-4 text-emerald-600" />
+                  <span>Post Grades for Student Consultation</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 font-sans mt-0.5">
+                  Publish recorded scores gradually by milestone step to poke students for consultation. Scores remain editable if adjustments are needed.
+                </p>
+              </div>
               <button 
                 onClick={() => setShowPostModal(false)}
                 className="text-slate-400 hover:text-slate-650 transition-colors p-1 cursor-pointer"
@@ -2268,31 +2355,176 @@ export default function ScoreInput() {
               </button>
             </div>
             
-            <div className="p-4 sm:p-6 space-y-4">
-              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-xs text-amber-800 leading-relaxed space-y-2">
-                <p className="flex items-start gap-1.5">
-                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                  <span><strong>Action is irreversible:</strong> Finalizing and posting will lock this class record across all periods (Prelim, Midterm, Semi-Final, and Final).</span>
-                </p>
-                <p>The grades will be officially posted to the Dean's Office and released to students. Any subsequent adjustments will require formal Dean override approval.</p>
-              </div>
+            <div className="p-4 sm:p-6 space-y-3.5 max-h-[70vh] overflow-y-auto">
+
+              {pendingPostMilestone ? (
+                <div className="p-4 sm:p-5 bg-amber-50 border border-amber-200 rounded-2xl space-y-3.5 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                      <AlertTriangle className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-amber-950 font-sans uppercase tracking-wider">
+                        Confirm {pendingPostMilestone === 'midterm' ? (isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)') : pendingPostMilestone === 'tfr' ? (isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)') : 'Official Semestral Grade (SG)'} Release
+                      </h4>
+                      <p className="text-xs text-amber-900 mt-1 leading-relaxed font-sans">
+                        {pendingPostMilestone === 'midterm' && (
+                          `Are you sure you want to post ${isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)'}? This will notify enrolled students for consultation. Scores remain editable if adjustments are needed.`
+                        )}
+                        {pendingPostMilestone === 'tfr' && (
+                          `Are you sure you want to post ${isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)'}? This will notify enrolled students for consultation so they can review their recorded period scores.`
+                        )}
+                        {pendingPostMilestone === 'semestral' && (
+                          `Are you sure you want to finalize Official Semestral Grade (SG)? This will publish final semestral grades and GWA for student review and official submission.`
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-amber-200/60">
+                    <button
+                      type="button"
+                      onClick={() => setPendingPostMilestone(null)}
+                      className="px-3.5 py-2 text-xs font-semibold border border-amber-300 text-amber-900 hover:bg-amber-100 rounded-xl transition-colors font-sans cursor-pointer"
+                    >
+                      Back / Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={postingGrades}
+                      onClick={() => handlePostGrades(pendingPostMilestone)}
+                      className="px-4 py-2 text-xs font-bold bg-amber-700 hover:bg-amber-800 text-white rounded-xl transition-colors shadow-2xs font-sans disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      {postingGrades ? 'Posting...' : 'Yes, Confirm & Release'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Milestone Option 1: Midterm Rating (MR) */}
+                  <div className={`p-4 rounded-xl border transition-all ${
+                    lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')
+                      ? 'bg-slate-50 border-slate-200 opacity-90'
+                      : 'bg-indigo-50/50 border-indigo-200 hover:border-indigo-400'
+                  }`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-indigo-900 font-sans">Step 1: {isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)'}</span>
+                          {(lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')) ? (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-md flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Posted for Consultation
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded-md">
+                              Ready for Consultation
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                          {isSummer 
+                            ? 'Posts Midterm period scores for student consultation. Freezes Midterm input cells.' 
+                            : 'Posts Prelim & Midterm period scores + Midterm Rating (MR) for student consultation. Freezes Midterm input cells.'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={postingGrades || lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')}
+                        onClick={() => setPendingPostMilestone('midterm')}
+                        className="px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
+                      >
+                        Post MR
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Milestone Option 2: Tentative Final Rating (TFR) */}
+                  <div className={`p-4 rounded-xl border transition-all ${
+                    lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')
+                      ? 'bg-slate-50 border-slate-200 opacity-90'
+                      : 'bg-amber-50/50 border-amber-200 hover:border-amber-400'
+                  }`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-amber-900 font-sans">Step 2: {isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)'}</span>
+                          {(lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')) ? (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-md flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Posted for Consultation
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded-md">
+                              Ready for Consultation
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                          {isSummer 
+                            ? 'Posts Final period scores for consultation before official semestral locking.'
+                            : 'Posts Semi-Final & Final period scores + Tentative Final Rating (TFR) for student consultation.'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={postingGrades || lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')}
+                        onClick={() => setPendingPostMilestone('tfr')}
+                        className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
+                      >
+                        Post TFR
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Milestone Option 3: Official Semestral Grade (SG) */}
+                  <div className={`p-4 rounded-xl border transition-all ${
+                    lockedMilestones.includes('Semestral Grade')
+                      ? 'bg-slate-50 border-slate-200 opacity-90'
+                      : 'bg-emerald-50/60 border-emerald-200 hover:border-emerald-400'
+                  }`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-emerald-955 font-sans">Step 3: Official Semestral Grade (SG)</span>
+                          {lockedMilestones.includes('Semestral Grade') ? (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-200 text-emerald-900 rounded-md flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Officially Locked & Submitted
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-md">
+                              Final Lock & Submit
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                          Finalizes overall Semestral Grade (SG) & Transmuted GWA. Submits official grade sheet to Dean & Registrar.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={postingGrades || lockedMilestones.includes('Semestral Grade')}
+                        onClick={() => setPendingPostMilestone('semestral')}
+                        className="px-3 py-1.5 text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
+                      >
+                        Finalize SG
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
             </div>
             
-            <div className="px-4 sm:px-6 py-3.5 sm:py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+            <div className="px-4 sm:px-6 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500 font-mono">
+                {lockedMilestones.length > 0 ? `${lockedMilestones.length} milestone(s) active` : 'No milestones posted yet'}
+              </span>
               <button
                 type="button"
                 onClick={() => setShowPostModal(false)}
-                className="px-4 py-2.5 text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl transition-colors font-sans cursor-pointer"
+                className="px-4 py-2 text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl transition-colors font-sans cursor-pointer"
               >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={postingGrades}
-                onClick={handlePostGrades}
-                className="px-5 py-2.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-colors shadow-2xs flex items-center gap-1.5 font-sans disabled:opacity-50 cursor-pointer"
-              >
-                {postingGrades ? 'Posting...' : 'Confirm & Post'}
+                Close
               </button>
             </div>
           </div>

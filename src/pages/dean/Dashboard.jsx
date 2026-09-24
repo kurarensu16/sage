@@ -19,6 +19,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { getTransmutedGrade } from '../../lib/gradingMath';
+import { computeTentativeGrade, computeUnifiedRisk, isStudentAtRisk, isStudentModerateRisk } from '../../lib/riskUtils';
 import { 
   AcademicTrajectoryLineChart,
   AcademicHealthDonutChart,
@@ -26,69 +27,9 @@ import {
   SectionPerformanceBarChart
 } from '../../components/dean/DeanCharts';
 
-// ── Risk classification ───────────────────────────────────────────────────────
-function classifyRisk(avgGwa, failingCount) {
-  if (failingCount > 0 || avgGwa > 3.00) {
-    return {
-      severity: 'high',
-      advisory: 'Immediate academic counselor intervention advised. Failing marks recorded.',
-    };
-  }
-  if (avgGwa >= 2.75 && avgGwa <= 3.00) {
-    return {
-      severity: 'medium',
-      advisory: 'Provide tutoring support. Running GWA is border-lining the passing scale.',
-    };
-  }
-  return {
-    severity: 'low',
-    advisory: 'Good academic standing. Maintain current study patterns.',
-  };
-}
+// ── Risk classification now handled by unified riskUtils.js (computeUnifiedRisk) ──
 
-// Compute tentative GWA for a class record from its scores
-function computeTentativeGrade(classRecordScores, classRecordCols) {
-  const terms = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
-  const termRatings = {};
-  
-  terms.forEach(term => {
-    const tSc = classRecordScores?.[term];
-    if (!tSc || (tSc.act1 == null && tSc.act2 == null && tSc.act3 == null && tSc.act4 == null && tSc.act5 == null && tSc.act6 == null && tSc.char_rating == null && tSc.exam == null)) {
-      return;
-    }
-    
-    const tMx = classRecordCols?.[term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
-    
-    const csSum = (tSc.act1 || 0) + (tSc.act2 || 0) + (tSc.act3 || 0) + (tSc.act4 || 0) + (tSc.act5 || 0) + (tSc.act6 || 0);
-    const csMax = (tMx.act1 || 20) + (tMx.act2 || 20) + (tMx.act3 || 20) + (tMx.act4 || 20) + (tMx.act5 || 20) + (tMx.act6 || 10);
-    
-    const csPercent = csMax > 0 ? (csSum / csMax) * 50 : 0;
-    const charPercent = (tSc.char_rating || 0) * 0.1;
-    const examPercent = (tMx.exam || 40) > 0 ? ((tSc.exam || 0) / tMx.exam) * 40 : 0;
-    
-    termRatings[term] = Math.min(100, Math.max(0, Math.round(csPercent + charPercent + examPercent)));
-  });
-  
-  const hasPrelim = termRatings['Prelim'] !== undefined;
-  const hasMidterm = termRatings['Midterm'] !== undefined;
-  const hasSF = termRatings['Semi-Final'] !== undefined;
-  const hasFinal = termRatings['Final'] !== undefined;
-  
-  let finalSG = null;
-  if (hasPrelim && hasMidterm && hasSF && hasFinal) {
-    const mr = Math.round((termRatings['Prelim'] + termRatings['Midterm']) / 2);
-    const tfr = Math.round((termRatings['Semi-Final'] + termRatings['Final']) / 2);
-    finalSG = Math.round((mr + tfr) / 2);
-  } else {
-    const available = Object.values(termRatings);
-    if (available.length > 0) {
-      finalSG = Math.round(available.reduce((sum, val) => sum + val, 0) / available.length);
-    }
-  }
-  
-  if (finalSG === null) return null;
-  return getTransmutedGrade(finalSG);
-}
+// computeTentativeGrade is now imported from riskUtils.js (single source of truth)
 
 // Compute student's grade for a specific term (e.g. 'Prelim', 'Midterm', 'Semi-Final', 'Final')
 function computeTermGwa(studentId, term, gradesByStudent, scoresMap, colMap) {
@@ -107,16 +48,22 @@ function computeTermGwa(studentId, term, gradesByStudent, scoresMap, colMap) {
 
   Object.keys(studentScores).forEach(classRecId => {
     const tSc = studentScores[classRecId]?.[term];
-    if (tSc && (tSc.act1 != null || tSc.exam != null || tSc.char_rating != null)) {
-      const tMx = colMap[classRecId]?.[term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 100 };
+    if (tSc) {
       const csSum = (tSc.act1 || 0) + (tSc.act2 || 0) + (tSc.act3 || 0) + (tSc.act4 || 0) + (tSc.act5 || 0) + (tSc.act6 || 0);
-      const csMax = (tMx.act1 || 20) + (tMx.act2 || 20) + (tMx.act3 || 20) + (tMx.act4 || 20) + (tMx.act5 || 20) + (tMx.act6 || 10);
-      const csPercent = csMax > 0 ? (csSum / csMax) * 50 : 0;
-      const charPercent = (tSc.char_rating || 0) * 0.1;
-      const examPercent = (tMx.exam || 100) > 0 ? ((tSc.exam || 0) / tMx.exam) * 40 : 0;
-      const termRating = Math.min(100, Math.max(0, Math.round(csPercent + charPercent + examPercent)));
-      const transmuted = getTransmutedGrade(termRating);
-      if (transmuted !== null) computedTermValues.push(transmuted);
+      const charVal = tSc.char_rating || 0;
+      const examVal = tSc.exam || 0;
+      const hasData = csSum > 0 || charVal > 0 || examVal > 0;
+
+      if (hasData) {
+        const tMx = colMap[classRecId]?.[term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
+        const csMax = (tMx.act1 || 20) + (tMx.act2 || 20) + (tMx.act3 || 20) + (tMx.act4 || 20) + (tMx.act5 || 20) + (tMx.act6 || 10);
+        const csPercent = csMax > 0 ? (csSum / csMax) * 50 : 0;
+        const charPercent = charVal * 0.1;
+        const examPercent = (tMx.exam || 40) > 0 ? (examVal / tMx.exam) * 40 : 0;
+        const termRating = Math.min(100, Math.max(0, Math.round(csPercent + charPercent + examPercent)));
+        const transmuted = getTransmutedGrade(termRating);
+        if (transmuted !== null) computedTermValues.push(transmuted);
+      }
     }
   });
 
@@ -340,10 +287,10 @@ export default function Dashboard() {
               gwaDist.failing++;
             }
 
-            const { severity } = classifyRisk(avgGwa, failingCount);
-            if (severity === 'high') {
+            const riskResult = computeUnifiedRisk({ avgGwa, failingCount });
+            if (isStudentAtRisk(riskResult.risk_level)) {
               highRiskCount++;
-            } else if (severity === 'medium') {
+            } else if (isStudentModerateRisk(riskResult.risk_level)) {
               moderateRiskCount++;
             } else {
               lowRiskCount++;

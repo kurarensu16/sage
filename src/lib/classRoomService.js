@@ -4,6 +4,7 @@
 import { supabase } from './supabase';
 import { calculateAcademicRisk } from './riskEngine';
 import { getTransmutedGrade } from './gradingMath';
+// Note: riskEngine.js is now the single source of truth for all risk calculations (V4).
 
 /**
  * Generates a clean, human-readable 6-8 character join code.
@@ -421,6 +422,26 @@ export async function getClassPriorityRoster(classRecordId) {
 
     const studentIds = students.map(s => s.user_id);
 
+    // 3. Fetch column setup configurations
+    const { data: cols } = await supabase
+      .from('class_grading_columns')
+      .select('*')
+      .eq('class_record_id', classRecordId);
+
+    const colsMap = {};
+    (cols || []).forEach(c => {
+      // Use ?? (nullish coalescing) NOT || — 0 means "activity not configured", not "use default"
+      colsMap[c.term] = {
+        act1: c.act1_max ?? 0,
+        act2: c.act2_max ?? 0,
+        act3: c.act3_max ?? 0,
+        act4: c.act4_max ?? 0,
+        act5: c.act5_max ?? 0,
+        act6: c.act6_max ?? 0,
+        exam: c.exam_max ?? 0
+      };
+    });
+
     // 3. Fetch scores from student_term_scores
     const { data: scores } = await supabase
       .from('student_term_scores')
@@ -466,25 +487,47 @@ export async function getClassPriorityRoster(classRecordId) {
       const termRatings = {};
       let prelimRating = null;
       let midtermRating = null;
-      let examSum = 0;
+      let examSumPct = 0;
       let examCount = 0;
       let hasValidScores = false;
 
       studScores.forEach(sc => {
         if (sc.term) {
-          const hasData = sc.act1 != null || sc.act2 != null || sc.act3 != null || sc.act4 != null || sc.act5 != null || sc.act6 != null || sc.char_rating != null || sc.exam != null;
+          const colSetup = colsMap[sc.term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
+          const actSum = (sc.act1 || 0) + (sc.act2 || 0) + (sc.act3 || 0) + (sc.act4 || 0) + (sc.act5 || 0) + (sc.act6 || 0);
+          const char = sc.char_rating || 0;
+          const examRaw = sc.exam;
+
+          const hasEnteredActivity = (
+            (sc.act1 != null && sc.act1 > 0) ||
+            (sc.act2 != null && sc.act2 > 0) ||
+            (sc.act3 != null && sc.act3 > 0) ||
+            (sc.act4 != null && sc.act4 > 0) ||
+            (sc.act5 != null && sc.act5 > 0) ||
+            (sc.act6 != null && sc.act6 > 0)
+          );
+          const hasEnteredExam = examRaw != null && examRaw > 0;
+          const hasEnteredChar = char > 0;
+
+          const hasData = hasEnteredActivity || hasEnteredExam || hasEnteredChar;
+
           if (hasData) {
             hasValidScores = true;
-            const actSum = (sc.act1 || 0) + (sc.act2 || 0) + (sc.act3 || 0) + (sc.act4 || 0) + (sc.act5 || 0) + (sc.act6 || 0);
-            const char = (sc.char_rating || 0) * 0.1;
-            const ex = sc.exam || 0;
-            if (sc.exam !== null && sc.exam !== undefined) {
-              examSum += sc.exam;
+            // Use values directly from colSetup — defaults are already in the fallback object (line 494)
+            const actMax = colSetup.act1 + colSetup.act2 + colSetup.act3 + colSetup.act4 + colSetup.act5 + colSetup.act6;
+            const csPct = (hasEnteredActivity && actMax > 0) ? Math.min(50, (actSum / actMax) * 50) : 0;
+            const charPct = char * 0.1;
+            
+            const examMax = colSetup.exam || 40;
+            let exPct = 0;
+            if (hasEnteredExam) {
+              const examPercentage = Math.min(100, (examRaw / examMax) * 100);
+              exPct = (examPercentage / 100) * 40;
+              examSumPct += examPercentage;
               examCount++;
             }
-            const csPct = Math.min(50, actSum * 0.5);
-            const exPct = Math.min(40, ex * 0.4);
-            const totalRating = Math.round(csPct + char + exPct);
+
+            const totalRating = Math.round(csPct + charPct + exPct);
             termRatings[sc.term] = totalRating;
             if (sc.term === 'Prelim') prelimRating = totalRating;
             if (sc.term === 'Midterm') midtermRating = totalRating;
@@ -512,16 +555,46 @@ export async function getClassPriorityRoster(classRecordId) {
         }
       }
 
-      const examAvg = examCount > 0 ? Math.round(examSum / examCount) : null;
+      const examAvg = examCount > 0 ? Math.round(examSumPct / examCount) : 100;
       const failingCount = (approxGwa !== null && approxGwa > 3.00) ? 1 : 0;
+      // hasGradeBelow200: Scholarship Grade Floor Breach (DYCI Handbook Sec 3.8.4 / 5.2.5.1)
+      // Only relevant for PL/scholarship candidates (GWA ≤ 1.75) — NOT a general risk factor.
+      // Moved to unified riskUtils.js computeUnifiedRisk() for proper per-student evaluation.
+      const hasGradeBelow200 = false;
+
+      // Count zero submissions ONLY for activities that are actually configured (max > 0)
+      let zeroSubmissionsCount = 0;
+      studScores.forEach(sc => {
+        if (sc.term) {
+          const termColSetup = colsMap[sc.term] || {};
+          const hasEnteredActivity = (
+            (sc.act1 != null && sc.act1 > 0) ||
+            (sc.act2 != null && sc.act2 > 0) ||
+            (sc.act3 != null && sc.act3 > 0) ||
+            (sc.act4 != null && sc.act4 > 0) ||
+            (sc.act5 != null && sc.act5 > 0) ||
+            (sc.act6 != null && sc.act6 > 0)
+          );
+          if (hasEnteredActivity) {
+            ['act1', 'act2', 'act3', 'act4', 'act5', 'act6'].forEach(key => {
+              // Only count zeros for activities that actually exist (configured max > 0)
+              const actMax = termColSetup[key] ?? 0;
+              if (actMax > 0 && sc[key] === 0) zeroSubmissionsCount++;
+            });
+          }
+        }
+      });
 
       const riskData = calculateAcademicRisk({
         currentGwa: approxGwa,
         failingSubjectsCount: failingCount,
-        majorExamAverage: examAvg !== null ? examAvg : 100,
+        majorExamAverage: examAvg,
         absenceCount: studAbsences,
         previousTermRating: prelimRating,
-        currentTermRating: midtermRating
+        currentTermRating: midtermRating,
+        consecutiveAbsences: studAbsences >= 2 ? 2 : 0,
+        zeroSubmissionsCount,
+        hasGradeBelow200
       });
 
       return {

@@ -20,7 +20,10 @@ import {
   TrendingUp, 
   Users, 
   HelpCircle,
-  BookOpen
+  BookOpen,
+  AlertTriangle,
+  Lock,
+  Check
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
@@ -29,6 +32,9 @@ import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { notifyGradesPosted } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import { TableSkeleton } from '../../components/common/Skeleton';
+import { triggerExcelExport } from '../../lib/excelExport';
+import ExportPreviewModal from '../../components/ExportPreviewModal';
+import html2pdf from 'html2pdf.js';
 
 export default function GradeComputationPreview() {
   const navigate = useNavigate();
@@ -37,6 +43,16 @@ export default function GradeComputationPreview() {
   const classRecordId = searchParams.get('id') || '';
 
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportMetadata, setExportMetadata] = useState({
+    examiner: 'MYRA R. CRUZ',
+    registrar: 'VIRGINIA D. SALVADOR, MBA',
+    facultyName: '',
+    dean: '',
+    day: 'Mon',
+    time: '07:00 - 10:00'
+  });
+  const [pendingPostMilestone, setPendingPostMilestone] = useState(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lockedMilestones, setLockedMilestones] = useState([]);
   const [postingGrades, setPostingGrades] = useState(false);
@@ -95,6 +111,50 @@ export default function GradeComputationPreview() {
     }
     fetchMyClasses();
   }, [user]);
+
+  // Initialize faculty name when profile loads
+  useEffect(() => {
+    if (profile) {
+      setExportMetadata(prev => ({
+        ...prev,
+        facultyName: `${profile.first_name} ${profile.last_name}`.toUpperCase()
+      }));
+    }
+  }, [profile]);
+
+  // Auto-lookup dean based on college
+  useEffect(() => {
+    if (!classInfo) return;
+    const collegeName = classInfo.subjects?.departments?.name || '';
+    if (!collegeName) return;
+
+    async function fetchDean() {
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('first_name, last_name, departments ( name )')
+          .eq('role', 'dean')
+          .eq('status', 'active')
+          .limit(10);
+
+        if (error) throw error;
+
+        const matched = (data || []).find(u => {
+          const deptName = u.departments?.name || '';
+          return deptName.toLowerCase().includes(collegeName.toLowerCase()) ||
+                 collegeName.toLowerCase().includes(deptName.toLowerCase());
+        }) || data?.[0];
+
+        if (matched) {
+          const fullName = `${matched.last_name.toUpperCase()}, ${matched.first_name.toUpperCase()}`;
+          setExportMetadata(prev => ({ ...prev, dean: fullName }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch dean:', err);
+      }
+    }
+    fetchDean();
+  }, [classInfo]);
 
   // Load class record information, enrolled students, max points, and saved scores
   useEffect(() => {
@@ -458,22 +518,47 @@ export default function GradeComputationPreview() {
     });
   }, [computedStudents, studentSearch, statusFilter]);
 
-  const handlePostGrades = async () => {
+  const handlePostGrades = async (targetMilestone = 'semestral') => {
     if (!classRecordId || computedStudents.length === 0) return;
     setPostingGrades(true);
     try {
+      let periodParam = 'final';
+      let termNotificationName = 'Official Semestral Grade (SG)';
+      let newMilestoneLock = 'Semestral Grade';
+
+      if (targetMilestone === 'midterm') {
+        periodParam = 'midterm';
+        termNotificationName = isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)';
+        newMilestoneLock = 'Midterm Rating';
+      } else if (targetMilestone === 'tfr') {
+        periodParam = 'final';
+        termNotificationName = isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)';
+        newMilestoneLock = 'Tentative Final Rating';
+      } else {
+        periodParam = 'final';
+        termNotificationName = 'Official Semestral Grade (SG)';
+        newMilestoneLock = 'Semestral Grade';
+      }
+
       const { data: existingPg, error: fetchErr } = await supabase
         .from('posted_grades')
-        .select('posted_grade_id, student_id')
+        .select('posted_grade_id, student_id, computed_grade, effective_grade, remarks')
         .eq('class_record_id', classRecordId)
-        .eq('grade_period', 'final');
+        .eq('grade_period', periodParam);
 
       if (fetchErr) throw fetchErr;
 
       const existingMap = {};
+      const isFirstPost = !existingPg || existingPg.length === 0;
+
       if (existingPg) {
         existingPg.forEach(row => {
-          existingMap[row.student_id] = row.posted_grade_id;
+          existingMap[row.student_id] = {
+            id: row.posted_grade_id,
+            computed_grade: row.computed_grade,
+            effective_grade: row.effective_grade,
+            remarks: row.remarks
+          };
         });
       }
 
@@ -484,6 +569,14 @@ export default function GradeComputationPreview() {
         return lower;
       };
 
+      const updatedLockedMilestones = Array.from(new Set([
+        ...lockedMilestones, 
+        newMilestoneLock,
+        ...(targetMilestone === 'midterm' ? ['Prelim', 'Midterm'] : targetMilestone === 'tfr' ? ['Semi-Final', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final', 'Semestral Grade'])
+      ]));
+
+      const changedStudentIds = [];
+
       const postRows = computedStudents.map(stud => {
         const remarksLabel = mapRemarkToDb(stud.remarks);
         let computedGWA = stud.gwa;
@@ -491,7 +584,28 @@ export default function GradeComputationPreview() {
           computedGWA = 3.00;
         }
 
-        const existingId = existingMap[stud.id];
+        let computedTermGrade = stud.fRate;
+        if (targetMilestone === 'midterm') {
+          computedTermGrade = stud.mr;
+        } else if (targetMilestone === 'tfr') {
+          computedTermGrade = stud.tfr;
+        }
+
+        const effectiveGrade = targetMilestone === 'semestral' ? computedGWA : getTransmutedGrade(computedTermGrade);
+
+        const oldRecord = existingMap[stud.id];
+        if (!isFirstPost) {
+          if (
+            !oldRecord ||
+            Number(oldRecord.computed_grade) !== Number(computedTermGrade) ||
+            Number(oldRecord.effective_grade) !== Number(effectiveGrade) ||
+            oldRecord.remarks !== remarksLabel
+          ) {
+            changedStudentIds.push(stud.id);
+          }
+        }
+
+        const existingId = oldRecord?.id;
         return {
           posted_grade_id: existingId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
             const r = Math.random() * 16 | 0;
@@ -499,17 +613,17 @@ export default function GradeComputationPreview() {
           })),
           class_record_id: classRecordId,
           student_id: stud.id,
-          grade_period: 'final',
-          computed_grade: stud.fRate,
-          effective_grade: computedGWA,
+          grade_period: periodParam,
+          computed_grade: computedTermGrade,
+          effective_grade: effectiveGrade,
           remarks: remarksLabel,
           remarks_note: stud.remarksNote || null,
           remarks_set_by: user.id,
           remarks_set_at: new Date().toISOString(),
           posted_by: user.id,
           posted_at: new Date().toISOString(),
-          is_locked: false,
-          locked_milestones: []
+          is_locked: true,
+          locked_milestones: updatedLockedMilestones
         };
       });
 
@@ -519,37 +633,186 @@ export default function GradeComputationPreview() {
 
       if (postErr) throw postErr;
 
+      setLockedMilestones(updatedLockedMilestones);
+
       const actorName = resolveActorName(profile, user);
       await logActivity(
         'Grade Posting',
-        `Posted Semestral grades for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
+        `Posted ${termNotificationName} for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
         actorName
       );
 
       await showLocalNotification({
-        title: 'Grades Finalized',
-        body: `📊 Semestral grades posted for ${classInfo?.subjects?.code || 'class'} (${classInfo?.sections?.name || ''}).`
+        title: `${termNotificationName} Posted`,
+        body: `📊 ${termNotificationName} posted for ${classInfo?.subjects?.code || 'class'} (${classInfo?.sections?.name || ''}).`
       });
 
       const targetSectionId = classInfo?.sections?.section_id || classInfo?.section_id;
       if (targetSectionId) {
-        await notifyGradesPosted({
-          sectionId: targetSectionId,
-          subjectCode: classInfo?.subjects?.code || '',
-          termName: 'Semestral',
-          facultyName: actorName
-        });
+        if (isFirstPost) {
+          await notifyGradesPosted({
+            sectionId: targetSectionId,
+            subjectCode: classInfo?.subjects?.code || '',
+            termName: termNotificationName,
+            facultyName: actorName,
+            isUpdate: false
+          });
+        } else if (changedStudentIds.length > 0) {
+          await notifyGradesPosted({
+            sectionId: targetSectionId,
+            subjectCode: classInfo?.subjects?.code || '',
+            termName: termNotificationName,
+            facultyName: actorName,
+            studentIds: changedStudentIds,
+            isUpdate: true
+          });
+        }
       }
 
       setShowConfirmModal(false);
-      alert('Grades posted and locked successfully!');
-      navigate('/faculty/postedgradesview');
+      setPendingPostMilestone(null);
+
+      const notifDetailText = isFirstPost 
+        ? 'Enrolled students have been notified for consultation.'
+        : changedStudentIds.length > 0 
+          ? `${changedStudentIds.length} student(s) with updated grades have been notified.`
+          : 'Grades re-posted. No score changes detected for enrolled students.';
+
+      alert(`Successfully posted ${termNotificationName}! ${notifDetailText}`);
     } catch (err) {
       console.error('Error posting grades to database:', err);
       alert('Failed to post grades: ' + err.message);
     } finally {
       setPostingGrades(false);
     }
+  };
+
+  const handleExportExcel = (selectedTab) => {
+    if (!classInfo || computedStudents.length === 0) return;
+
+    const metadata = {
+      college: classInfo.subjects?.departments?.name || 'College of Computer Studies',
+      course: classInfo.course || 'BSIT',
+      subjectCode: classInfo.subjects?.code || '',
+      subjectName: classInfo.subjects?.name || '',
+      section: classInfo.sections?.name || '',
+      semester: classInfo.semester === '1st' ? '1st Sem' : classInfo.semester === '2nd' ? '2nd Sem' : 'Summer',
+      schoolYear: classInfo.school_year || '',
+      units: classInfo.subjects?.units || 3,
+      ...exportMetadata
+    };
+
+    triggerExcelExport(metadata, computedStudents, selectedTab);
+  };
+
+  const handleExportPdf = (selectedTab) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    
+    const colorFuncRegex = /(oklch|oklab|lab|lch|hwb|color)\([^)]+\)/g;
+    const convertUnsupportedColorsToStringRgb = (str) => {
+      if (!str || typeof str !== 'string') return str;
+      colorFuncRegex.lastIndex = 0;
+      if (!colorFuncRegex.test(str)) return str;
+      return str.replace(colorFuncRegex, (match) => {
+        try {
+          if (!ctx) return match;
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = match;
+          ctx.fillRect(0, 0, 1, 1);
+          const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+          return a === 255 
+            ? `rgb(${r}, ${g}, ${b})` 
+            : `rgba(${r}, ${g}, ${b}, ${parseFloat((a / 255).toFixed(3))})`;
+        } catch (_e) {
+          return match;
+        }
+      });
+    };
+
+    try {
+      if (ctx) {
+        document.querySelectorAll('style').forEach(tag => {
+          if (tag.innerHTML && (tag.innerHTML.includes('oklch') || tag.innerHTML.includes('oklab') || tag.innerHTML.includes('lab') || tag.innerHTML.includes('lch'))) {
+            tag.innerHTML = convertUnsupportedColorsToStringRgb(tag.innerHTML);
+          }
+        });
+      }
+    } catch (e) {
+      console.error('Failed to convert stylesheet colors:', e);
+    }
+
+    const previewCard = document.querySelector('.bg-slate-100 .bg-white');
+    if (!previewCard) return;
+
+    const cloned = previewCard.cloneNode(true);
+    const originalElements = [previewCard, ...Array.from(previewCard.querySelectorAll('*'))];
+    const clonedElements = [cloned, ...Array.from(cloned.querySelectorAll('*'))];
+
+    for (let i = 0; i < originalElements.length; i++) {
+      const orig = originalElements[i];
+      const clone = clonedElements[i];
+      if (!orig || !clone) continue;
+
+      const computed = window.getComputedStyle(orig);
+      for (let j = 0; j < computed.length; j++) {
+        const prop = computed[j];
+        const val = computed.getPropertyValue(prop);
+        if (val && typeof val === 'string' && (val.includes('oklch') || val.includes('oklab') || val.includes('lab') || val.includes('lch'))) {
+          clone.style.setProperty(prop, convertUnsupportedColorsToStringRgb(val));
+        }
+      }
+    }
+
+    cloned.style.boxSizing = 'border-box';
+
+    let tabName = 'Gradesheet';
+    if (selectedTab === 'profile') tabName = 'Subject_Profile';
+    if (selectedTab === 'record') tabName = 'Record_Sheet';
+    if (selectedTab === 'report') tabName = 'Report_of_Grades';
+
+    if (selectedTab === 'profile') {
+      cloned.style.width = '740px';
+      cloned.style.minWidth = '740px';
+      cloned.style.maxWidth = '740px';
+      cloned.style.fontSize = '11px';
+
+      const rosterEl = cloned.querySelector('.pdf-roster-break');
+      if (rosterEl) {
+        rosterEl.style.pageBreakBefore = 'always';
+        rosterEl.style.breakBefore = 'page';
+        rosterEl.style.paddingTop = '32px';
+      }
+    } else {
+      const originalWidth = previewCard.offsetWidth || 1120;
+      const originalHeight = previewCard.offsetHeight || 1000;
+      const targetWidth = 740;
+      const targetHeight = 1060;
+
+      const widthScale = targetWidth / originalWidth;
+      const heightScale = targetHeight / originalHeight;
+      const scaleFactor = Math.min(widthScale, heightScale);
+
+      cloned.style.zoom = scaleFactor;
+      cloned.style.width = `${originalWidth}px`;
+      cloned.style.minWidth = `${originalWidth}px`;
+      cloned.style.maxWidth = `${originalWidth}px`;
+    }
+
+    const filename = `${classInfo?.subjects?.code || 'SAGE'}_${classInfo?.sections?.name || 'Class'}_${tabName}.pdf`;
+
+    const opt = {
+      margin:       [0.3, 0.3, 0.3, 0.3],
+      filename:     filename,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, logging: false },
+      jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+    };
+
+    const exporter = typeof html2pdf === 'function' ? html2pdf : (html2pdf && html2pdf.default ? html2pdf.default : html2pdf);
+    exporter().from(cloned).set(opt).save();
   };
 
   const handleClassChange = (newClassId) => {
@@ -786,6 +1049,14 @@ export default function GradeComputationPreview() {
             <span className="hidden sm:inline">Edit Raw Scores</span>
             <span className="sm:hidden">Scores</span>
           </Link>
+          <button 
+            disabled={computedStudents.length === 0}
+            onClick={() => setShowExportModal(true)}
+            className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+            <span className="hidden sm:inline">Export</span>
+          </button>
           <button 
             onClick={() => setShowConfirmModal(true)}
             disabled={postingGrades || computedStudents.length === 0}
@@ -1565,49 +1836,223 @@ export default function GradeComputationPreview() {
           </div>
         </div>
         
-        {/* ── Confirmation Modal ────────────────────────────────────────── */}
+        {/* ── 3-Step Gradual Milestone Confirmation Modal ────────────────────────────── */}
         {showConfirmModal && (
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xs sm:p-4 animate-in fade-in duration-200 text-left">
             <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
               <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1" />
-              <div className="p-5 sm:p-6 text-left">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-2xl bg-sage-50 text-sage-600 flex items-center justify-center flex-shrink-0">
-                    <Send className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base sm:text-lg font-bold text-slate-900 font-display">Post Semestral Grades</h3>
-                    <p className="text-xs text-slate-400 font-medium">Publish calculated semestral grades to students and the Dean.</p>
-                  </div>
+              <div className="px-5 sm:px-6 py-3.5 sm:py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 font-sans">
+                    <Send className="h-4 w-4 text-emerald-600" />
+                    <span>Post Grades for Student Consultation</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-sans mt-0.5">
+                    Publish recorded scores gradually by milestone step to poke students for consultation. Scores remain editable if adjustments are needed.
+                  </p>
                 </div>
+                <button 
+                  onClick={() => {
+                    setShowConfirmModal(false);
+                    setPendingPostMilestone(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-650 transition-colors p-1 cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
 
-                <div className="bg-sage-50 border border-sage-200 rounded-2xl p-3.5 sm:p-4 text-xs text-sage-800 leading-relaxed space-y-2">
-                  <p><strong>📊 Publishing Semestral Grades:</strong> Posting updates the official grade ledger for students (<strong>{classInfo?.subjects?.code} - {classInfo?.sections?.name}</strong>) and the Dean's Office.</p>
-                  <p>You can continue editing raw score sheets in <strong>Log Class Scores</strong> and re-post anytime if further score adjustments are made.</p>
-                </div>
+              <div className="p-4 sm:p-6 space-y-3.5 max-h-[70vh] overflow-y-auto">
 
-                <div className="mt-5 sm:mt-6 flex items-center justify-end gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmModal(false)}
-                    className="px-4 py-2.5 text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={postingGrades}
-                    onClick={handlePostGrades}
-                    className="px-5 py-2.5 text-xs font-semibold text-white bg-sage-600 hover:bg-sage-700 disabled:opacity-50 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                    {postingGrades ? 'Posting...' : 'Confirm & Post'}
-                  </button>
-                </div>
+                {pendingPostMilestone ? (
+                  <div className="p-4 sm:p-5 bg-amber-50 border border-amber-200 rounded-2xl space-y-3.5 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                        <AlertTriangle className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-amber-950 font-sans uppercase tracking-wider">
+                          Confirm {pendingPostMilestone === 'midterm' ? (isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)') : pendingPostMilestone === 'tfr' ? (isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)') : 'Official Semestral Grade (SG)'} Release
+                        </h4>
+                        <p className="text-xs text-amber-900 mt-1 leading-relaxed font-sans">
+                          {pendingPostMilestone === 'midterm' && (
+                            `Are you sure you want to post ${isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)'}? This will notify enrolled students for consultation. Scores remain editable if adjustments are needed.`
+                          )}
+                          {pendingPostMilestone === 'tfr' && (
+                            `Are you sure you want to post ${isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)'}? This will notify enrolled students for consultation so they can review their recorded period scores.`
+                          )}
+                          {pendingPostMilestone === 'semestral' && (
+                            `Are you sure you want to finalize Official Semestral Grade (SG)? This will publish final semestral grades and GWA for student review and official submission.`
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-amber-200/60">
+                      <button
+                        type="button"
+                        onClick={() => setPendingPostMilestone(null)}
+                        className="px-3.5 py-2 text-xs font-semibold border border-amber-300 text-amber-900 hover:bg-amber-100 rounded-xl transition-colors font-sans cursor-pointer"
+                      >
+                        Back / Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={postingGrades}
+                        onClick={() => handlePostGrades(pendingPostMilestone)}
+                        className="px-4 py-2 text-xs font-bold bg-amber-700 hover:bg-amber-800 text-white rounded-xl transition-colors shadow-2xs font-sans disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {postingGrades ? 'Posting...' : 'Yes, Confirm & Release'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Milestone Option 1: Midterm Rating (MR) */}
+                    <div className={`p-4 rounded-xl border transition-all ${
+                      lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')
+                        ? 'bg-slate-50 border-slate-200 opacity-90'
+                        : 'bg-indigo-50/50 border-indigo-200 hover:border-indigo-400'
+                    }`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-indigo-900 font-sans">Step 1: {isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)'}</span>
+                            {(lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')) ? (
+                              <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-md flex items-center gap-1">
+                                <Check className="w-3 h-3" /> Posted for Consultation
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded-md">
+                                Ready for Consultation
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                            {isSummer 
+                              ? 'Posts Midterm period scores for student consultation. Freezes Midterm input cells.' 
+                              : 'Posts Prelim & Midterm period scores + Midterm Rating (MR) for student consultation. Freezes Midterm input cells.'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={postingGrades || lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')}
+                          onClick={() => setPendingPostMilestone('midterm')}
+                          className="px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
+                        >
+                          Post MR
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Milestone Option 2: Tentative Final Rating (TFR) */}
+                    <div className={`p-4 rounded-xl border transition-all ${
+                      lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')
+                        ? 'bg-slate-50 border-slate-200 opacity-90'
+                        : 'bg-amber-50/50 border-amber-200 hover:border-amber-400'
+                    }`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-amber-900 font-sans">Step 2: {isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)'}</span>
+                            {(lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')) ? (
+                              <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-md flex items-center gap-1">
+                                <Check className="w-3 h-3" /> Posted for Consultation
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded-md">
+                                Ready for Consultation
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                            {isSummer 
+                              ? 'Posts Final period scores for consultation before official semestral locking.'
+                              : 'Posts Semi-Final & Final period scores + Tentative Final Rating (TFR) for student consultation.'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={postingGrades || lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')}
+                          onClick={() => setPendingPostMilestone('tfr')}
+                          className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
+                        >
+                          Post TFR
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Milestone Option 3: Official Semestral Grade (SG) */}
+                    <div className={`p-4 rounded-xl border transition-all ${
+                      lockedMilestones.includes('Semestral Grade')
+                        ? 'bg-slate-50 border-slate-200 opacity-90'
+                        : 'bg-emerald-50/60 border-emerald-200 hover:border-emerald-400'
+                    }`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-emerald-955 font-sans">Step 3: Official Semestral Grade (SG)</span>
+                            {lockedMilestones.includes('Semestral Grade') ? (
+                              <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-200 text-emerald-900 rounded-md flex items-center gap-1">
+                                <Check className="w-3 h-3" /> Officially Locked & Submitted
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-md">
+                                Final Lock & Submit
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
+                            Finalizes overall Semestral Grade (SG) & Transmuted GWA. Submits official grade sheet to Dean & Registrar.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={postingGrades || lockedMilestones.includes('Semestral Grade')}
+                          onClick={() => setPendingPostMilestone('semestral')}
+                          className="px-3 py-1.5 text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
+                        >
+                          Finalize SG
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+              </div>
+
+              <div className="px-4 sm:px-6 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-[11px] text-slate-500 font-mono">
+                  {lockedMilestones.length > 0 ? `${lockedMilestones.length} milestone(s) active` : 'No milestones posted yet'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowConfirmModal(false);
+                    setPendingPostMilestone(null);
+                  }}
+                  className="px-4 py-2 text-xs font-semibold border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl transition-colors font-sans cursor-pointer"
+                >
+                  Close
+                </button>
               </div>
             </div>
           </div>
         )}
+
+        {/* 📊 Export Excel / PDF Metadata Prompt Modal */}
+        <ExportPreviewModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          classInfo={classInfo}
+          students={computedStudents}
+          maxItems={maxItems}
+          metadata={exportMetadata}
+          onMetadataChange={(updated) => setExportMetadata(prev => ({ ...prev, ...updated }))}
+          onExportExcel={handleExportExcel}
+          onExportPdf={handleExportPdf}
+        />
 
       </div>
     </>

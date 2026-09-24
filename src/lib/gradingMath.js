@@ -53,12 +53,51 @@ export const calculateSemestralGrade = ({ prelim = null, midterm = null, semiFin
 
   const mr = (p !== null && m !== null) ? Math.round((p + m) / 2) : (m ?? p);
   const tfr = (sf !== null && f !== null) ? Math.round((sf + f) / 2) : (f ?? sf);
-  const sg = (mr !== null && tfr !== null) ? Math.round((mr + tfr) / 2) : null;
+  const sg = (mr !== null && tfr !== null) ? Math.round((mr + tfr) / 2) : (tfr ?? mr);
 
   const gwa = sg !== null ? getTransmutedGrade(sg).toFixed(2) : '—';
   const remarks = sg !== null ? (parseFloat(gwa) <= 3.00 ? 'Passed' : 'Failed') : '—';
 
   return { mr, tfr, sg, gwa, remarks };
+};
+
+/**
+ * Resolves President's List Tier classification according to DYCI Handbook Section 3.8 & 5.2.5.1
+ * @param {number|string} gwa - General Weighted Average
+ * @param {boolean} [hasGradeBelow200=false] - True if any individual subject grade exceeds 2.00
+ * @param {boolean} [hasInc=false] - True if student has any Incomplete grades
+ * @param {number} [units=18] - Enrolled course unit load
+ * @param {boolean} [isIrregular=false] - True if student is irregular
+ * @returns {{ tier: 'Sapientia'|'Excellentia'|'Virtus'|null, isEligible: boolean, disqualificationReason: string|null }}
+ */
+export const getPresidentsListTier = (gwa, hasGradeBelow200 = false, hasInc = false, units = 18, isIrregular = false) => {
+  if (gwa === null || gwa === undefined || gwa === '—') {
+    return { tier: null, isEligible: false, disqualificationReason: 'Pending Grades' };
+  }
+
+  const numGwa = parseFloat(gwa);
+  if (numGwa > 1.75) {
+    return { tier: null, isEligible: false, disqualificationReason: 'GWA exceeds 1.75 threshold (Sec 3.8.2)' };
+  }
+
+  if (hasGradeBelow200) {
+    return { tier: null, isEligible: false, disqualificationReason: 'Subject grade lower than 2.00 (Sec 3.8.4 / 5.2.5.1.3)' };
+  }
+
+  if (hasInc) {
+    return { tier: null, isEligible: false, disqualificationReason: 'Incomplete grade present (Sec 3.8.5)' };
+  }
+
+  if (isIrregular && units < 18) {
+    return { tier: null, isEligible: false, disqualificationReason: 'Irregular student underload (< 18 units) (Sec 3.8.6)' };
+  }
+
+  let tier = null;
+  if (numGwa <= 1.25) tier = 'Sapientia';
+  else if (numGwa <= 1.50) tier = 'Excellentia';
+  else if (numGwa <= 1.75) tier = 'Virtus';
+
+  return { tier, isEligible: true, disqualificationReason: null };
 };
 
 /**

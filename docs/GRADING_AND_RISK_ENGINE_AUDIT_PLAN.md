@@ -1,8 +1,8 @@
-# ASPIRE v3.1 System Audit & Implementation Plan: Grade Computation & Risk Engine
+# ASPIRE v3.1→v4.0 System Audit & Implementation Plan: Grade Computation & Risk Engine
 
 **Author**: Antigravity AI  
-**Date**: September 23, 2026  
-**Status**: Approved Plan (Deferred Implementation)  
+**Date**: September 23–24, 2026  
+**Status**: ✅ COMPLETED  
 **Target Repository**: `c:\Users\JC Gabriel\Downloads\New ASPIRE\sage`
 
 ---
@@ -22,9 +22,12 @@ Across `StudentRow.jsx`, `ScoreInput.jsx`, `GradeComputationPreview.jsx`, and `c
 3. $24.25\%$ transmutes to **5.00 GWA (Failed)** on the DYCI transmutation scale.
 4. Because the GWA is $5.00$, `calculateAcademicRisk` applies a heavy GWA penalty, driving the risk score high and flagging top-performing students as **HIGH RISK**.
 
+### 1.3 Resolution Status: ✅ RESOLVED
+**Fix Applied**: `gradingMath.js` → `calculateSemestralGrade()` now uses Available-Term Non-Null Averaging. Unencoded terms return `null` and are excluded from all averages.
+
 ---
 
-## 2. Technical Audit of the 3 Grade Posting Milestones
+## 2. Technical Audit of the 3 Grade Posting Milestones — ✅ RESOLVED
 
 The ASPIRE system supports 3 grade posting periods per DYCI academic guidelines:
 
@@ -40,106 +43,69 @@ The ASPIRE system supports 3 grade posting periods per DYCI academic guidelines:
 └───────────────────┴───────────────────────────┴────────────────────────┘
 ```
 
-| Milestone Period | DB `grade_period` Value | Target Rating Formula | Effective Transmuted Grade | Score Sheet Availability |
-| :--- | :--- | :--- | :--- | :--- |
-| **1. Midterm Rating** | `midterm` | $\text{MR} = \text{Math.round}\left(\frac{\text{Prelim} + \text{Midterm}}{2}\right)$<br>*(or $\text{Prelim}$ if Midterm is unencoded)* | $\text{Transmute}(\text{MR})$ | Prelim / Midterm period |
-| **2. Tentative Final Rating** | `tentative_final` | $\text{TFR} = \text{Math.round}\left(\frac{\text{SemiFinal} + \text{Final}}{2}\right)$<br>*(or $\text{SemiFinal}$ if Final is unencoded)* | $\text{Transmute}(\text{TFR})$ | Semi-Final / Final period |
-| **3. Semestral Grade** | `final` | $\text{SG} = \text{Math.round}\left(\frac{\text{MR} + \text{TFR}}{2}\right)$<br>*(or $\text{MR}$ if TFR is unencoded)* | $\text{Transmute}(\text{SG})$ | Full Semester complete |
-
 ---
 
-## 3. Detailed Architectural Solution
+## 3. Bugs Discovered & Fixed During Audit
 
-### Rule 1: Exclude Unencoded Terms from Averages
-When a term has NO encoded scores (activities/exams unentered), it must be **excluded** from term averages. Unencoded terms must **NEVER** contribute $0\%$ to a student's running grade or GWA.
+### 3.1 Ghost Student False Positive (Chloe Castro Case) — ✅ RESOLVED
+**Bug**: In `classRoomService.js` and `riskUtils.js`, JavaScript `||` operator treated configured activity maximums of `0` as falsy, defaulting them to `20`. This inflated the denominator, tanking scores from 93 to a failing GWA.
 
-- **Prelim Period Only**: Student with $97\%$ Prelim $\rightarrow$ Running $\text{MR} = 97\%$, Running $\text{SG} = 97\%$, Running $\text{GWA} = 1.00$, Risk = **LOW (On Track)**.
-- **Midterm Period**: Prelim $85\%$, Midterm $89\%$ $\rightarrow$ $\text{MR} = 87\%$, Running $\text{SG} = 87\%$, Running $\text{GWA} = 1.75$, Risk = **LOW**.
-- **Incomplete Midterm**: Prelim $85\%$, Midterm empty $\rightarrow$ Running $\text{MR} = 85\%$, Running $\text{SG} = 85\%$.
-
----
-
-## 4. Proposed Code Modifications
-
-### 4.1 `src/lib/gradingMath.js`
-Update `calculateSemestralGrade({ prelim, midterm, semiFinal, final, isSummer })`:
-```javascript
-export const calculateSemestralGrade = ({ prelim = null, midterm = null, semiFinal = null, final = null, isSummer = false }) => {
-  const p = prelim !== null && !isNaN(prelim) ? parseFloat(prelim) : null;
-  const m = midterm !== null && !isNaN(midterm) ? parseFloat(midterm) : null;
-  const sf = semiFinal !== null && !isNaN(semiFinal) ? parseFloat(semiFinal) : null;
-  const f = final !== null && !isNaN(final) ? parseFloat(final) : null;
-
-  // Compute Midterm Rating (MR)
-  let mr = null;
-  if (p !== null && m !== null) {
-    mr = Math.round((p + m) / 2);
-  } else if (p !== null) {
-    mr = p;
-  } else if (m !== null) {
-    mr = m;
-  }
-
-  // Compute Tentative Final Rating (TFR)
-  let tfr = null;
-  if (sf !== null && f !== null) {
-    tfr = Math.round((sf + f) / 2);
-  } else if (sf !== null) {
-    tfr = sf;
-  } else if (f !== null) {
-    tfr = f;
-  }
-
-  // Compute Running Semestral Grade (SG)
-  let sg = null;
-  if (mr !== null && tfr !== null) {
-    sg = Math.round((mr + tfr) / 2);
-  } else if (mr !== null) {
-    sg = mr;
-  } else if (tfr !== null) {
-    sg = tfr;
-  }
-
-  const gwa = sg !== null ? getTransmutedGrade(sg).toFixed(2) : '—';
-  const remarks = sg !== null ? (parseFloat(gwa) <= 3.00 ? 'Passed' : 'Failed') : '—';
-
-  return { mr, tfr, sg, gwa, remarks };
-};
+**Fix**: Changed `||` to `??` (nullish coalescing) in all column configuration lookups:
+```diff
+- const actMax = termColSetup[key] || 20;
++ const actMax = termColSetup[key] ?? 0;
 ```
 
-### 4.2 `src/components/StudentRow.jsx`
-- Replace inline period rating averaging (`(prelimResult.rating + midtermResult.rating)/2`) with `calculateSemestralGrade`.
-- Compute `getStatus` based on running GWA so 97% Prelim students receive the green `Safe` status badge instead of red `Failing`.
+### 3.2 Scholarship Grade Floor Breach Applied Globally — ✅ RESOLVED
+**Bug**: The `hasGradeBelow200` flag was being applied to ALL students, adding +15 risk points to anyone with a subject grade above 2.00. Per DYCI Handbook Sec 3.8.4 / 5.2.5.1, this rule applies ONLY to PL/scholarship candidates (GWA ≤ 1.75).
 
-### 4.3 `src/pages/faculty/ScoreInput.jsx`
-- Align draft saving and `posted_grades` payloads with the 3 milestone periods:
-  - Midterm posting $\rightarrow$ `grade_period: 'midterm'`, `computed_grade: mr`, `effective_grade: transmute(mr)`.
-  - Tentative Final posting $\rightarrow$ `grade_period: 'tentative_final'`, `computed_grade: tfr`, `effective_grade: transmute(tfr)`.
-  - Semestral Grade posting $\rightarrow$ `grade_period: 'final'`, `computed_grade: sg`, `effective_grade: transmute(sg)`.
+**Fix**: Moved the check inside `computeUnifiedRisk()` with a guard:
+```javascript
+const isPlCandidate = avgGwa !== null && avgGwa <= 1.75;
+const hasGradeBelow200 = isPlCandidate && individualSubjectGrades.some(g => g > 2.00);
+```
 
-### 4.4 `src/lib/classRoomService.js`
-- Update `getClassPriorityRoster` to use running GWA from `calculateSemestralGrade`.
-- Pass running GWA to `calculateAcademicRisk`. A student with 97% in Prelim will have `approxGwa = 1.00` and `failing_count = 0` $\rightarrow$ producing **Risk Score 0 (Low Risk)**.
+### 3.3 Stale Posted Grades Overriding Live Data — ✅ RESOLVED
+**Bug**: The `posted_grades` table contained frozen snapshots of incorrect 5.00 GWA values from before the bug fixes. `classRoomService.js` prioritized these stale records over live calculations, causing the At-Risk page to show GWA 5.00 while the class record showed correct passing grades.
 
-### 4.5 `src/pages/faculty/GradeComputationPreview.jsx` & `PostedGradesView.jsx`
-- Update preview calculation matrices to display "Running Grade" tags when incomplete terms exist.
-- Support viewing posted records across all 3 milestone periods (`midterm`, `tentative_final`, `final`).
+**Fix**: Cleared erroneous entries from the `posted_grades` table. The system now correctly falls back to dynamic grade computation.
+
+### 3.4 Risk Engine Duplication — ✅ RESOLVED
+**Bug**: Risk logic was split between `riskEngine.js` (core math) and `riskUtils.js` (wrapper + helpers). This created confusion about which file was the "source of truth."
+
+**Fix**: Consolidated everything into a single `riskEngine.js`. The old `riskUtils.js` is now a thin re-export shim for backwards compatibility.
 
 ---
 
-## 5. Summary Table: Before vs. After Implementation
+## 4. V4 Risk Matrix Transition — ✅ IMPLEMENTED
 
-| Scenario | Student Score | Current Behavior (Flawed) | Corrected Behavior |
+### Problem
+The old risk matrix used percentage-based weights (35% GWA, 30% Assessment, 15% Attendance, 20% Trajectory) that produced a maximum effective GWA penalty of only 35 points. This meant a student with a **failing 5.00 GWA** could score as low as 45 points (Moderate/Watch), which is counter-intuitive and indefensible to a panel.
+
+### Solution
+The V4 Risk Matrix uses **direct point allocation anchored to the DYCI Transmutation Scale**:
+
+| Factor | Max Points | Key Threshold |
+| :--- | :--- | :--- |
+| GWA Deficit | 60 | Failing GWA (5.00) = 60 pts → Instant HIGH RISK |
+| Attendance / FDA | 50 | 4+ absences = 50 pts → FDA recommendation trigger |
+| Missing Work | 15 | 3+ zeros on configured activities |
+| Grade Decline | 10 | >15% drop between terms |
+
+**Total potential**: 135 pts, **capped at 100**.
+
+See `docs/ASPIRE_GRADING_AND_RISK_RULES_DEFENSE_GUIDE.md` for the complete V4 specification and panel defense arguments.
+
+---
+
+## 5. Verification Checklist
+
+| # | Test Case | Expected Result | Status |
 | :--- | :--- | :--- | :--- |
-| **Prelim Period Only** | Prelim: 97%<br>Midterm: Unencoded | Midterm treated as 0%.<br>GWA = **5.00**<br>Risk = **HIGH (Failed)** | Uses Prelim rating.<br>GWA = **1.00**<br>Risk = **LOW (On Track)** |
-| **Midterm Period** | Prelim: 85%<br>Midterm: 89% | Averages all 4 terms with 0s.<br>GWA = **5.00** | $\text{MR} = \frac{85+89}{2} = 87\%$.<br>GWA = **1.75**<br>Risk = **LOW** |
-| **Posted Grades** | Milestone: Midterm | Forces 4-term SG posting. | Posts official **Midterm Rating (MR)** cleanly without locking score sheet edits. |
-
----
-
-## 6. Verification Plan
-
-When you are ready to implement this plan in the future:
-1. **Test 97% Prelim Scenario**: Enter 97% in Prelim for a student on a score sheet with blank Midterm/Semi-Final/Final. Confirm GWA displays `1.00` and Risk displays `LOW - 0`.
-2. **Test Milestone Posting**: Save and post grades under Midterm milestone. Confirm `posted_grades` table saves `grade_period: 'midterm'` with `effective_grade: 1.00`.
-3. **Build Check**: Run `npm run build` to verify 0 errors.
+| 1 | Student with 97% Prelim, no other terms | GWA = 1.00, Risk = LOW (0) | ✅ |
+| 2 | Student with GWA 5.00 (failing), 0 absences | Risk ≥ 50 (HIGH) | ✅ |
+| 3 | Student with GWA 2.25, 0 absences | Risk ~12 (MODERATE Watch) | ✅ |
+| 4 | Student with GWA 1.50, 4 absences | Risk = 50 (HIGH — FDA trigger) | ✅ |
+| 5 | Student with GWA 3.00 (borderline), 4 absences | Risk = 75 (CRITICAL) | ✅ |
+| 6 | Chloe Castro (unconfigured activities) | GWA = 1.50, Risk = LOW | ✅ |
+| 7 | All portals show consistent risk levels | Dean = Faculty = Admin = Student | ✅ |

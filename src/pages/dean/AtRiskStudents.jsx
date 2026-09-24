@@ -10,52 +10,11 @@ import { useAuth } from '../../lib/AuthContext';
 import { dispatchNotifications } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import { getTransmutedGrade } from '../../lib/gradingMath';
-import { calculateAcademicRisk, calculateInterventionOutcome } from '../../lib/riskEngine';
+import { calculateInterventionOutcome } from '../../lib/riskEngine';
+import { computeTentativeGrade, computeUnifiedRisk, isStudentAtRisk } from '../../lib/riskUtils';
 import { cn } from '../../lib/utils';
 
-// Compute tentative GWA for a class record from its scores
-function computeTentativeGrade(classRecordScores, classRecordCols) {
-  const terms = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
-  const termRatings = {};
-  
-  terms.forEach(term => {
-    const tSc = classRecordScores?.[term];
-    if (!tSc || (tSc.act1 == null && tSc.act2 == null && tSc.act3 == null && tSc.act4 == null && tSc.act5 == null && tSc.act6 == null && tSc.char_rating == null && tSc.exam == null)) {
-      return;
-    }
-    
-    const tMx = classRecordCols?.[term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
-    
-    const csSum = (tSc.act1 || 0) + (tSc.act2 || 0) + (tSc.act3 || 0) + (tSc.act4 || 0) + (tSc.act5 || 0) + (tSc.act6 || 0);
-    const csMax = (tMx.act1 || 20) + (tMx.act2 || 20) + (tMx.act3 || 20) + (tMx.act4 || 20) + (tMx.act5 || 20) + (tMx.act6 || 10);
-    
-    const csPercent = csMax > 0 ? (csSum / csMax) * 50 : 0;
-    const charPercent = (tSc.char_rating || 0) * 0.1;
-    const examPercent = (tMx.exam || 40) > 0 ? ((tSc.exam || 0) / tMx.exam) * 40 : 0;
-    
-    termRatings[term] = Math.min(100, Math.max(0, Math.round(csPercent + charPercent + examPercent)));
-  });
-  
-  const hasPrelim = termRatings['Prelim'] !== undefined;
-  const hasMidterm = termRatings['Midterm'] !== undefined;
-  const hasSF = termRatings['Semi-Final'] !== undefined;
-  const hasFinal = termRatings['Final'] !== undefined;
-  
-  let finalSG = null;
-  if (hasPrelim && hasMidterm && hasSF && hasFinal) {
-    const mr = Math.round((termRatings['Prelim'] + termRatings['Midterm']) / 2);
-    const tfr = Math.round((termRatings['Semi-Final'] + termRatings['Final']) / 2);
-    finalSG = Math.round((mr + tfr) / 2);
-  } else {
-    const available = Object.values(termRatings);
-    if (available.length > 0) {
-      finalSG = Math.round(available.reduce((sum, val) => sum + val, 0) / available.length);
-    }
-  }
-  
-  if (finalSG === null) return null;
-  return getTransmutedGrade(finalSG);
-}
+// computeTentativeGrade is now imported from riskUtils.js (single source of truth)
 
 function SeverityBadge({ severity, score }) {
   if (severity === 'critical' || severity === 'high') {
@@ -400,12 +359,12 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
           const failingItems = subjectGradeList.filter(item => item.val > 3.00);
           const failingCount = failingItems.length;
 
-          // Explainable Multi-Factor Risk Assessment via centralized engine
-          const riskAssessment = calculateAcademicRisk({
-            currentGwa: avgGwa,
-            failingSubjectsCount: failingCount,
-            majorExamAverage: 80,
-            absenceCount: 0
+          // Unified Risk Assessment via centralized ASPIRE 7-Rule Matrix (single source of truth)
+          const riskAssessment = computeUnifiedRisk({
+            avgGwa,
+            failingCount,
+            examAverage: 80,
+            individualSubjectGrades: subjectGradeList.map(item => item.val)
           });
 
           const severity = riskAssessment.risk_level;
@@ -490,7 +449,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
 
   // Derived lists for ASPIRE v3.1 Matrix
   const tier1Students = students.filter(s => 
-    s.failingCount > 0 || (s.runningGwa !== null && s.runningGwa >= 2.50) || s.severity === 'critical' || s.severity === 'high'
+    s.failingCount > 0 || s.severity === 'critical' || s.severity === 'high'
   );
 
   const tier2PlStudents = students.filter(s => s.isHonorsPace);

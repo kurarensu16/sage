@@ -48,6 +48,7 @@ export default function StudentRiskEvaluationModal({
   const [referToDean, setReferToDean] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   // Compute live explainable risk metrics
   const riskAnalysis = useMemo(() => {
@@ -101,8 +102,14 @@ export default function StudentRiskEvaluationModal({
       return;
     }
 
+    setShowConfirm(true);
+  };
+
+  const processSubmit = async () => {
     setSaving(true);
     setError(null);
+
+    const validTasks = tasks.filter(t => t.description.trim().length > 0);
 
     try {
       const baselineSnapshot = {
@@ -270,11 +277,11 @@ export default function StudentRiskEvaluationModal({
                 </div>
 
                 <div className="p-2 bg-white border border-slate-200 rounded-md">
-                  <div className="text-[10px] text-slate-400 font-medium uppercase">Assessment</div>
+                  <div className="text-[10px] text-slate-400 font-medium uppercase">Missing Work</div>
                   <div className="font-mono text-sm font-semibold text-slate-800">
-                    {student.failing_count || 0} Fail
+                    {riskAnalysis.factors.missing_work?.zero_submissions_count || 0} Missed
                   </div>
-                  <div className="text-[10px] font-mono text-slate-500">+{riskAnalysis.factors.assessment.points_contributed} pts</div>
+                  <div className="text-[10px] font-mono text-slate-500">+{riskAnalysis.factors.missing_work?.points_contributed || 0} pts</div>
                 </div>
 
                 <div className="p-2 bg-white border border-slate-200 rounded-md">
@@ -414,6 +421,45 @@ export default function StudentRiskEvaluationModal({
           </div>
         </form>
       </div>
+      
+      {/* Confirmation Modal Overlay */}
+      {showConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs text-left animate-in fade-in duration-150">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-150 border border-slate-200">
+            <div className="p-5 flex flex-col items-center text-center space-y-3">
+              <div className="w-12 h-12 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mb-1">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <h4 className="text-base font-bold text-slate-800">Submit Risk Evaluation?</h4>
+              <p className="text-xs text-slate-500 font-sans leading-relaxed">
+                You are about to officially submit this academic intervention plan for <strong className="text-slate-700">{student.first_name} {student.last_name}</strong>.
+                {referToDean && (
+                  <span className="block mt-1.5 text-rose-600 font-medium">This will also flag the student for the Dean's review queue.</span>
+                )}
+              </p>
+            </div>
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-2 justify-center">
+              <button
+                type="button"
+                onClick={() => setShowConfirm(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors w-full"
+              >
+                Go Back
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirm(false);
+                  processSubmit();
+                }}
+                className="px-4 py-2 text-xs font-semibold text-white bg-sage-600 rounded-lg hover:bg-sage-700 transition-colors w-full"
+              >
+                Confirm Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
