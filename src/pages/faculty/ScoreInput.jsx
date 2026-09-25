@@ -748,30 +748,58 @@ export default function ScoreInput() {
     if (!editingColumn || !classRecordId) return;
 
     const { period, key } = editingColumn;
-    const dbKey = `${key}_max`;
 
     try {
-      // 1. Save maximum item change to DB
-      await supabase
-        .from('class_grading_columns')
-        .select('*')
-        .eq('class_record_id', classRecordId)
-        .eq('term', period)
-        .single();
+      // Determine if the key is an activity UUID or a fixed column key like 'exam'
+      const isActivityUuid = key.length > 10 && key.includes('-');
 
-      const payload = {
-        class_record_id: classRecordId,
-        term: period,
-        [dbKey]: value
-      };
+      if (isActivityUuid) {
+        // 1a. Update max_score in class_activities table
+        const { error: actErr } = await supabase
+          .from('class_activities')
+          .update({ max_score: value })
+          .eq('activity_id', key);
 
-      const { error } = await supabase
-        .from('class_grading_columns')
-        .upsert(payload, { onConflict: 'class_record_id,term' });
+        if (actErr) throw actErr;
 
-      if (error) throw error;
+        // 1b. Update the activities local state
+        const updatedList = (activities[period] || []).map(act =>
+          act.id === key ? { ...act, max: value } : act
+        );
+        const updatedActivities = { ...activities, [period]: updatedList };
+        setActivities(updatedActivities);
+        localStorage.setItem(`sage_activities_${classRecordId}`, JSON.stringify(updatedActivities));
 
-      // 2. Update local state
+        // 1c. Find the slot key (act1, act2, etc.) for this activity to update class_grading_columns
+        const slotIndex = (activities[period] || []).findIndex(act => act.id === key);
+        if (slotIndex >= 0) {
+          const slotKey = `act${slotIndex + 1}`;
+          const colPayload = {
+            class_record_id: classRecordId,
+            term: period,
+            [`${slotKey}_max`]: value
+          };
+          await supabase
+            .from('class_grading_columns')
+            .upsert(colPayload, { onConflict: 'class_record_id,term' });
+        }
+      } else {
+        // 2. Fixed column key (e.g. 'exam') — update class_grading_columns directly
+        const dbKey = `${key}_max`;
+        const payload = {
+          class_record_id: classRecordId,
+          term: period,
+          [dbKey]: value
+        };
+
+        const { error } = await supabase
+          .from('class_grading_columns')
+          .upsert(payload, { onConflict: 'class_record_id,term' });
+
+        if (error) throw error;
+      }
+
+      // 3. Update local maxItems state
       setMaxItems(prev => ({
         ...prev,
         [period]: {
@@ -780,7 +808,7 @@ export default function ScoreInput() {
         }
       }));
 
-      // 3. Log audit activity
+      // 4. Log audit activity
       const actorName = resolveActorName(profile, user);
       await logActivity(
         'Grade Column Config',
@@ -793,6 +821,7 @@ export default function ScoreInput() {
       console.error('Error updating column max points:', err);
     }
   };
+
 
 
   const openConfigModal = (term, slotIndex, act) => {
@@ -1889,7 +1918,7 @@ export default function ScoreInput() {
                           )}
 
                           {/* Midterm Rating (MR) */}
-                          {((!isSummer || viewMode === 'Midterm') && (viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch' || viewMode === 'Summary')) && (
+                          {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch' || viewMode === 'Summary') && (
                             <td className="px-3 py-3 border-r border-slate-200 bg-indigo-100/40 text-center"></td>
                           )}
 
