@@ -1,6 +1,6 @@
-# SAGE — Supabase Migration Workflow
+# ASPIRE — Supabase Migration Workflow
 
-> Systematic plan to migrate from `localStorage` (mockDb.js) to Supabase PostgreSQL.  
+> Systematic plan to migrate from `localStorage` (mockDb.js) to Supabase PostgreSQL.
 > Status: **Completed**
 
 ---
@@ -21,7 +21,7 @@
 
 ## Step 1: Supabase Project Setup
 
-- [x] Create Supabase project for SAGE
+- [x] Create Supabase project for ASPIRE
 - [x] Generate SQL migrations for all tables from the ERD
 - [x] Create `.env` file with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
 - [x] Install `@supabase/supabase-js`
@@ -178,5 +178,5 @@ Convert all default arrays from `mockDb.js` into `supabase/seed.sql`:
 
 ---
 
-*End of Supabase Migration Workflow — SAGE, DYCI Capstone Project*
+*End of Supabase Migration Workflow — ASPIRE, DYCI Capstone Project*
 

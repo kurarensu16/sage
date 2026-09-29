@@ -1,4 +1,9 @@
-import { getTransmutedGrade } from './gradingMath';
+import {
+  calculateSemestralGrade,
+  calculateStoredTermRating,
+  getTransmutedGrade,
+  resolveGradingFormula
+} from './gradingMath';
 import * as XLSX from 'xlsx-js-style';
 
 // ---------------------------------------------------------------------------
@@ -79,17 +84,18 @@ const getScore = (student, term, key) => {
 // ---------------------------------------------------------------------------
 // JS-side rating computation (used for single-sheet exports)
 // ---------------------------------------------------------------------------
-const computeStudentRatings = (student) => {
+const computeStudentRatings = (student, gradingOptions = {}) => {
   if (!student) return { name: '', mr: '', tfr: '', gwa: '' };
+  const formula = gradingOptions.formula || resolveGradingFormula(null, { formulaAssigned: false });
 
   const getTermRating = (termName) => {
     const ts = student.periods?.[termName] || {};
-    const csSum = (ts.act1 || 0) + (ts.act2 || 0) + (ts.act3 || 0) +
-                  (ts.act4 || 0) + (ts.act5 || 0) + (ts.act6 || 0);
-    const csPercent  = (csSum / 110) * 50;
-    const charPercent = (ts.char || 0) * 0.1;
-    const examPercent = ((ts.exam || 0) / 40) * 40;
-    return Math.min(100, Math.max(0, Math.round(csPercent + charPercent + examPercent)));
+    return calculateStoredTermRating({
+      formula,
+      termScores: ts,
+      maxItems: gradingOptions.maxItems?.[termName] || {},
+      activities: gradingOptions.activities?.[termName] || []
+    }).rating;
   };
 
   const prelim    = getTermRating('Prelim');
@@ -97,26 +103,31 @@ const computeStudentRatings = (student) => {
   const semiFinal = getTermRating('Semi-Final');
   const finalTerm = getTermRating('Final');
 
-  const mr  = Math.round((prelim + midterm) / 2);
-  const tfr = Math.round((semiFinal + finalTerm) / 2);
-  const sgRating = Math.round((mr + tfr) / 2);
+  const semesterResult = calculateSemestralGrade({
+    prelim,
+    midterm,
+    semiFinal,
+    final: finalTerm,
+    isSummer: Boolean(gradingOptions.isSummer)
+  });
+  const { mr, tfr, sg: sgRating } = semesterResult;
 
   
 
-  const rawGwa = getTransmutedGrade(sgRating);
+  const rawGwa = sgRating === null ? null : getTransmutedGrade(sgRating);
   const remarkLower = student.customRemarks?.toLowerCase() || '';
 
-  let gwa = rawGwa;
+  let gwa = rawGwa ?? '';
   if      (student.absences >= 4)                            gwa = 5.00;
   else if (remarkLower === 'inc' || remarkLower === 'incomplete') gwa = 'Inc.';
   else if (remarkLower === 'dropped' || remarkLower === 'drp')    gwa = 'Drp.';
-  else if (remarkLower === 'passed')  gwa = Math.min(3.00, rawGwa);
+  else if (remarkLower === 'passed' && rawGwa !== null)  gwa = Math.min(3.00, rawGwa);
   else if (remarkLower === 'failed')  gwa = 5.00;
 
   return {
     name: student.name.toUpperCase(),
-    mr:   mr + '%',
-    tfr:  tfr + '%',
+    mr:   mr === null ? '' : `${mr}%`,
+    tfr:  tfr === null ? '' : `${tfr}%`,
     gwa:  typeof gwa === 'number' ? gwa.toFixed(2) : gwa
   };
 };
@@ -443,7 +454,7 @@ export function buildRecordSheet(ws, metadata, students, isSingleSheet = false) 
 // ===========================================================================
 // REPORT OF GRADES
 // ===========================================================================
-export function buildReportOfGrades(ws, metadata, students, isSingleSheet = false) {
+export function buildReportOfGrades(ws, metadata, students, isSingleSheet = false, gradingOptions = {}) {
   // Grade conversion scale
   const scale = [
     { label: '98-100',    val: 1.00 },
@@ -520,7 +531,7 @@ export function buildReportOfGrades(ws, metadata, students, isSingleSheet = fals
     const leftStudent = students[i];
     if (isSingleSheet) {
       if (leftStudent) {
-        const ratings = computeStudentRatings(leftStudent);
+        const ratings = computeStudentRatings(leftStudent, gradingOptions);
         setCell(ws, leftRow, 1, ratings.name, false, null, 's', style.left);
         setCell(ws, leftRow, 4, ratings.mr, false, null, 's', style.center);
         setCell(ws, leftRow, 5, ratings.tfr, false, null, 's', style.center);
@@ -542,7 +553,7 @@ export function buildReportOfGrades(ws, metadata, students, isSingleSheet = fals
     const rightStudent = students[i + 30];
     if (isSingleSheet) {
       if (rightStudent) {
-        const ratings = computeStudentRatings(rightStudent);
+        const ratings = computeStudentRatings(rightStudent, gradingOptions);
         setCell(ws, leftRow, 8, ratings.name, false, null, 's', style.left);
         setCell(ws, leftRow, 11, ratings.mr, false, null, 's', style.center);
         setCell(ws, leftRow, 12, ratings.tfr, false, null, 's', style.center);
@@ -604,7 +615,7 @@ export function buildReportOfGrades(ws, metadata, students, isSingleSheet = fals
 // ===========================================================================
 // TRIGGER EXPORT
 // ===========================================================================
-export function triggerExcelExport(classroomMetadata, students, selectedTab = 'all') {
+export function triggerExcelExport(classroomMetadata, students, selectedTab = 'all', gradingOptions = {}) {
   const wb = XLSX.utils.book_new();
 
   let tabName = 'Gradesheet';
@@ -628,7 +639,7 @@ export function triggerExcelExport(classroomMetadata, students, selectedTab = 'a
 
   if (selectedTab === 'all' || selectedTab === 'report') {
     const wsReport = XLSX.utils.aoa_to_sheet([]);
-    buildReportOfGrades(wsReport, classroomMetadata, students, selectedTab === 'report');
+    buildReportOfGrades(wsReport, classroomMetadata, students, selectedTab === 'report', gradingOptions);
     XLSX.utils.book_append_sheet(wb, wsReport, 'Report of Grades');
   }
 

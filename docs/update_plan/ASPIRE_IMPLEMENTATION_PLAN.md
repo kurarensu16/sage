@@ -1,6 +1,6 @@
-# SAGE — Complete Frontend Implementation & UI Refactor Plan
+# ASPIRE — Complete Frontend Implementation & UI Refactor Plan
 
-This document outlines the step-by-step implementation blueprint to resolve all missing pages, stubs, and dynamic scoring layouts across the SAGE application. 
+This document outlines the step-by-step implementation blueprint to resolve all missing pages, stubs, and dynamic scoring layouts across the ASPIRE application.
 
 Since all underlying database tables for these pages (such as `attendance_logs`, `enrollments`, and `departments`) already exist, these updates can be deployed directly on the frontend. The development team will only need to verify and tweak the API queries.
 
@@ -70,8 +70,8 @@ Since all underlying database tables for these pages (such as `attendance_logs`,
   * **Dropdown Configuration (`UserForm.jsx`)**: In the student's Block Section selector, include the static option: `<option value="Irregular">Irregular Student</option>`.
   * **Table Label Styling (`UserList.jsx`)**: If the student's `section_id` is null, display the section label as `"Irregular"` using the amber badge style:
     ```jsx
-    stud.section === 'Irregular' 
-      ? 'bg-amber-50 text-amber-700 border border-amber-100 rounded px-2.5 py-0.5 text-xs font-semibold' 
+    stud.section === 'Irregular'
+      ? 'bg-amber-50 text-amber-700 border border-amber-100 rounded px-2.5 py-0.5 text-xs font-semibold'
       : 'bg-slate-100 text-slate-600 rounded px-2.5 py-0.5 text-xs font-semibold'
     ```
   * **Manual Class Enrollments**: Ensure class list enrollments support manual registration of these irregular/unassigned students.

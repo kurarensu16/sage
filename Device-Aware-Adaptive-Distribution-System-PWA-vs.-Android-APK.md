@@ -1,7 +1,7 @@
 # Implementation Plan: Device-Aware Adaptive Distribution System (PWA vs. Android APK)
 
 ## 📌 Goal Description
-Implement an intelligent **Device-Aware Adaptive Distribution Gateway** for the SAGE web portal. 
+Implement an intelligent **Device-Aware Adaptive Distribution Gateway** for the ASPIRE web portal.
 The system dynamically inspects the client's operating system environment (`navigator.userAgent` and display mode):
 1. **On Android Mobile & Tablets**: Replaces the browser PWA prompt with a direct **"Download Android App (.APK)"** trigger, complete with a step-by-step modal guiding students through the Android "Install Unknown Apps" permission flow.
 2. **On iOS Devices (iPhone / iPad)**: Detects Safari/WebKit and presents an **"Add to Home Screen (iOS PWA)"** visual walkthrough.
@@ -23,7 +23,7 @@ The system dynamically inspects the client's operating system environment (`navi
 ---
 
 ## ❓ Open Questions
-- What is the exact public URL or filename for the compiled SAGE Android APK? *(Default fallback: Supabase storage or `/downloads/sage-latest.apk`)*.
+- What is the exact public URL or filename for the compiled ASPIRE Android APK? *(Default fallback: Supabase storage or `/downloads/sage-latest.apk`)*.
 - Would you like a download banner to appear on the **Public Login page** for mobile visitors, or keep it strictly inside the **Sidebar / Navigation**?
 
 ---
@@ -32,7 +32,7 @@ The system dynamically inspects the client's operating system environment (`navi
 
 ### Component 1: Core Platform Detection & Installation Engine
 
-#### [MODIFY] [`src/lib/usePwaInstall.js`](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/lib/usePwaInstall.js)
+#### [MODIFY] [`src/lib/usePwaInstall.js`](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/lib/usePwaInstall.js)
 - Extend state to include `platform`: `'android'`, `'ios'`, or `'desktop'`.
 - Add Android APK download handler linking to the APK release endpoint.
 - Enhance standalone detection (`display-mode: standalone`, `window.navigator.standalone`).
@@ -42,24 +42,24 @@ The system dynamically inspects the client's operating system environment (`navi
 
 ### Component 2: Smart Adaptive Install Modal & UI Components
 
-#### [NEW] [`src/components/layout/SmartInstallModal.jsx`](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/components/layout/SmartInstallModal.jsx)
+#### [NEW] [`src/components/layout/SmartInstallModal.jsx`](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/components/layout/SmartInstallModal.jsx)
 - **Multi-Platform Modal UI**:
-  - **Android View**: Features a direct **"Download SAGE APK (.apk)"** button + a 3-step visual guide:
+  - **Android View**: Features a direct **"Download ASPIRE APK (.apk)"** button + a 3-step visual guide:
     1. *Download*: Tap "Download Anyway" when prompted by Chrome/browser.
     2. *Open File*: Tap the completed `.apk` notification.
     3. *Install*: Select "Allow from this source" if prompted by Android Security.
   - **iOS View**: Features step-by-step Safari directions with visual icons (*Tap Share `[⎋]` ➔ Tap `Add to Home Screen` ➔ Tap `Add`*).
   - **Desktop View**: Triggers native `deferredPrompt.prompt()` or shows Chrome/Edge address bar install guide (*Click `⊕ Install`*).
 
-#### [MODIFY] [`src/components/layout/Sidebar.jsx`](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/components/layout/Sidebar.jsx)
+#### [MODIFY] [`src/components/layout/Sidebar.jsx`](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/components/layout/Sidebar.jsx)
 - Update the sidebar bottom install trigger:
   - If **Android**: Icon displays `Smartphone` + label *"Download Android App (.APK)"*.
   - If **Desktop**: Icon displays `Monitor` / `Download` + label *"Install Desktop App"*.
   - If **iOS**: Icon displays `Smartphone` + label *"Add to Home Screen"*.
 - Replace the legacy static PWA modal with the new `SmartInstallModal`.
 
-#### [MODIFY] [`src/pages/public/Login.jsx`](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/public/Login.jsx)
-- Add an optional, non-intrusive mobile install badge at the bottom of the login card (*e.g., "Using an Android device? Download the Native SAGE App"*) so students can install the APK before logging in.
+#### [MODIFY] [`src/pages/public/Login.jsx`](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/public/Login.jsx)
+- Add an optional, non-intrusive mobile install badge at the bottom of the login card (*e.g., "Using an Android device? Download the Native ASPIRE App"*) so students can install the APK before logging in.
 
 ---
 

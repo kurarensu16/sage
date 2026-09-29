@@ -1,6 +1,6 @@
-# SAGE GHOST UPDATE LOG — 05-06-2026
+# ASPIRE GHOST UPDATE LOG — 05-06-2026
 
-This document registers all recent core changes, enhancements, and system design/database updates completed in the SAGE (Smart Academic Grading & Evaluation) application workspace.
+This document registers all recent core changes, enhancements, and system design/database updates completed in the ASPIRE (Academic Support and Performance Advising with Intervention, Risk, and Evaluation) application workspace.
 
 ---
 
@@ -8,18 +8,18 @@ This document registers all recent core changes, enhancements, and system design
 
 | File Path | Type of Change | Purpose / Description |
 | :--- | :--- | :--- |
-| [SAGE_DATABASE_SCHEMA.md](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/SAGE_DATABASE_SCHEMA.md) | **Modified** | Updated schema for `posted_grades`, added `unlock_requests` table, ERD updates, and enum additions (`fda`, `dropped`). |
-| [capstone-system-design-v2.md](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/docs/design/capstone-system-design-v2.md) | **Modified** | Updated system architecture diagrams description, processes (P3, P7), DFD components, and screens (S20, S27, S30, S31, S32). |
-| [App.jsx](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/App.jsx) | **Modified** | Added router mapping for the new Dean Remark Override Requests page. |
-| [Sidebar.jsx](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/components/layout/Sidebar.jsx) | **Modified** | Added **Remark Requests** navigation item with a dynamic badge indicating pending requests under the Dean Portal section. |
-| [StudentRow.jsx](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/components/StudentRow.jsx) | **Modified** | Removed the Action column. Implemented a debounced (800ms) automatic localStorage save mechanism (`sage_scores_{classCode}_{studentId}`) with clean UI indicator animations (☁ Saving… / ✓ Saved). Added grade logic: `INC` sets grade to failing (`5.00`); switching from `INC` to `Passed` caps the maximum grade at `3.00` (grace Pass). Standardized color-coding to style `fda`, `inc`, `drop`, `fail` in distinct premium red. |
-| [GradePostingStatus.jsx](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/dean/GradePostingStatus.jsx) | **Modified** | Added the top-level **Dean's Registry Unlock Override Dashboard** enabling active override control per milestone. |
-| [ClassRecordsList.jsx](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/faculty/ClassRecordsList.jsx) | **Modified** | Adjusted Actions card layouts to display both "Input Scores" and "View Posted" buttons side-by-side. |
-| [Dashboard.jsx](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/faculty/Dashboard.jsx) | **Modified** | Removed deprecated mock items or unnecessary handlers. |
-| [GradeComputationPreview.jsx](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/faculty/GradeComputationPreview.jsx) | **Modified** | Removed the Action column header and improved the milestone selective posting modal UI. |
-| [ScoreInput.jsx](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/faculty/ScoreInput.jsx) | **Modified** | Removed the Action column header from the grading tables. |
-| [PostedGradesView.jsx](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/faculty/PostedGradesView.jsx) | **Modified** | Removed the Action column header. Added a brand-new **"Request Remark Change"** flow for locked posted grades where faculty can select a student, provide a mandatory explanation note, and submit to the Dean. |
-| [RemarkOverrideRequests.jsx](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/dean/RemarkOverrideRequests.jsx) | **New (Untracked)** | Core page for the Dean to review, approve/unlock, or reject pending remark override requests with real-time audit logs and stats. |
+| [ASPIRE_DATABASE_SCHEMA.md](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/ASPIRE_DATABASE_SCHEMA.md) | **Modified** | Updated schema for `posted_grades`, added `unlock_requests` table, ERD updates, and enum additions (`fda`, `dropped`). |
+| [capstone-system-design-v2.md](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/docs/design/capstone-system-design-v2.md) | **Modified** | Updated system architecture diagrams description, processes (P3, P7), DFD components, and screens (S20, S27, S30, S31, S32). |
+| [App.jsx](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/App.jsx) | **Modified** | Added router mapping for the new Dean Remark Override Requests page. |
+| [Sidebar.jsx](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/components/layout/Sidebar.jsx) | **Modified** | Added **Remark Requests** navigation item with a dynamic badge indicating pending requests under the Dean Portal section. |
+| [StudentRow.jsx](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/components/StudentRow.jsx) | **Modified** | Removed the Action column. Implemented a debounced (800ms) automatic localStorage save mechanism (`sage_scores_{classCode}_{studentId}`) with clean UI indicator animations (☁ Saving… / ✓ Saved). Added grade logic: `INC` sets grade to failing (`5.00`); switching from `INC` to `Passed` caps the maximum grade at `3.00` (grace Pass). Standardized color-coding to style `fda`, `inc`, `drop`, `fail` in distinct premium red. |
+| [GradePostingStatus.jsx](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/dean/GradePostingStatus.jsx) | **Modified** | Added the top-level **Dean's Registry Unlock Override Dashboard** enabling active override control per milestone. |
+| [ClassRecordsList.jsx](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/faculty/ClassRecordsList.jsx) | **Modified** | Adjusted Actions card layouts to display both "Input Scores" and "View Posted" buttons side-by-side. |
+| [Dashboard.jsx](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/faculty/Dashboard.jsx) | **Modified** | Removed deprecated mock items or unnecessary handlers. |
+| [GradeComputationPreview.jsx](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/faculty/GradeComputationPreview.jsx) | **Modified** | Removed the Action column header and improved the milestone selective posting modal UI. |
+| [ScoreInput.jsx](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/faculty/ScoreInput.jsx) | **Modified** | Removed the Action column header from the grading tables. |
+| [PostedGradesView.jsx](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/faculty/PostedGradesView.jsx) | **Modified** | Removed the Action column header. Added a brand-new **"Request Remark Change"** flow for locked posted grades where faculty can select a student, provide a mandatory explanation note, and submit to the Dean. |
+| [RemarkOverrideRequests.jsx](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/dean/RemarkOverrideRequests.jsx) | **New (Untracked)** | Core page for the Dean to review, approve/unlock, or reject pending remark override requests with real-time audit logs and stats. |
 
 ---
 
@@ -27,7 +27,7 @@ This document registers all recent core changes, enhancements, and system design
 
 ### 1. Database Schema & System Architecture Documentation
 * **Entity Relationship Diagram & Tables**:
-  * Incorporated `unlock_requests` as a first-class relational table in `SAGE_DATABASE_SCHEMA.md` detailing the relationship between `class_records` and `users` (requested/resolved by).
+  * Incorporated `unlock_requests` as a first-class relational table in `ASPIRE_DATABASE_SCHEMA.md` detailing the relationship between `class_records` and `users` (requested/resolved by).
   * Extended `posted_grades` table columns to track `effective_grade`, `remarks_note`, `remarks_set_by`, `remarks_set_at` (audit-trail for remark changes), and `locked_milestones` (selective term lock state array).
   * Registered `fda` (Failure due to Absences) and `dropped` as valid enum remarks values.
 * **System Design Spec (`capstone-system-design-v2.md`)**:

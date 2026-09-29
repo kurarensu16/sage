@@ -1,13 +1,13 @@
-# SAGE: MASTER TECHNICAL DOCUMENTATION
+# ASPIRE: MASTER TECHNICAL DOCUMENTATION
 
 
 
 
 ---
 
-# SAGE — Smart Academic Grading & Evaluation System
+# ASPIRE — Academic Support and Performance Advising with Intervention, Risk, and Evaluation
 
-SAGE is a premium, high-fidelity academic portal system engineered for **Dr. Yanga's Colleges, Inc.** It serves as an integrated platform for grading oversight, student evaluations, GWA analysis, academic early risk warning alerts, and administration workflows.
+ASPIRE is a premium, high-fidelity academic portal system engineered for **Dr. Yanga's Colleges, Inc.** It serves as an integrated platform for grading oversight, student evaluations, GWA analysis, academic early risk warning alerts, and administration workflows.
 
 ---
 
@@ -55,9 +55,9 @@ The system is split into **4 main portals** plus public authentication screens, 
 
 ## 📄 System Documentation & Architecture
 
-* [Complete User Journey Flow](file:///c:/Users/sadia/SAGE/docs/design/USER_JOURNEY_FLOW.md) — Comprehensive view of role-based workflows, UI screen steps, and database mutations.
-* [System Design Document](file:///c:/Users/sadia/SAGE/docs/design/capstone-system-design-v2.md) — High-level architecture, portals overview, and functional requirements.
-* [Database Schema & ERD Documentation](file:///c:/Users/sadia/SAGE/SAGE_DATABASE_SCHEMA.md) — Relational schema definitions, columns list, and setup DDL scripts.
+* [Complete User Journey Flow](../design/USER_JOURNEY_FLOW.md) — Comprehensive view of role-based workflows, UI screen steps, and database mutations.
+* [System Design Document](../design/capstone-system-design-v2.md) — High-level architecture, portals overview, and functional requirements.
+* [Database Schema & ERD Documentation](../../ASPIRE_DATABASE_SCHEMA.md) — Relational schema definitions, columns list, and setup DDL scripts.
 
 ---
 
@@ -68,7 +68,7 @@ The system is split into **4 main portals** plus public authentication screens, 
   * Anchored on custom `@theme` brand colors: Sage Green (`#022C22` / `sage-900`) and Emerald accent scales.
   * Google Fonts: **Sora** (headers and titles), **DM Sans** (body text), **JetBrains Mono** (GWA stats, grades, and audit timestamps).
 * **Icons Library**: Lucide Icons exclusively
-* **SVG Vector Assets**: Custom spline-vectorized SAGE logo (`SageLogo.jsx`) Vectorized in binary mode.
+* **SVG Vector Assets**: Custom spline-vectorized ASPIRE logo (`SageLogo.jsx`) Vectorized in binary mode.
 
 ---
 
@@ -103,9 +103,9 @@ To launch the project locally and begin evaluation:
 
 ---
 
-# SAGE Agent Context & System Overview
+# ASPIRE Agent Context & System Overview
 
-This document provides a permanent technical context and reference for AI agents working on the **Smart Academic Grading and Evaluation System (SAGE)** repository.
+This document provides a permanent technical context and reference for AI agents working on the **Academic Support and Performance Advising with Intervention, Risk, and Evaluation (ASPIRE)** repository.
 
 ---
 
@@ -120,21 +120,21 @@ This document provides a permanent technical context and reference for AI agents
 ---
 
 ## 2. Directory Structure & Key Files
-* **[`src/App.jsx`](file:///c:/Users/sadia/SAGE/src/App.jsx):** Main React router configuration mapping all 41 pages across role portals.
+* **[`src/App.jsx`](../../src/App.jsx):** Main React router configuration mapping all 41 pages across role portals.
 * **`src/pages/`:** Contains role-specific directories:
   * `admin/` — User accounts, class creation, evaluation builders/windows, grade overrides, and audit logs.
   * `dean/` — Department auditing dashboards, AI faculty predictions, at-risk rosters, and summary reports.
   * `faculty/` — Class record setup, score inputs, computation previews, posted grades, evaluation feedback, and notifications.
   * `student/` — Personal grades list/breakdowns, survey submissions, and AI academic recommendations.
-* **[`src/lib/mockDb.js`](file:///c:/Users/sadia/SAGE/src/lib/mockDb.js):** LocalStorage-based persistent mock database. Serves as the source of truth before Supabase migration.
-* **[`src/lib/excelExport.js`](file:///c:/Users/sadia/SAGE/src/lib/excelExport.js):** Shared module generating formatted grade spreadsheets with SheetJS.
-* **[`src/lib/constants.js`](file:///c:/Users/sadia/SAGE/src/lib/constants.js):** DYCI college and program listing constants.
-* **[`docs/design/capstone-system-design-v2.md`](file:///c:/Users/sadia/SAGE/docs/design/capstone-system-design-v2.md):** Main Capstone System Design documentation (S01–S41 screens).
+* **[`src/lib/mockDb.js`](../../src/lib/mockDb.js):** LocalStorage-based persistent mock database. Serves as the source of truth before Supabase migration.
+* **[`src/lib/excelExport.js`](../../src/lib/excelExport.js):** Shared module generating formatted grade spreadsheets with SheetJS.
+* **[`src/lib/constants.js`](../../src/lib/constants.js):** DYCI college and program listing constants.
+* **[`docs/design/capstone-system-design-v2.md`](../design/capstone-system-design-v2.md):** Main Capstone System Design documentation (S01–S41 screens).
 
 ---
 
 ## 3. Relational Database Design (19 Tables)
-SAGE runs on a Supabase Postgres schema with RLS enabled:
+ASPIRE runs on a Supabase Postgres schema with RLS enabled:
 * **User/Organization:** `departments`, `users`
 * **Class & Enrollment:** `subjects`, `sections`, `enrollments`, `class_records`, `class_faculty_log`
 * **Grading:** `grade_components`, `class_grading_columns`, `component_scores`, `posted_grades`
@@ -191,9 +191,9 @@ Both `PostedGradesView` and `GradeComputationPreview` support grade exports usin
 
 ---
 
-# SAGE: Detailed Development Phases by Module
+# ASPIRE: Detailed Development Phases by Module
 
-This document provides a highly granular breakdown of the development phases for the **Smart Academic Grading and Evaluation System (SAGE)**. It is organized by system module to track the historical decisions, current implementations, and future roadmap for every component of the application.
+This document provides a highly granular breakdown of the development phases for the **Academic Support and Performance Advising with Intervention, Risk, and Evaluation (ASPIRE)**. It is organized by system module to track the historical decisions, current implementations, and future roadmap for every component of the application.
 
 ---
 
@@ -203,7 +203,7 @@ This document provides a highly granular breakdown of the development phases for
 *   **Tech Stack Setup:** Initialized the project with React 19, Vite, and Tailwind CSS v4. Applied custom `@theme` brand colors (Sage Green, Emerald) and imported font families (Sora, DM Sans, JetBrains Mono).
 *   **Mock Database Engine:** Engineered `src/lib/mockDb.js`, a persistent LocalStorage database to simulate a relational structure without a backend, allowing rapid UI prototyping.
 *   **Authentication Prototype:** Built the split-screen Login Page (S01) with simulated server-side role resolution. Added a "Quick Demo Accounts Selector" drawer for instant testing across the four user roles.
-*   **Vector Assets:** Integrated custom spline-vectorized binary SVGs for the SAGE logo and branding elements.
+*   **Vector Assets:** Integrated custom spline-vectorized binary SVGs for the ASPIRE logo and branding elements.
 
 ### Phase 2: Core Enhancements (Current)
 *   **State Propagation:** Refined the `mockDb` to support dynamic, real-time state propagation across all portals upon page refresh (e.g., changes in Admin immediately reflect in Faculty/Dean dashboards).
@@ -220,12 +220,12 @@ This document provides a highly granular breakdown of the development phases for
 ## 2. Admin Portal (S04-S14)
 
 ### Phase 1: Foundation (Older)
-*   **User & Class Setup:** Created the User Management registry and basic Classrooms Directory. 
+*   **User & Class Setup:** Created the User Management registry and basic Classrooms Directory.
 *   **Evaluation Builder:** Developed the Evaluation Form Builder (S09-S10) with drag-and-drop criteria reordering, max rating adjustments, and a side-by-side Live Preview panel.
 *   **Self-Enrollment Concept:** Initially planned "Class Join Codes" and "COR Validation" for student self-enrollment.
 
 ### Phase 2: Core Enhancements & Policy (Current)
-*   **Enrollment Overhaul:** Cut the "Class Join Codes" and "COR Validation" features entirely to avoid conflicts with DYCI's official enrollment system. 
+*   **Enrollment Overhaul:** Cut the "Class Join Codes" and "COR Validation" features entirely to avoid conflicts with DYCI's official enrollment system.
 *   **CSV Registry Imports:** Implemented CSV parser panels (FR28) allowing admins to copy-paste/import official registry files with interactive preview grids before saving.
 *   **Faculty Reassignment:** Cut the complex "Co-Teaching Support" model. Replaced it with a cleaner Faculty Reassignment feature (FR29) supported by a `class_faculty_log` for tracking reassignment history and auditing (FR30).
 *   **Class Archiving:** Added the ability to archive classes at the end of the semester, permanently locking grades and preventing new enrollments (FR31).
@@ -269,7 +269,7 @@ This document provides a highly granular breakdown of the development phases for
 *   **Live Early Warning System:** Added real-time visual standing indicators (Green/Yellow/Red dots) and precise percentage hover tooltips to the Score Input Table (S24).
 
 ### Phase 3: Backend & Production (Upcoming)
-*   **SheetJS Excel Exports:** 
+*   **SheetJS Excel Exports:**
     *   **Record Sheet:** Finalizing the export so that outputted grading sheets contain live Excel formulas mimicking the official DYCI spreadsheet (recalculating automatically in Excel).
     *   **Report of Grades:** Building the registrar print layout featuring a symmetrical 30-row split roster linked via cell formulas.
 *   **Real-time Notifications:** Wiring Supabase real-time subscriptions for instant alerts regarding new evaluation windows or administrative grade overrides.
@@ -298,7 +298,7 @@ This document provides a highly granular breakdown of the development phases for
 ================================================================
 FEATURE COMPARISON REPORT
 Proposed Features vs. Final Decisions
-SAGE: Smart Academic Grading and Evaluation System
+ASPIRE: Academic Support and Performance Advising with Intervention, Risk, and Evaluation
 Dr. Yanga's Colleges, Inc. — BS Information Technology Capstone
 ================================================================
 
@@ -367,7 +367,7 @@ B. FINAL DECISION
 
 Reasoning:
   DYCI already has a separate enrollment system that handles
-  all student enrollments — regular and irregular. SAGE should
+  all student enrollments — regular and irregular. ASPIRE should
   not duplicate this responsibility. Adding join codes creates a
   conflict over which system is the source of truth for
   enrollment data. The panel will immediately ask: "Why does a
@@ -378,7 +378,7 @@ Reasoning:
 Replacement:
   Admin imports enrolled students via CSV at the start of each
   semester — a clean handoff from the existing enrollment system
-  into SAGE. No self-enrollment needed.
+  into ASPIRE. No self-enrollment needed.
 
 Impact on Documents:
   REMOVE: FR27-FR31 (old join code requirements)
@@ -438,15 +438,15 @@ B. FINAL DECISION
 Reasoning:
   COR validation is directly dependent on the self-enrollment
   flow. Since join codes were cut, there is no trigger point
-  for COR upload in SAGE. Furthermore, the existing DYCI
+  for COR upload in ASPIRE. Furthermore, the existing DYCI
   enrollment system already validates student registration
   before students appear in any class list. Adding COR handling
-  to SAGE would be redundant and would introduce unnecessary
+  to ASPIRE would be redundant and would introduce unnecessary
   file storage infrastructure and data privacy obligations.
 
 Replacement:
   None needed. Enrollment validation is handled entirely
-  outside SAGE by the existing enrollment system.
+  outside ASPIRE by the existing enrollment system.
 
 Impact on Documents:
   REMOVE: FR32-FR33 (old COR requirements)
@@ -592,7 +592,7 @@ Reasoning:
   requires the ability to replace one faculty with another
   without disrupting the class record and its existing scores.
   The full co-teaching architecture solves a much larger problem
-  than what SAGE v1 actually needs, and introduces permission
+  than what ASPIRE v1 actually needs, and introduces permission
   complexity across every module.
 
 Replacement:
@@ -692,7 +692,7 @@ Impact on Documents:
 
 
 ================================================================
-NET CHANGES TO SAGE DOCUMENTS
+NET CHANGES TO ASPIRE DOCUMENTS
 ================================================================
 
 FUNCTIONAL REQUIREMENTS
@@ -749,7 +749,7 @@ replaced with a simpler alternative, and two were cut entirely.
 
 The decisions follow three principles:
 
-  1. Boundary clarity — SAGE does not duplicate responsibilities
+  1. Boundary clarity — ASPIRE does not duplicate responsibilities
      owned by DYCI's existing enrollment system.
 
   2. Scope discipline — features that add complexity without
@@ -766,7 +766,7 @@ demonstrable feature during the capstone defense. It should
 be treated as a priority in the implementation sprint plan.
 
 ================================================================
-End of Report — SAGE Capstone Project, DYCI AY 2025-2026
+End of Report — ASPIRE Capstone Project, DYCI AY 2025-2026
 ================================================================
 
 
@@ -774,10 +774,10 @@ End of Report — SAGE Capstone Project, DYCI AY 2025-2026
 
 ---
 
-# SAGE Grading System Analysis Report
+# ASPIRE Grading System Analysis Report
 *Dr. Yanga's Colleges, Inc. (DYCI)*
 
-This document provides a comprehensive mathematical and structural analysis of the official Excel-based grading system used by the institution, based on the cell values and formulas extracted from [SAGE_Grading_System_Mock.xlsx](file:///c:/Users/sadia/SAGE/SAGE_Grading_System_Mock.xlsx).
+This document provides a comprehensive mathematical and structural analysis of the official Excel-based grading system used by the institution, based on the cell values and formulas extracted from [ASPIRE_Grading_System_Mock.xlsx](../../ASPIRE_Grading_System_Mock.xlsx).
 
 ---
 
@@ -863,7 +863,7 @@ flowchart TD
     BC -->|Threshold check| BD[Remarks: Passed]
 ```
 
-1. **Midterm Rating (MR)** (Column `AB`): 
+1. **Midterm Rating (MR)** (Column `AB`):
    Calculated as the rounded average of Prelim Grade (`O9`) and Midterm Grade (`AA9`).
    $$\text{MR} = \text{ROUND}\left( \text{AVERAGE}(\text{Prelim Grade}, \text{Midterm Grade}), 0 \right)$$
    *Example: $\text{ROUND}(\text{AVERAGE}(91, 87), 0) = 89$*
@@ -916,7 +916,7 @@ A student passes if their GWA equivalent is less than or equal to `3.00`. An equ
 
 ---
 
-## 6. Implementation Plan for SAGE Portal
+## 6. Implementation Plan for ASPIRE Portal
 
 To ensure the grading portal aligns perfectly with the school's Excel spreadsheet computations, the frontend components (e.g., `GradeComputationPreview.jsx` and `ScoreInput.jsx`) should be updated:
 
@@ -937,9 +937,9 @@ To ensure the grading portal aligns perfectly with the school's Excel spreadshee
 
 ---
 
-# SAGE Database Schema & ERD Documentation
+# ASPIRE Database Schema & ERD Documentation
 
-This document describes the complete relational database schema for SAGE (Smart Academic Grading and Evaluation System). The database is designed for **Supabase PostgreSQL** and consists of **19 tables** organized into six functional groups: User/Organizational Data, Class/Enrollment Management, Grading, Evaluations, AI Insights, and System Notifications.
+This document describes the complete relational database schema for ASPIRE (Academic Support and Performance Advising with Intervention, Risk, and Evaluation). The database is designed for **Supabase PostgreSQL** and consists of **19 tables** organized into six functional groups: User/Organizational Data, Class/Enrollment Management, Grading, Evaluations, AI Insights, and System Notifications.
 
 ---
 
@@ -950,37 +950,37 @@ erDiagram
     departments ||--o{ users : "belongs to"
     departments ||--o{ subjects : "belongs to"
     departments ||--o{ sections : "belongs to"
-    
+
     users ||--o{ enrollments : "is enrolled"
     sections ||--o{ enrollments : "contains"
     subjects ||--o{ enrollments : "covers"
-    
+
     users ||--o{ class_records : "teaches"
     subjects ||--o{ class_records : "taught in"
     sections ||--o{ class_records : "scheduled for"
-    
+
     class_records ||--o{ class_faculty_log : "tracked by"
     users ||--o{ class_faculty_log : "faculty change"
-    
+
     class_records ||--o{ grade_components : "contains"
     grade_components ||--o{ component_scores : "has scores"
     users ||--o{ component_scores : "student score"
-    
+
     class_records ||--o{ posted_grades : "grades for"
     users ||--o{ posted_grades : "student grade"
-    
+
     users ||--o{ notifications : "recipient"
-    
+
     evaluation_forms ||--o{ evaluation_criteria : "contains"
     evaluation_forms ||--o{ evaluation_windows : "uses"
     users ||--o{ evaluation_windows : "faculty evaluated"
     sections ||--o{ evaluation_windows : "student section"
-    
+
     evaluation_windows ||--o{ evaluation_responses : "has responses"
     evaluation_responses ||--o{ evaluation_ratings : "scored with"
     evaluation_criteria ||--o{ evaluation_ratings : "assessed by"
     evaluation_responses ||--o{ evaluation_comments : "commented on"
-    
+
     users ||--o{ ai_student_recommendations : "advises"
     users ||--o{ ai_faculty_predictions : "evaluates"
 ```
@@ -1250,7 +1250,7 @@ Stores logs of administrative and system changes.
 
 ## 3. SQL Data Definition Language (DDL) Scripts
 
-You can use the following scripts to initialize the SAGE database inside your Supabase SQL editor:
+You can use the following scripts to initialize the ASPIRE database inside your Supabase SQL editor:
 
 ```sql
 -- Create custom constraint checks

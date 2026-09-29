@@ -1,16 +1,16 @@
-# SAGE — Capstone 1 Defense Rulings & System Alignment Analysis
+# ASPIRE — Capstone 1 Defense Rulings & System Alignment Analysis
 
-**Document Source:** `Capstone1_Transcript-06-11-26 (1).docx`  
-**System:** Smart Academic Grading and Evaluation System (SAGE) — Dr. Yanga's Colleges, Inc. (DYCI)  
-**Date:** July 27, 2026  
+**Document Source:** `Capstone1_Transcript-06-11-26 (1).docx`
+**System:** Academic Support and Performance Advising with Intervention, Risk, and Evaluation (ASPIRE) — Dr. Yanga's Colleges, Inc. (DYCI)
+**Date:** July 27, 2026
 
 ---
 
 ## 1. Executive Summary
 
-This report synthesizes the panel recommendations, institutional policies, and technical requirements captured during the Capstone 1 Defense presentation. The rulings focus on establishing **academic integrity, evaluation fairness, department flexibility, and strong administrative governance**. 
+This report synthesizes the panel recommendations, institutional policies, and technical requirements captured during the Capstone 1 Defense presentation. The rulings focus on establishing **academic integrity, evaluation fairness, department flexibility, and strong administrative governance**.
 
-Integrating these requirements ensures SAGE protects faculty from retaliatory scoring, respects individual department grading methodologies, provides clear student transparency, and empowers Deans with final oversight.
+Integrating these requirements ensures ASPIRE protects faculty from retaliatory scoring, respects individual department grading methodologies, provides clear student transparency, and empowers Deans with final oversight.
 
 ```mermaid
 flowchart TD
@@ -82,9 +82,9 @@ flowchart TD
 
 ---
 
-## 3. Gap Analysis: SAGE Current State vs Target Requirements
+## 3. Gap Analysis: ASPIRE Current State vs Target Requirements
 
-| Feature Domain | Current Implementation in SAGE | Required Action / Target State | Impact Level |
+| Feature Domain | Current Implementation in ASPIRE | Required Action / Target State | Impact Level |
 | :--- | :--- | :--- | :--- |
 | **Evaluation Rating Calculation** | Includes all submitted survey records | Filter out submissions where `is_on_time = false` from faculty average ratings | 🔴 High |
 | **Student Grade View** | Displays Prelim, Midterm, Semi-Final, Final ratings | Limit student grade summary display to **Midterm** and **Final** ratings only | 🟡 Medium |
@@ -102,16 +102,16 @@ To support these requirements in Supabase and `mockDb`, the following schema add
 
 ```sql
 -- 1. Evaluation Submissions: Track timeliness to enforce Fairness Clause
-ALTER TABLE public.evaluation_responses 
+ALTER TABLE public.evaluation_responses
 ADD COLUMN IF NOT EXISTS is_on_time BOOLEAN DEFAULT true,
 ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ DEFAULT NOW();
 
 -- 2. Faculty Evaluation Release Control (Dean Governance)
-ALTER TABLE public.evaluation_windows 
+ALTER TABLE public.evaluation_windows
 ADD COLUMN IF NOT EXISTS is_released_to_faculty BOOLEAN DEFAULT false;
 
 -- 3. Dynamic Department Grading Weights
-ALTER TABLE public.departments 
+ALTER TABLE public.departments
 ADD COLUMN IF NOT EXISTS cs_weight NUMERIC(5,2) DEFAULT 50.00,
 ADD COLUMN IF NOT EXISTS char_weight NUMERIC(5,2) DEFAULT 10.00,
 ADD COLUMN IF NOT EXISTS exam_weight NUMERIC(5,2) DEFAULT 40.00;

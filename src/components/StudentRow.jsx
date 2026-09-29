@@ -2,7 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { cn } from "../lib/utils";
 import { Check, MessageSquare, CloudUpload, Lock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getTransmutedGrade, calculateSemestralGrade } from '../lib/gradingMath';
+import {
+  calculateSemestralGrade,
+  calculateStoredTermRating,
+  resolveGradingFormula
+} from '../lib/gradingMath';
 import { calculateAcademicRisk } from '../lib/riskEngine';
 
 export default function StudentRow({
@@ -28,6 +32,8 @@ export default function StudentRow({
     'Semi-Final': [],
     Final: []
   },
+  gradingFormula,
+  showCharacter = true,
   onSelectRiskStudent,
   onSaveStatusChange
 }) {
@@ -174,56 +180,32 @@ export default function StudentRow({
     }));
   };
 
-  // Computes ratings dynamically based on dynamic activities list
+  const effectiveFormula = gradingFormula
+    || resolveGradingFormula(null, { formulaAssigned: false });
+
+  // Computes ratings through the same formula engine used by posting paths.
   const calcPeriodRating = (term) => {
     const termScores = scores[term] || {};
     const termActivities = activities[term] || [];
-
-    let hasEnteredScore = false;
-    let csTotal = 0;
-    let totalActMax = 0;
-    termActivities.forEach(act => {
-      const val = termScores[act.id];
-      if (val !== undefined && val !== null && val !== '') {
-        hasEnteredScore = true;
-      }
-      csTotal += Number(val) || 0;
-      totalActMax += (act.max || 0);
+    const result = calculateStoredTermRating({
+      formula: effectiveFormula,
+      termScores,
+      maxItems: maxItems[term] || {},
+      activities: termActivities
     });
-
-    if (termScores.char !== undefined && termScores.char !== null && termScores.char !== '') {
-      hasEnteredScore = true;
-    }
-    if (termScores.exam !== undefined && termScores.exam !== null && termScores.exam !== '') {
-      hasEnteredScore = true;
-    }
-
-    const charVal = Number(termScores.char) || 0;
-    const examVal = Number(termScores.exam) || 0;
-
-    const isTermEmpty = csTotal === 0 && charVal === 0 && examVal === 0;
-    if (isTermEmpty || !hasEnteredScore) {
-      return {
-        csTotal: 0,
-        csPercent: 0,
-        examPercent: 0,
-        rating: null
-      };
-    }
-
-    const csPercent = totalActMax > 0 ? (csTotal / totalActMax) * 50 : 0;
-    const charPercent = (charVal / 100) * 10;
-    const examMax = Number(maxItems[term]?.exam) || 40;
-    const examPercent = examMax > 0 ? (examVal / examMax) * 40 : 0;
-
-    const totalScore = csPercent + charPercent + examPercent;
-    const rating = Math.min(100, Math.max(0, Math.round(totalScore)));
+    const repeatable = result.contributions.filter(component => component.isMultiple);
+    const examComponent = result.contributions.find(component =>
+      !component.isMultiple && !/character/i.test(component.name)
+    );
+    const csTotal = repeatable.reduce((sum, component) => sum + component.earned, 0);
+    const csMax = repeatable.reduce((sum, component) => sum + component.possible, 0);
 
     return {
       csTotal,
-      csPercent: totalActMax > 0 ? (csTotal / totalActMax) * 100 : 0,
-      examPercent: examMax > 0 ? (examVal / examMax) * 100 : 0,
-      rating
+      csPercent: csMax > 0 ? (csTotal / csMax) * 100 : 0,
+      examPercent: examComponent?.percentage || 0,
+      rating: result.rating,
+      calculationError: result.error
     };
   };
 
@@ -378,7 +360,7 @@ export default function StudentRow({
           })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{prelimResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Prelim', 'char', 100, isPrelimCellLocked, "w-16")}</td>
+          {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Prelim', 'char', 100, isPrelimCellLocked, "w-16")}</td>}
           <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Prelim', 'exam', maxItems.Prelim?.exam || 40, isPrelimCellLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-sky-50 border-r border-slate-200 text-sky-850 w-14 text-center">{prelimResult.rating}</td>
@@ -404,7 +386,7 @@ export default function StudentRow({
           })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{midtermResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Midterm', 'char', 100, isMidtermCellLocked, "w-16")}</td>
+          {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Midterm', 'char', 100, isMidtermCellLocked, "w-16")}</td>}
           <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Midterm', 'exam', maxItems.Midterm?.exam || 40, isMidtermCellLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-indigo-50 border-r border-slate-200 text-indigo-800 w-14 text-center">{midtermResult.rating}</td>
@@ -434,7 +416,7 @@ export default function StudentRow({
           })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{semiFinalResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Semi-Final', 'char', 100, isSemiFinalCellLocked, "w-16")}</td>
+          {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Semi-Final', 'char', 100, isSemiFinalCellLocked, "w-16")}</td>}
           <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Semi-Final', 'exam', maxItems['Semi-Final']?.exam || 40, isSemiFinalCellLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-amber-50 border-r border-slate-200 text-amber-800 w-14 text-center">{semiFinalResult.rating}</td>
@@ -460,7 +442,7 @@ export default function StudentRow({
           })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{finalResult.csTotal}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.csPercent.toFixed(1)}</td>
-          <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Final', 'char', 100, isFinalCellLocked, "w-16")}</td>
+          {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Final', 'char', 100, isFinalCellLocked, "w-16")}</td>}
           <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Final', 'exam', maxItems.Final?.exam || 40, isFinalCellLocked)}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-orange-50 border-r border-slate-200 text-orange-850 w-14 text-center">{finalResult.rating}</td>

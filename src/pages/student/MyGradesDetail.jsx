@@ -5,14 +5,23 @@ import {
   ChevronRight, 
   ChevronDown, 
   AlertCircle,
-  Layers,
-  BookOpen
+  Layers
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
-import { getTransmutedGrade, calculateSemestralGrade } from '../../lib/gradingMath';
+import {
+  calculateSemestralGrade,
+  calculateStoredTermRating,
+  getTransmutedGrade,
+  resolveGradingFormula
+} from '../../lib/gradingMath';
 import { DetailSkeleton } from '../../components/common/Skeleton';
+import {
+  GRADE_MILESTONES,
+  findPostedMilestone,
+  getCanonicalGradePeriod
+} from '../../lib/gradeMilestones';
 
 export default function MyGradesDetail() {
   const navigate = useNavigate();
@@ -66,6 +75,7 @@ export default function MyGradesDetail() {
             status,
             school_year,
             semester,
+            grading_formula_snapshot,
             subject_id,
             subjects ( code, name, units, computation_id ),
             faculty:users!faculty_id ( first_name, last_name )
@@ -75,7 +85,7 @@ export default function MyGradesDetail() {
 
         if (crErr) throw crErr;
 
-        if (crInfo?.subjects?.computation_id) {
+        if (crInfo?.subjects?.computation_id && !crInfo?.grading_formula_snapshot) {
           try {
             const { data: compData } = await supabase
               .from('grade_computations')
@@ -170,12 +180,32 @@ export default function MyGradesDetail() {
 
         const postedMap = {};
         posted?.forEach(p => {
-          // grade_period in DB: prelim, midterm, semi_final, final
-          const termKey = p.grade_period === 'prelim' ? 'Prelim' 
-                        : p.grade_period === 'midterm' ? 'Midterm'
-                        : p.grade_period === 'semi_final' ? 'Semi-Final'
-                        : 'Final';
-          postedMap[termKey] = p;
+          const canonicalPeriod = getCanonicalGradePeriod(p);
+          const termKey = canonicalPeriod === 'prelim' ? 'Prelim'
+                        : canonicalPeriod === 'semi_final' ? 'Semi-Final'
+                        : canonicalPeriod === GRADE_MILESTONES.MIDTERM_RATING ? 'Midterm'
+                        : canonicalPeriod === GRADE_MILESTONES.TENTATIVE_FINAL_RATING ? 'Final'
+                        : canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE ? 'Final'
+                        : null;
+          if (!termKey) return;
+          const current = postedMap[termKey];
+          if (
+            !current
+            || canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE
+            || getCanonicalGradePeriod(current) !== GRADE_MILESTONES.SEMESTRAL_GRADE
+          ) {
+            postedMap[termKey] = p;
+          }
+        });
+
+        const gradingSnapshot = crInfo?.grading_formula_snapshot
+          || posted?.find(row => row.grading_formula_snapshot)?.grading_formula_snapshot
+          || null;
+        const configuredComponents = gradingSnapshot?.components
+          || crInfo?.subjects?.grade_computations?.grade_computation_components
+          || null;
+        const gradingFormula = resolveGradingFormula(configuredComponents, {
+          formulaAssigned: Boolean(gradingSnapshot || crInfo?.subjects?.computation_id)
         });
 
         // Compute results for each term
@@ -187,71 +217,30 @@ export default function MyGradesDetail() {
           const max = colsMap[term] || defaultMax;
           const studScores = scoresMap[term] || { act1: null, act2: null, act3: null, act4: null, act5: null, act6: null, char: null, exam: null };
           
-          const char = studScores.char !== null ? studScores.char : 0;
-          const exam = studScores.exam !== null ? studScores.exam : 0;
-
           // Check if custom dynamic activities exist for this term
           const termActs = dynamicActivities.filter(a => a.term === term);
-          let csSum = 0;
-          let csMax = 0;
-
-          const compList = crInfo?.subjects?.grade_computations?.grade_computation_components || [];
-          const templateActs = compList.filter(c => c.is_multiple);
-
-          let csBreakdown = [];
-          if (termActs.length > 0) {
-            csBreakdown = termActs.map(act => {
-              const score = studentScoresByActivity[act.activity_id] ?? 0;
-              csSum += score;
-              csMax += (parseFloat(act.max_score) || 20);
-              return {
-                name: act.title || act.name || 'Activity',
-                obtained: score,
-                max: parseFloat(act.max_score) || 20,
-                description: act.description || ''
-              };
-            });
-          } else {
-            // Fallback to core act1-act6 columns from student_term_scores and colsMap
-            ['act1', 'act2', 'act3', 'act4', 'act5', 'act6'].forEach(actKey => {
-              const val = studScores[actKey];
-              if (val !== null && val !== undefined) {
-                csSum += Number(val) || 0;
-                csMax += Number(max[actKey]) || 20;
-              }
-            });
-            if (csMax === 0) {
-              csMax = (max.act1 || 20) + (max.act2 || 20) + (max.act3 || 20) + (max.act4 || 20) + (max.act5 || 20) + (max.act6 || 10);
-            }
-          }
-
-          const csPct = csMax > 0 ? (csSum / csMax) * 50 : 0;
-
-          // Char
-          const charPct = char * 0.1;
-
-          // Exam
-          const examMax = max.exam || 40;
-          const examPct = examMax > 0 ? (exam / examMax) * 40 : 0;
-
-          // Total Raw computed Rating
-          const calculatedRating = Math.min(100, Math.max(0, Math.round(csPct + charPct + examPct)));
+          const calculationActivities = termActs.map(act => ({
+            id: act.activity_id,
+            dbId: act.activity_id,
+            name: act.title || act.name || 'Activity',
+            max: parseFloat(act.max_score) || 20,
+            componentId: act.component_id || null
+          }));
+          const calculationScores = { ...studScores };
+          termActs.forEach(act => {
+            calculationScores[act.activity_id] = studentScoresByActivity[act.activity_id];
+          });
+          const calculation = calculateStoredTermRating({
+            formula: gradingFormula,
+            termScores: calculationScores,
+            maxItems: { ...max, char: 100 },
+            activities: calculationActivities
+          });
           
           // Check if posted
           const postedRow = postedMap[term];
           const isPosted = !!postedRow;
           
-          const hasScores = 
-            (studScores.act1 !== undefined && studScores.act1 !== null && studScores.act1 > 0) ||
-            (studScores.act2 !== undefined && studScores.act2 !== null && studScores.act2 > 0) ||
-            (studScores.act3 !== undefined && studScores.act3 !== null && studScores.act3 > 0) ||
-            (studScores.act4 !== undefined && studScores.act4 !== null && studScores.act4 > 0) ||
-            (studScores.act5 !== undefined && studScores.act5 !== null && studScores.act5 > 0) ||
-            (studScores.act6 !== undefined && studScores.act6 !== null && studScores.act6 > 0) ||
-            (studScores.char !== undefined && studScores.char !== null && studScores.char > 0) ||
-            (studScores.exam !== undefined && studScores.exam !== null && studScores.exam > 0) ||
-            csSum > 0;
-
           const finalRating = isPosted 
             ? parseFloat(postedRow.computed_grade) 
             : null;
@@ -262,22 +251,42 @@ export default function MyGradesDetail() {
           
           const status = isPosted ? 'Posted' : 'Pending';
 
-          // Components array for detailed view
-          const components = [
-            {
-              name: 'Class Standing (Formative Assessments)',
-              weight: 50,
-              obtained: csSum,
-              max: csMax,
-              contribution: csPct,
-              breakdown: csBreakdown
-            },
-            { name: 'Character Rating', weight: 10, obtained: char, max: 100, contribution: charPct },
-            { name: 'Examination', weight: 40, obtained: exam, max: examMax, contribution: examPct }
-          ];
+          // Build the displayed breakdown from the same resolved formula used when posting.
+          const multipleComponents = gradingFormula.ok
+            ? gradingFormula.components.filter(component => component.isMultiple)
+            : [];
+          const components = calculation.contributions.map(component => {
+            let breakdown;
+            if (component.isMultiple) {
+              const matchingActivities = multipleComponents.length > 1
+                ? termActs.filter(act => act.component_id === component.componentId)
+                : termActs;
+              breakdown = matchingActivities.length > 0
+                ? matchingActivities.map(act => ({
+                    name: act.title || act.name || 'Activity',
+                    obtained: studentScoresByActivity[act.activity_id] ?? 0,
+                    max: parseFloat(act.max_score) || 20,
+                    description: act.description || ''
+                  }))
+                : ['act1', 'act2', 'act3', 'act4', 'act5', 'act6'].map((actKey, index) => ({
+                    name: `Assessment ${index + 1}`,
+                    obtained: studScores[actKey] ?? 0,
+                    max: Number(max[actKey]) || 20,
+                    description: ''
+                  }));
+            }
+            return {
+              name: component.name,
+              weight: component.weight,
+              obtained: component.earned,
+              max: component.possible,
+              contribution: component.contribution,
+              breakdown
+            };
+          });
 
           // Check missing scores only if officially posted
-          const missingScores = [];
+          const missingScores = isPosted ? [...calculation.missingComponents] : [];
           if (isPosted) {
             if (termActs.length > 0) {
               termActs.forEach(act => {
@@ -293,14 +302,13 @@ export default function MyGradesDetail() {
               if (studScores.act5 === null) missingScores.push('Formative Assessment 5');
               if (studScores.act6 === null) missingScores.push('Formative Assessment 6');
             }
-            if (studScores.exam === null) missingScores.push(`${term} Exam`);
           }
 
           newTermData[term] = {
             rating: finalRating,
             grade: finalGrade,
             status,
-            overallPct: finalRating !== null ? csPct + charPct + examPct : 0,
+            overallPct: finalRating !== null ? (calculation.rawRating ?? 0) : 0,
             components,
             missingScores
           };
@@ -309,17 +317,32 @@ export default function MyGradesDetail() {
         setTermData(newTermData);
 
         // Final Calculations (MR, TFR, SG, GWA, Remarks)
-        const calcResult = calculateSemestralGrade({
+        const calculatedFallback = calculateSemestralGrade({
           prelim: newTermData['Prelim']?.rating,
           midterm: newTermData['Midterm']?.rating,
           semiFinal: newTermData['Semi-Final']?.rating,
           final: newTermData['Final']?.rating,
           isSummer
         });
+        const postedMr = findPostedMilestone(posted, GRADE_MILESTONES.MIDTERM_RATING);
+        const postedTfr = findPostedMilestone(posted, GRADE_MILESTONES.TENTATIVE_FINAL_RATING);
+        const postedSg = findPostedMilestone(posted, GRADE_MILESTONES.SEMESTRAL_GRADE);
+        const sgValue = postedSg ? Number(postedSg.computed_grade) : calculatedFallback.sg;
+        const calcResult = {
+          mr: postedMr ? Number(postedMr.computed_grade) : calculatedFallback.mr,
+          tfr: postedTfr ? Number(postedTfr.computed_grade) : calculatedFallback.tfr,
+          sg: sgValue,
+          gwa: postedSg?.effective_grade !== null && postedSg?.effective_grade !== undefined
+            ? Number(postedSg.effective_grade).toFixed(2)
+            : (sgValue !== null ? getTransmutedGrade(sgValue).toFixed(2) : '—'),
+          remarks: sgValue !== null
+            ? (getTransmutedGrade(sgValue) <= 3 ? 'Passed' : 'Failed')
+            : '—'
+        };
 
         let remarks = calcResult.remarks;
-        if (postedMap['Final'] && postedMap['Final'].remarks) {
-          const finalPosted = postedMap['Final'];
+        if (postedSg?.remarks) {
+          const finalPosted = postedSg;
           remarks = finalPosted.remarks.charAt(0).toUpperCase() + finalPosted.remarks.slice(1);
         }
 
@@ -471,18 +494,18 @@ export default function MyGradesDetail() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
                   {activeData.components.map((item, idx) => {
-                    const isCs = item.name.includes('Class Standing');
+                    const isExpandable = Array.isArray(item.breakdown);
                     return (
                       <React.Fragment key={idx}>
                         <tr 
                           className={cn(
                             "hover:bg-slate-50/50 transition-colors",
-                            isCs && "cursor-pointer"
+                            isExpandable && "cursor-pointer"
                           )}
-                          onClick={() => isCs && setIsCsExpanded(!isCsExpanded)}
+                          onClick={() => isExpandable && setIsCsExpanded(!isCsExpanded)}
                         >
                           <td className="px-4 py-3 font-semibold text-slate-900 flex items-center gap-2">
-                            {isCs && (
+                            {isExpandable && (
                               isCsExpanded ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />
                             )}
                             <span>{item.name}</span>
@@ -497,15 +520,15 @@ export default function MyGradesDetail() {
                         </tr>
 
                         {/* CS Sub-activities breakdown */}
-                        {isCs && isCsExpanded && item.breakdown && (
+                        {isExpandable && isCsExpanded && (
                           <tr>
                             <td colSpan={4} className="p-0 bg-slate-50/40">
                               <div className="px-8 py-3 border-b border-slate-100/80 space-y-2">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Individual Formative Assessments Breakdown</div>
+                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Individual {item.name} Breakdown</div>
                                 <div className="bg-white border border-slate-250 rounded-xl divide-y divide-slate-100 overflow-hidden shadow-xs">
                                   {item.breakdown.length === 0 ? (
                                     <div className="px-4 py-6 text-center text-xs text-slate-400 font-medium">
-                                      No formative assessments have been configured or assigned for this period yet.
+                                      No activities have been configured or assigned for this component yet.
                                     </div>
                                   ) : (
                                     item.breakdown.map((act, aIdx) => (
@@ -518,7 +541,7 @@ export default function MyGradesDetail() {
                                         <div className="flex flex-col">
                                           <span className="text-xs font-bold text-slate-800 font-sans hover:text-sage-700">{act.name}</span>
                                           <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wide mt-0.5">
-                                            {act.description ? '📝 Click to view description' : 'Formative Assessment Item'}
+                                            {act.description ? 'Click to view description' : `${item.name} item`}
                                           </span>
                                         </div>
                                         <span className="text-sm font-bold font-mono text-slate-850">

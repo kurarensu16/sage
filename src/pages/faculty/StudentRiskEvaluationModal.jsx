@@ -34,7 +34,8 @@ export default function StudentRiskEvaluationModal({
       : 'pl_retention'
   );
 
-  const [professorNotes, setProfessorNotes] = useState('');
+  const [privateNote, setPrivateNote] = useState('');
+  const [sharedAcademicFeedback, setSharedAcademicFeedback] = useState('');
   const [tasks, setTasks] = useState(() => [
     {
       task_id: 'task-init-1',
@@ -91,8 +92,12 @@ export default function StudentRiskEvaluationModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!professorNotes.trim()) {
-      setError('Please document qualitative observations for this student.');
+    if (!privateNote.trim()) {
+      setError('Please document the restricted faculty observation for this evaluation.');
+      return;
+    }
+    if (!sharedAcademicFeedback.trim()) {
+      setError('Please provide student-visible academic guidance.');
       return;
     }
 
@@ -124,27 +129,22 @@ export default function StudentRiskEvaluationModal({
         tasks_completed: 0
       };
 
-      const payload = {
-        class_record_id: classRecordId,
-        student_id: student.user_id || student.id,
-        faculty_id: user?.id,
-        term: currentTerm,
-        evaluation_context: context,
-        risk_level: riskAnalysis?.risk_level || 'moderate',
-        risk_score: riskAnalysis?.composite_score || 0,
-        risk_breakdown: riskAnalysis || {},
-        professor_notes: professorNotes.trim(),
-        advising_plan: validTasks,
-        baseline_snapshot: baselineSnapshot,
-        refer_to_dean: referToDean,
-        status: 'submitted',
-        updated_at: new Date().toISOString()
-      };
-
       const { data, error: dbErr } = await supabase
-        .from('student_risk_evaluations')
-        .upsert(payload, { onConflict: 'class_record_id,student_id,term' })
-        .select()
+        .rpc('submit_student_risk_evaluation', {
+          p_class_record_id: classRecordId,
+          p_student_id: student.user_id || student.id,
+          p_term: currentTerm,
+          p_evaluation_context: context,
+          p_risk_level: riskAnalysis?.risk_level || 'moderate',
+          p_risk_score: riskAnalysis?.composite_score || 0,
+          p_risk_breakdown: riskAnalysis || {},
+          p_shared_academic_feedback: sharedAcademicFeedback.trim(),
+          p_private_note: privateNote.trim(),
+          p_advising_plan: validTasks,
+          p_baseline_snapshot: baselineSnapshot,
+          p_refer_to_dean: referToDean,
+          p_status: 'submitted'
+        })
         .single();
 
       if (dbErr) throw dbErr;
@@ -168,9 +168,9 @@ export default function StudentRiskEvaluationModal({
       }
 
       if (onEvaluationSaved) {
-        onEvaluationSaved(data || payload);
+        onEvaluationSaved(data);
       } else if (onSaveSuccess) {
-        onSaveSuccess(data || payload);
+        onSaveSuccess(data);
       }
       onClose();
     } catch (err) {
@@ -316,21 +316,39 @@ export default function StudentRiskEvaluationModal({
             </div>
           )}
 
-          {/* Qualitative Notes */}
+          {/* Restricted faculty note */}
           <div className="space-y-1">
             <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
-              Professor Qualitative Observations <span className="text-rose-500">*</span>
+              Restricted Faculty Observation <span className="text-rose-500">*</span>
             </label>
             <textarea
               required
               rows={3}
-              value={professorNotes}
-              onChange={(e) => setProfessorNotes(e.target.value)}
+              value={privateNote}
+              onChange={(e) => setPrivateNote(e.target.value)}
               placeholder="Document specific conceptual gaps, lab execution struggles, or behavioral observations..."
               className="w-full px-3 py-2 text-xs font-sans text-slate-900 bg-white border border-slate-300 rounded-md shadow-xs placeholder:text-slate-400 focus:outline-none focus:border-sage-600 focus:ring-1 focus:ring-sage-600 transition-colors resize-none"
             />
-            <p className="text-[10px] text-slate-400">
-              Your observation context will be delivered directly to the student's Advising Inbox and will enrich their AI study coach.
+            <p className="text-[10px] text-slate-500">
+              Restricted to authorized faculty and the student's department dean. This note is never shown to the student or sent to Ask ASPIRE.
+            </p>
+          </div>
+
+          {/* Student-visible guidance */}
+          <div className="space-y-1">
+            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
+              Student-Visible Academic Guidance <span className="text-rose-500">*</span>
+            </label>
+            <textarea
+              required
+              rows={3}
+              value={sharedAcademicFeedback}
+              onChange={(e) => setSharedAcademicFeedback(e.target.value)}
+              placeholder="Explain the academic concern, supporting evidence, and practical next step in student-appropriate language..."
+              className="w-full px-3 py-2 text-xs font-sans text-slate-900 bg-white border border-slate-300 rounded-md shadow-xs placeholder:text-slate-400 focus:outline-none focus:border-sage-600 focus:ring-1 focus:ring-sage-600 transition-colors resize-none"
+            />
+            <p className="text-[10px] text-slate-500">
+              Published to the student's Advising Inbox and may be used as approved context by Ask ASPIRE.
             </p>
           </div>
 
@@ -412,7 +430,7 @@ export default function StudentRiskEvaluationModal({
             </button>
             <button
               type="submit"
-              disabled={saving || !professorNotes.trim()}
+              disabled={saving || !privateNote.trim() || !sharedAcademicFeedback.trim()}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-sage-600 hover:bg-sage-700 active:bg-sage-800 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-md shadow-xs transition-colors cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />

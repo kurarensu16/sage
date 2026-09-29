@@ -1,6 +1,6 @@
-# SAGE — Comprehensive Notification System Catalog
+# ASPIRE — Comprehensive Notification System Catalog
 
-This document details the current state of notifications in the SAGE codebase, the complete catalog of notifications for all 5 user roles, trigger mechanisms, and the native pop-up integration architecture.
+This document details the current state of notifications in the ASPIRE codebase, the complete catalog of notifications for all 5 user roles, trigger mechanisms, and the native pop-up integration architecture.
 
 ---
 
@@ -78,18 +78,18 @@ Administrators receive system health, audit log triggers, database sync results,
 | `security` | **Audit Log Security Alert** | *"Critical administrative audit log: Manual database override detected on users table."* | Audit log records critical override / security action | `/admin/audit-logs` |
 | `database_sync` | **Database Sync Successful** | *"Database auto-sync success: Registry synchronized."* | Background synchronization completes | `/admin/database-sync` |
 | `user_signup` | **New User Registered** | *"New user registration: Faculty profile created for Prof. Maria Clara Ramos."* | Admin creates new faculty/student account | `/admin/users` |
-| `system` | **System Maintenance Notice** | *"System notice: SAGE Platform Registry core updated to version 2.4.1."* | Platform version update or maintenance window | `/admin/settings` |
+| `system` | **System Maintenance Notice** | *"System notice: ASPIRE Platform Registry core updated to version 2.4.1."* | Platform version update or maintenance window | `/admin/settings` |
 
 ---
 
 ## 3. Native Android Popup Architecture
 
-Using `@capacitor/local-notifications`, SAGE delivers native Android heads-up banners and lock-screen popups without external dependencies:
+Using `@capacitor/local-notifications`, ASPIRE delivers native Android heads-up banners and lock-screen popups without external dependencies:
 
 ```mermaid
 flowchart TD
     subgraph Trigger Sources
-        A[Supabase Realtime Channel\n'notifications' table INSERT] 
+        A[Supabase Realtime Channel\n'notifications' table INSERT]
         B[In-App Action\nGrade Submit, Override, EWS Flag]
         C[Settings Test Button\n'Send Test Android Notification']
     end

@@ -30,6 +30,7 @@ import {
   AssessmentComponentDistributionBar 
 } from '../../components/faculty/FacultyCharts';
 import { getClassPriorityRoster } from '../../lib/classRoomService';
+import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
 import { getTransmutedGrade } from '../../lib/gradingMath';
 
 export default function Dashboard() {
@@ -127,12 +128,12 @@ export default function Dashboard() {
           mappedClasses = classesData.map((cls, idx) => {
             const classRoster = rosters[idx] || [];
             const matchingPosted = (postedGrades || []).filter(g => g.class_record_id === cls.class_record_id);
-            const postedPeriods = new Set(matchingPosted.map(g => g.grade_period.toLowerCase()));
+            const postedPeriods = new Set(matchingPosted.map(getCanonicalGradePeriod));
             
             let statusLabel = 'Ongoing';
             let gradingPeriod = 'Semestral';
 
-            if (postedPeriods.has('final')) {
+            if (postedPeriods.has(GRADE_MILESTONES.SEMESTRAL_GRADE)) {
               statusLabel = 'Grades Posted';
               gradingPeriod = 'Final';
             }

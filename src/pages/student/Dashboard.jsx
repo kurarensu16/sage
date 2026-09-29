@@ -14,13 +14,14 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { DashboardSkeleton } from '../../components/common/Skeleton';
+import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
 
 // Helper to check pending advising tasks
 const checkPendingAdvisingTasks = async (studentId) => {
   try {
     const { data: evals } = await supabase
       .from('student_risk_evaluations')
-      .select('evaluation_id, advising_plan, evaluation_context, professor_notes, status, created_at')
+      .select('evaluation_id, advising_plan, evaluation_context, shared_academic_feedback, status, created_at')
       .eq('student_id', studentId)
       .order('created_at', { ascending: false });
 
@@ -125,16 +126,17 @@ export default function Dashboard() {
           .select('*')
           .eq('student_id', user.id);
 
-        const postedMap = {};
+        const postedRowsByClass = {};
         (posted || []).forEach(p => {
-          const periods = { prelim: 1, midterm: 2, semi_final: 3, final: 4 };
-          const current = postedMap[p.class_record_id];
-          const currentWeight = current ? (periods[current.grade_period] || 0) : 0;
-          const newWeight = periods[p.grade_period] || 0;
-          if (newWeight > currentWeight) {
-            postedMap[p.class_record_id] = p;
-          }
+          if (!postedRowsByClass[p.class_record_id]) postedRowsByClass[p.class_record_id] = [];
+          postedRowsByClass[p.class_record_id].push(p);
         });
+        const postedMap = Object.fromEntries(
+          Object.entries(postedRowsByClass).map(([classId, rows]) => [
+            classId,
+            findMostAdvancedPostedGrade(rows)
+          ])
+        );
 
         // 6. Map all student enrollments to their class records
         const activeEnrolled = (enrolls || []).map(e => {

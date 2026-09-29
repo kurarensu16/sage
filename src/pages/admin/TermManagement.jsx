@@ -143,7 +143,7 @@ export default function TermManagement() {
       const { data: postedGrades, error: gradeErr } = await supabase
         .from('posted_grades')
         .select('class_record_id, is_locked')
-        .eq('grade_period', 'final');
+        .in('grade_period', ['semestral_grade', 'final']);
 
       if (gradeErr) throw gradeErr;
 

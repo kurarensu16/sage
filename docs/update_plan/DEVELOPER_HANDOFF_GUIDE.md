@@ -1,4 +1,4 @@
-# SAGE — Developer Database Migration & Integration Guide
+# ASPIRE — Developer Database Migration & Integration Guide
 
 This guide is prepared for the backend developer to complete **Phase 5 (Database Migration)**. It is organized by portal roles to help you easily locate, deploy, and integrate the frontend component states with Supabase.
 
@@ -9,7 +9,7 @@ This guide is prepared for the backend developer to complete **Phase 5 (Database
 > [!CAUTION]
 > **PREVENT DATA MISMATCHES:** Because this update introduces significant structural changes to grading workflows (e.g., dynamic `class_activities` replacing hardcoded columns, and the `is_multiple` boolean in `grade_computation_components`), you **MUST wipe/delete existing related data** (or execute a fresh database reset) before applying these schema updates. Attempting to run this migration on top of legacy mock data will result in constraint violations and silent data mismatches in the UI.
 
-Run the complete SQL commands inside **[`database_migration_2026-08-19.sql`](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/SAGE_UPDATE_PLAN_2026-08-19/database_migration_2026-08-19.sql)** in your Supabase SQL editor. This creates:
+Run the complete SQL commands inside **[`database_migration_2026-08-19.sql`](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/ASPIRE_UPDATE_PLAN_2026-08-19/database_migration_2026-08-19.sql)** in your Supabase SQL editor. This creates:
 1. `public.class_activities`: Tracks dynamic columns created per course and term.
 2. `public.grade_computation_components`: Added `is_multiple` boolean column to specify if a component type allows multiple column additions (e.g. Class Standing = true, Major Exam = false).
 3. `public.student_activity_scores`: Holds individual student scores mapping to activities.
@@ -90,7 +90,7 @@ For a cleaner integration environment, it is highly recommended to populate mock
 To support subjects offered during the **Summer term** (which only utilize **2 grading periods**: `Midterm` and `Final`) instead of the standard **4 periods** (`Prelim`, `Midterm`, `Semi-Final`, and `Final`):
 
 ### 1. Identify Semester Type
-Read the matching class record's section semester field (e.g. `sections.semester = 'Summer'`). 
+Read the matching class record's section semester field (e.g. `sections.semester = 'Summer'`).
 
 ### 2. Make Periods Dynamic
 Instead of hardcoding `const periodsList = ['Prelim', 'Midterm', 'Semi-Final', 'Final']` across the files (`ScoreInput.jsx`, `MyGradesDetail.jsx`, `StudentRow.jsx`, `GradeComponentsSetup.jsx`, `GradeComputationPreview.jsx`):

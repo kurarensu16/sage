@@ -1,11 +1,11 @@
-# Comprehensive Technical Audit & Strategic Assessment: SAGE Capacitor Integration Plan
+# Comprehensive Technical Audit & Strategic Assessment: ASPIRE Capacitor Integration Plan
 
-**Audit Target:** `C:\Users\JC Gabriel\Downloads\Capacitor-Integration-Plan.md`  
-**Target Codebase:** SAGE (Vite 8 + React 19 + `@supabase/supabase-js` v2 + Tailwind v4)  
-**Audit Date:** August 28, 2026  
-**Auditor:** Antigravity AI  
-**Operating Strategy:** **Online-Only Data Operations with Persistent Auth Session Caching**  
-**Overall Feasibility & Attainability:** **100% Attainable — Recommended Strategic Approach**  
+**Audit Target:** `C:\Users\JC Gabriel\Downloads\Capacitor-Integration-Plan.md`
+**Target Codebase:** ASPIRE (Vite 8 + React 19 + `@supabase/supabase-js` v2 + Tailwind v4)
+**Audit Date:** August 28, 2026
+**Auditor:** Antigravity AI
+**Operating Strategy:** **Online-Only Data Operations with Persistent Auth Session Caching**
+**Overall Feasibility & Attainability:** **100% Attainable — Recommended Strategic Approach**
 **Audit Quality Rating:** **7.2 / 10** — *Structurally sound architectural vision; requires 2 critical code corrections prior to implementation.*
 
 ---
@@ -14,7 +14,7 @@
 
 ### Why Capacitor is the Optimal Architectural Choice for the Team
 
-The **Capacitor Integration Strategy** is **highly attainable** and represents the **best, most efficient architectural approach** for the development team. 
+The **Capacitor Integration Strategy** is **highly attainable** and represents the **best, most efficient architectural approach** for the development team.
 
 Rather than maintaining two separate codebases (e.g., Web App + Native Mobile App), Capacitor allows the team to ship native Android and iOS applications while maintaining **a single unified React + Tailwind + Supabase codebase**.
 
@@ -32,7 +32,7 @@ Rather than maintaining two separate codebases (e.g., Web App + Native Mobile Ap
 
 ## Data Architecture: Session Caching vs. Offline Operations
 
-| Category | Supported in SAGE Mobile? | Technical Implementation & Rationale |
+| Category | Supported in ASPIRE Mobile? | Technical Implementation & Rationale |
 |---|---|---|
 | **Auth Session Caching** | ✅ **YES (Essential)** | Supabase JS automatically caches JWT tokens in persistent mobile storage when `androidScheme: 'https'` and `iosScheme: 'https'` are configured. Users stay logged in across app restarts without re-entering password. |
 | **Offline Data Mutations** | ❌ **NO (Not Needed)** | Entering grades, submitting evaluation scores, and modifying rosters while offline are intentionally disabled. Requiring active internet protects institutional grade integrity, real-time audit logs, and Supabase RLS security. |
@@ -89,7 +89,7 @@ export const NetworkBanner = () => {
   return (
     <div className="bg-amber-600 text-white px-4 py-2 text-sm font-medium flex items-center justify-center gap-2 sticky top-0 z-50 shadow-md">
       <WifiOff className="w-4 h-4 animate-pulse" />
-      <span>No Internet Connection. SAGE requires active network connectivity to sync grades and data.</span>
+      <span>No Internet Connection. ASPIRE requires active network connectivity to sync grades and data.</span>
     </div>
   );
 };
@@ -125,7 +125,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'ph.edu.dyci.sage',
-  appName: 'SAGE',
+  appName: 'ASPIRE',
   webDir: 'dist',
   server: {
     androidScheme: 'https',
@@ -152,7 +152,7 @@ export default config;
   - With `androidScheme: 'https'` and `iosScheme: 'https'`, Capacitor serves app bundles under `https://localhost`.
   - Under `https://localhost`, **`BrowserRouter` works seamlessly** on both Android and iOS native Capacitor apps!
   - Forcing `HashRouter` unnecessarily alters clean web URLs (e.g. `/admin/dashboard` becomes `/#/admin/dashboard`).
-- **Team Recommendation:** Keep [`BrowserRouter`](file:///C:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/App.jsx#L67) in [`src/App.jsx`](file:///C:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/App.jsx).
+- **Team Recommendation:** Keep [`BrowserRouter`](file:///C:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/App.jsx#L67) in [`src/App.jsx`](file:///C:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/App.jsx).
 
 #### 2.2 Deep Link & Supabase Auth Parsing (CRITICAL CORRECTION)
 - **Plan Proposal (Step 3):** Calls `supabase.auth.getSessionFromUrl({ storeSession: true })`.
@@ -235,7 +235,7 @@ export const saveAndShareFile = async (base64Data, fileName, mimeType) => {
 ### Phase 3 — Native Features & Push Notifications
 
 #### 3.1 Lock-Screen Push Notifications Architecture
-Push notifications allow SAGE to notify users even when the app is closed:
+Push notifications allow ASPIRE to notify users even when the app is closed:
 
 1. **Mobile App Token Registration (`src/lib/AuthContext.jsx`):**
 ```js
@@ -278,8 +278,8 @@ CREATE TABLE IF NOT EXISTS public.user_push_tokens (
 
 ALTER TABLE public.user_push_tokens ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can manage their own push tokens" 
-ON public.user_push_tokens FOR ALL 
+CREATE POLICY "Users can manage their own push tokens"
+ON public.user_push_tokens FOR ALL
 USING (auth.uid() = user_id);
 ```
 
@@ -330,4 +330,4 @@ useEffect(() => {
 
 ---
 
-*Audit & Strategic Assessment completed by Antigravity AI for SAGE Capstone Project.*
+*Audit & Strategic Assessment completed by Antigravity AI for ASPIRE Capstone Project.*

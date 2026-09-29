@@ -1,12 +1,12 @@
-# SAGE Agent Context & System Overview
+# ASPIRE Agent Context & System Overview
 
-This document provides a permanent technical context and reference for AI agents working on the **Smart Academic Grading and Evaluation System (SAGE)** repository.
+This document provides a permanent technical context and reference for AI agents working on the **Academic Support and Performance Advising with Intervention, Risk, and Evaluation (ASPIRE)** repository.
 
 ---
 
 ## 1. Project Overview & Tech Stack
 * **Institution:** Dr. Yanga's Colleges, Inc. (DYCI)
-* **System Name:** SAGE
+* **System Name:** ASPIRE
 * **Purpose:** Automate class record management, grade computations, student performance tracking, faculty evaluations, clearance auditing, and AI counseling recommendations.
 * **Technology Stack:**
   * **Frontend:** React 19, Vite, Tailwind CSS, Lucide Icons, SheetJS (`xlsx`).
@@ -16,22 +16,22 @@ This document provides a permanent technical context and reference for AI agents
 ---
 
 ## 2. Directory Structure & Key Files
-* **[`src/App.jsx`](file:///c:/Users/sadia/SAGE/src/App.jsx):** Main React router configuration mapping all role portals.
+* **[`src/App.jsx`](../src/App.jsx):** Main React router configuration mapping all role portals.
 * **`src/pages/`:** Contains role-specific directories:
   * `admin/` — User accounts, class creation, evaluation builders/windows, grade overrides, and audit logs.
   * `dean/` — Department auditing dashboards, AI faculty predictions, at-risk rosters, summary reports, and evaluation release controls.
   * `faculty/` — Class record setup, score inputs, computation previews, posted grades, evaluation feedback, and grade resubmission requests.
   * `student/` — Personal grades list/breakdowns, survey submissions, and AI academic recommendations.
-* **[`src/lib/mockDb.js`](file:///c:/Users/sadia/SAGE/src/lib/mockDb.js):** LocalStorage-based persistent mock database. Serves as runtime source of truth for Admin/Dean pages before full Supabase cutover.
-* **[`src/lib/excelExport.js`](file:///c:/Users/sadia/SAGE/src/lib/excelExport.js):** Shared module generating formatted grade spreadsheets with SheetJS.
-* **[`src/lib/constants.js`](file:///c:/Users/sadia/SAGE/src/lib/constants.js):** DYCI college and program listing constants.
-* **[`docs/design/capstone-system-design-v2.md`](file:///c:/Users/sadia/SAGE/docs/design/capstone-system-design-v2.md):** Main Capstone System Design documentation.
-* **[`docs/reports/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md`](file:///c:/Users/sadia/SAGE/docs/reports/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md):** Formal Capstone 1 Defense panel rulings and institutional policy specifications.
+* **[`src/lib/mockDb.js`](../src/lib/mockDb.js):** LocalStorage-based persistent mock database. Serves as runtime source of truth for Admin/Dean pages before full Supabase cutover.
+* **[`src/lib/excelExport.js`](../src/lib/excelExport.js):** Shared module generating formatted grade spreadsheets with SheetJS.
+* **[`src/lib/constants.js`](../src/lib/constants.js):** DYCI college and program listing constants.
+* **[`docs/design/capstone-system-design-v2.md`](design/capstone-system-design-v2.md):** Main Capstone System Design documentation.
+* **[`docs/reports/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md`](reports/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md):** Formal Capstone 1 Defense panel rulings and institutional policy specifications.
 
 ---
 
 ## 3. Relational Database Design (21 Tables)
-SAGE runs on a Supabase Postgres schema with 21 tables:
+ASPIRE runs on a Supabase Postgres schema with 21 tables:
 * **User/Organization:** `departments`, `profiles`
 * **Class & Enrollment:** `subjects`, `sections`, `class_enrollments`, `class_records`
 * **Grading:** `grade_computations`, `grade_computation_components`, `draft_scores`, `posted_grades`, `grade_change_requests`

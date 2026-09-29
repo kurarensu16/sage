@@ -160,7 +160,7 @@ export default function RemarkOverrideRequests() {
         .update({ is_locked: false })
         .eq('class_record_id', req.classCode)
         .eq('student_id', req.studentId)
-        .eq('grade_period', 'final');
+        .in('grade_period', ['semestral_grade', 'final']);
 
       // 4. Audit log
       await logActivity(

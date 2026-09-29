@@ -1,8 +1,8 @@
-# SAGE — Documentation & Scope Validator
+# ASPIRE — Documentation & Scope Validator
 
-> Cross-reference of the System Design Document (41 screens, 35 FRs, 31 UCs) vs. actual codebase implementation.  
-> Includes keep/drop/add recommendations for scope finalization.  
-> Validation Date: 2026-05-28  
+> Cross-reference of the System Design Document (41 screens, 35 FRs, 31 UCs) vs. actual codebase implementation.
+> Includes keep/drop/add recommendations for scope finalization.
+> Validation Date: 2026-05-28
 > Status: **Analysis Complete — Awaiting Scope Decisions**
 
 ---
@@ -195,4 +195,4 @@ Features where implementation effort may exceed their value for capstone scope:
 
 ---
 
-*End of Documentation & Scope Validator — SAGE, DYCI Capstone Project AY 2025-2026*
+*End of Documentation & Scope Validator — ASPIRE, DYCI Capstone Project AY 2025-2026*

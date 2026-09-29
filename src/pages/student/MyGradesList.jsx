@@ -9,6 +9,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import { submitJoinRequest } from '../../lib/classRoomService';
+import { GRADE_MILESTONES, findPostedMilestone } from '../../lib/gradeMilestones';
 
 // ASPIRE v3.1: Transparent Official Milestone Ledger (No clearance locks)
 
@@ -303,7 +304,7 @@ export default function MyGradesList() {
             const finalRating = getTermRating('Final');
 
             // 1. Midterm Rating (MR) = ROUND((Prelim + Midterm) / 2)
-            const mrPostedRow = crPosted.find(p => p.grade_period === 'midterm_rating' || p.grade_period === 'mr');
+            const mrPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.MIDTERM_RATING);
             let mrGwa = '—';
             let mrRating = null;
             if (mrPostedRow) {
@@ -317,7 +318,7 @@ export default function MyGradesList() {
             }
 
             // 2. Tentative Final Rating (TFR) = ROUND((Semi-Final + Final) / 2)
-            const tfrPostedRow = crPosted.find(p => p.grade_period === 'tentative_final_rating' || p.grade_period === 'tfr');
+            const tfrPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.TENTATIVE_FINAL_RATING);
             let tfrGwa = '—';
             let tfrRating = null;
             if (tfrPostedRow) {
@@ -331,7 +332,7 @@ export default function MyGradesList() {
             }
 
             // 3. Semestral Grade (SG) = ROUND((MR + TFR) / 2)
-            const sgPostedRow = crPosted.find(p => p.grade_period === 'semestral_grade' || p.grade_period === 'sg');
+            const sgPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.SEMESTRAL_GRADE);
             let sgGwa = '—';
             let sgRating = null;
             if (sgPostedRow) {

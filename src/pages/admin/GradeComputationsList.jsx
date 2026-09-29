@@ -151,7 +151,16 @@ export default function GradeComputationsList() {
   const handleApplyPreset = (preset) => {
     setName(preset.name);
     setDescription(preset.description);
-    setComponents(preset.components.map(c => ({ ...c })));
+    const existingByName = new Map(
+      (editingTemplate?.grade_computation_components || []).map(component => [
+        component.name.trim().toLowerCase(),
+        component.component_id
+      ])
+    );
+    setComponents(preset.components.map(component => ({
+      ...component,
+      component_id: existingByName.get(component.name.trim().toLowerCase()) || undefined
+    })));
     setErrorMsg('');
   };
 
@@ -211,28 +220,63 @@ export default function GradeComputationsList() {
 
         if (headerErr) throw headerErr;
 
-        // Delete existing components and rebuild them to prevent collision mapping
-        const { error: deleteErr } = await supabase
-          .from('grade_computation_components')
-          .delete()
-          .eq('computation_id', computationId);
+        // Preserve existing component UUIDs so class activities can maintain a
+        // durable relationship to their grading component across weight edits.
+        const existingComponentIds = new Set(
+          (editingTemplate.grade_computation_components || [])
+            .map(component => component.component_id)
+            .filter(Boolean)
+        );
+        const retainedComponentIds = new Set(
+          components.map(component => component.component_id).filter(Boolean)
+        );
+        const removedComponentIds = Array.from(existingComponentIds)
+          .filter(componentId => !retainedComponentIds.has(componentId));
 
-        if (deleteErr) throw deleteErr;
+        const existingComponentPayloads = components
+          .filter(component => component.component_id)
+          .map(c => ({
+            component_id: c.component_id,
+            computation_id: computationId,
+            name: c.name.trim(),
+            weight: c.weight,
+            max_score: c.max_score,
+            is_multiple: !!c.is_multiple
+          }));
+        const newComponentPayloads = components
+          .filter(component => !component.component_id)
+          .map(c => ({
+            computation_id: computationId,
+            name: c.name.trim(),
+            weight: c.weight,
+            max_score: c.max_score,
+            is_multiple: !!c.is_multiple
+          }));
 
-        // Re-insert components
-        const componentPayloads = components.map(c => ({
-          computation_id: computationId,
-          name: c.name.trim(),
-          weight: c.weight,
-          max_score: c.max_score,
-          is_multiple: !!c.is_multiple
-        }));
+        if (existingComponentPayloads.length > 0) {
+          const { error: updateComponentsErr } = await supabase
+            .from('grade_computation_components')
+            .upsert(existingComponentPayloads, { onConflict: 'component_id' });
 
-        const { error: compsErr } = await supabase
-          .from('grade_computation_components')
-          .insert(componentPayloads);
+          if (updateComponentsErr) throw updateComponentsErr;
+        }
 
-        if (compsErr) throw compsErr;
+        if (newComponentPayloads.length > 0) {
+          const { error: insertComponentsErr } = await supabase
+            .from('grade_computation_components')
+            .insert(newComponentPayloads);
+
+          if (insertComponentsErr) throw insertComponentsErr;
+        }
+
+        if (removedComponentIds.length > 0) {
+          const { error: deleteComponentsErr } = await supabase
+            .from('grade_computation_components')
+            .delete()
+            .in('component_id', removedComponentIds);
+
+          if (deleteComponentsErr) throw deleteComponentsErr;
+        }
 
         await logActivity(
           'Grading Template Edit',

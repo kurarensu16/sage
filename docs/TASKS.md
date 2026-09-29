@@ -1,10 +1,10 @@
-# SAGE — Master SDLC Task Tracker & Checklist
+# ASPIRE — Master SDLC Task Tracker & Checklist
 
-> **Project:** SAGE (Smart Academic Grading and Evaluation System)  
-> **Institution:** Dr. Yanga's Colleges, Inc. (DYCI) — Capstone Project  
-> **Stack:** React 19 + Vite + Tailwind CSS + Supabase + Google Gemini 2.5 Flash API + Supabase Storage  
+> **Project:** ASPIRE (Academic Support and Performance Advising with Intervention, Risk, and Evaluation)
+> **Institution:** Dr. Yanga's Colleges, Inc. (DYCI) — Capstone Project
+> **Stack:** React 19 + Vite + Tailwind CSS + Supabase + Google Gemini 2.5 Flash API + Supabase Storage
 
-This document serves as the master, highly-detailed **Software Development Life Cycle (SDLC)** tracker for the SAGE project, tracking every granular technical and business milestone from conception through Capstone Defense alignment and production deployment.
+This document serves as the master, highly-detailed **Software Development Life Cycle (SDLC)** tracker for the ASPIRE project, tracking every granular technical and business milestone from conception through Capstone Defense alignment and production deployment.
 
 ---
 
@@ -40,7 +40,7 @@ This document serves as the master, highly-detailed **Software Development Life 
 *Objective: Design the database, algorithms, UI/UX, and technology stack.*
 
 ### Database Design (Supabase PostgreSQL)
-- [X] Architect the complete **21-table relational schema** (`SAGE_DATABASE_SCHEMA.md`).
+- [X] Architect the complete **21-table relational schema** (`ASPIRE_DATABASE_SCHEMA.md`).
 - [X] Design the Entity Relationship Diagram (ERD).
 - [X] Define PostgreSQL Enums (`user_role`, `term_period`, `grade_remarks`, `class_status`).
 - [X] Add Capstone defense schema extensions: `submitted_timely`, `is_released_to_faculty`, centralized `grade_computations` templates, and `grade_change_requests`.
@@ -49,7 +49,7 @@ This document serves as the master, highly-detailed **Software Development Life 
 - [X] Map out User Journeys for all portals (Student, Faculty, Dean, Admin, College Office).
 - [X] Establish the Tailwind Theme System: Sage Green (`sage-900`) primary and Emerald accent scales.
 - [X] Select and map Typography: Sora (Headers), DM Sans (Body), JetBrains Mono (GWA/Stats).
-- [X] Standardize system branding to **SAGE** across topbar, sidebar, login, and layout wrappers.
+- [X] Standardize system branding to **ASPIRE** across topbar, sidebar, login, and layout wrappers.
 
 ---
 
@@ -94,7 +94,7 @@ This document serves as the master, highly-detailed **Software Development Life 
 ## 🧪 Phase 4: Testing & Quality Assurance
 *Objective: Ensure absolute accuracy, security, and stability before launch.*
 
-- [ ] **Unit Tests:** Input dummy scores into SAGE and cross-check the generated GWA strictly against official DYCI `SAGE_Grading_System_Mock.xlsx` baseline.
+- [ ] **Unit Tests:** Input dummy scores into ASPIRE and cross-check the generated GWA strictly against official DYCI `ASPIRE_Grading_System_Mock.xlsx` baseline.
 - [ ] **Data Integrity:** Verify that CSV imports correctly reject duplicate student IDs or invalid formats.
 - [ ] **Export Verification:** Ensure generated SheetJS outputs print cleanly onto standard Registrar paper sizes (Legal/A4).
 - [ ] **RLS Auditing:** Attempt to access Faculty Grade Sheets using a Student JWT token (must return 401/403).

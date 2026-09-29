@@ -1,7 +1,7 @@
-# SAGE — Capacitor Integration Plan
+# ASPIRE — Capacitor Integration Plan
 
-> Goal: Wrap the existing SAGE Vite + React app into a native Android/iOS app using Capacitor.js,
-> deployable to Google Play Store and Apple App Store — **without rewriting any existing code**.  
+> Goal: Wrap the existing ASPIRE Vite + React app into a native Android/iOS app using Capacitor.js,
+> deployable to Google Play Store and Apple App Store — **without rewriting any existing code**.
 > Status: **Not Started**
 
 ---
@@ -50,7 +50,7 @@ npm install @capacitor/android @capacitor/ios
 ### 1.2 Initialize Capacitor
 
 ```bash
-npx cap init SAGE ph.edu.dyci.sage --web-dir dist
+npx cap init ASPIRE ph.edu.dyci.sage --web-dir dist
 ```
 
 This generates `capacitor.config.ts` in the project root.
@@ -62,7 +62,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'ph.edu.dyci.sage',
-  appName: 'SAGE',
+  appName: 'ASPIRE',
   webDir: 'dist',
   server: {
     // Required for Supabase Auth (cookie-based sessions need https scheme)
@@ -129,7 +129,7 @@ the History API which doesn't work from `file://`. Switch to `HashRouter`:
 ### 2.2 Fix: Supabase Auth Deep Links (Password Reset / Magic Links)
 
 Supabase sends email links (password reset, invite) that open in the browser. On mobile,
-these need to redirect back into the SAGE app via a custom URL scheme.
+these need to redirect back into the ASPIRE app via a custom URL scheme.
 
 **Step 1 — Add redirect URL in Supabase Dashboard:**
 - Go to: Authentication → URL Configuration → Redirect URLs
@@ -226,7 +226,7 @@ email + password. Stores credentials securely in the native keychain.
 npm install @capacitor/status-bar @capacitor/splash-screen
 ```
 
-Match the SAGE dark theme:
+Match the ASPIRE dark theme:
 ```ts
 StatusBar.setStyle({ style: Style.Dark });
 StatusBar.setBackgroundColor({ color: '#0f172a' }); // sage-bg token
@@ -306,4 +306,4 @@ Keep version numbers in sync across:
 
 ---
 
-*SAGE Capacitor Integration Plan — DYCI Capstone Project*
+*ASPIRE Capacitor Integration Plan — DYCI Capstone Project*

@@ -24,20 +24,20 @@ This ensures the list is anchored dynamically according to this exact Red -> Yel
 
 #### A. High Academic Risk Detected (Red Alert 🔴 - Order 0)
 - **Aggregated Rule**: Checks all active student rosters. Counts unique students whose running average GWA exceeds `3.00` OR who have at least one failing grading period (`GWA > 3.00`).
-- **User Interface Message**: 
+- **User Interface Message**:
   > *"There are [X] student(s) flagged at high academic risk with failing marks (GWA > 3.00) or failing periods recorded."*
 - **Action Trigger**: Click redirects the Dean to `/dean/atriskstudents` (At-Risk Students Ledger) where individual details are fully disclosed.
 
 #### B. Moderate Academic Risk Detected (Yellow Alert 🟡 - Order 1)
 - **Aggregated Rule**: Counts students whose running average GWA is border-lining the passing threshold (`GWA >= 2.75` and `GWA <= 3.00`).
   - *Simulation Sample*: Simulated student Jane Doe (`usr-008`) is seeded at `2.85` GWA average to verify this alert state.
-- **User Interface Message**: 
+- **User Interface Message**:
   - *"There are [Y] student(s) flagged at moderate academic risk border-lining the passing scale (GWA 2.75 - 3.00)."*
 - **Action Trigger**: Click redirects the Dean to the `/dean/atriskstudents` ledger.
 
 #### C. Low Evaluation Engagement (Yellow Alert 🟡 - Order 2)
 - **Aggregated Rule**: Counts all active scheduled evaluation windows where the response rate falls below `50%` (i.e. `responsesCount / totalStudents < 0.5`).
-- **User Interface Message**: 
+- **User Interface Message**:
   - *"There are [Z] class evaluation(s) with response rates below the 50% participation threshold."*
 - **Action Trigger**: Click redirects the Dean to `/dean/evalresultsoverview` (Faculty Evaluation overview).
 
@@ -56,7 +56,7 @@ This ensures the list is anchored dynamically according to this exact Red -> Yel
 
 #### F. Pending Class Grade Postings (Blue Notice 🔵 - Order 5)
 - **Aggregated Rule**: Identifies outstanding grade postings across active classrooms (Prelim/Midterm/Finals).
-- **User Interface Message**: 
+- **User Interface Message**:
   > *"There are [N] outstanding grading periods (Prelim/Midterm/Finals) awaiting submission across active classrooms."*
 - **Action Trigger**: Click redirects the Dean to `/dean/gradepostingstatus`.
 

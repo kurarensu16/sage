@@ -1,6 +1,6 @@
-# SAGE — System Scope & Technical Specifications Document
+# ASPIRE — System Scope & Technical Specifications Document
 
-> **System Name**: SAGE (Smart Academic Governance Engine)
+> **System Name**: ASPIRE (Academic Support and Performance Advising with Intervention, Risk, and Evaluation)
 > **Target Environment**: Web Application (React 19, Vite, Tailwind CSS, Supabase / Postgres)
 > **Document Version**: 5.0
 > **Last Updated**: August 11, 2026
@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary
 
-**SAGE** is an enterprise-grade academic management, grading engine, and faculty evaluation governance system engineered specifically for higher education institutions. The system standardizes academic grading workflows, enforces institutional policy compliance (e.g., DYCI grading standards, attendance advisory thresholds), automates student clearance sign-offs, and provides AI-assisted academic advising.
+**ASPIRE** is an enterprise-grade academic management, grading engine, and faculty evaluation governance system engineered specifically for higher education institutions. The system standardizes academic grading workflows, enforces institutional policy compliance (e.g., DYCI grading standards, attendance advisory thresholds), automates student clearance sign-offs, and provides AI-assisted academic advising.
 
 The system operates across **5 distinct user portals**, backed by a 21-table database schema in Supabase Postgres, supporting real-time data synchronization, audit logging, and role-based access control.
 
@@ -36,17 +36,17 @@ The system operates across **5 distinct user portals**, backed by a 21-table dat
 
 * **Multi-Tenancy / School Isolation**: The system is a single-tenant instance optimized for DYCI; there are no school subdomain routing, dynamic watermark logo swaps, or dynamic `school_id` filtering.
 * **MFA / Hardware Fingerprinting**: Browser-based HWID/fingerprinting and SMS/SMTP OTP codes are excluded to avoid user friction in shared campus computer labs.
-* **Financial & Tuition Payments**: SAGE does not process cashier transactions, tuition payments, or financial accounting ledgers.
-* **LMS Video Streaming & Live Classrooms**: SAGE is an academic governance and grading system, not a video conferencing or course content storage engine.
+* **Financial & Tuition Payments**: ASPIRE does not process cashier transactions, tuition payments, or financial accounting ledgers.
+* **LMS Video Streaming & Live Classrooms**: ASPIRE is an academic governance and grading system, not a video conferencing or course content storage engine.
 
 ---
 
 ## 3. Comprehensive Breakdown of the 5 User Portals
 
-SAGE strictly isolates interface components across **5 dedicated user portals**:
+ASPIRE strictly isolates interface components across **5 dedicated user portals**:
 
 ```
-SAGE System Architecture
+ASPIRE System Architecture
 ├── 1. Student Portal (/student/*)
 ├── 2. Faculty Portal (/faculty/*)
 ├── 3. Dean Portal (/dean/*)
@@ -167,7 +167,7 @@ SAGE System Architecture
 
 ## 4. Academic Grading Math & Formulas
 
-SAGE enforces exact subject-level weights and transmutations:
+ASPIRE enforces exact subject-level weights and transmutations:
 
 ### 4.1 Subject Weight Templates
 

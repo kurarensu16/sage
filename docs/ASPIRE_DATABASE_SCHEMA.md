@@ -1,6 +1,6 @@
-# SAGE Database Schema & ERD Documentation
+# ASPIRE Database Schema & ERD Documentation
 
-This document describes the complete relational database schema for SAGE (Smart Academic Governance Engine). The database is designed for **Supabase PostgreSQL** and consists of **21 tables** organized into six functional groups: User/Organizational Data, Class/Enrollment Management, Grading, Evaluations, AI Insights, and System Notifications.
+This document describes the complete relational database schema for ASPIRE (Academic Support and Performance Advising with Intervention, Risk, and Evaluation). The database is designed for **Supabase PostgreSQL** and consists of **21 tables** organized into six functional groups: User/Organizational Data, Class/Enrollment Management, Grading, Evaluations, AI Insights, and System Notifications.
 
 ---
 
@@ -11,35 +11,35 @@ erDiagram
     departments ||--o{ profiles : "belongs to"
     departments ||--o{ subjects : "belongs to"
     departments ||--o{ sections : "belongs to"
-    
+
     profiles ||--o{ class_enrollments : "is enrolled"
     sections ||--o{ class_enrollments : "contains"
     subjects ||--o{ class_enrollments : "covers"
-    
+
     profiles ||--o{ class_records : "teaches"
     subjects ||--o{ class_records : "taught in"
     sections ||--o{ class_records : "scheduled for"
-    
+
     grade_computations ||--o{ grade_computation_components : "defines"
     subjects ||--o{ grade_computations : "uses template"
-    
+
     class_records ||--o{ draft_scores : "has scores"
     profiles ||--o{ draft_scores : "student score"
-    
+
     class_records ||--o{ posted_grades : "grades for"
     profiles ||--o{ posted_grades : "student grade"
-    
+
     class_records ||--o{ grade_change_requests : "requests change for"
     profiles ||--o{ grade_change_requests : "requested by / resolved by"
-    
+
     evaluation_windows ||--o{ evaluation_responses : "has responses"
     profiles ||--o{ evaluation_windows : "faculty evaluated"
     sections ||--o{ evaluation_windows : "student section"
-    
+
     evaluation_responses ||--o{ evaluation_ratings : "scored with"
     evaluation_criteria ||--o{ evaluation_ratings : "assessed by"
     evaluation_responses ||--o{ evaluation_comments : "commented on"
-    
+
     profiles ||--o{ attendance_logs : "has attendance"
     profiles ||--o{ clearance_records : "has clearance"
     profiles ||--o{ ai_counseling_logs : "advises"

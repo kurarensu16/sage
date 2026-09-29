@@ -2,8 +2,9 @@
 // Service for Class Room Creation, Join Codes, and Irregular Student Verification
 
 import { supabase } from './supabase';
-import { calculateAcademicRisk } from './riskEngine';
-import { getTransmutedGrade } from './gradingMath';
+import { calculateAcademicRisk, computeTentativeGradeDetails } from './riskEngine';
+import { getTransmutedGrade, resolveGradingFormula } from './gradingMath';
+import { findMostAdvancedPostedGrade } from './gradeMilestones';
 // Note: riskEngine.js is now the single source of truth for all risk calculations (V4).
 
 /**
@@ -388,11 +389,24 @@ export async function getClassPriorityRoster(classRecordId) {
     // 1. Get class details
     const { data: cr } = await supabase
       .from('class_records')
-      .select('class_record_id, section_id, subject_id')
+      .select('class_record_id, section_id, subject_id, semester, grading_formula_snapshot, subjects ( computation_id )')
       .eq('class_record_id', classRecordId)
       .single();
 
     if (!cr) return [];
+
+    let formulaComponents = cr.grading_formula_snapshot?.components || null;
+    if (!formulaComponents && cr.subjects?.computation_id) {
+      const { data: computation } = await supabase
+        .from('grade_computations')
+        .select('grade_computation_components ( * )')
+        .eq('computation_id', cr.subjects.computation_id)
+        .maybeSingle();
+      formulaComponents = computation?.grade_computation_components || null;
+    }
+    const gradingFormula = resolveGradingFormula(formulaComponents, {
+      formulaAssigned: Boolean(cr.grading_formula_snapshot || cr.subjects?.computation_id)
+    });
 
     // 2. Fetch enrolled students
     const { data: enrolls } = await supabase
@@ -449,6 +463,32 @@ export async function getClassPriorityRoster(classRecordId) {
       .eq('class_record_id', classRecordId)
       .in('student_id', studentIds);
 
+    const { data: classActivities } = await supabase
+      .from('class_activities')
+      .select('activity_id, term, name, max_score, component_id')
+      .eq('class_record_id', classRecordId);
+
+    const activityIds = (classActivities || []).map(activity => activity.activity_id);
+    const { data: granularScores } = activityIds.length > 0
+      ? await supabase
+          .from('student_activity_scores')
+          .select('student_id, activity_id, score')
+          .in('student_id', studentIds)
+          .in('activity_id', activityIds)
+      : { data: [] };
+
+    const activitiesByTerm = {};
+    (classActivities || []).forEach(activity => {
+      if (!activitiesByTerm[activity.term]) activitiesByTerm[activity.term] = [];
+      activitiesByTerm[activity.term].push({
+        id: activity.activity_id,
+        dbId: activity.activity_id,
+        name: activity.name,
+        max: Number(activity.max_score) || 20,
+        componentId: activity.component_id || null
+      });
+    });
+
     // 3b. Fetch posted grades
     const { data: postedGrades } = await supabase
       .from('posted_grades')
@@ -481,56 +521,42 @@ export async function getClassPriorityRoster(classRecordId) {
         at => at.student_id === stud.user_id && (at.status === 'Absent' || at.status?.toLowerCase() === 'absent')
       ).length;
       const studPosted = (postedGrades || []).filter(pg => pg.student_id === stud.user_id);
-      const finalPosted = studPosted.find(pg => pg.grade_period === 'final');
+      const finalPosted = findMostAdvancedPostedGrade(studPosted);
 
-      // Extract term ratings
-      const termRatings = {};
-      let prelimRating = null;
-      let midtermRating = null;
+      const classRecordScores = {};
+      studScores.forEach(score => {
+        if (score.term) classRecordScores[score.term] = { ...score };
+      });
+      (granularScores || [])
+        .filter(score => score.student_id === stud.user_id)
+        .forEach(score => {
+          const activity = (classActivities || []).find(item => item.activity_id === score.activity_id);
+          if (!activity?.term) return;
+          classRecordScores[activity.term] ||= {};
+          classRecordScores[activity.term][score.activity_id] = Number(score.score) || 0;
+        });
+
+      const tentativeDetails = computeTentativeGradeDetails(classRecordScores, colsMap, {
+        formula: gradingFormula,
+        activitiesByTerm,
+        isSummer: cr.semester === 'Summer'
+      });
+      const termRatings = tentativeDetails.termRatings;
+      const prelimRating = termRatings.Prelim ?? null;
+      const midtermRating = termRatings.Midterm ?? null;
       let examSumPct = 0;
       let examCount = 0;
-      let hasValidScores = false;
+      const hasValidScores = Object.keys(termRatings).length > 0;
 
       studScores.forEach(sc => {
         if (sc.term) {
           const colSetup = colsMap[sc.term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
-          const actSum = (sc.act1 || 0) + (sc.act2 || 0) + (sc.act3 || 0) + (sc.act4 || 0) + (sc.act5 || 0) + (sc.act6 || 0);
-          const char = sc.char_rating || 0;
           const examRaw = sc.exam;
-
-          const hasEnteredActivity = (
-            (sc.act1 != null && sc.act1 > 0) ||
-            (sc.act2 != null && sc.act2 > 0) ||
-            (sc.act3 != null && sc.act3 > 0) ||
-            (sc.act4 != null && sc.act4 > 0) ||
-            (sc.act5 != null && sc.act5 > 0) ||
-            (sc.act6 != null && sc.act6 > 0)
-          );
           const hasEnteredExam = examRaw != null && examRaw > 0;
-          const hasEnteredChar = char > 0;
-
-          const hasData = hasEnteredActivity || hasEnteredExam || hasEnteredChar;
-
-          if (hasData) {
-            hasValidScores = true;
-            // Use values directly from colSetup — defaults are already in the fallback object (line 494)
-            const actMax = colSetup.act1 + colSetup.act2 + colSetup.act3 + colSetup.act4 + colSetup.act5 + colSetup.act6;
-            const csPct = (hasEnteredActivity && actMax > 0) ? Math.min(50, (actSum / actMax) * 50) : 0;
-            const charPct = char * 0.1;
-            
+          if (hasEnteredExam) {
             const examMax = colSetup.exam || 40;
-            let exPct = 0;
-            if (hasEnteredExam) {
-              const examPercentage = Math.min(100, (examRaw / examMax) * 100);
-              exPct = (examPercentage / 100) * 40;
-              examSumPct += examPercentage;
-              examCount++;
-            }
-
-            const totalRating = Math.round(csPct + charPct + exPct);
-            termRatings[sc.term] = totalRating;
-            if (sc.term === 'Prelim') prelimRating = totalRating;
-            if (sc.term === 'Midterm') midtermRating = totalRating;
+            examSumPct += Math.min(100, (examRaw / examMax) * 100);
+            examCount++;
           }
         }
       });
@@ -542,24 +568,14 @@ export async function getClassPriorityRoster(classRecordId) {
       } else if (finalPosted && finalPosted.computed_grade != null) {
         approxGwa = getTransmutedGrade(parseFloat(finalPosted.computed_grade));
       } else if (hasValidScores) {
-        if (midtermRating !== null) {
-          approxGwa = getTransmutedGrade(midtermRating);
-        } else if (prelimRating !== null) {
-          approxGwa = getTransmutedGrade(prelimRating);
-        } else {
-          const available = Object.values(termRatings);
-          if (available.length > 0) {
-            const avgRating = Math.round(available.reduce((a, b) => a + b, 0) / available.length);
-            approxGwa = getTransmutedGrade(avgRating);
-          }
-        }
+        approxGwa = tentativeDetails.gwa;
       }
 
       const examAvg = examCount > 0 ? Math.round(examSumPct / examCount) : 100;
       const failingCount = (approxGwa !== null && approxGwa > 3.00) ? 1 : 0;
       // hasGradeBelow200: Scholarship Grade Floor Breach (DYCI Handbook Sec 3.8.4 / 5.2.5.1)
       // Only relevant for PL/scholarship candidates (GWA ≤ 1.75) — NOT a general risk factor.
-      // Moved to unified riskUtils.js computeUnifiedRisk() for proper per-student evaluation.
+      // The unified risk engine applies this only in its scholarship-specific path.
       const hasGradeBelow200 = false;
 
       // Count zero submissions ONLY for activities that are actually configured (max > 0)
