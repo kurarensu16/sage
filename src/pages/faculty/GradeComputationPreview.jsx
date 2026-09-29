@@ -41,6 +41,8 @@ import { TableSkeleton } from '../../components/common/Skeleton';
 import { triggerExcelExport } from '../../lib/excelExport';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
+import EnrollmentTypeBadge from '../../components/common/EnrollmentTypeBadge';
+import { getEnrollmentType } from '../../lib/classRoomService';
 import {
   GRADE_MILESTONES,
   getCanonicalGradePeriod,
@@ -238,7 +240,8 @@ export default function GradeComputationPreview() {
               first_name,
               last_name,
               email,
-              user_number
+              user_number,
+              section_id
             )
           `)
           .eq('section_id', cr.section_id)
@@ -258,7 +261,10 @@ export default function GradeComputationPreview() {
           id: u.user_id,
           studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
           name: `${u.last_name}, ${u.first_name}`,
-          email: u.email
+          email: u.email,
+          home_section_id: u.section_id || null,
+          enrollment_type: getEnrollmentType(u.section_id, cr.section_id),
+          is_irregular: getEnrollmentType(u.section_id, cr.section_id) === 'Irregular'
         }));
         studentList.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -1588,6 +1594,7 @@ export default function GradeComputationPreview() {
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-mono font-bold text-slate-400">#{idx + 1}</span>
                       <span className="font-bold text-slate-900 font-display text-xs sm:text-sm truncate">{student.name}</span>
+                      <EnrollmentTypeBadge enrollmentType={student.enrollment_type} className="shrink-0" />
                     </div>
                     <span className="text-[10px] font-mono text-slate-400 block mt-0.5">{student.studentNo}</span>
                   </div>
@@ -1805,8 +1812,11 @@ export default function GradeComputationPreview() {
                       <td className="px-2 py-3 border-r border-slate-100 text-slate-600 font-bold sticky left-[40px] bg-white z-20">
                         {student.studentNo}
                       </td>
-                      <td className="px-4 py-3 text-left font-sans font-bold text-slate-900 sticky left-[152px] bg-white border-r border-slate-100 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)] truncate max-w-[220px]">
-                        {student.name}
+                      <td className="px-4 py-3 text-left font-sans font-bold text-slate-900 sticky left-[152px] bg-white border-r border-slate-100 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)] max-w-[220px]">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate">{student.name}</span>
+                          <EnrollmentTypeBadge enrollmentType={student.enrollment_type} className="shrink-0" />
+                        </div>
                       </td>
 
                       {!isSummer && (

@@ -21,7 +21,7 @@ import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
 import { cn } from '../../lib/utils';
 import { TableSkeleton } from '../../components/common/Skeleton';
-import { getClassPriorityRoster } from '../../lib/classRoomService';
+import { getClassPriorityRoster, getEnrollmentType } from '../../lib/classRoomService';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
 import {
   GRADE_MILESTONES,
@@ -453,7 +453,8 @@ export default function ScoreInput() {
               first_name,
               last_name,
               email,
-              user_number
+              user_number,
+              section_id
             )
           `)
           .eq('section_id', cr.section_id)
@@ -481,11 +482,15 @@ export default function ScoreInput() {
 
         const studentList = Array.from(uniqueUsersMap.values()).map((u, idx) => {
           const pInfo = priorityMap[u.user_id] || {};
+          const enrollmentType = pInfo.enrollment_type || getEnrollmentType(u.section_id, cr.section_id);
           return {
             id: u.user_id,
             studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
             name: `${u.last_name}, ${u.first_name}`,
             email: u.email,
+            home_section_id: u.section_id || null,
+            enrollment_type: enrollmentType,
+            is_irregular: pInfo.is_irregular ?? enrollmentType === 'Irregular',
             risk_score: pInfo.risk_score || 0,
             risk_level: pInfo.risk_level || 'low',
             badge_color: pInfo.badge_color || 'emerald',
