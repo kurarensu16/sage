@@ -1,4 +1,4 @@
-# SAGE System — Audit Log Coverage Report
+# ASPIRE System — Audit Log Coverage Report
 **Generated:** August 27, 2026 | **Environment:** Production (`sage-dyci.vercel.app`) | **Supabase Region:** `ap-southeast-1` | **Timezone:** Asia/Manila (UTC+8)
 
 ---
@@ -14,7 +14,7 @@
 
 ## Executive Summary
 
-A comprehensive scan of all **7 portal directories** and **40+ source files** was performed to map every user-initiated write transaction (INSERT, UPDATE, DELETE, UPSERT) against the `activity_logs` table. 
+A comprehensive scan of all **7 portal directories** and **40+ source files** was performed to map every user-initiated write transaction (INSERT, UPDATE, DELETE, UPSERT) against the `activity_logs` table.
 
 | Category | Count |
 |---|---|
@@ -125,7 +125,7 @@ The following transactions mutate production data with **no audit trail** whatso
 - **Recommended Log:**
   ```
   Action:  "Attendance Posted"
-  Message: "Faculty [Name] submitted attendance for [Section] ([Subject Code]) on [Date PHT]. 
+  Message: "Faculty [Name] submitted attendance for [Section] ([Subject Code]) on [Date PHT].
             Present: X | Absent: Y | Late: Z"
   ```
 
@@ -139,7 +139,7 @@ The following transactions mutate production data with **no audit trail** whatso
 - **Recommended Log:**
   ```
   Action:  "Grade Unlock Approval"
-  Message: "Dean [Name] approved grade unlock request for [Faculty Name]'s 
+  Message: "Dean [Name] approved grade unlock request for [Faculty Name]'s
             class [Subject Code] - [Section Name]."
   ```
 
@@ -153,7 +153,7 @@ The following transactions mutate production data with **no audit trail** whatso
 - **Recommended Log:**
   ```
   Action:  "Eval Results Release"
-  Message: "Dean [Name] [released / recalled] evaluation results 
+  Message: "Dean [Name] [released / recalled] evaluation results
             for Faculty [Name] in [Department]."
   ```
 
@@ -264,4 +264,4 @@ const formatTimestamp = (isoString) => {
 
 ---
 
-*Report prepared by Antigravity AI — SAGE Dev Session — August 27, 2026*
+*Report prepared by Antigravity AI — ASPIRE Dev Session — August 27, 2026*

@@ -1,4 +1,4 @@
-# SAGE — AGENTS.md
+# ASPIRE — AGENTS.md
 
 ## Dev Commands
 - `npm run dev` — Vite dev server (port **5175**, strict, not default 5173)
@@ -45,11 +45,11 @@ When editing a page, check whether it imports from `mockDb` (Admin/Dean) or uses
 - Weight formula per term: 50% Class Standing + 10% Character + 40% Exam
 - Term Rating = `ROUND(CS_50 + Char_10 + Exam_40, 0)`
 - Midterm Rating = `ROUND(AVG(Prelim, Midterm), 0)`
-- All rounding must match DYCI Excel standards (see `SAGE_CONTEXT.md`)
+- All rounding must match DYCI Excel standards (see `ASPIRE_CONTEXT.md`)
 
 ## Important Docs
-- `docs/SAGE_CONTEXT.md` — full agent context, grading formulas, DB tables, institutional policies
-- `docs/SAGE_DATABASE_SCHEMA.md` — ERD, 21-table DDL, SQL types
+- `docs/ASPIRE_CONTEXT.md` — full agent context, grading formulas, DB tables, institutional policies
+- `docs/ASPIRE_DATABASE_SCHEMA.md` — ERD, 21-table DDL, SQL types
 - `docs/reports/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md` — Capstone 1 defense panel rulings & policy specifications
 - `docs/workflows/Supabase-Migration.md` — migration plan with page-by-page mapping
 - `docs/agents/AI-Agent-Architecture.md` — AI features plan (Student Advisor, Faculty Predictor etc.)

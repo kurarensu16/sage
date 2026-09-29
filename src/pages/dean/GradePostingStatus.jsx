@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, Filter, Loader2, RefreshCw } from 'lucide-react';
+import { Search, Filter, Loader2, RefreshCw, Unlock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { notifyUnlockApproved } from '../../lib/notificationDispatcher';
+import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
 
 export default function GradePostingStatus() {
   const { user, profile } = useAuth();
@@ -20,7 +21,6 @@ export default function GradePostingStatus() {
   const [semFilter, setSemFilter] = useState('');
   const [syFilter, setSyFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedOverrideClass, setSelectedOverrideClass] = useState('');
 
   const [termList, setTermList] = useState([]);
 
@@ -124,9 +124,6 @@ export default function GradePostingStatus() {
       });
 
       setClassrooms(formatted);
-      if (formatted.length > 0 && !selectedOverrideClass) {
-        setSelectedOverrideClass(formatted[0].id);
-      }
     } catch (err) {
       console.error('Error loading grade posting status:', err);
     } finally {
@@ -136,7 +133,6 @@ export default function GradePostingStatus() {
 
   useEffect(() => {
     loadPostingData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleApproveUnlock = async (classRecordId) => {
@@ -180,7 +176,9 @@ export default function GradePostingStatus() {
     const postedList = postedGradesMap[classId] || [];
     const unlockList = unlockRequestsMap[classId] || [];
     
-    const isPosted = postedList.length > 0;
+    const isPosted = postedList.some(row =>
+      getCanonicalGradePeriod(row) === GRADE_MILESTONES.SEMESTRAL_GRADE
+    );
     const isRequested = unlockList.length > 0;
     
     if (isPosted) {
@@ -195,7 +193,8 @@ export default function GradePostingStatus() {
               className="px-2 py-0.5 text-[9px] font-extrabold bg-amber-500 hover:bg-amber-600 text-white rounded shadow-sm transition-colors flex items-center gap-1 animate-pulse outline-none cursor-pointer"
               title="Click to approve faculty request and unlock registry"
             >
-              🔓 Approve Request
+              <Unlock className="h-3 w-3" />
+              Approve Request
             </button>
           )}
         </div>
@@ -226,10 +225,6 @@ export default function GradePostingStatus() {
     });
   }, [classrooms, searchTerm, semFilter, syFilter, deptFilter]);
 
-  const selectedClassObj = classrooms.find(c => c.id === selectedOverrideClass);
-  const selectedPostedList = postedGradesMap[selectedOverrideClass] || [];
-  const isSelectedLocked = selectedPostedList.length > 0 && selectedPostedList.some(p => p.is_locked);
-
   return (
     <>
       <PageHeader 
@@ -249,77 +244,6 @@ export default function GradePostingStatus() {
       
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
         
-        {/* 🔑 Dean's Administrative Registry Override Dashboard */}
-        {false && <div className="bg-amber-50/45 border border-amber-200 rounded-xl p-5 space-y-4 shadow-sm">
-          <div className="flex flex-wrap justify-between items-start gap-4">
-            <div>
-              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                <span>🔑 Dean's Administrative Registry Overrides</span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Select a class record to bypass registry locks and manually unlock any term milestone score entries.
-              </p>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Select</label>
-              <select
-                value={selectedOverrideClass}
-                onChange={(e) => setSelectedOverrideClass(e.target.value)}
-                className="bg-white border border-slate-200 hover:border-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold focus:ring-1 focus:ring-amber-500 focus:border-amber-500 outline-none transition-all cursor-pointer text-slate-700 shadow-sm max-w-xs truncate"
-              >
-                {filteredClasses.length === 0 ? (
-                  <option value="">No active classes</option>
-                ) : (
-                  filteredClasses.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.subjectCode} - {c.section} ({c.facultyName})
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
-          </div>
-
-          <div className="p-4 bg-white rounded-lg border border-amber-100/70 space-y-3 shadow-inner">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Registry Locks</span>
-              <div className="flex flex-wrap gap-1">
-                {!isSelectedLocked ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    No active locks
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 font-mono">
-                    🔒 Semestral Grade
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {!isSelectedLocked ? (
-              <p className="text-xs font-semibold text-slate-400 italic text-center py-2">
-                {selectedClassObj ? `This class (${selectedClassObj.subjectCode} - ${selectedClassObj.section}) currently has no locked milestones.` : 'No class selected.'}
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 gap-2.5 pt-1">
-                <div className="flex justify-between items-center bg-slate-50/50 p-2.5 rounded-lg border border-slate-200 shadow-sm">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-slate-800">Semestral Grade Registry</span>
-                    <span className="text-[9px] text-rose-600 font-mono mt-0.5 font-bold">Status: LOCKED</span>
-                  </div>
-                  <button
-                    onClick={() => handleApproveUnlock(selectedOverrideClass)}
-                    className="px-2.5 py-1 text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors shadow-sm outline-none cursor-pointer"
-                  >
-                    🔓 Unlock Override
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>}
-
         {/* Filters Toolbar */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">

@@ -1,15 +1,15 @@
-# SAGE — Audit Log Implementation Plan
-**Document Type:** Phased Development Plan  
-**Status:** Pending Implementation  
-**Created:** August 27, 2026  
-**Author:** Antigravity AI  
-**References:** `SAGE_AUDIT_LOG_COVERAGE_REPORT_2026-08-27.md`
+# ASPIRE — Audit Log Implementation Plan
+**Document Type:** Phased Development Plan
+**Status:** Pending Implementation
+**Created:** August 27, 2026
+**Author:** Antigravity AI
+**References:** `ASPIRE_AUDIT_LOG_COVERAGE_REPORT_2026-08-27.md`
 
 ---
 
 ## Overview
 
-This document provides a detailed, developer-ready implementation guide for adding the **6 missing audit log entries** identified in the SAGE Audit Log Coverage Report. Each phase contains exact file paths, current code context, line numbers where changes should be made, recommended code snippets, and notes on potential risks or edge cases.
+This document provides a detailed, developer-ready implementation guide for adding the **6 missing audit log entries** identified in the ASPIRE Audit Log Coverage Report. Each phase contains exact file paths, current code context, line numbers where changes should be made, recommended code snippets, and notes on potential risks or edge cases.
 
 > **Ground Rule:** All audit log entries must use the shared `logActivity()` utility from `src/lib/auditLog.js` and the `resolveActorName()` helper to ensure consistent actor name resolution across all portals.
 
@@ -28,8 +28,8 @@ These 3 gaps involve sensitive academic data mutations with zero audit trail. Th
 ---
 
 ### GAP-001 | Faculty Attendance Save
-**File:** `src/pages/faculty/ClassAttendance.jsx`  
-**Estimated Effort:** 30 minutes  
+**File:** `src/pages/faculty/ClassAttendance.jsx`
+**Estimated Effort:** 30 minutes
 **Risk Level:** Low — additive change only, no logic modification
 
 #### Background
@@ -118,8 +118,8 @@ const handleSaveAttendance = async () => {
 ---
 
 ### GAP-002 | Dean Approves Grade Unlock Request
-**File:** `src/pages/dean/GradePostingStatus.jsx`  
-**Estimated Effort:** 45 minutes  
+**File:** `src/pages/dean/GradePostingStatus.jsx`
+**Estimated Effort:** 45 minutes
 **Risk Level:** Medium — needs additional data fetch to build a descriptive log message
 
 #### Background
@@ -230,8 +230,8 @@ const handleApproveUnlock = async (classRecordId) => {
 ---
 
 ### GAP-003 | Dean Releases / Recalls Evaluation Results
-**File:** `src/pages/dean/EvalResultsOverview.jsx`  
-**Estimated Effort:** 30 minutes  
+**File:** `src/pages/dean/EvalResultsOverview.jsx`
+**Estimated Effort:** 30 minutes
 **Risk Level:** Low — clean toggle function with all needed data in scope
 
 #### Background
@@ -332,8 +332,8 @@ const toggleReleaseStatus = async (facultyId, currentStatus) => {
 ---
 
 ### GAP-004 | Term Management — Evaluation Window Toggle
-**File:** `src/pages/admin/TermManagement.jsx`  
-**Estimated Effort:** 20 minutes  
+**File:** `src/pages/admin/TermManagement.jsx`
+**Estimated Effort:** 20 minutes
 **Risk Level:** Low
 
 #### Investigation Findings
@@ -358,8 +358,8 @@ await logActivity(
 ---
 
 ### GAP-005 | Evaluation Form Deletion
-**File:** `src/pages/office/EvalFormsList.jsx`  
-**Estimated Effort:** 20 minutes  
+**File:** `src/pages/office/EvalFormsList.jsx`
+**Estimated Effort:** 20 minutes
 **Risk Level:** Low
 
 #### Investigation Findings
@@ -419,7 +419,7 @@ if (confirm(`Are you sure you want to delete the "${title}" evaluation template?
 }
 ```
 
-> **Note for GAP-004 update:** `EvalFormsList.jsx` does NOT have a publish toggle. Update the audit report (`SAGE_AUDIT_LOG_COVERAGE_REPORT_2026-08-27.md`) to correct GAP-005 description from "Evaluation Form Publish/Unpublish" to **"Evaluation Form Deletion"**.
+> **Note for GAP-004 update:** `EvalFormsList.jsx` does NOT have a publish toggle. Update the audit report (`ASPIRE_AUDIT_LOG_COVERAGE_REPORT_2026-08-27.md`) to correct GAP-005 description from "Evaluation Form Publish/Unpublish" to **"Evaluation Form Deletion"**.
 
 ---
 
@@ -428,12 +428,12 @@ if (confirm(`Are you sure you want to delete the "${title}" evaluation template?
 ---
 
 ### GAP-006 | Notification Deletion Logging
-**Files:** 
+**Files:**
 - `src/pages/dean/Notifications.jsx` (line 120 — `.delete()`)
 - `src/pages/faculty/Notifications.jsx` (line 120 — `.delete()`)
 - `src/pages/office/Notifications.jsx`
 
-**Estimated Effort:** 30 minutes (all 3 files)  
+**Estimated Effort:** 30 minutes (all 3 files)
 **Risk Level:** Very Low
 
 #### Recommendation
@@ -466,7 +466,7 @@ Phase 2 — MEDIUM PRIORITY
 [ ] GAP-004: TermManagement.jsx — Locate is_evaluation_open toggle button and add log
 [ ] GAP-004: TermManagement.jsx — Remove duplicate raw activity_logs insert at line 314
 [ ] GAP-005 (Revised): EvalFormsList.jsx — Add import + log inside handleDeleteTemplate()
-[ ] Update SAGE_AUDIT_LOG_COVERAGE_REPORT: Correct GAP-005 description
+[ ] Update ASPIRE_AUDIT_LOG_COVERAGE_REPORT: Correct GAP-005 description
 [ ] Commit: "feat(audit): add term toggle and eval form deletion logs"
 
 Phase 3 — LOW PRIORITY (Defer)
@@ -478,7 +478,7 @@ Phase 3 — LOW PRIORITY (Defer)
 Final
 [ ] Push all changes to ghost branch
 [ ] Open pull request to main
-[ ] Update revision history in SAGE_AUDIT_LOG_COVERAGE_REPORT_2026-08-27.md
+[ ] Update revision history in ASPIRE_AUDIT_LOG_COVERAGE_REPORT_2026-08-27.md
 ```
 
 ---
@@ -502,4 +502,4 @@ export function resolveActorName(profile, user) {
 
 ---
 
-*Plan prepared by Antigravity AI — SAGE Dev Session — August 27, 2026*
+*Plan prepared by Antigravity AI — ASPIRE Dev Session — August 27, 2026*

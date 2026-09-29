@@ -1,7 +1,7 @@
-# SAGE — Component Consistency Audit
+# ASPIRE — Component Consistency Audit
 
-> Full audit of all 38 page files + 5 layout components against the Design System spec.  
-> Audit Date: 2026-05-28  
+> Full audit of all 38 page files + 5 layout components against the Design System spec.
+> Audit Date: 2026-05-28
 > Status: **Findings Documented — Fixes Pending**
 
 ---
@@ -172,7 +172,7 @@ Note: Using `LayoutDashboard` for all dashboards is a reasonable deviation since
 `src/App.css` (185 lines) contains the original Vite starter template CSS:
 - `.hero`, `.counter`, `#center`, `#next-steps`, `#docs`, `#spacer`, `.ticks`
 
-**None of these classes are used anywhere in the SAGE codebase.** All actual styling is done through `index.css` + Tailwind utility classes.
+**None of these classes are used anywhere in the ASPIRE codebase.** All actual styling is done through `index.css` + Tailwind utility classes.
 
 ### Recommended Fix
 Delete the entire contents of `App.css` or delete the file entirely. No visual impact.
@@ -227,4 +227,4 @@ Using `cn()` (which wraps `clsx` + `tailwind-merge`) prevents class conflicts. C
 
 ---
 
-*End of Component Consistency Audit — SAGE, DYCI Capstone Project*
+*End of Component Consistency Audit — ASPIRE, DYCI Capstone Project*

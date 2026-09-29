@@ -1,4 +1,4 @@
-# SAGE: Smart Academic Grading and Evaluation System
+# ASPIRE: Academic Support and Performance Advising with Intervention, Risk, and Evaluation
 ## User Journey Flow Document
 * **Institution**: Dr. Yanga's Colleges, Inc.
 * **Program**: BS Information Technology — Capstone Project
@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary
 
-This document describes the end-to-end user journeys for the **Smart Academic Grading and Evaluation System (SAGE)**. It traces how the four core user roles—**Admin**, **Faculty**, **Student**, and **Dean**—interact with the system interfaces (Screens **S01** to **S41**), and documents how these front-end actions translate to database transactions and record mutations in the **Supabase PostgreSQL** database.
+This document describes the end-to-end user journeys for the **Academic Support and Performance Advising with Intervention, Risk, and Evaluation (ASPIRE)**. It traces how the four core user roles—**Admin**, **Faculty**, **Student**, and **Dean**—interact with the system interfaces (Screens **S01** to **S41**), and documents how these front-end actions translate to database transactions and record mutations in the **Supabase PostgreSQL** database.
 
 ---
 
@@ -27,7 +27,7 @@ This document describes the end-to-end user journeys for the **Smart Academic Gr
 
 ## 3. Global User Journey Flow Diagram
 
-This diagram maps out the chronological lifecycle of a single semester in SAGE, illustrating how actions of one user role unlock subsequent workflows for other roles.
+This diagram maps out the chronological lifecycle of a single semester in ASPIRE, illustrating how actions of one user role unlock subsequent workflows for other roles.
 
 ```mermaid
 flowchart TD
@@ -98,7 +98,7 @@ flowchart TD
 #### Step 2: Master Database Initialization
 * **Action**: Pre-load structural assets—academic subjects and student sections.
 * **UI Interaction**: Navigates to Subjects List (**S07**) and Sections List (**S09**). Clicks "Batch Import CSV/Excel" (**S08**, **S10**), selects sheets, previews the tabular validation grid, and clicks "Confirm Import".
-* **Database Action**: 
+* **Database Action**:
   * `INSERT INTO subjects (code, name, units, department_id)`
   * `INSERT INTO sections (name, school_year, semester, department_id)`
 
@@ -155,7 +155,7 @@ flowchart TD
   * Displays color-coded risk flags: **Safe (Green)**, **At-Risk (Yellow)**, or **Failing Trajectory (Red)**.
   * Shows exact running percentages on hovering.
   * Faculty clicks "Save Student Row" or "Save All Scores".
-* **Database Action**: 
+* **Database Action**:
   * Bulk `INSERT ... ON CONFLICT DO UPDATE` into `component_scores (component_id, student_id, score, encoded_by)`
   * `SELECT` queries to pull component scores and recalculate students' overall running standing dynamically.
 
@@ -210,7 +210,7 @@ flowchart TD
   * `INSERT INTO evaluation_comments (response_id, comment)`
 
 > [!CAUTION]
-> **Data Privacy Enforcement**: To comply with the Philippine Data Privacy Act (RA 10173), SAGE generates the `anonymous_token` deterministically on the client/middleware via a hash of the `student_id` and the `window_id`. This prevents duplicate submissions while ensuring that once written, the response record cannot be mapped back to the student's user ID.
+> **Data Privacy Enforcement**: To comply with the Philippine Data Privacy Act (RA 10173), ASPIRE generates the `anonymous_token` deterministically on the client/middleware via a hash of the `student_id` and the `window_id`. This prevents duplicate submissions while ensuring that once written, the response record cannot be mapped back to the student's user ID.
 
 #### Step 4: Reviewing AI Academic Advising
 * **Action**: Access AI recommendations to determine academic status.
@@ -268,7 +268,7 @@ sequenceDiagram
     actor Admin
     participant DB as Supabase DB
     participant Faculty
-    
+
     Admin->>Admin: Prepares Subjects, Sections & Students CSV files
     Admin->>DB: Uploads Subjects CSV (inserts to 'subjects')
     Admin->>DB: Uploads Sections CSV (inserts to 'sections')
@@ -281,7 +281,7 @@ sequenceDiagram
 
 ### 5.2 Grading, Calculations & Locking Sequence
 
-The computation of student grades is automatically executed by SAGE based on the faculty's custom configurations. The calculation chain is structured as follows:
+The computation of student grades is automatically executed by ASPIRE based on the faculty's custom configurations. The calculation chain is structured as follows:
 
 1. **Grade Components Setup**: Faculty defines weights ($W_i$) and maximum scores ($M_i$) for components within a term (Prelim, Midterm, Semi-Final, Final).
 2. **Score Entry**: Faculty records raw scores ($S_{ij}$) for each student.
@@ -289,11 +289,11 @@ The computation of student grades is automatically executed by SAGE based on the
    $$\text{Component Score} = \left( \frac{\sum \text{Raw Scores}}{\sum \text{Max Scores}} \right) \times W_i$$
 4. **Term Grade Calculation**: The sum of all component scores for a term.
 5. **Rating Aggregation**:
-   * **Midterm Rating (MR)**: 
+   * **Midterm Rating (MR)**:
      $$\text{MR} = \left( \frac{\text{Prelim Grade}}{3} \right) + \left( \frac{2 \times \text{Midterm Grade}}{3} \right)$$
-   * **Tentative Final Rating (TFR)**: 
+   * **Tentative Final Rating (TFR)**:
      $$\text{TFR} = \left( \frac{\text{Semi-Final Grade}}{3} \right) + \left( \frac{2 \times \text{Final Grade}}{3} \right)$$
-   * **Semestral Grade (SG)**: 
+   * **Semestral Grade (SG)**:
      $$\text{SG} = \left( \frac{\text{Midterm Rating}}{3} \right) + \left( \frac{2 \times \text{Tentative Final Rating}}{3} \right)$$
 
 ```mermaid
@@ -394,4 +394,4 @@ To assist developers during implementation, this section maps key UI actions dir
 
 ---
 
-*End of User Journey Flow Document — SAGE, DYCI Capstone Project AY 2025-2026*
+*End of User Journey Flow Document — ASPIRE, DYCI Capstone Project AY 2025-2026*

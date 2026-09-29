@@ -2,7 +2,7 @@
 
 ## Overview
 
-SAGE integrates with [OpenRouter](https://openrouter.ai) to deliver intelligent, cost-free AI advisory and counseling capabilities (**FR34** - Academic Recommendations and **FR35** - Faculty Predictions). 
+SAGE integrates with [OpenRouter](https://openrouter.ai) to deliver intelligent, cost-free AI advisory and counseling capabilities (**FR34** - Academic Recommendations and **FR35** - Faculty Predictions).
 
 By leveraging OpenRouter's `:free` model routing with automatic fallbacks, SAGE guarantees continuous AI guidance without incurring API costs or failing when a single provider experiences high traffic or rate limits.
 
@@ -34,16 +34,17 @@ body: JSON.stringify({
 
 ## 2. Model Breakdown & Selection Rationale
 
-| Priority | Model ID | Strengths for SAGE | Status |
-| :---: | :--- | :--- | :---: |
+|        Priority        | Model ID                                   | Strengths for SAGE                                                                                                                 |      Status      |
+| :--------------------: | :----------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------- | :---------------: |
 | **1 (Primary)** | `nvidia/nemotron-3-super-120b-a12b:free` | **120B Flagship Intelligence:** Clean, direct, empathetic counseling guidance without internal reasoning/scratchpad leakage. | Active & Verified |
-| **2 (Fallback)** | `nvidia/nemotron-3-ultra-550b-a55b:free` | **550B Ultra Reasoning:** Deep pedagogical insight and comprehensive multi-term GWA trend analysis. | Active & Verified |
+| **2 (Fallback)** | `nvidia/nemotron-3-ultra-550b-a55b:free` | **550B Ultra Reasoning:** Deep pedagogical insight and comprehensive multi-term GWA trend analysis.                          | Active & Verified |
 
 ---
 
 ## 3. How the Fallback Mechanism Works
 
 OpenRouter's `models` array parameter enables **automatic server-side failover**:
+
 1. OpenRouter attempts to route the request to the primary model (`llama-3.3-70b-instruct:free`).
 2. If that model is rate-limited, undergoing provider maintenance, or overloaded, OpenRouter automatically forwards the prompt to the next available model in the list (`gemini-2.0-flash-exp:free`, `qwen-2.5-72b`, etc.) without throwing an error back to the frontend.
 3. The frontend receives a clean, transparent response without requiring manual retry logic.

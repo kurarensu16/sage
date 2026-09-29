@@ -27,6 +27,7 @@ import {
   getOrCreateJoinCode, 
   getClassPriorityRoster 
 } from '../../lib/classRoomService';
+import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
 import FacultyCreateClassroomModal from './FacultyCreateClassroomModal';
 import { cn } from '../../lib/utils';
@@ -201,8 +202,8 @@ export default function ClassRecordsList() {
         let gradingPeriod = 'Prelim';
 
         if (hasSetup) {
-          const postedPeriods = new Set(matchingPosted.map(g => g.grade_period.toLowerCase()));
-          if (postedPeriods.has('final')) {
+          const postedPeriods = new Set(matchingPosted.map(getCanonicalGradePeriod));
+          if (postedPeriods.has(GRADE_MILESTONES.SEMESTRAL_GRADE)) {
             statusLabel = 'Grades Posted';
             gradingPeriod = 'Final';
           } else {

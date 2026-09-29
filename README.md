@@ -1,6 +1,6 @@
-# SAGE — Smart Academic Grading & Evaluation System
+# ASPIRE — Academic Support and Performance Advising with Intervention, Risk, and Evaluation
 
-SAGE is a premium, high-fidelity academic portal system engineered for **Dr. Yanga's Colleges, Inc.** It serves as an integrated platform for grading oversight, student evaluations, GWA analysis, academic early risk warning alerts, and administration workflows.
+ASPIRE is a premium, high-fidelity academic portal system engineered for **Dr. Yanga's Colleges, Inc.** It serves as an integrated platform for grading oversight, student evaluations, GWA analysis, academic early risk warning alerts, and administration workflows.
 
 ---
 
@@ -52,7 +52,7 @@ The system is split into **4 main portals** plus public authentication screens, 
   * Anchored on custom `@theme` brand colors: Sage Green (`#022C22` / `sage-900`) and Emerald accent scales.
   * Google Fonts: **Sora** (headers and titles), **DM Sans** (body text), **JetBrains Mono** (GWA stats, grades, and audit timestamps).
 * **Icons Library**: Lucide Icons exclusively
-* **SVG Vector Assets**: Custom spline-vectorized SAGE logo (`SageLogo.jsx`) Vectorized in binary mode.
+* **SVG Vector Assets**: Custom spline-vectorized ASPIRE logo (`SageLogo.jsx`) Vectorized in binary mode.
 
 ---
 

@@ -1,7 +1,7 @@
-# SAGE Grading System Analysis Report
+# ASPIRE Grading System Analysis Report
 *Dr. Yanga's Colleges, Inc. (DYCI)*
 
-This document provides a comprehensive mathematical and structural analysis of the official Excel-based grading system used by the institution, based on the cell values and formulas extracted from [SAGE_Grading_System_Mock.xlsx](file:///c:/Users/sadia/SAGE/SAGE_Grading_System_Mock.xlsx).
+This document provides a comprehensive mathematical and structural analysis of the official Excel-based grading system used by the institution, based on the cell values and formulas extracted from [ASPIRE_Grading_System_Mock.xlsx](../../ASPIRE_Grading_System_Mock.xlsx).
 
 ---
 
@@ -87,7 +87,7 @@ flowchart TD
     BC -->|Threshold check| BD[Remarks: Passed]
 ```
 
-1. **Midterm Rating (MR)** (Column `AB`): 
+1. **Midterm Rating (MR)** (Column `AB`):
    Calculated as the rounded average of Prelim Grade (`O9`) and Midterm Grade (`AA9`).
    $$\text{MR} = \text{ROUND}\left( \text{AVERAGE}(\text{Prelim Grade}, \text{Midterm Grade}), 0 \right)$$
    *Example: $\text{ROUND}(\text{AVERAGE}(91, 87), 0) = 89$*
@@ -140,7 +140,7 @@ A student passes if their GWA equivalent is less than or equal to `3.00`. An equ
 
 ---
 
-## 6. Implementation Plan for SAGE Portal
+## 6. Implementation Plan for ASPIRE Portal
 
 To ensure the grading portal aligns perfectly with the school's Excel spreadsheet computations, the frontend components (e.g., `GradeComputationPreview.jsx` and `ScoreInput.jsx`) should be updated:
 

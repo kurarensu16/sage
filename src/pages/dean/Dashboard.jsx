@@ -18,8 +18,19 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
-import { getTransmutedGrade } from '../../lib/gradingMath';
-import { computeTentativeGrade, computeUnifiedRisk, isStudentAtRisk, isStudentModerateRisk } from '../../lib/riskUtils';
+import { getTransmutedGrade, resolveGradingFormula } from '../../lib/gradingMath';
+import {
+  computeTentativeGrade,
+  computeTentativeGradeDetails,
+  computeUnifiedRisk,
+  isStudentAtRisk,
+  isStudentModerateRisk
+} from '../../lib/riskEngine';
+import {
+  GRADE_MILESTONES,
+  findMostAdvancedPostedGrade,
+  getCanonicalGradePeriod
+} from '../../lib/gradeMilestones';
 import { 
   AcademicTrajectoryLineChart,
   AcademicHealthDonutChart,
@@ -27,12 +38,10 @@ import {
   SectionPerformanceBarChart
 } from '../../components/dean/DeanCharts';
 
-// ── Risk classification now handled by unified riskUtils.js (computeUnifiedRisk) ──
-
-// computeTentativeGrade is now imported from riskUtils.js (single source of truth)
+// Risk and tentative-grade calculations share the centralized formula-aware engine.
 
 // Compute student's grade for a specific term (e.g. 'Prelim', 'Midterm', 'Semi-Final', 'Final')
-function computeTermGwa(studentId, term, gradesByStudent, scoresMap, colMap) {
+function computeTermGwa(studentId, term, gradesByStudent, scoresMap, colMap, classConfigMap) {
   // 1. Check posted grades for this term
   const myGrades = gradesByStudent[studentId] || [];
   const termKey = term.toLowerCase().replace('-', '_');
@@ -49,20 +58,11 @@ function computeTermGwa(studentId, term, gradesByStudent, scoresMap, colMap) {
   Object.keys(studentScores).forEach(classRecId => {
     const tSc = studentScores[classRecId]?.[term];
     if (tSc) {
-      const csSum = (tSc.act1 || 0) + (tSc.act2 || 0) + (tSc.act3 || 0) + (tSc.act4 || 0) + (tSc.act5 || 0) + (tSc.act6 || 0);
-      const charVal = tSc.char_rating || 0;
-      const examVal = tSc.exam || 0;
-      const hasData = csSum > 0 || charVal > 0 || examVal > 0;
-
-      if (hasData) {
-        const tMx = colMap[classRecId]?.[term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
-        const csMax = (tMx.act1 || 20) + (tMx.act2 || 20) + (tMx.act3 || 20) + (tMx.act4 || 20) + (tMx.act5 || 20) + (tMx.act6 || 10);
-        const csPercent = csMax > 0 ? (csSum / csMax) * 50 : 0;
-        const charPercent = charVal * 0.1;
-        const examPercent = (tMx.exam || 40) > 0 ? (examVal / tMx.exam) * 40 : 0;
-        const termRating = Math.min(100, Math.max(0, Math.round(csPercent + charPercent + examPercent)));
-        const transmuted = getTransmutedGrade(termRating);
-        if (transmuted !== null) computedTermValues.push(transmuted);
+      const config = classConfigMap[classRecId] || {};
+      const details = computeTentativeGradeDetails(studentScores[classRecId], colMap[classRecId], config);
+      const termRating = details.termRatings[term];
+      if (termRating !== null && termRating !== undefined) {
+        computedTermValues.push(getTransmutedGrade(termRating));
       }
     }
   });
@@ -157,7 +157,7 @@ export default function Dashboard() {
         ] = await Promise.all([
           supabase.from('academic_terms').select('term_id, school_year, semester').eq('is_active', true).maybeSingle(),
           supabase.from('users').select('user_id, role, first_name, last_name, section_id, department_id'),
-          supabase.from('class_records').select('class_record_id, section_id, faculty_id, term_id, school_year, semester').eq('status', 'active').in('section_id', sectionIds),
+          supabase.from('class_records').select('class_record_id, section_id, faculty_id, term_id, school_year, semester, grading_formula_snapshot, subjects ( computation_id )').eq('status', 'active').in('section_id', sectionIds),
           supabase.from('posted_grades').select('class_record_id, student_id, grade_period, computed_grade, effective_grade'),
           supabase.from('student_term_scores').select('student_id, class_record_id, term, act1, act2, act3, act4, act5, act6, char_rating, exam'),
           supabase.from('class_grading_columns').select('class_record_id, term, act1_max, act2_max, act3_max, act4_max, act5_max, act6_max, exam_max'),
@@ -195,6 +195,65 @@ export default function Dashboard() {
         const studentIds = deptStudents.map(s => s.user_id);
         const studentIdsSet = new Set(studentIds);
 
+        const computationIds = [...new Set(
+          classroomsFiltered.map(record => record.subjects?.computation_id).filter(Boolean)
+        )];
+        const classRecordIds = classroomsFiltered.map(record => record.class_record_id);
+        const [{ data: computationData }, { data: activityData }] = await Promise.all([
+          computationIds.length > 0
+            ? supabase
+                .from('grade_computations')
+                .select('computation_id, grade_computation_components ( * )')
+                .in('computation_id', computationIds)
+            : Promise.resolve({ data: [] }),
+          classRecordIds.length > 0
+            ? supabase
+                .from('class_activities')
+                .select('activity_id, class_record_id, term, name, max_score, component_id')
+                .in('class_record_id', classRecordIds)
+            : Promise.resolve({ data: [] })
+        ]);
+        const activityIds = (activityData || []).map(activity => activity.activity_id);
+        const { data: granularScoreData } = activityIds.length > 0
+          ? await supabase
+              .from('student_activity_scores')
+              .select('student_id, activity_id, score')
+              .in('activity_id', activityIds)
+          : { data: [] };
+
+        const computationMap = new Map(
+          (computationData || []).map(computation => [
+            computation.computation_id,
+            computation.grade_computation_components || []
+          ])
+        );
+        const classConfigMap = {};
+        classroomsFiltered.forEach(record => {
+          const components = record.grading_formula_snapshot?.components
+            || computationMap.get(record.subjects?.computation_id)
+            || null;
+          const activitiesByTerm = {};
+          (activityData || [])
+            .filter(activity => activity.class_record_id === record.class_record_id)
+            .forEach(activity => {
+              if (!activitiesByTerm[activity.term]) activitiesByTerm[activity.term] = [];
+              activitiesByTerm[activity.term].push({
+                id: activity.activity_id,
+                dbId: activity.activity_id,
+                name: activity.name,
+                max: Number(activity.max_score) || 20,
+                componentId: activity.component_id || null
+              });
+            });
+          classConfigMap[record.class_record_id] = {
+            formula: resolveGradingFormula(components, {
+              formulaAssigned: Boolean(record.grading_formula_snapshot || record.subjects?.computation_id)
+            }),
+            activitiesByTerm,
+            isSummer: record.semester === 'Summer'
+          };
+        });
+
         // Map columns
         const colMap = {};
         (colData || []).forEach(c => {
@@ -218,6 +277,16 @@ export default function Dashboard() {
           if (!scoresMap[s.student_id][s.class_record_id]) scoresMap[s.student_id][s.class_record_id] = {};
           scoresMap[s.student_id][s.class_record_id][s.term] = s;
         });
+        const activityById = new Map((activityData || []).map(activity => [activity.activity_id, activity]));
+        (granularScoreData || []).forEach(score => {
+          if (!studentIdsSet.has(score.student_id)) return;
+          const activity = activityById.get(score.activity_id);
+          if (!activity?.term) return;
+          scoresMap[score.student_id] ||= {};
+          scoresMap[score.student_id][activity.class_record_id] ||= {};
+          scoresMap[score.student_id][activity.class_record_id][activity.term] ||= {};
+          scoresMap[score.student_id][activity.class_record_id][activity.term][score.activity_id] = Number(score.score) || 0;
+        });
 
         // Group posted grades by student ID
         const gradesByStudent = {};
@@ -225,6 +294,17 @@ export default function Dashboard() {
           if (!studentIdsSet.has(g.student_id)) return;
           if (!gradesByStudent[g.student_id]) gradesByStudent[g.student_id] = [];
           gradesByStudent[g.student_id].push(g);
+        });
+        const advancedGradesByStudent = {};
+        Object.entries(gradesByStudent).forEach(([studentId, rows]) => {
+          const rowsByClass = {};
+          rows.forEach(row => {
+            if (!rowsByClass[row.class_record_id]) rowsByClass[row.class_record_id] = [];
+            rowsByClass[row.class_record_id].push(row);
+          });
+          advancedGradesByStudent[studentId] = Object.values(rowsByClass)
+            .map(findMostAdvancedPostedGrade)
+            .filter(Boolean);
         });
 
         let highRiskCount = 0;
@@ -241,7 +321,7 @@ export default function Dashboard() {
         const allStudentGwas = [];
 
         deptStudents.forEach(s => {
-          const myGrades = gradesByStudent[s.user_id] || [];
+          const myGrades = advancedGradesByStudent[s.user_id] || [];
           const postedClassRecordIds = new Set(myGrades.map(g => g.class_record_id));
           
           const gradeValues = [];
@@ -260,7 +340,11 @@ export default function Dashboard() {
             if (!postedClassRecordIds.has(classRecId)) {
               const classRecordScores = studentScores[classRecId];
               const classRecordCols = colMap[classRecId];
-              const tentativeVal = computeTentativeGrade(classRecordScores, classRecordCols);
+              const tentativeVal = computeTentativeGrade(
+                classRecordScores,
+                classRecordCols,
+                classConfigMap[classRecId]
+              );
               if (tentativeVal !== null) {
                 gradeValues.push(tentativeVal);
               }
@@ -304,11 +388,15 @@ export default function Dashboard() {
 
         // 3. Pending Grade Posts & Submission Progress
         let pendingPosts = 0;
-        const targetPeriods = ['prelim', 'midterm', 'final'];
+        const targetPeriods = [
+          GRADE_MILESTONES.MIDTERM_RATING,
+          GRADE_MILESTONES.TENTATIVE_FINAL_RATING,
+          GRADE_MILESTONES.SEMESTRAL_GRADE
+        ];
         classroomsFiltered.forEach(c => {
           const postedPeriodsForClass = (postedGrades || [])
             .filter(g => g.class_record_id === c.class_record_id)
-            .map(g => g.grade_period);
+            .map(getCanonicalGradePeriod);
           const uniquePeriods = [...new Set(postedPeriodsForClass)];
           
           const postedTargetPeriods = uniquePeriods.filter(p => targetPeriods.includes(p));
@@ -362,7 +450,7 @@ export default function Dashboard() {
         const traj = termProgression.map((termName, tIdx) => {
           const termGrades = [];
           deptStudents.forEach(s => {
-            const g = computeTermGwa(s.user_id, termName, gradesByStudent, scoresMap, colMap);
+            const g = computeTermGwa(s.user_id, termName, gradesByStudent, scoresMap, colMap, classConfigMap);
             if (g !== null) termGrades.push(g);
           });
 
@@ -434,7 +522,7 @@ export default function Dashboard() {
           let secHonors = 0;
 
           secStudents.forEach(s => {
-            const myGrades = gradesByStudent[s.user_id] || [];
+            const myGrades = advancedGradesByStudent[s.user_id] || [];
             const postedClassRecordIds = new Set(myGrades.map(g => g.class_record_id));
             const gradeValues = [];
 
@@ -446,7 +534,11 @@ export default function Dashboard() {
             const studentScores = scoresMap[s.user_id] || {};
             Object.keys(studentScores).forEach(cId => {
               if (!postedClassRecordIds.has(cId)) {
-                const tVal = computeTentativeGrade(studentScores[cId], colMap[cId]);
+                const tVal = computeTentativeGrade(
+                  studentScores[cId],
+                  colMap[cId],
+                  classConfigMap[cId]
+                );
                 if (tVal !== null) gradeValues.push(tVal);
               }
             });

@@ -1,6 +1,6 @@
-# SAGE Database Reset and Manual Seeding Guide
+# ASPIRE Database Reset and Manual Seeding Guide
 
-This step-by-step guide is designed to help you safely clean your Supabase database and re-seed SAGE with the correct data hierarchy for testing, development, and capstone defense demonstrations.
+This step-by-step guide is designed to help you safely clean your Supabase database and re-seed ASPIRE with the correct data hierarchy for testing, development, and capstone defense demonstrations.
 
 ---
 
@@ -11,7 +11,7 @@ This step-by-step guide is designed to help you safely clean your Supabase datab
 | Institutional Email Domain | `@dyci.edu.ph` | Standardized across all accounts |
 | `'office'` role added to `user_role` enum | ✅ Done | Department-scoped office accounts |
 | `departments` table populated (11 colleges) | ✅ Done — **DO NOT truncate** | Root relational anchor for all colleges |
-| `users_rows.csv` prepared with 301 users | ✅ Ready | Formatted for SAGE Batch CSV Import |
+| `users_rows.csv` prepared with 301 users | ✅ Ready | Formatted for ASPIRE Batch CSV Import |
 | RLS disabled for development | ✅ Confirmed | Bypasses permission overhead during testing |
 
 ---
@@ -31,14 +31,14 @@ Phase 2: Clean Supabase Auth Users (keep admin.system@dyci.edu.ph)
 Phase 3: Seed academic_terms (1 active term for AY 2026-2027 1st Sem)
       │
       ▼
-Phase 4: Create block sections via SAGE Admin UI (/admin/sections)
+Phase 4: Create block sections via ASPIRE Admin UI (/admin/sections)
       │
       ▼
-Phase 5: Batch Import 301 Users via SAGE Admin UI (/admin/users)
+Phase 5: Batch Import 301 Users via ASPIRE Admin UI (/admin/users)
          (CSV → Supabase Auth + public.users via create-admin-user Edge Function)
       │
       ▼
-Phase 6: Seed subjects & grade computation templates via SAGE UI
+Phase 6: Seed subjects & grade computation templates via ASPIRE UI
       │
       ▼
 [System is operational — class records, enrollments, activities, and grades
@@ -63,7 +63,7 @@ Run the following SQL in your **Supabase SQL Editor**. This clears all operation
 BEGIN;
 
 -- 1. Wipe all grade, evaluation, and activity data (deepest dependencies first)
-TRUNCATE TABLE 
+TRUNCATE TABLE
     public.student_activity_scores,
     public.class_activities,
     public.posted_grades,
@@ -82,8 +82,8 @@ TRUNCATE TABLE
     RESTART IDENTITY CASCADE;
 
 -- 2. Wipe logs, insights, and request history
-TRUNCATE TABLE 
-    public.activity_logs, 
+TRUNCATE TABLE
+    public.activity_logs,
     public.class_faculty_log,
     public.notifications,
     public.student_academic_insights,
@@ -93,13 +93,13 @@ TRUNCATE TABLE
     RESTART IDENTITY CASCADE;
 
 -- 3. Wipe grading templates and academic structure
-TRUNCATE TABLE 
+TRUNCATE TABLE
     public.grade_computation_components,
     public.grade_computations
     RESTART IDENTITY CASCADE;
 
 -- 4. Wipe sections and academic terms (sections depend on departments, which we KEEP)
-TRUNCATE TABLE 
+TRUNCATE TABLE
     public.sections,
     public.academic_terms
     RESTART IDENTITY CASCADE;
@@ -108,7 +108,7 @@ TRUNCATE TABLE
 TRUNCATE TABLE public.subjects RESTART IDENTITY CASCADE;
 
 -- 6. Clear all user profiles EXCEPT the System Admin (to prevent admin lockout)
-DELETE FROM public.users 
+DELETE FROM public.users
 WHERE email NOT IN ('admin.system@dyci.edu.ph', 'admin@dyci.edu.ph');
 
 COMMIT;
@@ -145,7 +145,7 @@ RETURNING term_id;
 
 ---
 
-## Phase 4: Create Sections & Verify Departments (SAGE Admin UI)
+## Phase 4: Create Sections & Verify Departments (ASPIRE Admin UI)
 
 Before importing student users, their assigned sections must exist in the database.
 
@@ -156,9 +156,9 @@ Before importing student users, their assigned sections must exist in the databa
 
 ---
 
-## Phase 5: Batch Import Users via SAGE Admin Portal
+## Phase 5: Batch Import Users via ASPIRE Admin Portal
 
-SAGE includes a built-in **Batch CSV Import** engine in the Admin Portal. It reads your CSV file and calls the `create-admin-user` Supabase Edge Function to atomically create each account in **Supabase Auth** (`auth.users`) and populate their profile in **`public.users`**.
+ASPIRE includes a built-in **Batch CSV Import** engine in the Admin Portal. It reads your CSV file and calls the `create-admin-user` Supabase Edge Function to atomically create each account in **Supabase Auth** (`auth.users`) and populate their profile in **`public.users`**.
 
 ### 1. Required CSV Format (`users_rows.csv`)
 
@@ -176,9 +176,9 @@ Rivera,Amanda,Santos,a.rivera@dyci.edu.ph,faculty,College of Computer Studies,Ba
 Office,CCS,Staff,office@dyci.edu.ph,office,College of Computer Studies,,,,OFC-2026-00008
 ```
 
-### 2. Execution Steps in SAGE Admin UI
+### 2. Execution Steps in ASPIRE Admin UI
 
-1. Log in to SAGE as **System Admin** (`admin.system@dyci.edu.ph` / `DemoPassword123!`).
+1. Log in to ASPIRE as **System Admin** (`admin.system@dyci.edu.ph` / `DemoPassword123!`).
 2. Navigate to **User Management** (`/admin/users`).
 3. Click the **`[Import Users]`** (or **`[Batch CSV Import]`**) button in the top-right toolbar.
 4. Drag and drop your `users_rows.csv` file into the upload zone or paste the raw CSV content.
@@ -192,9 +192,9 @@ Office,CCS,Staff,office@dyci.edu.ph,office,College of Computer Studies,,,,OFC-20
 
 ---
 
-## Phase 6: Seed Subjects + Grade Computation Templates (SAGE UI)
+## Phase 6: Seed Subjects + Grade Computation Templates (ASPIRE UI)
 
-With all users, departments, terms, and sections populated, complete the operational setup through the SAGE web portals:
+With all users, departments, terms, and sections populated, complete the operational setup through the ASPIRE web portals:
 
 #### 1. Create Grade Computation Templates (Admin Portal)
 * **Path:** `/admin/gradecomputations`
@@ -246,11 +246,11 @@ Each college has its dedicated departmental office account. These accounts are *
 
 ## 📌 APPENDIX: LEGACY & UNUSED TABLES AUDIT
 
-The following tables exist in older SQL schema migrations but are **completely unused** by the current SAGE React codebase. You can safely ignore them during seeding:
+The following tables exist in older SQL schema migrations but are **completely unused** by the current ASPIRE React codebase. You can safely ignore them during seeding:
 
 ### 1. `public.grade_components` & `public.component_scores`
 * **Why they exist:** Originally designed for static grade component rows per class.
-* **Why unused now:** SAGE was refactored to use dynamic grading via **`public.class_activities`** (custom activities created by faculty) and **`public.student_activity_scores`** (scores per activity). The old static tables are obsolete.
+* **Why unused now:** ASPIRE was refactored to use dynamic grading via **`public.class_activities`** (custom activities created by faculty) and **`public.student_activity_scores`** (scores per activity). The old static tables are obsolete.
 
 ### 2. `public.class_faculty_log`
 * **Why it exists:** Created to fulfill FR30 (Faculty Reassignment Auditing).

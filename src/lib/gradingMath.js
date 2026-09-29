@@ -3,6 +3,413 @@
 // Institution: Dr. Yanga's Colleges, Inc. (DYCI)
 // =============================================================================
 
+const WEIGHT_TOLERANCE = 0.01;
+
+export const LEGACY_GRADING_COMPONENTS = Object.freeze([
+  Object.freeze({
+    key: 'class_standing',
+    name: 'Class Standing',
+    weight: 50,
+    maxScore: 100,
+    isMultiple: true
+  }),
+  Object.freeze({
+    key: 'character',
+    name: 'Character Rating',
+    weight: 10,
+    maxScore: 100,
+    isMultiple: false
+  }),
+  Object.freeze({
+    key: 'examination',
+    name: 'Major Examination',
+    weight: 40,
+    maxScore: 100,
+    isMultiple: false
+  })
+]);
+
+const toFiniteNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const createComponentKey = (component, index) => {
+  if (component.component_id || component.componentId) return component.component_id || component.componentId;
+  if (component.key) return component.key;
+
+  const nameKey = String(component.name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  return nameKey || `component_${index + 1}`;
+};
+
+/**
+ * Validates and normalizes a grading formula without assigning storage slots.
+ * Configured formulas fail closed when invalid. The legacy formula is used only
+ * when the subject has no assigned computation.
+ *
+ * @param {Array<Object>|null|undefined} components
+ * @param {Object} [options]
+ * @param {boolean} [options.formulaAssigned]
+ * @returns {{ok: boolean, source: 'configured'|'legacy'|'invalid', components: Array<Object>, totalWeight: number, error: string|null}}
+ */
+export function resolveGradingFormula(components, { formulaAssigned = Array.isArray(components) && components.length > 0 } = {}) {
+  if (!formulaAssigned) {
+    return {
+      ok: true,
+      source: 'legacy',
+      components: LEGACY_GRADING_COMPONENTS.map(component => ({ ...component })),
+      totalWeight: 100,
+      error: null
+    };
+  }
+
+  if (!Array.isArray(components) || components.length === 0) {
+    return {
+      ok: false,
+      source: 'invalid',
+      components: [],
+      totalWeight: 0,
+      error: 'The assigned grading formula has no components.'
+    };
+  }
+
+  const normalized = [];
+  const usedKeys = new Set();
+
+  for (let index = 0; index < components.length; index += 1) {
+    const component = components[index] || {};
+    const name = String(component.name || '').trim();
+    const weight = toFiniteNumber(component.weight);
+    const maxScore = toFiniteNumber(component.max_score ?? component.maxScore);
+    const key = createComponentKey(component, index);
+
+    if (!name) {
+      return {
+        ok: false,
+        source: 'invalid',
+        components: [],
+        totalWeight: 0,
+        error: `Grading component ${index + 1} has no name.`
+      };
+    }
+    if (weight === null || weight <= 0) {
+      return {
+        ok: false,
+        source: 'invalid',
+        components: [],
+        totalWeight: 0,
+        error: `Grading component "${name}" has an invalid weight.`
+      };
+    }
+    if (maxScore === null || maxScore <= 0) {
+      return {
+        ok: false,
+        source: 'invalid',
+        components: [],
+        totalWeight: 0,
+        error: `Grading component "${name}" has an invalid maximum score.`
+      };
+    }
+    if (usedKeys.has(key)) {
+      return {
+        ok: false,
+        source: 'invalid',
+        components: [],
+        totalWeight: 0,
+        error: `Grading component key "${key}" is duplicated.`
+      };
+    }
+
+    usedKeys.add(key);
+    normalized.push({
+      componentId: component.component_id || component.componentId || null,
+      key,
+      name,
+      weight,
+      maxScore,
+      isMultiple: Boolean(component.is_multiple ?? component.isMultiple)
+    });
+  }
+
+  const totalWeight = normalized.reduce((sum, component) => sum + component.weight, 0);
+  if (Math.abs(totalWeight - 100) > WEIGHT_TOLERANCE) {
+    return {
+      ok: false,
+      source: 'invalid',
+      components: normalized,
+      totalWeight,
+      error: `The assigned grading formula totals ${totalWeight}% instead of 100%.`
+    };
+  }
+
+  return {
+    ok: true,
+    source: 'configured',
+    components: normalized,
+    totalWeight,
+    error: null
+  };
+}
+
+const getStoredActivityScore = (termScores, activity, index, { allowLegacyFallback = true } = {}) => {
+  const candidateKeys = [
+    activity?.id,
+    activity?.dbId,
+    activity?.activity_id,
+    ...(allowLegacyFallback ? [activity?.slotKey, `act${index + 1}`] : [])
+  ].filter(Boolean);
+
+  for (const key of candidateKeys) {
+    if (termScores[key] !== undefined && termScores[key] !== null && termScores[key] !== '') {
+      return termScores[key];
+    }
+  }
+  return null;
+};
+
+/**
+ * Compatibility adapter for the current score-sheet storage model. It maps
+ * granular activities and the legacy char/exam slots into generic component
+ * scores, then delegates the arithmetic to calculateWeightedTermRating.
+ * Multi-bucket formulas require every activity to carry a component identity.
+ */
+export function calculateStoredTermRating({
+  formula,
+  termScores = {},
+  maxItems = {},
+  activities = []
+}) {
+  if (!formula?.ok) {
+    return calculateWeightedTermRating({ formula, componentScores: {} });
+  }
+
+  const multipleComponents = formula.components.filter(component => component.isMultiple);
+  const singleComponents = formula.components.filter(component => !component.isMultiple);
+  const configuredActivities = (activities || []).filter(activity =>
+    activity && (activity.dbId || activity.activity_id || activity.name)
+  );
+  const componentScores = {};
+
+  if (multipleComponents.length > 1) {
+    const componentIds = new Set(
+      multipleComponents.map(component => component.componentId).filter(Boolean)
+    );
+    const uncategorized = configuredActivities.filter(activity => {
+      const componentId = activity.componentId || activity.component_id;
+      return !componentId || !componentIds.has(componentId);
+    });
+
+    if (
+      multipleComponents.some(component => !component.componentId)
+      || configuredActivities.length === 0
+      || uncategorized.length > 0
+    ) {
+      return {
+        ok: false,
+        rating: null,
+        rawRating: null,
+        hasData: false,
+        isComplete: false,
+        contributions: [],
+        missingComponents: [],
+        error: 'This grading formula has multiple activity buckets. Categorize every activity before grades can be calculated or posted.'
+      };
+    }
+
+    multipleComponents.forEach(component => {
+      const matchingActivities = configuredActivities.filter(activity =>
+        (activity.componentId || activity.component_id) === component.componentId
+      );
+      componentScores[component.key] = matchingActivities.map((activity, index) => ({
+        score: getStoredActivityScore(termScores, activity, index, { allowLegacyFallback: false }),
+        maxScore: activity.max ?? activity.max_score ?? component.maxScore
+      }));
+    });
+    if (multipleComponents.some(component => componentScores[component.key].length === 0)) {
+      return {
+        ok: false,
+        rating: null,
+        rawRating: null,
+        hasData: false,
+        isComplete: false,
+        contributions: [],
+        missingComponents: [],
+        error: 'Every repeatable grading component needs at least one categorized activity before grades can be posted.'
+      };
+    }
+  } else if (multipleComponents.length === 1) {
+    const component = multipleComponents[0];
+    if (configuredActivities.length > 0) {
+      componentScores[component.key] = configuredActivities.map((activity, index) => ({
+        score: getStoredActivityScore(termScores, activity, index),
+        maxScore: activity.max ?? activity.max_score ?? maxItems[`act${index + 1}`] ?? component.maxScore
+      }));
+    } else {
+      componentScores[component.key] = [1, 2, 3, 4, 5, 6].map(index => ({
+        score: termScores[`act${index}`],
+        maxScore: maxItems[`act${index}`] ?? component.maxScore
+      }));
+    }
+  }
+
+  const characterComponents = singleComponents.filter(component => /character/i.test(component.name));
+  const remainingSingleComponents = singleComponents.filter(component => !characterComponents.includes(component));
+
+  if (characterComponents.length > 1 || remainingSingleComponents.length > 1) {
+    return {
+      ok: false,
+      rating: null,
+      rawRating: null,
+      hasData: false,
+      isComplete: false,
+      contributions: [],
+      missingComponents: [],
+      error: 'The current score sheet cannot map this formula’s non-repeatable components safely.'
+    };
+  }
+
+  if (characterComponents.length === 1) {
+    const component = characterComponents[0];
+    componentScores[component.key] = {
+      score: termScores.char ?? termScores.char_rating,
+      maxScore: maxItems.char ?? component.maxScore
+    };
+  }
+
+  if (remainingSingleComponents.length === 1) {
+    const component = remainingSingleComponents[0];
+    componentScores[component.key] = {
+      score: termScores.exam,
+      maxScore: maxItems.exam ?? component.maxScore
+    };
+  }
+
+  return calculateWeightedTermRating({ formula, componentScores });
+}
+
+export function createGradingFormulaSnapshot(formula, { computationId = null } = {}) {
+  if (!formula?.ok) return null;
+  return {
+    version: 1,
+    computationId,
+    source: formula.source,
+    totalWeight: formula.totalWeight,
+    components: formula.components.map(component => ({ ...component }))
+  };
+}
+
+export function getGradingStoragePresentation(formula) {
+  const components = formula?.ok ? formula.components : LEGACY_GRADING_COMPONENTS;
+  const repeatableComponents = components.filter(component => component.isMultiple);
+  const characterComponent = components.find(component => !component.isMultiple && /character/i.test(component.name));
+  const primarySingleComponent = components.find(component => !component.isMultiple && component !== characterComponent);
+
+  return {
+    activityLabel: repeatableComponents.length === 1
+      ? repeatableComponents[0].name
+      : 'Categorized Activities',
+    activityWeight: repeatableComponents.reduce((sum, component) => sum + component.weight, 0),
+    hasMultipleActivityBuckets: repeatableComponents.length > 1,
+    hasCharacter: Boolean(characterComponent),
+    characterLabel: characterComponent?.name || 'Character Rating',
+    characterWeight: characterComponent?.weight || 0,
+    examLabel: primarySingleComponent?.name || 'Examination',
+    examWeight: primarySingleComponent?.weight || 0
+  };
+}
+
+const normalizeScoreItems = (rawValue, component) => {
+  if (Array.isArray(rawValue)) return rawValue;
+  if (rawValue && typeof rawValue === 'object') {
+    if (Array.isArray(rawValue.items)) return rawValue.items;
+    return [rawValue];
+  }
+  if (rawValue === null || rawValue === undefined || rawValue === '') return [];
+  return [{ score: rawValue, maxScore: component.maxScore }];
+};
+
+/**
+ * Calculates one term rating from normalized formula components. Scores are
+ * keyed by the resolved component key. A score can be a scalar, one
+ * `{ score, maxScore }` object, or an array of those objects for repeatable
+ * components.
+ *
+ * @param {Object} params
+ * @param {ReturnType<typeof resolveGradingFormula>} params.formula
+ * @param {Object<string, number|Object|Array<Object>>} params.componentScores
+ * @returns {{ok: boolean, rating: number|null, rawRating: number|null, hasData: boolean, isComplete: boolean, contributions: Array<Object>, missingComponents: Array<string>, error: string|null}}
+ */
+export function calculateWeightedTermRating({ formula, componentScores = {} }) {
+  if (!formula?.ok) {
+    return {
+      ok: false,
+      rating: null,
+      rawRating: null,
+      hasData: false,
+      isComplete: false,
+      contributions: [],
+      missingComponents: [],
+      error: formula?.error || 'A valid grading formula is required.'
+    };
+  }
+
+  const contributions = formula.components.map(component => {
+    const items = normalizeScoreItems(componentScores[component.key], component);
+    let earned = 0;
+    let possible = 0;
+    let hasData = false;
+
+    items.forEach(item => {
+      const score = toFiniteNumber(item?.score ?? item?.earned ?? item?.value);
+      const maxScore = toFiniteNumber(item?.maxScore ?? item?.max_score ?? component.maxScore);
+      if (score === null || maxScore === null || maxScore <= 0) return;
+
+      hasData = true;
+      earned += Math.max(0, score);
+      possible += maxScore;
+    });
+
+    const percentage = hasData && possible > 0
+      ? Math.min(100, Math.max(0, (earned / possible) * 100))
+      : 0;
+    const contribution = (percentage / 100) * component.weight;
+
+    return {
+      ...component,
+      earned,
+      possible,
+      percentage,
+      contribution,
+      hasData
+    };
+  });
+
+  const hasData = contributions.some(component => component.hasData);
+  const missingComponents = contributions
+    .filter(component => !component.hasData)
+    .map(component => component.name);
+  const rawRating = hasData
+    ? contributions.reduce((sum, component) => sum + component.contribution, 0)
+    : null;
+
+  return {
+    ok: true,
+    rating: rawRating === null ? null : Math.min(100, Math.max(0, Math.round(rawRating))),
+    rawRating,
+    hasData,
+    isComplete: missingComponents.length === 0,
+    contributions,
+    missingComponents,
+    error: null
+  };
+}
+
 /**
  * Transmutes a 0-100 numerical rating to the official DYCI GWA scale (1.00 - 5.00).
  * @param {number|null} score - Raw or computed term/semestral score (0-100)

@@ -1,4 +1,10 @@
-import { getTransmutedGrade } from '../../lib/gradingMath';
+import {
+  calculateSemestralGrade,
+  calculateStoredTermRating,
+  createGradingFormulaSnapshot,
+  getTransmutedGrade,
+  resolveGradingFormula
+} from '../../lib/gradingMath';
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
@@ -35,6 +41,11 @@ import { TableSkeleton } from '../../components/common/Skeleton';
 import { triggerExcelExport } from '../../lib/excelExport';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
+import {
+  GRADE_MILESTONES,
+  getCanonicalGradePeriod,
+  getMilestoneForPostingTarget
+} from '../../lib/gradeMilestones';
 
 export default function GradeComputationPreview() {
   const navigate = useNavigate();
@@ -74,8 +85,28 @@ export default function GradeComputationPreview() {
     'Semi-Final': { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 },
     Final: { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 }
   });
+  const [activities, setActivities] = useState({
+    Prelim: [],
+    Midterm: [],
+    'Semi-Final': [],
+    Final: []
+  });
 
   const isSummer = classInfo?.sections?.semester === 'Summer' || classInfo?.semester === 'Summer';
+  const gradingFormula = useMemo(() => {
+    const snapshot = classInfo?.grading_formula_snapshot;
+    const configuredComponents = snapshot?.components
+      || classInfo?.subjects?.grade_computations?.grade_computation_components
+      || null;
+    return resolveGradingFormula(configuredComponents, {
+      formulaAssigned: Boolean(snapshot || classInfo?.subjects?.computation_id)
+    });
+  }, [classInfo]);
+  const gradingFormulaSnapshot = useMemo(() => createGradingFormulaSnapshot(gradingFormula, {
+    computationId: classInfo?.grading_formula_snapshot?.computationId
+      || classInfo?.subjects?.computation_id
+      || null
+  }), [gradingFormula, classInfo]);
 
   // Escape key closes fullscreen
   useEffect(() => {
@@ -173,15 +204,27 @@ export default function GradeComputationPreview() {
             status,
             school_year,
             semester,
+            grading_formula_snapshot,
             subject_id,
             section_id,
-            subjects ( code, name, units, departments ( name ) ),
+            subjects ( code, name, units, computation_id, departments ( name ) ),
             sections ( name )
           `)
           .eq('class_record_id', classRecordId)
           .single();
 
         if (crErr) throw crErr;
+
+        if (cr?.subjects?.computation_id && !cr.grading_formula_snapshot) {
+          const { data: compData, error: compErr } = await supabase
+            .from('grade_computations')
+            .select('name, description, grade_computation_components ( * )')
+            .eq('computation_id', cr.subjects.computation_id)
+            .maybeSingle();
+
+          if (compErr) throw compErr;
+          if (compData) cr.subjects.grade_computations = compData;
+        }
         setClassInfo(cr);
 
         // 2. Fetch enrolled students
@@ -249,7 +292,31 @@ export default function GradeComputationPreview() {
         }
         setMaxItems(newMax);
 
-        // 4. Fetch saved term scores from Supabase
+        // 4. Fetch granular activities so preview and direct posting use the
+        // same score identities and component categories.
+        const { data: dbActs, error: activitiesErr } = await supabase
+          .from('class_activities')
+          .select('*')
+          .eq('class_record_id', classRecordId)
+          .order('created_at', { ascending: true });
+
+        if (activitiesErr) throw activitiesErr;
+        const loadedActivities = { Prelim: [], Midterm: [], 'Semi-Final': [], Final: [] };
+        (dbActs || []).forEach(activity => {
+          if (!loadedActivities[activity.term]) return;
+          const termIndex = loadedActivities[activity.term].length;
+          loadedActivities[activity.term].push({
+            id: activity.activity_id,
+            dbId: activity.activity_id,
+            slotKey: `act${termIndex + 1}`,
+            name: activity.name || activity.title || '',
+            max: parseFloat(activity.max_score) || 20,
+            componentId: activity.component_id || null
+          });
+        });
+        setActivities(loadedActivities);
+
+        // 5. Fetch saved term scores from Supabase
         const { data: savedScores } = await supabase
           .from('student_term_scores')
           .select('*')
@@ -277,7 +344,31 @@ export default function GradeComputationPreview() {
           };
         });
 
-        // 5. Fetch actual absences count from Supabase to sync
+        const activityIds = (dbActs || []).map(activity => activity.activity_id);
+        if (activityIds.length > 0) {
+          const { data: granularScores, error: granularErr } = await supabase
+            .from('student_activity_scores')
+            .select('student_id, activity_id, score')
+            .in('activity_id', activityIds);
+
+          if (granularErr) throw granularErr;
+          const activityTerms = new Map((dbActs || []).map(activity => [activity.activity_id, activity.term]));
+          (granularScores || []).forEach(scoreRow => {
+            const term = activityTerms.get(scoreRow.activity_id);
+            if (!term) return;
+            if (!scoresByStudent[scoreRow.student_id]) {
+              scoresByStudent[scoreRow.student_id] = {
+                Prelim: {},
+                Midterm: {},
+                'Semi-Final': {},
+                Final: {}
+              };
+            }
+            scoresByStudent[scoreRow.student_id][term][scoreRow.activity_id] = scoreRow.score;
+          });
+        }
+
+        // 6. Fetch actual absences count from Supabase to sync
         const { data: absenceData } = await supabase
           .from('attendance_records')
           .select('student_id')
@@ -291,26 +382,41 @@ export default function GradeComputationPreview() {
           });
         }
 
-        // 6. Fetch locked milestones / posted grades
+        // 7. Fetch locked milestones / posted grades
         const { data: pgData } = await supabase
           .from('posted_grades')
           .select('*')
-          .eq('class_record_id', classRecordId)
-          .eq('grade_period', 'final');
+          .eq('class_record_id', classRecordId);
 
-        const lockedList = [];
+        const lockedSet = new Set();
         const customRemarksMap = {};
         const remarksNoteMap = {};
         if (pgData && pgData.length > 0) {
-          if (pgData[0].is_locked) {
-            lockedList.push('Semestral Grade');
-          }
           pgData.forEach(row => {
-            customRemarksMap[row.student_id] = row.remarks;
-            remarksNoteMap[row.student_id] = row.remarks_note;
+            const canonicalPeriod = getCanonicalGradePeriod(row);
+            if (canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE) {
+              customRemarksMap[row.student_id] = row.remarks;
+              remarksNoteMap[row.student_id] = row.remarks_note;
+            }
+            if (!row.is_locked) return;
+            if (canonicalPeriod === GRADE_MILESTONES.MIDTERM_RATING) {
+              lockedSet.add('Prelim');
+              lockedSet.add('Midterm');
+              lockedSet.add('Midterm Rating');
+            }
+            if (
+              canonicalPeriod === GRADE_MILESTONES.TENTATIVE_FINAL_RATING
+              || canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE
+            ) {
+              lockedSet.add('Final');
+              lockedSet.add(canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE
+                ? 'Semestral Grade'
+                : 'Tentative Final Rating');
+            }
+            (row.locked_milestones || []).forEach(milestone => lockedSet.add(milestone));
           });
         }
-        setLockedMilestones(lockedList);
+        setLockedMilestones(Array.from(lockedSet));
 
         // Compile complete student datasets
         const compiled = studentList.map(student => {
@@ -349,33 +455,28 @@ export default function GradeComputationPreview() {
   // Compute live term ratings, GWA, and statuses for every student
   const computedStudents = useMemo(() => {
     return students.map(student => {
-      const getTermRating = (termName) => {
-        const tSc = student.periods?.[termName] || {};
-        const tMx = maxItems[termName] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
-        const tCs = (tSc.act1 || 0) + (tSc.act2 || 0) + (tSc.act3 || 0) + (tSc.act4 || 0) + (tSc.act5 || 0) + (tSc.act6 || 0);
-        const tCsMx = tMx.act1 + tMx.act2 + tMx.act3 + tMx.act4 + tMx.act5 + tMx.act6;
-        const tCsP = tCsMx > 0 ? (tCs / tCsMx) * 50 : 0;
-        const tChP = (tSc.char || 0) * 0.1;
-        const tExP = tMx.exam > 0 ? ((tSc.exam || 0) / tMx.exam) * 40 : 0;
-        return Math.min(100, Math.max(0, Math.round(tCsP + tChP + tExP)));
-      };
-
-      const pRate = getTermRating('Prelim');
-      const mRate = getTermRating('Midterm');
-      const sfRate = getTermRating('Semi-Final');
-      const fRate = getTermRating('Final');
-
-      // DYCI Milestone Math
-      let mr, tfr, sg;
-      if (isSummer) {
-        mr = mRate;
-        tfr = fRate;
-        sg = Math.round((mr + tfr) / 2);
-      } else {
-        mr = Math.round((pRate + mRate) / 2);
-        tfr = Math.round((sfRate + fRate) / 2);
-        sg = Math.round((mr + tfr) / 2);
-      }
+      const termResults = Object.fromEntries(['Prelim', 'Midterm', 'Semi-Final', 'Final'].map(termName => [
+        termName,
+        calculateStoredTermRating({
+          formula: gradingFormula,
+          termScores: student.periods?.[termName] || {},
+          maxItems: maxItems[termName] || {},
+          activities: activities[termName] || []
+        })
+      ]));
+      const pRate = termResults.Prelim.rating ?? 0;
+      const mRate = termResults.Midterm.rating ?? 0;
+      const sfRate = termResults['Semi-Final'].rating ?? 0;
+      const fRate = termResults.Final.rating ?? 0;
+      const semesterResult = calculateSemestralGrade({
+        prelim: termResults.Prelim.rating,
+        midterm: termResults.Midterm.rating,
+        semiFinal: termResults['Semi-Final'].rating,
+        final: termResults.Final.rating,
+        isSummer
+      });
+      const { mr, tfr, sg } = semesterResult;
+      const calculationError = Object.values(termResults).find(result => !result.ok)?.error || null;
 
 
       // Check for missing component marks per student (per USER_JOURNEY_FLOW S31 scope)
@@ -424,10 +525,12 @@ export default function GradeComputationPreview() {
         isMidtermMissing,
         isSemiFinalMissing,
         isFinalMissing,
-        hasMissingComponents
+        hasMissingComponents,
+        calculationError,
+        termResults
       };
     });
-  }, [students, maxItems, isSummer]);
+  }, [students, maxItems, activities, gradingFormula, isSummer]);
 
   // Aggregate executive metrics & distribution tiers
   const stats = useMemo(() => {
@@ -520,22 +623,47 @@ export default function GradeComputationPreview() {
 
   const handlePostGrades = async (targetMilestone = 'semestral') => {
     if (!classRecordId || computedStudents.length === 0) return;
+    if (!gradingFormula.ok) {
+      alert(`Grades cannot be posted: ${gradingFormula.error}`);
+      return;
+    }
+    const calculationFailure = computedStudents.find(student => student.calculationError);
+    if (calculationFailure) {
+      alert(`Grades cannot be posted for ${calculationFailure.name}: ${calculationFailure.calculationError}`);
+      return;
+    }
+    const requiredTerms = targetMilestone === 'midterm'
+      ? (isSummer ? ['Midterm'] : ['Prelim', 'Midterm'])
+      : targetMilestone === 'tfr'
+        ? (isSummer ? ['Final'] : ['Semi-Final', 'Final'])
+        : (isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final']);
+    const incompleteStudent = computedStudents.find(student => requiredTerms.some(term => {
+      const result = student.termResults[term];
+      return !result.ok || !result.hasData || !result.isComplete;
+    }));
+    if (incompleteStudent) {
+      const incompleteTerm = requiredTerms.find(term => {
+        const result = incompleteStudent.termResults[term];
+        return !result.ok || !result.hasData || !result.isComplete;
+      });
+      const result = incompleteStudent.termResults[incompleteTerm];
+      const missing = result.missingComponents?.join(', ');
+      alert(`Grades cannot be posted for ${incompleteStudent.name}: ${result.error || (missing ? `Missing ${incompleteTerm} components: ${missing}.` : `No scores are encoded for ${incompleteTerm}.`)}`);
+      return;
+    }
     setPostingGrades(true);
     try {
-      let periodParam = 'final';
+      let periodParam = getMilestoneForPostingTarget(targetMilestone);
       let termNotificationName = 'Official Semestral Grade (SG)';
       let newMilestoneLock = 'Semestral Grade';
 
       if (targetMilestone === 'midterm') {
-        periodParam = 'midterm';
         termNotificationName = isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)';
         newMilestoneLock = 'Midterm Rating';
       } else if (targetMilestone === 'tfr') {
-        periodParam = 'final';
         termNotificationName = isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)';
         newMilestoneLock = 'Tentative Final Rating';
       } else {
-        periodParam = 'final';
         termNotificationName = 'Official Semestral Grade (SG)';
         newMilestoneLock = 'Semestral Grade';
       }
@@ -576,6 +704,16 @@ export default function GradeComputationPreview() {
       ]));
 
       const changedStudentIds = [];
+
+      if (!classInfo?.grading_formula_snapshot && gradingFormulaSnapshot) {
+        const { error: snapshotErr } = await supabase
+          .from('class_records')
+          .update({ grading_formula_snapshot: gradingFormulaSnapshot })
+          .eq('class_record_id', classRecordId)
+          .is('grading_formula_snapshot', null);
+
+        if (snapshotErr) throw snapshotErr;
+      }
 
       const postRows = computedStudents.map(stud => {
         const remarksLabel = mapRemarkToDb(stud.remarks);
@@ -623,7 +761,8 @@ export default function GradeComputationPreview() {
           posted_by: user.id,
           posted_at: new Date().toISOString(),
           is_locked: true,
-          locked_milestones: updatedLockedMilestones
+          locked_milestones: updatedLockedMilestones,
+          grading_formula_snapshot: gradingFormulaSnapshot
         };
       });
 
@@ -702,7 +841,12 @@ export default function GradeComputationPreview() {
       ...exportMetadata
     };
 
-    triggerExcelExport(metadata, computedStudents, selectedTab);
+    triggerExcelExport(metadata, computedStudents, selectedTab, {
+      formula: gradingFormula,
+      activities,
+      maxItems,
+      isSummer
+    });
   };
 
   const handleExportPdf = (selectedTab) => {
@@ -2048,6 +2192,9 @@ export default function GradeComputationPreview() {
           classInfo={classInfo}
           students={computedStudents}
           maxItems={maxItems}
+          activities={activities}
+          gradingFormula={gradingFormula}
+          isSummer={isSummer}
           metadata={exportMetadata}
           onMetadataChange={(updated) => setExportMetadata(prev => ({ ...prev, ...updated }))}
           onExportExcel={handleExportExcel}

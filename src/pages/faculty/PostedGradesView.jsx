@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import StudentRow from '../../components/StudentRow';
@@ -29,6 +29,15 @@ import { notifyUnlockRequested, notifyOverrideRequested } from '../../lib/notifi
 import { triggerExcelExport } from '../../lib/excelExport';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
+import {
+  getGradingStoragePresentation,
+  resolveGradingFormula
+} from '../../lib/gradingMath';
+import {
+  GRADE_MILESTONES,
+  getCanonicalGradePeriod,
+  findPostedMilestone
+} from '../../lib/gradeMilestones';
 
 export default function PostedGradesView() {
   const navigate = useNavigate();
@@ -48,6 +57,19 @@ export default function PostedGradesView() {
   
   const isSummer = classInfo?.semester === 'Summer';
   const periodsList = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+  const gradingFormula = useMemo(() => {
+    const snapshot = classInfo?.grading_formula_snapshot;
+    const configuredComponents = snapshot?.components
+      || classInfo?.subjects?.grade_computations?.grade_computation_components
+      || null;
+    return resolveGradingFormula(configuredComponents, {
+      formulaAssigned: Boolean(snapshot || classInfo?.subjects?.computation_id)
+    });
+  }, [classInfo]);
+  const gradingPresentation = useMemo(
+    () => getGradingStoragePresentation(gradingFormula),
+    [gradingFormula]
+  );
 
   const [activities, setActivities] = useState({
     Prelim: [
@@ -210,7 +232,12 @@ export default function PostedGradesView() {
       ...exportMetadata
     };
 
-    triggerExcelExport(metadata, studentsWithGrades, selectedTab);
+    triggerExcelExport(metadata, studentsWithGrades, selectedTab, {
+      formula: gradingFormula,
+      activities,
+      maxItems,
+      isSummer
+    });
   };
 
   const handleExportPdf = (selectedTab) => {
@@ -365,6 +392,7 @@ export default function PostedGradesView() {
             status,
             school_year,
             semester,
+            grading_formula_snapshot,
             subject_id,
             section_id,
             subjects ( 
@@ -382,7 +410,7 @@ export default function PostedGradesView() {
         if (crErr) throw crErr;
 
         // Fetch computation template separately if subject has computation_id
-        if (cr?.subjects?.computation_id) {
+        if (cr?.subjects?.computation_id && !cr?.grading_formula_snapshot) {
           try {
             const { data: compData } = await supabase
               .from('grade_computations')
@@ -479,6 +507,7 @@ export default function PostedGradesView() {
         }
         
         // Fetch dynamic custom activities from Supabase class_activities table
+        let fetchedDbActs = [];
         try {
           const { data: dbActs } = await supabase
             .from('class_activities')
@@ -487,6 +516,7 @@ export default function PostedGradesView() {
             .order('created_at', { ascending: true });
 
           if (dbActs && dbActs.length > 0) {
+            fetchedDbActs = dbActs;
             const loadedActivities = { Prelim: [], Midterm: [], 'Semi-Final': [], Final: [] };
             const isSummer = cr.semester === 'Summer';
             const periodsList = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
@@ -495,8 +525,10 @@ export default function PostedGradesView() {
               if (termActs.length > 0) {
                 loadedActivities[t] = termActs.map(a => ({
                   id: a.activity_id,
+                  dbId: a.activity_id,
                   name: a.name,
-                  max: parseFloat(a.max_score) || 20
+                  max: parseFloat(a.max_score) || 20,
+                  componentId: a.component_id || null
                 }));
               } else if (dynamicComps.length > 0) {
                 loadedActivities[t] = dynamicComps.map((c, index) => ({
@@ -561,6 +593,30 @@ export default function PostedGradesView() {
           };
         });
 
+        if (fetchedDbActs.length > 0) {
+          const activityIds = fetchedDbActs.map(activity => activity.activity_id);
+          const { data: granularScores } = await supabase
+            .from('student_activity_scores')
+            .select('student_id, activity_id, score')
+            .in('activity_id', activityIds);
+
+          const activityTerms = new Map(
+            fetchedDbActs.map(activity => [activity.activity_id, activity.term])
+          );
+          (granularScores || []).forEach(row => {
+            const term = activityTerms.get(row.activity_id);
+            if (!term) return;
+            if (!scoresByStudent[row.student_id]) {
+              scoresByStudent[row.student_id] = {
+                Prelim: {}, Midterm: {}, 'Semi-Final': {}, Final: {},
+                customRemarks: '', remarksNote: ''
+              };
+            }
+            scoresByStudent[row.student_id][term] ||= {};
+            scoresByStudent[row.student_id][term][row.activity_id] = Number(row.score) || 0;
+          });
+        }
+
         // 5. Fetch posted grades to check customRemarks/overrides and locked milestones
         const { data: pgData } = await supabase
           .from('posted_grades')
@@ -580,13 +636,22 @@ export default function PostedGradesView() {
               remarksNote: ''
             };
           }
-          if (row.grade_period === 'final') {
+          const canonicalPeriod = getCanonicalGradePeriod(row);
+          if (canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE) {
             scoresByStudent[row.student_id].customRemarks = row.remarks === 'passed' ? 'Passed' : row.remarks === 'failed' ? 'Failed' : row.remarks.toUpperCase();
             scoresByStudent[row.student_id].remarksNote = row.remarks_note || '';
           }
 
           if (row.is_locked) {
-            if (row.grade_period === 'final') {
+            if (canonicalPeriod === GRADE_MILESTONES.MIDTERM_RATING) {
+              locked.add('Prelim');
+              locked.add('Midterm');
+              locked.add('Midterm Rating');
+            }
+            if (
+              canonicalPeriod === GRADE_MILESTONES.TENTATIVE_FINAL_RATING
+              || canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE
+            ) {
               locked.add('Final');
               locked.add('Semestral Grade');
             }
@@ -596,6 +661,15 @@ export default function PostedGradesView() {
                 if (norm === 'final' || norm === 'semestral grade' || norm === 'semestral_grade') {
                   locked.add('Final');
                   locked.add('Semestral Grade');
+                }
+                if (norm === 'prelim' || norm === 'midterm' || norm === 'midterm rating' || norm === 'midterm_rating') {
+                  locked.add('Prelim');
+                  locked.add('Midterm');
+                  locked.add('Midterm Rating');
+                }
+                if (norm === 'semi-final' || norm === 'semi_final' || norm === 'tentative final rating' || norm === 'tentative_final_rating') {
+                  locked.add('Semi-Final');
+                  locked.add('Tentative Final Rating');
                 }
               });
             }
@@ -652,7 +726,10 @@ export default function PostedGradesView() {
 
         const compiled = studentList.map(stud => {
           const dbData = scoresByStudent[stud.id] || {};
-          const pgRow = (pgData || []).find(r => r.student_id === stud.id && r.grade_period === 'final');
+          const pgRow = findPostedMilestone(
+            (pgData || []).filter(row => row.student_id === stud.id),
+            GRADE_MILESTONES.SEMESTRAL_GRADE
+          );
           return {
             ...stud,
             customRemarks: dbData.customRemarks || '',
@@ -1070,19 +1147,19 @@ export default function PostedGradesView() {
                             <th rowSpan={2} className="px-2 py-3 border-r border-slate-200 w-24 sticky left-[40px] bg-slate-50 z-30">Student No.</th>
                             <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-[136px] bg-slate-50 border-r border-slate-200 z-30 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
                             {(viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch') && (
-                              <th colSpan={(activities.Prelim?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
+                              <th colSpan={(activities.Prelim?.length || 0) + (gradingPresentation.hasCharacter ? 6 : 5)} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
                             )}
                             {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch') && (
-                              <th colSpan={(activities.Midterm?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">MIDTERM GRADE</th>
+                              <th colSpan={(activities.Midterm?.length || 0) + (gradingPresentation.hasCharacter ? 6 : 5)} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">MIDTERM GRADE</th>
                             )}
                             {(viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch' || viewMode === 'Summary') && (
                               <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-indigo-100 text-indigo-950 font-bold uppercase tracking-wider w-16">Midterm Rating (MR)</th>
                             )}
                             {(viewMode === 'All' || viewMode === 'Semi-Final' || viewMode === 'FinalBatch') && (
-                              <th colSpan={(activities['Semi-Final']?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-amber-50 text-amber-850">SEMI-FINAL GRADE</th>
+                              <th colSpan={(activities['Semi-Final']?.length || 0) + (gradingPresentation.hasCharacter ? 6 : 5)} className="px-4 py-2 border-r border-slate-200 bg-amber-50 text-amber-850">SEMI-FINAL GRADE</th>
                             )}
                             {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch') && (
-                              <th colSpan={(activities.Final?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-orange-50 text-orange-850">FINAL GRADE</th>
+                              <th colSpan={(activities.Final?.length || 0) + (gradingPresentation.hasCharacter ? 6 : 5)} className="px-4 py-2 border-r border-slate-200 bg-orange-50 text-orange-850">FINAL GRADE</th>
                             )}
                             {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch' || viewMode === 'Summary') && (
                               <th rowSpan={2} className="px-3 py-3 border-r border-slate-200 bg-orange-100 text-orange-955 font-bold uppercase tracking-wider w-16">Tentative Final Rating (TFR)</th>
@@ -1106,8 +1183,10 @@ export default function PostedGradesView() {
                                 ))}
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                {gradingPresentation.hasCharacter && (
+                                  <th className="px-1.5 py-1.5 border-r border-slate-100 w-16" title={gradingPresentation.characterLabel}>{gradingPresentation.characterLabel}</th>
+                                )}
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12" title={gradingPresentation.examLabel}>{gradingPresentation.examLabel}</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-sky-100/30 font-bold w-14 text-slate-800">Rating</th>
                               </>
@@ -1120,8 +1199,10 @@ export default function PostedGradesView() {
                                 ))}
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                {gradingPresentation.hasCharacter && (
+                                  <th className="px-1.5 py-1.5 border-r border-slate-100 w-16" title={gradingPresentation.characterLabel}>{gradingPresentation.characterLabel}</th>
+                                )}
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12" title={gradingPresentation.examLabel}>{gradingPresentation.examLabel}</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-indigo-100/30 font-bold w-14 text-slate-800">Rating</th>
                               </>
@@ -1134,8 +1215,10 @@ export default function PostedGradesView() {
                                 ))}
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                {gradingPresentation.hasCharacter && (
+                                  <th className="px-1.5 py-1.5 border-r border-slate-100 w-16" title={gradingPresentation.characterLabel}>{gradingPresentation.characterLabel}</th>
+                                )}
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12" title={gradingPresentation.examLabel}>{gradingPresentation.examLabel}</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-amber-100/30 font-bold w-14 text-slate-800">Rating</th>
                               </>
@@ -1148,8 +1231,10 @@ export default function PostedGradesView() {
                                 ))}
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12">Exam</th>
+                                {gradingPresentation.hasCharacter && (
+                                  <th className="px-1.5 py-1.5 border-r border-slate-100 w-16" title={gradingPresentation.characterLabel}>{gradingPresentation.characterLabel}</th>
+                                )}
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-12" title={gradingPresentation.examLabel}>{gradingPresentation.examLabel}</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-orange-100/30 font-bold w-14 text-slate-800">Rating</th>
                               </>
@@ -1173,6 +1258,8 @@ export default function PostedGradesView() {
                               classCode={classRecordId}
                               maxItems={maxItems}
                               activities={activities}
+                              gradingFormula={gradingFormula}
+                              showCharacter={gradingPresentation.hasCharacter}
                               viewMode={viewMode}
                               periodsList={periodsList}
                               lockedMilestones={lockedMilestones}
@@ -1325,6 +1412,9 @@ export default function PostedGradesView() {
         classInfo={classInfo}
         students={compileStudentsWithGrades()}
         maxItems={maxItems}
+        activities={activities}
+        gradingFormula={gradingFormula}
+        isSummer={isSummer}
         metadata={exportMetadata}
         onMetadataChange={(updated) => setExportMetadata(prev => ({ ...prev, ...updated }))}
         onExportExcel={handleExportExcel}

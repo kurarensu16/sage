@@ -1,14 +1,14 @@
-# SAGE Implementation Plan: Chapter 1 & 2 Alignment
+# ASPIRE Implementation Plan: Chapter 1 & 2 Alignment
 
-**Target Repository**: `c:\Users\sadia\SAGE`  
-**Reference Document**: `Chapter12_With_Diagrams.docx`  
-**Date**: August 5, 2026  
+**Target Repository**: `<repository-root>`
+**Reference Document**: `Chapter12_With_Diagrams.docx`
+**Date**: August 5, 2026
 
 ---
 
 ## Executive Overview
 
-This implementation plan defines the exact technical tasks required to align the **SAGE codebase** with the updated Capstone Thesis specifications documented in **`Chapter12_With_Diagrams.docx`** (Chapters 1 & 2).
+This implementation plan defines the exact technical tasks required to align the **ASPIRE codebase** with the updated Capstone Thesis specifications documented in **`Chapter12_With_Diagrams.docx`** (Chapters 1 & 2).
 
 ---
 
@@ -35,22 +35,22 @@ This implementation plan defines the exact technical tasks required to align the
 
 Adds the 5th user portal as specified in Chapter 1 & 2 (VTOC Figs 2.14 & 2.18), including CSV roster imports and evaluation clearance auditing.
 
-#### [NEW] [Dashboard.jsx](file:///c:/Users/sadia/SAGE/src/pages/college_office/Dashboard.jsx)
+#### [NEW] [Dashboard.jsx](../../src/pages/college_office/Dashboard.jsx)
 - Department-scoped overview dashboard showing section counts, active faculty, enrollment totals, and clearance audit summary metrics.
 
-#### [NEW] [RosterImport.jsx](file:///c:/Users/sadia/SAGE/src/pages/college_office/RosterImport.jsx)
+#### [NEW] [RosterImport.jsx](../../src/pages/college_office/RosterImport.jsx)
 - Bulk CSV import interface for student and faculty accounts. Auto-applies the department metadata (e.g. CCS Office $\rightarrow$ Computer Studies department).
 
-#### [NEW] [ComplianceAudit.jsx](file:///c:/Users/sadia/SAGE/src/pages/college_office/ComplianceAudit.jsx)
+#### [NEW] [ComplianceAudit.jsx](../../src/pages/college_office/ComplianceAudit.jsx)
 - Evaluation completion audit table allowing College Office staff to search student progress and sign off on physical clearance sheets.
 
-#### [MODIFY] [App.jsx](file:///c:/Users/sadia/SAGE/src/App.jsx)
+#### [MODIFY] [App.jsx](../../src/App.jsx)
 - Register `/office/*` routes wrapped in `MainLayout` with `RoleGuard` allowing `college_office` / `department_admin`.
 
-#### [MODIFY] [Sidebar.jsx](file:///c:/Users/sadia/SAGE/src/components/layout/Sidebar.jsx)
+#### [MODIFY] [Sidebar.jsx](../../src/components/layout/Sidebar.jsx)
 - Add navigation tree for `college_office`: Dashboard, Roster Import, and Clearance Audit.
 
-#### [MODIFY] [AuthContext.jsx](file:///c:/Users/sadia/SAGE/src/lib/AuthContext.jsx)
+#### [MODIFY] [AuthContext.jsx](../../src/lib/AuthContext.jsx)
 - Include demo account `office.ccs@sage.edu.ph` (CCS Department Admin) in the Quick Demo Accounts Selector drawer.
 
 ---
@@ -59,12 +59,12 @@ Adds the 5th user portal as specified in Chapter 1 & 2 (VTOC Figs 2.14 & 2.18), 
 
 Updates the grading engine to support program COG formulas (Gen Ed, Health Sciences Theory/RLE, Maritime) and term branching (4-term Regular vs 2-term Summer).
 
-#### [MODIFY] [ScoreInput.jsx](file:///c:/Users/sadia/SAGE/src/pages/faculty/ScoreInput.jsx)
+#### [MODIFY] [ScoreInput.jsx](../../src/pages/faculty/ScoreInput.jsx)
 - Add a read-only COG Template selector badge and Term Type selector (`Regular 4-Term` | `Summer 2-Term`).
 - Support Health Sciences Theory weight distribution (30% Class Standing / 60% Exam / 10% Character).
 - Branch calculations: Summer terms compute `Midterm Rating (MR)` and `Final Rating (TFR)` directly into `Semestral Grade (SG)`.
 
-#### [MODIFY] [GradeComputationPreview.jsx](file:///c:/Users/sadia/SAGE/src/pages/faculty/GradeComputationPreview.jsx)
+#### [MODIFY] [GradeComputationPreview.jsx](../../src/pages/faculty/GradeComputationPreview.jsx)
 - Display active COG template rules and term type badges in the header of the grade preview spreadsheet.
 
 ---
@@ -73,11 +73,11 @@ Updates the grading engine to support program COG formulas (Gen Ed, Health Scien
 
 Implements anti-retaliation features specified in Chapter 1 & 2 (Level 1 DFD 5.2).
 
-#### [MODIFY] [EvaluationsFeedback.jsx](file:///c:/Users/sadia/SAGE/src/pages/faculty/EvaluationsFeedback.jsx)
+#### [MODIFY] [EvaluationsFeedback.jsx](../../src/pages/faculty/EvaluationsFeedback.jsx)
 - Add channel toggle buttons: `[On-Time Only (Official)]`, `[Late Only (Informational)]`, `[Combined]`.
 - Add **Retaliation-Drift Card** displaying score variance between on-time and late evaluation submissions.
 
-#### [MODIFY] [FacultyEvaluations.jsx](file:///c:/Users/sadia/SAGE/src/pages/dean/FacultyEvaluations.jsx)
+#### [MODIFY] [FacultyEvaluations.jsx](../../src/pages/dean/FacultyEvaluations.jsx)
 - Integrate department-wide Retaliation-Drift indicators to help Deans flag suspicious rating drops.
 
 ---
@@ -86,11 +86,11 @@ Implements anti-retaliation features specified in Chapter 1 & 2 (Level 1 DFD 5.2
 
 Enforces evaluation-gated grade visibility and acknowledgment tracking.
 
-#### [MODIFY] [MyGradesList.jsx](file:///c:/Users/sadia/SAGE/src/pages/student/MyGradesList.jsx)
+#### [MODIFY] [MyGradesList.jsx](../../src/pages/student/MyGradesList.jsx)
 - Apply CSS `blur-sm` to the `Semestral Grade (SG)` column if evaluation surveys are pending.
 - Display prompt banner: *"Complete teacher evaluation survey to unlock final semestral grade"*.
 
-#### [MODIFY] [SubjectDetail.jsx](file:///c:/Users/sadia/SAGE/src/pages/student/SubjectDetail.jsx)
+#### [MODIFY] [SubjectDetail.jsx](../../src/pages/student/SubjectDetail.jsx)
 - Add "Acknowledge Grade" action button.
 - Auto-reset acknowledgment status to "Pending Re-acknowledgment" when a faculty member updates posted scores.
 
@@ -100,10 +100,10 @@ Enforces evaluation-gated grade visibility and acknowledgment tracking.
 
 Implements student retention badges and MFA login simulation.
 
-#### [MODIFY] [StudentRow.jsx](file:///c:/Users/sadia/SAGE/src/components/StudentRow.jsx)
+#### [MODIFY] [StudentRow.jsx](../../src/components/StudentRow.jsx)
 - Display a red "At-Risk: 4+ Absences" warning pill badge when student absence count is $\ge 4$.
 
-#### [MODIFY] [AuthContext.jsx](file:///c:/Users/sadia/SAGE/src/lib/AuthContext.jsx)
+#### [MODIFY] [AuthContext.jsx](../../src/lib/AuthContext.jsx)
 - Add trusted device fingerprint simulation (`sage_trusted_device` in `localStorage`). Show OTP verification modal if logging in from an unrecognized browser environment.
 
 ---

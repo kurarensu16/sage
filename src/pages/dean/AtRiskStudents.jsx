@@ -9,12 +9,14 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { dispatchNotifications } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
-import { getTransmutedGrade } from '../../lib/gradingMath';
-import { calculateInterventionOutcome } from '../../lib/riskEngine';
-import { computeTentativeGrade, computeUnifiedRisk, isStudentAtRisk } from '../../lib/riskUtils';
+import { resolveGradingFormula } from '../../lib/gradingMath';
+import {
+  calculateInterventionOutcome,
+  computeTentativeGrade,
+  computeUnifiedRisk
+} from '../../lib/riskEngine';
+import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
 import { cn } from '../../lib/utils';
-
-// computeTentativeGrade is now imported from riskUtils.js (single source of truth)
 
 function SeverityBadge({ severity, score }) {
   if (severity === 'critical' || severity === 'high') {
@@ -114,14 +116,12 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
       const requiresTutoring = deanActionType === 'tutoring' || selectedQueueItem.requires_tutoring;
 
       const { error: updateErr } = await supabase
-        .from('student_risk_evaluations')
-        .update({
-          refer_to_dean: isResolving ? false : true,
-          requires_tutoring: requiresTutoring,
-          status: isResolving ? 'acknowledged_by_student' : selectedQueueItem.status,
-          updated_at: new Date().toISOString()
-        })
-        .eq('evaluation_id', selectedQueueItem.evaluation_id);
+        .rpc('review_student_risk_evaluation', {
+          p_evaluation_id: selectedQueueItem.evaluation_id,
+          p_refer_to_dean: !isResolving,
+          p_requires_tutoring: requiresTutoring,
+          p_status: isResolving ? 'acknowledged_by_student' : selectedQueueItem.status
+        });
 
       if (updateErr) throw updateErr;
 
@@ -242,6 +242,69 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
           .select('student_id, class_record_id, term, act1, act2, act3, act4, act5, act6, char_rating, exam')
           .in('student_id', studentIds.length > 0 ? studentIds : ['00000000-0000-0000-0000-000000000000']);
 
+        const scoreClassRecordIds = [...new Set((scoreData || []).map(score => score.class_record_id).filter(Boolean))];
+        const { data: scoreClassRecords } = scoreClassRecordIds.length > 0
+          ? await supabase
+              .from('class_records')
+              .select('class_record_id, semester, grading_formula_snapshot, subjects ( computation_id )')
+              .in('class_record_id', scoreClassRecordIds)
+          : { data: [] };
+        const computationIds = [...new Set(
+          (scoreClassRecords || []).map(record => record.subjects?.computation_id).filter(Boolean)
+        )];
+        const [{ data: computationData }, { data: activityData }] = await Promise.all([
+          computationIds.length > 0
+            ? supabase
+                .from('grade_computations')
+                .select('computation_id, grade_computation_components ( * )')
+                .in('computation_id', computationIds)
+            : Promise.resolve({ data: [] }),
+          scoreClassRecordIds.length > 0
+            ? supabase
+                .from('class_activities')
+                .select('activity_id, class_record_id, term, name, max_score, component_id')
+                .in('class_record_id', scoreClassRecordIds)
+            : Promise.resolve({ data: [] })
+        ]);
+        const activityIds = (activityData || []).map(activity => activity.activity_id);
+        const { data: granularScoreData } = activityIds.length > 0
+          ? await supabase
+              .from('student_activity_scores')
+              .select('student_id, activity_id, score')
+              .in('activity_id', activityIds)
+              .in('student_id', studentIds)
+          : { data: [] };
+        const computationMap = new Map((computationData || []).map(computation => [
+          computation.computation_id,
+          computation.grade_computation_components || []
+        ]));
+        const classConfigMap = {};
+        (scoreClassRecords || []).forEach(record => {
+          const components = record.grading_formula_snapshot?.components
+            || computationMap.get(record.subjects?.computation_id)
+            || null;
+          const activitiesByTerm = {};
+          (activityData || [])
+            .filter(activity => activity.class_record_id === record.class_record_id)
+            .forEach(activity => {
+              if (!activitiesByTerm[activity.term]) activitiesByTerm[activity.term] = [];
+              activitiesByTerm[activity.term].push({
+                id: activity.activity_id,
+                dbId: activity.activity_id,
+                name: activity.name,
+                max: Number(activity.max_score) || 20,
+                componentId: activity.component_id || null
+              });
+            });
+          classConfigMap[record.class_record_id] = {
+            formula: resolveGradingFormula(components, {
+              formulaAssigned: Boolean(record.grading_formula_snapshot || record.subjects?.computation_id)
+            }),
+            activitiesByTerm,
+            isSummer: record.semester === 'Summer'
+          };
+        });
+
         const { data: colData } = await supabase
           .from('class_grading_columns')
           .select('class_record_id, term, act1_max, act2_max, act3_max, act4_max, act5_max, act6_max, exam_max');
@@ -266,6 +329,15 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
           if (!scoresMap[s.student_id][s.class_record_id]) scoresMap[s.student_id][s.class_record_id] = {};
           scoresMap[s.student_id][s.class_record_id][s.term] = s;
         });
+        const activityById = new Map((activityData || []).map(activity => [activity.activity_id, activity]));
+        (granularScoreData || []).forEach(score => {
+          const activity = activityById.get(score.activity_id);
+          if (!activity?.term) return;
+          scoresMap[score.student_id] ||= {};
+          scoresMap[score.student_id][activity.class_record_id] ||= {};
+          scoresMap[score.student_id][activity.class_record_id][activity.term] ||= {};
+          scoresMap[score.student_id][activity.class_record_id][activity.term][score.activity_id] = Number(score.score) || 0;
+        });
 
         // Step 4: AI Insights
         const { data: aiData } = await supabase
@@ -287,6 +359,12 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
           .from('student_risk_evaluations')
           .select(`
             *,
+            private_notes:student_risk_private_notes (
+              note_text,
+              author_id,
+              created_at,
+              updated_at
+            ),
             faculty:users!faculty_id ( first_name, last_name, email ),
             class_record:class_records (
               class_record_id,
@@ -316,12 +394,20 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
         const enriched = (studentData || []).map(s => {
           const myGrades = gradesByStudent[s.user_id] || [];
           const postedClassRecordIds = new Set(myGrades.map(g => g.class_record_id));
+          const postedRowsByClass = {};
+          myGrades.forEach(grade => {
+            if (!postedRowsByClass[grade.class_record_id]) postedRowsByClass[grade.class_record_id] = [];
+            postedRowsByClass[grade.class_record_id].push(grade);
+          });
+          const advancedGrades = Object.values(postedRowsByClass)
+            .map(findMostAdvancedPostedGrade)
+            .filter(Boolean);
           
           const subjectGradeList = [];
           let containsTentative = false;
 
           // Posted grades
-          myGrades.forEach(g => {
+          advancedGrades.forEach(g => {
             const val = g.effective_grade != null ? parseFloat(g.effective_grade) : parseFloat(g.computed_grade);
             if (!isNaN(val)) {
               subjectGradeList.push({
@@ -339,7 +425,11 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
             if (!postedClassRecordIds.has(classRecId)) {
               const classRecordScores = studentScores[classRecId];
               const classRecordCols = colMap[classRecId];
-              const tentativeVal = computeTentativeGrade(classRecordScores, classRecordCols);
+              const tentativeVal = computeTentativeGrade(
+                classRecordScores,
+                classRecordCols,
+                classConfigMap[classRecId]
+              );
               if (tentativeVal !== null) {
                 subjectGradeList.push({
                   subjectCode: 'DRAFT',
@@ -459,6 +549,9 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
     .filter(ev => ev.refer_to_dean === true)
     .map(ev => {
       const studentMatch = students.find(s => s.id === ev.student_id);
+      const privateNotes = Array.isArray(ev.private_notes) ? ev.private_notes : [];
+      const facultyPrivateNote = privateNotes.find(note => note.author_id === ev.faculty_id)
+        || [...privateNotes].sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))[0];
       return {
         evaluation_id: ev.evaluation_id,
         student_id: ev.student_id,
@@ -475,7 +568,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
         context: ev.evaluation_context === 'pl_retention' ? "President's Lister Retention" : "Academic Recovery",
         risk_level: ev.risk_level,
         risk_score: ev.risk_score,
-        professor_notes: ev.professor_notes || 'Professor requested Dean consultation regarding student academic standing.',
+        private_note: facultyPrivateNote?.note_text || 'Professor requested Dean consultation regarding student academic standing.',
         advising_plan: Array.isArray(ev.advising_plan) ? ev.advising_plan : [],
         requires_tutoring: ev.requires_tutoring || false,
         status: ev.status,
@@ -1049,13 +1142,13 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
                       </div>
                     </div>
 
-                    {/* Professor Notes */}
+                    {/* Restricted faculty note */}
                     <div className="space-y-1.5">
                       <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
-                        <MessageSquare className="h-3 w-3 text-indigo-500" /> Professor Qualitative Statement:
+                        <MessageSquare className="h-3 w-3 text-indigo-500" /> Restricted Faculty Observation:
                       </span>
                       <blockquote className="p-3 bg-slate-50/80 border-l-2 border-indigo-400 rounded-r-lg text-xs text-slate-700 italic leading-relaxed">
-                        "{item.professor_notes}"
+                        "{item.private_note}"
                       </blockquote>
                     </div>
 
@@ -1241,11 +1334,11 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
                 </div>
               </div>
 
-              {/* Professor Statement */}
+              {/* Restricted faculty note */}
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Professor Escalation Statement</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Restricted Faculty Observation</label>
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 italic leading-relaxed">
-                  "{selectedQueueItem.professor_notes}"
+                  "{selectedQueueItem.private_note}"
                 </div>
               </div>
 

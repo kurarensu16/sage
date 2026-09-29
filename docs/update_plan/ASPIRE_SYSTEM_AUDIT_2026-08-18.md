@@ -1,6 +1,6 @@
-# SAGE — Comprehensive System Audit & Grading Configuration Plan
+# ASPIRE — Comprehensive System Audit & Grading Configuration Plan
 
-This document presents the **finalized and corrected audit** of the **SAGE** system. It reviews the active codebase **[c:\Users\SAGE\sage](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage>)** against the official specifications in **[SAGE_SYSTEM_SCOPE.md](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/SAGE_SYSTEM_SCOPE.md>)** to identify all existing implementations, intentional naming abstractions, and critical functional gaps.
+This document presents the **finalized and corrected audit** of the **ASPIRE** system. It reviews the active codebase **[c:\Users\ASPIRE\sage](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage>)** against the official specifications in **[ASPIRE_SYSTEM_SCOPE.md](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/ASPIRE_SYSTEM_SCOPE.md>)** to identify all existing implementations, intentional naming abstractions, and critical functional gaps.
 
 ---
 
@@ -9,12 +9,12 @@ This document presents the **finalized and corrected audit** of the **SAGE** sys
 > [!IMPORTANT]
 > **Audit Context & Scope Focus**:
 >
-> * **Primary Objective**: Verify that the core guidelines and specifications outlined in the **[SAGE_SYSTEM_SCOPE.md](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/SAGE_SYSTEM_SCOPE.md>)** are fully met and applied in the live **[sage](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage>)** codebase.
-> * **Audit Baseline**: The **[SAGE_Roster_Import_Review.md](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/SAGE_Roster_Import_Review.md>)** document represents the audit accomplished by the user's team member, which focuses strictly on the mechanics of the College Office Portal (`RosterImport.jsx`) and System Admin Portal (`UserImport.jsx` / `UserList.jsx`).
+> * **Primary Objective**: Verify that the core guidelines and specifications outlined in the **[ASPIRE_SYSTEM_SCOPE.md](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/ASPIRE_SYSTEM_SCOPE.md>)** are fully met and applied in the live **[sage](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage>)** codebase.
+> * **Audit Baseline**: The **[ASPIRE_Roster_Import_Review.md](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/ASPIRE_Roster_Import_Review.md>)** document represents the audit accomplished by the user's team member, which focuses strictly on the mechanics of the College Office Portal (`RosterImport.jsx`) and System Admin Portal (`UserImport.jsx` / `UserList.jsx`).
 
 Based on a complete file scanning and codebase audit:
 
-1. **Roster / User Imports**: The system is functional but diverges slightly from the file structure outlined in the System Scope (using a modal inside [UserList.jsx](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/admin/UserList.jsx>) instead of a dedicated `UserImport.jsx` page).
+1. **Roster / User Imports**: The system is functional but diverges slightly from the file structure outlined in the System Scope (using a modal inside [UserList.jsx](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/admin/UserList.jsx>) instead of a dedicated `UserImport.jsx` page).
 2. **The Roster Import Review Findings**: All six issues identified in the review document are **valid** and represent areas where the codebase leaves mechanics implicit (such as static/weak credentials and lack of robust, granular error tracking for failed rows).
 3. **Overall System-Scope Alignment**: The active codebase generally matches the architectural layout of the 5 portals and the 21-table database schema defined in the System Scope document, with minor implementation details consolidated into modular layouts (e.g., modals vs. separate pages).
 
@@ -25,7 +25,7 @@ Based on a complete file scanning and codebase audit:
 
 ## 2. Portal-by-Portal Frontend Page Verification & Gaps
 
-Below is a complete verification mapping of every page specified in the **[SAGE_SYSTEM_SCOPE.md](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/SAGE_SYSTEM_SCOPE.md>)** against the active files in the **[sage](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage>)** codebase.
+Below is a complete verification mapping of every page specified in the **[ASPIRE_SYSTEM_SCOPE.md](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/ASPIRE_SYSTEM_SCOPE.md>)** against the active files in the **[sage](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage>)** codebase.
 
 ### 2.1 Student Portal (`/student/*`)
 
@@ -96,7 +96,7 @@ Below is a complete verification mapping of every page specified in the **[SAGE_
 
 ### 3.1 Layman vs Developer Table Mapping
 
-The mapping between layman terms in `SAGE_SYSTEM_SCOPE.md` (exposed on the UI) and developer tables in the database is intentional and aligns as follows:
+The mapping between layman terms in `ASPIRE_SYSTEM_SCOPE.md` (exposed on the UI) and developer tables in the database is intentional and aligns as follows:
 
 * `profiles` $\rightarrow$ `users`
 * `class_enrollments` $\rightarrow$ `enrollments`
@@ -106,7 +106,7 @@ The mapping between layman terms in `SAGE_SYSTEM_SCOPE.md` (exposed on the UI) a
 
 ### 3.2 Subject Pre-load & Grading Templates Gap
 
-* **Critical Mismatch**: While `SAGE_DATABASE_SCHEMA.md` lists `computation_id` inside the `subjects` table, the admin's [SubjectForm.jsx](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/subjectform.jsx>) lacks a selection field.
+* **Critical Mismatch**: While `ASPIRE_DATABASE_SCHEMA.md` lists `computation_id` inside the `subjects` table, the admin's [SubjectForm.jsx](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/subjectform.jsx>) lacks a selection field.
 * **Impact**: Subjects are saved without a grading template. The faculty portal is forced to fallback to a hardcoded preset (50% CS / 40% Exam / 10% Character) for all records, rendering central database formulas inoperable.
 
 ### 3.3 Math Engine & Transmutation Scale Duplication
@@ -118,12 +118,12 @@ The mapping between layman terms in `SAGE_SYSTEM_SCOPE.md` (exposed on the UI) a
 
 ## 4. Planned Changes: Centralized Grading Systems Builder
 
-To integrate centralized, flexible grading setups (using [Computation of Grades.docx](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/Computation%20of%20Grades.docx>) rules and [SAGE_Grading_System_Mock.xlsx](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/SAGE_Grading_System_Mock.xlsx>) configurations) without changing the code yet, here is the technical blueprint of the changes:
+To integrate centralized, flexible grading setups (using [Computation of Grades.docx](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/Computation%20of%20Grades.docx>) rules and [ASPIRE_Grading_System_Mock.xlsx](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/ASPIRE_Grading_System_Mock.xlsx>) configurations) without changing the code yet, here is the technical blueprint of the changes:
 
 ### 4.1 Required Changes (Files to Modify/Create)
 
 ```
-SAGE Grading Refactoring Plan
+ASPIRE Grading Refactoring Plan
 ├── 1. [NEW] Admin Template Builder (/admin/gradecomputationslist)
 ├── 2. [MODIFY] Admin Subject Form (SubjectForm.jsx)
 ├── 3. [MODIFY] Faculty Score Setup & Grading Sheets (GradeComponentsSetup.jsx, ScoreInput.jsx)
@@ -249,7 +249,7 @@ ALTER TABLE draft_scores ADD COLUMN activity_id UUID REFERENCES class_activities
 
 #### 4. Subject Formulation & Grading Link
 
-Update **[`SubjectForm.jsx`](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/admin/SubjectForm.jsx>)**:
+Update **[`SubjectForm.jsx`](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/admin/SubjectForm.jsx>)**:
 
 * Query grading templates (`grade_computations`) in the loading `useEffect` block.
 * Render a select element for template binding.
@@ -257,7 +257,7 @@ Update **[`SubjectForm.jsx`](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/
 
 #### 5. Dynamic Grid Matrix Setup
 
-Update **[`ScoreInput.jsx`](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/faculty/ScoreInput.jsx>)**:
+Update **[`ScoreInput.jsx`](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/faculty/ScoreInput.jsx>)**:
 
 * Fetch `grade_computation_components` for the subject.
 * Build table headers dynamically based on these components. If a component has multiple columns, dynamically add a `Total` and `%` summary column at the end.
@@ -266,14 +266,14 @@ Update **[`ScoreInput.jsx`](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/s
 
 #### 6. Student Grade Breakdown UI (Grid to Column List)
 
-Update **[`MyGradesDetail.jsx`](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/student/MyGradesDetail.jsx>)**:
+Update **[`MyGradesDetail.jsx`](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/student/MyGradesDetail.jsx>)**:
 
 * Delete the grid layout card display.
 * Implement a vertical table stack mapping the nested categories (Class Standing, Exams) with guidelines, titles, and score values aligned on the right.
 
 #### 7. Resolve Blank Student Sections Stub
 
-Update **[`StudentSections.jsx`](<file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/office/StudentSections.jsx>)**:
+Update **[`StudentSections.jsx`](<file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/office/StudentSections.jsx>)**:
 
 * Replace the placeholder stub text.
 * Create a simple student lookup dropdown.
@@ -301,4 +301,4 @@ Create **`src/pages/faculty/VerificationQueue.jsx`**:
 
 1. **Retain Dual-Naming Mapping**: Keep the current mapping as documented. The frontend handles the translation of database technical terms into readable terminology for academic administrators, deans, faculty, and students.
 2. **Remove Dead Mock Files**: Safely remove `src/lib/mockDb.js` since all pages and auth managers have successfully completed transition to Supabase live clients.
-3. **Consolidate Importer Modals**: While functional, compile the CSV parsing functions from [UserList.jsx](file:///c:/Users/JC Gabriel/Downloads/SAGE/sage/src/pages/admin/UserList.jsx) and [RosterImport.jsx](file:///c:/Users/JC Gabriel/Downloads/SAGE/sage/src/pages/office/RosterImport.jsx) into a single helper block to reduce duplication.
+3. **Consolidate Importer Modals**: While functional, compile the CSV parsing functions from [UserList.jsx](file:///c:/Users/JC Gabriel/Downloads/ASPIRE/sage/src/pages/admin/UserList.jsx) and [RosterImport.jsx](file:///c:/Users/JC Gabriel/Downloads/ASPIRE/sage/src/pages/office/RosterImport.jsx) into a single helper block to reduce duplication.

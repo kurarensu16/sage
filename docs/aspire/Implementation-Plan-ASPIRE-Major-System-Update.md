@@ -1,9 +1,9 @@
 # Implementation Plan: ASPIRE Major System Update (v3.1)
 
-> **System Core**: Building directly on the existing **SAGE** codebase (`sage/`).  
-> **Project Title**: **ASPIRE** (*Academic Support and Performance Advising with Intervention, Risk, and Evaluation*)  
-> **Document Version**: **v3.1 (September 14, 2026)** — Official Implementation Baseline  
-> **Update Scope**: 
+> **System Core**: Building directly on the existing **ASPIRE** codebase (`sage/`).
+> **Project Title**: **ASPIRE** (*Academic Support and Performance Advising with Intervention, Risk, and Evaluation*)
+> **Document Version**: **v3.1 (September 14, 2026)** — Official Implementation Baseline
+> **Update Scope**:
 > 1. **Feature & Portal Removals**: Student-to-Faculty Evaluation, Form Builder, Eval Scheduler, Clearance Compliance Audit, **AND Complete Removal of College Office Portal** (`src/pages/office/*` wiped out).
 > 2. **Transferred Responsibilities**: **Subject Assignment** transferred directly to **Professors** (self-assigning courses/class records via `[ + Create Class / Room ]`) and **Admin** (bulk roster import via `UserList.jsx`).
 > 3. **Mandatory Activity Metadata**: Enforces **Activity Title + Activity Description/Scope** entry when adding activities in `ScoreInput.jsx` to feed the Student AI Academic Advisor.
@@ -15,7 +15,7 @@
 
 | Version | Date | Status | Key Scope Changes |
 |---|---|---|---|
-| **v1.0** | Aug 18, 2026 | Legacy | Original SAGE baseline (5 Portals, clearance locks, College Office). |
+| **v1.0** | Aug 18, 2026 | Legacy | Original ASPIRE baseline (5 Portals, clearance locks, College Office). |
 | **v2.0** | Sep 09, 2026 | Draft | Initial ASPIRE preliminary draft. |
 | **v3.0** | Sep 14, 2026 | Refined | 6-stage closed loop, weighted risk model ($0\text{--}100$), baseline/follow-up snapshots. |
 | **v3.1** | **Sep 14, 2026** | **ACTIVE** | **Current Official Specification**: Student-to-faculty evals 100% removed + **Mandatory Activity Title & Scope/Description Enforcement** for student AI advisor ingestion. |
@@ -86,7 +86,7 @@ sequenceDiagram
 
 ### Phase 4: Report Dispatch & Dual-Engine Student Delivery
 1. **Official Reports Center (`FacultyAdvisingInbox.jsx`)**: Displays binding professor evaluation reports and catch-up checklists.
-2. **AI Personal Tutor (`AcademicInsights.jsx`)**: 
+2. **AI Personal Tutor (`AcademicInsights.jsx`)**:
    * Ingests mandatory activity titles and scope descriptions from `class_activities`.
    * Displays **Subject Diagnostic Cards** with topic-level advice.
    * Real-Time Running GWA & PL Forecast Engine.
@@ -104,7 +104,7 @@ sequenceDiagram
 
 ### `class_activities` (Activity Metadata Support)
 ```sql
-ALTER TABLE IF EXISTS public.class_activities 
+ALTER TABLE IF EXISTS public.class_activities
 ADD COLUMN IF NOT EXISTS title VARCHAR(150) NOT NULL DEFAULT 'Untitled Activity',
 ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT 'General Subject Assessment';
 ```
@@ -117,23 +117,23 @@ CREATE TABLE IF NOT EXISTS public.student_risk_evaluations (
     student_id         UUID NOT NULL REFERENCES public.users(user_id) ON DELETE CASCADE,
     faculty_id         UUID NOT NULL REFERENCES public.users(user_id) ON DELETE CASCADE,
     term               VARCHAR(20) NOT NULL CHECK (term IN ('prelim', 'midterm', 'semi_final', 'final')),
-    
+
     evaluation_context VARCHAR(30) DEFAULT 'passing_recovery' CHECK (evaluation_context IN ('passing_recovery', 'pl_retention')),
     risk_level         VARCHAR(20) NOT NULL CHECK (risk_level IN ('low', 'moderate', 'high', 'critical')),
     risk_score         NUMERIC(5,2) NOT NULL DEFAULT 0.00,
     risk_breakdown     JSONB DEFAULT '{}'::jsonb,
-    
+
     professor_notes    TEXT NOT NULL,
     advising_plan      JSONB NOT NULL,
-    
+
     baseline_snapshot  JSONB DEFAULT '{}'::jsonb,
     followup_snapshot  JSONB DEFAULT '{}'::jsonb,
-    
+
     refer_to_dean      BOOLEAN DEFAULT FALSE,
     status             VARCHAR(20) DEFAULT 'submitted' CHECK (status IN ('draft', 'submitted', 'acknowledged_by_student')),
     submitted_at       TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at         TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    
+
     UNIQUE(class_record_id, student_id, term)
 );
 ```
@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS public.student_risk_evaluations (
 #### [MODIFY] `src/pages/student/AcademicInsights.jsx`
 - Consumes mandatory activity title & scope descriptions to render **Subject-Level Diagnostic Cards** and topic-level AI study advice.
 
-#### [NEW] [`FacultyAdvisingInbox.jsx`](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/sage/src/pages/student/FacultyAdvisingInbox.jsx)
+#### [NEW] [`FacultyAdvisingInbox.jsx`](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/sage/src/pages/student/FacultyAdvisingInbox.jsx)
 - Displays binding professor evaluation reports and catch-up task checklists.
 
 ---

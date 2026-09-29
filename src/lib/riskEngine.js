@@ -5,7 +5,12 @@
 // Do NOT duplicate grade/risk logic in individual page components.
 // =============================================================================
 
-import { getTransmutedGrade, calculateSemestralGrade } from './gradingMath';
+import {
+  calculateSemestralGrade,
+  calculateStoredTermRating,
+  getTransmutedGrade,
+  resolveGradingFormula
+} from './gradingMath.js';
 
 // ── V4 Risk Matrix Weights (Anchored to DYCI Transmutation Scale) ────────────
 // Individual components can exceed 100 (total potential: 135) but the final
@@ -225,10 +230,24 @@ export function calculateAcademicRisk({
  * 
  * @param {Object} classRecordScores - Keyed by term name, each containing act1-6, char_rating, exam
  * @param {Object} classRecordCols   - Keyed by term name, each containing act1_max-6_max, exam_max
+ * @param {Object} [options]
+ * @param {Object|Array} [options.formula] Resolved formula or raw components
+ * @param {Object} [options.activitiesByTerm]
+ * @param {boolean} [options.isSummer=false]
  * @returns {number|null} Transmuted GWA (1.00-5.00) or null if no data
  */
-export function computeTentativeGrade(classRecordScores, classRecordCols) {
-  const terms = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+export function computeTentativeGradeDetails(classRecordScores, classRecordCols, options = {}) {
+  const formula = options.formula?.ok !== undefined
+    ? options.formula
+    : resolveGradingFormula(options.formula || null, {
+        formulaAssigned: Array.isArray(options.formula) && options.formula.length > 0
+      });
+  if (!formula.ok) {
+    return { formula, termRatings: {}, semesterResult: null, gwa: null };
+  }
+
+  const isSummer = Boolean(options.isSummer);
+  const terms = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
   const termRatings = {};
 
   terms.forEach(term => {
@@ -236,32 +255,33 @@ export function computeTentativeGrade(classRecordScores, classRecordCols) {
     if (!tSc) return;
 
     const tMx = classRecordCols?.[term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
-    const csSum = (tSc.act1 || 0) + (tSc.act2 || 0) + (tSc.act3 || 0) + (tSc.act4 || 0) + (tSc.act5 || 0) + (tSc.act6 || 0);
-    const charVal = tSc.char_rating || 0;
-    const examVal = tSc.exam || 0;
-
-    // ASPIRE Rule 1: Only include terms with actual encoded data
-    const hasData = csSum > 0 || charVal > 0 || examVal > 0;
-    if (!hasData) return;
-
-    const csMax = (tMx.act1 ?? 0) + (tMx.act2 ?? 0) + (tMx.act3 ?? 0) + (tMx.act4 ?? 0) + (tMx.act5 ?? 0) + (tMx.act6 ?? 0);
-    const csPercent = csMax > 0 ? (csSum / csMax) * 50 : 0;
-    const charPercent = charVal * 0.1;
-    const examMax = tMx.exam || 40;
-    const examPercent = examMax > 0 ? (examVal / examMax) * 40 : 0;
-
-    termRatings[term] = Math.min(100, Math.max(0, Math.round(csPercent + charPercent + examPercent)));
+    const result = calculateStoredTermRating({
+      formula,
+      termScores: tSc,
+      maxItems: { ...tMx, char: tMx.char ?? 100 },
+      activities: options.activitiesByTerm?.[term] || []
+    });
+    if (result.ok && result.hasData) termRatings[term] = result.rating;
   });
 
-  const calc = calculateSemestralGrade({
+  const semesterResult = calculateSemestralGrade({
     prelim: termRatings['Prelim'] ?? null,
     midterm: termRatings['Midterm'] ?? null,
     semiFinal: termRatings['Semi-Final'] ?? null,
-    final: termRatings['Final'] ?? null
+    final: termRatings['Final'] ?? null,
+    isSummer
   });
 
-  if (calc.sg === null) return null;
-  return getTransmutedGrade(calc.sg);
+  return {
+    formula,
+    termRatings,
+    semesterResult,
+    gwa: semesterResult.sg === null ? null : getTransmutedGrade(semesterResult.sg)
+  };
+}
+
+export function computeTentativeGrade(classRecordScores, classRecordCols, options = {}) {
+  return computeTentativeGradeDetails(classRecordScores, classRecordCols, options).gwa;
 }
 
 /**

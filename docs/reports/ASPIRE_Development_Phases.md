@@ -1,6 +1,6 @@
-# SAGE: Detailed Development Phases by Module
+# ASPIRE: Detailed Development Phases by Module
 
-This document provides a highly granular breakdown of the development phases for the **Smart Academic Grading and Evaluation System (SAGE)**. It is organized by system module to track the historical decisions, current implementations, and future roadmap for every component of the application.
+This document provides a highly granular breakdown of the development phases for the **Academic Support and Performance Advising with Intervention, Risk, and Evaluation (ASPIRE)**. It is organized by system module to track the historical decisions, current implementations, and future roadmap for every component of the application.
 
 ---
 
@@ -10,7 +10,7 @@ This document provides a highly granular breakdown of the development phases for
 *   **Tech Stack Setup:** Initialized the project with React 19, Vite, and Tailwind CSS v4. Applied custom `@theme` brand colors (Sage Green, Emerald) and imported font families (Sora, DM Sans, JetBrains Mono).
 *   **Mock Database Engine:** Engineered `src/lib/mockDb.js`, a persistent LocalStorage database to simulate a relational structure without a backend, allowing rapid UI prototyping.
 *   **Authentication Prototype:** Built the split-screen Login Page (S01) with simulated server-side role resolution. Added a "Quick Demo Accounts Selector" drawer for instant testing across the four user roles.
-*   **Vector Assets:** Integrated custom spline-vectorized binary SVGs for the SAGE logo and branding elements.
+*   **Vector Assets:** Integrated custom spline-vectorized binary SVGs for the ASPIRE logo and branding elements.
 
 ### Phase 2: Core Enhancements (Current)
 *   **State Propagation:** Refined the `mockDb` to support dynamic, real-time state propagation across all portals upon page refresh (e.g., changes in Admin immediately reflect in Faculty/Dean dashboards).
@@ -27,12 +27,12 @@ This document provides a highly granular breakdown of the development phases for
 ## 2. Admin Portal (S04-S14)
 
 ### Phase 1: Foundation (Older)
-*   **User & Class Setup:** Created the User Management registry and basic Classrooms Directory. 
+*   **User & Class Setup:** Created the User Management registry and basic Classrooms Directory.
 *   **Evaluation Builder:** Developed the Evaluation Form Builder (S09-S10) with drag-and-drop criteria reordering, max rating adjustments, and a side-by-side Live Preview panel.
 *   **Self-Enrollment Concept:** Initially planned "Class Join Codes" and "COR Validation" for student self-enrollment.
 
 ### Phase 2: Core Enhancements & Policy (Current)
-*   **Enrollment Overhaul:** Cut the "Class Join Codes" and "COR Validation" features entirely to avoid conflicts with DYCI's official enrollment system. 
+*   **Enrollment Overhaul:** Cut the "Class Join Codes" and "COR Validation" features entirely to avoid conflicts with DYCI's official enrollment system.
 *   **CSV Registry Imports:** Implemented CSV parser panels (FR28) allowing admins to copy-paste/import official registry files with interactive preview grids before saving.
 *   **Faculty Reassignment:** Cut the complex "Co-Teaching Support" model. Replaced it with a cleaner Faculty Reassignment feature (FR29) supported by a `class_faculty_log` for tracking reassignment history and auditing (FR30).
 *   **Class Archiving:** Added the ability to archive classes at the end of the semester, permanently locking grades and preventing new enrollments (FR31).
@@ -80,7 +80,7 @@ This document provides a highly granular breakdown of the development phases for
 ### Phase 3: Attendance, FDA, & Exports (Completed & Current)
 *   **Daily Attendance Tracker**: Completed the daily attendance sheet featuring debounced background saves, history quick-load session buttons, and double-confirmation checks on new date initializations.
 *   **FDA Grade Worksheet Locks**: Triggering FDA (&ge; 4 absences) forces the GWA to **5.00** and disables the worksheet remarks dropdown.
-*   **SheetJS Excel Exports (Upcoming)**: 
+*   **SheetJS Excel Exports (Upcoming)**:
     *   **Record Sheet:** Finalizing the export so that outputted grading sheets contain live Excel formulas mimicking the official DYCI spreadsheet.
     *   **Report of Grades:** Building the registrar print layout featuring a symmetrical 30-row split roster linked via cell formulas.
 *   **Real-time Notifications**: Wiring Supabase real-time subscriptions for instant alerts regarding new evaluation windows or administrative grade overrides.

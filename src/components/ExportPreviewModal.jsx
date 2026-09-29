@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
 import { FileSpreadsheet, FileText, X, Check } from 'lucide-react';
-import { getTransmutedGrade } from '../lib/gradingMath';
+import {
+  calculateSemestralGrade,
+  calculateStoredTermRating,
+  getTransmutedGrade,
+  resolveGradingFormula
+} from '../lib/gradingMath';
 
 export default function ExportPreviewModal({
   isOpen,
@@ -8,6 +13,9 @@ export default function ExportPreviewModal({
   classInfo,
   students, // compiled with grades/absences
   maxItems,
+  activities = {},
+  gradingFormula,
+  isSummer = false,
   metadata,
   onMetadataChange,
   onExportExcel,
@@ -20,27 +28,19 @@ export default function ExportPreviewModal({
   const subjectCode = classInfo.subjects?.code || '';
   const subjectName = classInfo.subjects?.name || '';
   const sectionName = classInfo.sections?.name || '';
+  const effectiveFormula = gradingFormula || resolveGradingFormula(null, { formulaAssigned: false });
 
   // Helpers to calculate student values
   const getComputedStudentRow = (student) => {
     const getTermRating = (termName) => {
       const termScores = student.periods?.[termName] || {};
       const maxT = maxItems[termName] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
-
-      const csSum =
-        (termScores.act1 || 0) +
-        (termScores.act2 || 0) +
-        (termScores.act3 || 0) +
-        (termScores.act4 || 0) +
-        (termScores.act5 || 0) +
-        (termScores.act6 || 0);
-
-      const csMax = maxT.act1 + maxT.act2 + maxT.act3 + maxT.act4 + maxT.act5 + maxT.act6;
-      const csPercent = csMax > 0 ? (csSum / csMax) * 50 : 0;
-      const charPercent = (termScores.char || 0) * 0.1;
-      const examPercent = maxT.exam > 0 ? ((termScores.exam || 0) / maxT.exam) * 40 : 0;
-
-      return Math.min(100, Math.max(0, Math.round(csPercent + charPercent + examPercent)));
+      return calculateStoredTermRating({
+        formula: effectiveFormula,
+        termScores,
+        maxItems: maxT,
+        activities: activities[termName] || []
+      }).rating;
     };
 
     const prelim = getTermRating('Prelim');
@@ -48,15 +48,20 @@ export default function ExportPreviewModal({
     const semiFinal = getTermRating('Semi-Final');
     const finalTerm = getTermRating('Final');
 
-    const mr = Math.round((prelim + midterm) / 2);
-    const tfr = Math.round((semiFinal + finalTerm) / 2);
-    const sg = Math.round((mr + tfr) / 2);
+    const semesterResult = calculateSemestralGrade({
+      prelim,
+      midterm,
+      semiFinal,
+      final: finalTerm,
+      isSummer
+    });
+    const { mr, tfr, sg } = semesterResult;
 
-    const rawGwa = getTransmutedGrade(sg);
+    const rawGwa = sg === null ? null : getTransmutedGrade(sg);
     const remarkLower = student.customRemarks?.toLowerCase() || '';
 
-    let gwa = rawGwa;
-    let remarks = rawGwa <= 3.00 ? 'Passed' : 'Failed';
+    let gwa = rawGwa ?? '';
+    let remarks = rawGwa === null ? 'Pending' : rawGwa <= 3.00 ? 'Passed' : 'Failed';
 
     if (student.absences >= 4) {
       gwa = 5.00;
@@ -68,7 +73,7 @@ export default function ExportPreviewModal({
       gwa = 'Drp.';
       remarks = 'Drp';
     } else if (remarkLower === 'passed') {
-      gwa = Math.min(3.00, rawGwa);
+      gwa = rawGwa === null ? '' : Math.min(3.00, rawGwa);
       remarks = 'Passed';
     } else if (remarkLower === 'failed') {
       gwa = 5.00;

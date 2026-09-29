@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase';
 import html2pdf from 'html2pdf.js';
 import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
 import { useAuth } from '../../lib/AuthContext';
+import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
 
 export default function SummaryReports() {
   const { profile } = useAuth();
@@ -84,6 +85,15 @@ export default function SummaryReports() {
         });
 
         const termClassRecordIds = new Set(termClassRecords.map(c => c.class_record_id));
+        const postedRowsByStudentClass = {};
+        (postedGradesData || []).forEach(grade => {
+          const key = `${grade.student_id}:${grade.class_record_id}`;
+          if (!postedRowsByStudentClass[key]) postedRowsByStudentClass[key] = [];
+          postedRowsByStudentClass[key].push(grade);
+        });
+        const advancedPostedGrades = Object.values(postedRowsByStudentClass)
+          .map(findMostAdvancedPostedGrade)
+          .filter(Boolean);
 
         if (reportType === 'grade-distribution') {
           // Map class sections to passing/average metrics filtered by selected college
@@ -93,7 +103,7 @@ export default function SummaryReports() {
               return deptName === deptFilter;
             })
             .map(c => {
-              const grades = (postedGradesData || []).filter(g => g.class_record_id === c.class_record_id);
+              const grades = advancedPostedGrades.filter(g => g.class_record_id === c.class_record_id);
               const sum = grades.reduce((acc, curr) => acc + Number(curr.effective_grade !== null ? curr.effective_grade : curr.computed_grade), 0);
               const avg = grades.length > 0 ? sum / grades.length : 1.75;
               const passedCount = grades.filter(g => Number(g.effective_grade !== null ? g.effective_grade : g.computed_grade) <= 3.00).length;
@@ -163,7 +173,7 @@ export default function SummaryReports() {
             );
             
             const studentGradesMap = {};
-            (postedGradesData || []).forEach(g => {
+            advancedPostedGrades.forEach(g => {
               if (termClassRecordIds.has(g.class_record_id)) {
                 if (!studentGradesMap[g.student_id]) studentGradesMap[g.student_id] = [];
                 studentGradesMap[g.student_id].push(Number(g.effective_grade !== null ? g.effective_grade : g.computed_grade));
@@ -203,7 +213,7 @@ export default function SummaryReports() {
           
           // Calculate running GWA from posted grades only for the selected term's class records
           const studentGradesMap = {};
-          (postedGradesData || []).forEach(g => {
+          advancedPostedGrades.forEach(g => {
             if (termClassRecordIds.has(g.class_record_id)) {
               if (!studentGradesMap[g.student_id]) {
                 studentGradesMap[g.student_id] = [];

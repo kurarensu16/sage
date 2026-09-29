@@ -1,14 +1,14 @@
-# Chapter 1 & 2 Documentation vs. SAGE Codebase Comparison Report
+# Chapter 1 & 2 Documentation vs. ASPIRE Codebase Comparison Report
 
-**Document Analyzed**: `Chapter12_With_Diagrams.docx`  
-**Repository**: SAGE (`c:\Users\sadia\SAGE`)  
-**Date**: August 5, 2026  
+**Document Analyzed**: `Chapter12_With_Diagrams.docx`
+**Repository**: ASPIRE (`<repository-root>`)
+**Date**: August 5, 2026
 
 ---
 
 ## Executive Summary
 
-This document presents a comprehensive comparison between the updated Capstone Thesis documentation (**Chapter 1: Project Rationale** and **Chapter 2: System Development** contained in `Chapter12_With_Diagrams.docx`) and the actual implementation state of the **SAGE (Smart Academic Grading & Evaluation System)** codebase.
+This document presents a comprehensive comparison between the updated Capstone Thesis documentation (**Chapter 1: Project Rationale** and **Chapter 2: System Development** contained in `Chapter12_With_Diagrams.docx`) and the actual implementation state of the **ASPIRE (Academic Support and Performance Advising with Intervention, Risk, and Evaluation)** codebase.
 
 The updated documentation introduces significant expansions across:
 1. **User Roles & Portals**: Introducing a 5th dedicated role and portal — **College Office (Department Admin)**.
@@ -21,7 +21,7 @@ The updated documentation introduces significant expansions across:
 
 ## Master Feature Matrix & Implementation Gap Analysis
 
-| Feature Area | Specifications in `Chapter12_With_Diagrams.docx` | Current Codebase Implementation (`c:\Users\sadia\SAGE`) | Status & Action Required |
+| Feature Area | Specifications in `Chapter12_With_Diagrams.docx` | Current Codebase Implementation (`<repository-root>`) | Status & Action Required |
 | :--- | :--- | :--- | :--- |
 | **Portals & Roles** | **5 Portals**: Student, Faculty, Dean, **College Office (Department Admin)**, System Administrator. | **4 Portals**: `src/pages/` contains `admin/`, `dean/`, `faculty/`, `student/`. No `college_office/` folder. | ⚠️ **Gap**: Create `college_office/` pages for Roster Import (CSV) and Clearance Auditing. |
 | **Data Layer** | Cloud-hosted Supabase Postgres DB with active Row-Level Security (RLS) and `school_id` multi-tenancy. | **`mockDb.js` (localStorage)** for Admin/Dean; inline arrays for Faculty/Student. Supabase RLS is currently **disabled**. | ⚠️ **Gap**: Complete migration to Supabase DB and enable RLS per `docs/workflows/Supabase-Migration.md`. |

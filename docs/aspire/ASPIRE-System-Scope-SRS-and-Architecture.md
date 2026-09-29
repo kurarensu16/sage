@@ -1,11 +1,11 @@
 # ASPIRE: System Scope, Software Requirements Specification (SRS) & Architecture
 
-> **System Title**: **ASPIRE** (*Academic Support and Performance Advising with Intervention, Risk, and Evaluation*)  
-> **Institutional Host**: Dr. Yanga's Colleges, Inc. (DYCI), Bocaue, Bulacan  
-> **Academic Context**: AY 2026–2027  
-> **System Baseline**: ASPIRE v3.1 (Official Capstone Specification)  
-> **Document Type**: System Scope Definition, Software Requirements Specification (SRS) & Technical Architecture  
-> **Active Target Roles**: **4 Core Roles** (**Student**, **Faculty**, **Dean**, **Academic Administrator**)  
+> **System Title**: **ASPIRE** (*Academic Support and Performance Advising with Intervention, Risk, and Evaluation*)
+> **Institutional Host**: Dr. Yanga's Colleges, Inc. (DYCI), Bocaue, Bulacan
+> **Academic Context**: AY 2026–2027
+> **System Baseline**: ASPIRE v3.1 (Official Capstone Specification)
+> **Document Type**: System Scope Definition, Software Requirements Specification (SRS) & Technical Architecture
+> **Active Target Roles**: **4 Core Roles** (**Student**, **Faculty**, **Dean**, **Academic Administrator**)
 
 ---
 
@@ -23,7 +23,7 @@ Unlike traditional learning management systems or passive grading ledgers that m
 
 ```
                    THE ASPIRE CLOSED-LOOP PIPELINE
-                   
+
      [ Detect ]  ─────────►  [ Prioritize ]  ─────────►  [ Evaluate ]
    Risk Composite              Pinned Flagged              HITL Baseline
       Formula                      Roster                    Snapshot
@@ -51,7 +51,7 @@ graph TD
         FAC["👨‍🏫 Faculty Portal<br/>- Educator Triage Roster<br/>- HITL Risk Evaluation<br/>- Score Spreadsheet<br/>- Mandatory Activity Meta"]
         STU["🎒 Student Portal<br/>- Code Self-Enrollment<br/>- Milestone Ledgers<br/>- Advising Inbox<br/>- AI Diagnostic Advisor<br/>- Direct Consultations"]
     end
-    
+
     PUB --> ADM & DEN & FAC & STU
     ADM -->|"Provisions Teaching Load + Codes"| FAC
     ADM -->|"Enrolls via Code"| STU
@@ -314,7 +314,7 @@ graph TB
     subgraph "Tier 1: Presentation Layer"
         PWA["Web Browser (React 19 SPA)"]
         MOB["Android Native App (Capacitor 8 APK)"]
-        TAILWIND["Tailwind CSS 4 + SAGE Design Tokens"]
+        TAILWIND["Tailwind CSS 4 + ASPIRE Design Tokens"]
         LUCIDE["Lucide React Unified Iconography"]
     end
 
@@ -426,22 +426,22 @@ erDiagram
     departments ||--o{ subjects : "offers"
     departments ||--o{ sections : "manages"
     departments ||--o{ users : "employs/enrolls"
-    
+
     academic_terms ||--o{ class_records : "bounds"
     subjects ||--o{ class_records : "instantiates"
     sections ||--o{ class_records : "hosts"
     users ||--o{ class_records : "instructs (faculty)"
-    
+
     class_records ||--|| class_room_join_codes : "issues"
     class_records ||--o{ class_activities : "defines"
     class_records ||--o{ class_grading_columns : "configures"
     class_records ||--o{ posted_grades : "finalizes"
     class_records ||--o{ student_risk_evaluations : "evaluates"
-    
+
     sections ||--o{ enrollments : "groups"
     subjects ||--o{ enrollments : "registers"
     users ||--o{ enrollments : "attends (student)"
-    
+
     users ||--o{ student_risk_evaluations : "targets (student)"
     users ||--o{ student_risk_evaluations : "authored_by (faculty)"
     student_risk_evaluations ||--o{ dean_consultation_notes : "escalates"
@@ -547,26 +547,26 @@ $$\text{Semestral Grade (SG)} = \text{ROUND}\left( \frac{\text{MR} + \text{TFR}}
 
 | SRS Req ID | Feature Description | Portal | Live Implementation File | Status |
 |:---:|---|:---:|---|:---:|
-| `FR-ADM-01` | Centralized Classroom Provisioning | Admin | [`ClassroomProvisioning.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/ClassroomProvisioning.jsx) | ✅ **VERIFIED** |
-| `FR-ADM-03` | Classroom Join Code Engine | Admin | [`classRoomService.js`](file:///c:/Users/sadia/SAGE/src/lib/classRoomService.js) | ✅ **VERIFIED** |
-| `FR-ADM-05` | Bulk Roster CSV Importer | Admin | [`UserList.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/UserList.jsx) | ✅ **VERIFIED** |
-| `FR-ADM-06` | COG Grading Templates Manager | Admin | [`GradeComputationsList.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/GradeComputationsList.jsx) | ✅ **VERIFIED** |
-| `FR-DEN-01` | Strategic Visual Analytics Charts | Dean | [`Dashboard.jsx`](file:///c:/Users/sadia/SAGE/src/pages/dean/Dashboard.jsx) | ✅ **VERIFIED** |
-| `FR-DEN-02` | 4-Tab Risk & Honors Matrix | Dean | [`AtRiskStudents.jsx`](file:///c:/Users/sadia/SAGE/src/pages/dean/AtRiskStudents.jsx) | ✅ **VERIFIED** |
-| `FR-DEN-03` | Dean Discussion Escalation Queue | Dean | [`AtRiskStudents.jsx`](file:///c:/Users/sadia/SAGE/src/pages/dean/AtRiskStudents.jsx) | ✅ **VERIFIED** |
-| `FR-DEN-06` | Intervention Outcomes PDF Exporter | Dean | [`SummaryReports.jsx`](file:///c:/Users/sadia/SAGE/src/pages/dean/SummaryReports.jsx) | ✅ **VERIFIED** |
-| `FR-FAC-01` | Classroom Code Presentation Banner | Faculty | [`ClassRecordsList.jsx`](file:///c:/Users/sadia/SAGE/src/pages/faculty/ClassRecordsList.jsx) | ✅ **VERIFIED** |
-| `FR-FAC-03` | Mandatory Activity Meta Enforcement| Faculty | [`ScoreInput.jsx`](file:///c:/Users/sadia/SAGE/src/pages/faculty/ScoreInput.jsx) | ✅ **VERIFIED** |
-| `FR-FAC-04` | HITL Risk Evaluation Modal | Faculty | [`StudentRiskEvaluationModal.jsx`](file:///c:/Users/sadia/SAGE/src/pages/faculty/StudentRiskEvaluationModal.jsx) | ✅ **VERIFIED** |
-| `FR-STU-01` | Universal Code Self-Enrollment | Student | [`MyGradesList.jsx`](file:///c:/Users/sadia/SAGE/src/pages/student/MyGradesList.jsx) | ✅ **VERIFIED** |
-| `FR-STU-03` | Faculty Advising Inbox & Checklist | Student | [`FacultyAdvisingInbox.jsx`](file:///c:/Users/sadia/SAGE/src/pages/student/FacultyAdvisingInbox.jsx) | ✅ **VERIFIED** |
-| `FR-STU-05` | AI Topic Diagnostic Cards | Student | [`AcademicInsights.jsx`](file:///c:/Users/sadia/SAGE/src/pages/student/AcademicInsights.jsx) | 🔄 **IN POLISH** |
-| `FR-RSK-01` | Explainable Risk composite ($0\text{-}100$) | Core | [`riskEngine.js`](file:///c:/Users/sadia/SAGE/src/lib/riskEngine.js) | ✅ **VERIFIED** |
+| `FR-ADM-01` | Centralized Classroom Provisioning | Admin | [`ClassroomProvisioning.jsx`](../../src/pages/admin/ClassroomProvisioning.jsx) | ✅ **VERIFIED** |
+| `FR-ADM-03` | Classroom Join Code Engine | Admin | [`classRoomService.js`](../../src/lib/classRoomService.js) | ✅ **VERIFIED** |
+| `FR-ADM-05` | Bulk Roster CSV Importer | Admin | [`UserList.jsx`](../../src/pages/admin/UserList.jsx) | ✅ **VERIFIED** |
+| `FR-ADM-06` | COG Grading Templates Manager | Admin | [`GradeComputationsList.jsx`](../../src/pages/admin/GradeComputationsList.jsx) | ✅ **VERIFIED** |
+| `FR-DEN-01` | Strategic Visual Analytics Charts | Dean | [`Dashboard.jsx`](../../src/pages/dean/Dashboard.jsx) | ✅ **VERIFIED** |
+| `FR-DEN-02` | 4-Tab Risk & Honors Matrix | Dean | [`AtRiskStudents.jsx`](../../src/pages/dean/AtRiskStudents.jsx) | ✅ **VERIFIED** |
+| `FR-DEN-03` | Dean Discussion Escalation Queue | Dean | [`AtRiskStudents.jsx`](../../src/pages/dean/AtRiskStudents.jsx) | ✅ **VERIFIED** |
+| `FR-DEN-06` | Intervention Outcomes PDF Exporter | Dean | [`SummaryReports.jsx`](../../src/pages/dean/SummaryReports.jsx) | ✅ **VERIFIED** |
+| `FR-FAC-01` | Classroom Code Presentation Banner | Faculty | [`ClassRecordsList.jsx`](../../src/pages/faculty/ClassRecordsList.jsx) | ✅ **VERIFIED** |
+| `FR-FAC-03` | Mandatory Activity Meta Enforcement| Faculty | [`ScoreInput.jsx`](../../src/pages/faculty/ScoreInput.jsx) | ✅ **VERIFIED** |
+| `FR-FAC-04` | HITL Risk Evaluation Modal | Faculty | [`StudentRiskEvaluationModal.jsx`](../../src/pages/faculty/StudentRiskEvaluationModal.jsx) | ✅ **VERIFIED** |
+| `FR-STU-01` | Universal Code Self-Enrollment | Student | [`MyGradesList.jsx`](../../src/pages/student/MyGradesList.jsx) | ✅ **VERIFIED** |
+| `FR-STU-03` | Faculty Advising Inbox & Checklist | Student | [`FacultyAdvisingInbox.jsx`](../../src/pages/student/FacultyAdvisingInbox.jsx) | ✅ **VERIFIED** |
+| `FR-STU-05` | AI Topic Diagnostic Cards | Student | [`AcademicInsights.jsx`](../../src/pages/student/AcademicInsights.jsx) | 🔄 **IN POLISH** |
+| `FR-RSK-01` | Explainable Risk composite ($0\text{-}100$) | Core | [`riskEngine.js`](../../src/lib/riskEngine.js) | ✅ **VERIFIED** |
 
 ---
 
 ## 6. Document Validation & Capstone Defense Alignment
 
-This document serves as the formal **Technical Specification, SRS, and Architectural Baseline** for the ASPIRE Capstone Project defense at Dr. Yanga's Colleges, Inc. 
+This document serves as the formal **Technical Specification, SRS, and Architectural Baseline** for the ASPIRE Capstone Project defense at Dr. Yanga's Colleges, Inc.
 
-All architectural choices, mathematical formulas, and functional requirements defined herein are synchronized with the live codebase in `c:\Users\sadia\SAGE` and reflect the panel rulings of the Capstone 1 defense.
+All architectural choices, mathematical formulas, and functional requirements defined herein are synchronized with the live codebase in `<repository-root>` and reflect the panel rulings of the Capstone 1 defense.

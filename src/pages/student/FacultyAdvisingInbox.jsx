@@ -37,9 +37,7 @@ export default function FacultyAdvisingInbox() {
           faculty_id,
           term,
           evaluation_context,
-          risk_level,
-          risk_score,
-          professor_notes,
+          shared_academic_feedback,
           advising_plan,
           baseline_snapshot,
           status,
@@ -81,25 +79,12 @@ export default function FacultyAdvisingInbox() {
       const targetEval = evaluations.find(e => e.evaluation_id === evaluationId);
       if (!targetEval) return;
 
-      const updatedPlan = (targetEval.advising_plan || []).map(t => {
-        if (t.task_id === taskId) {
-          const nextCompleted = !currentStatus;
-          return {
-            ...t,
-            completed: nextCompleted,
-            completed_at: nextCompleted ? new Date().toISOString() : null
-          };
-        }
-        return t;
-      });
-
-      const { error } = await supabase
-        .from('student_risk_evaluations')
-        .update({
-          advising_plan: updatedPlan,
-          updated_at: new Date().toISOString()
-        })
-        .eq('evaluation_id', evaluationId);
+      const { data: updatedPlan, error } = await supabase
+        .rpc('set_legacy_advising_task_completion', {
+          p_evaluation_id: evaluationId,
+          p_task_id: taskId,
+          p_completed: !currentStatus
+        });
 
       if (error) throw error;
 
@@ -238,15 +223,17 @@ export default function FacultyAdvisingInbox() {
                       </div>
                     )}
 
-                    {/* Professor's Memorandum Note */}
-                    <div className="p-3.5 bg-slate-50 border-l-2 border-sage-500 rounded-r-md text-xs text-slate-800 space-y-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                        Professor's Observations & Directions:
+                    {/* Only explicitly shared feedback is student-visible. */}
+                    {ev.shared_academic_feedback && (
+                      <div className="p-3.5 bg-slate-50 border-l-2 border-sage-500 rounded-r-md text-xs text-slate-800 space-y-1">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          Faculty Academic Guidance:
+                        </div>
+                        <p className="text-slate-700 leading-relaxed font-sans">
+                          {ev.shared_academic_feedback}
+                        </p>
                       </div>
-                      <p className="italic text-slate-700 leading-relaxed font-sans">
-                        "{ev.professor_notes}"
-                      </p>
-                    </div>
+                    )}
 
                     {/* Action Tasks Checklist */}
                     <div className="space-y-2">

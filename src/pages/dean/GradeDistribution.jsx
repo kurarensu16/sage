@@ -62,7 +62,7 @@ export default function GradeDistribution() {
 
   const [classrooms, setClassrooms] = useState([]);
   const [selectedClassId, setSelectedClassId] = useState('');
-  const [selectedPeriod, setSelectedPeriod] = useState('prelim');
+  const [selectedPeriod, setSelectedPeriod] = useState('midterm_rating');
   const [gradesList, setGradesList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [gradesLoading, setGradesLoading] = useState(false);
@@ -412,10 +412,9 @@ export default function GradeDistribution() {
                     onChange={e => setSelectedPeriod(e.target.value)}
                     className="block w-full border border-slate-200 px-3 py-2.5 rounded-lg text-xs bg-white outline-none cursor-pointer focus:border-sage-500 transition-colors"
                   >
-                    <option value="prelim">Prelim Period</option>
-                    <option value="midterm">Midterm Period</option>
-                    <option value="semi_final">Semi-Final Period</option>
-                    <option value="final">Final Period</option>
+                    <option value="midterm_rating">Midterm Rating (MR)</option>
+                    <option value="tentative_final_rating">Tentative Final Rating (TFR)</option>
+                    <option value="semestral_grade">Semestral Grade (SG)</option>
                   </select>
                 </div>
               </div>

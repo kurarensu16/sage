@@ -1,4 +1,4 @@
-# SAGE: Smart Academic Grading and Evaluation System
+# ASPIRE: Academic Support and Performance Advising with Intervention, Risk, and Evaluation
 ## System Design Document
 * **Institution**: Dr. Yanga's Colleges, Inc.
 * **Program**: BS Information Technology — Capstone Project
@@ -8,9 +8,9 @@
 
 ## 1. System Overview
 
-SAGE (Smart Academic Grading and Evaluation System) is a web-based academic management system developed for Dr. Yanga's Colleges, Inc. (DYCI). The system automates class record management, grade computation, student performance monitoring, faculty evaluation, and AI-driven academic recommendations.
+ASPIRE (Academic Support and Performance Advising with Intervention, Risk, and Evaluation) is a web-based academic management system developed for Dr. Yanga's Colleges, Inc. (DYCI). The system automates class record management, grade computation, student performance monitoring, faculty evaluation, and AI-driven academic recommendations.
 
-SAGE is designed to eliminate manual grade computation, reduce the burden of grade consultations, enforce data privacy in faculty evaluations, and provide data-driven insights for both students and administration. It does not replace DYCI's existing enrollment system — enrolled students are imported into SAGE at the start of each semester via CSV.
+ASPIRE is designed to eliminate manual grade computation, reduce the burden of grade consultations, enforce data privacy in faculty evaluations, and provide data-driven insights for both students and administration. It does not replace DYCI's existing enrollment system — enrolled students are imported into ASPIRE at the start of each semester via CSV.
 
 ### Technology Stack
 
@@ -177,16 +177,16 @@ SAGE is designed to eliminate manual grade computation, reduce the burden of gra
 
 ## 5. Entity Relationship Diagram
 
-The SAGE database consists of 21 tables hosted on Supabase (PostgreSQL). Tables are organized into functional groups including User/Organizational Data, Class/Enrollment Management, Grading, Evaluations, and AI Insights/Logs.
+The ASPIRE database consists of 21 tables hosted on Supabase (PostgreSQL). Tables are organized into functional groups including User/Organizational Data, Class/Enrollment Management, Grading, Evaluations, and AI Insights/Logs.
 
 > [!NOTE]
-> For the complete and up-to-date Entity Relationship Diagram (ERD), Table Schemas, and SQL DDL scripts, please refer directly to the master database documentation: `docs/SAGE_DATABASE_SCHEMA.md`.
+> For the complete and up-to-date Entity Relationship Diagram (ERD), Table Schemas, and SQL DDL scripts, please refer directly to the master database documentation: `docs/ASPIRE_DATABASE_SCHEMA.md`.
 
 ---
 
 ## 6. Use Case Diagram
 
-SAGE has 33 use cases across 9 modules distributed among 4 actors.
+ASPIRE has 33 use cases across 9 modules distributed among 4 actors.
 
 | UC # | Module | Use Case | Actors |
 |---|---|---|---|
@@ -272,7 +272,7 @@ The Level 0 DFD treats the entire system as a single process and identifies all 
 
 ## 8. UI Screen List
 
-SAGE consists of multiple screens distributed across 5 role portals plus shared public screens.
+ASPIRE consists of multiple screens distributed across 5 role portals plus shared public screens.
 
 ### 8.1 Shared / Public Screens
 | Screen # | Screen Name | Key Elements |
@@ -348,4 +348,4 @@ SAGE consists of multiple screens distributed across 5 role portals plus shared 
 
 ---
 
-*End of System Design Document — SAGE, DYCI Capstone Project AY 2025-2026*
+*End of System Design Document — ASPIRE, DYCI Capstone Project AY 2025-2026*

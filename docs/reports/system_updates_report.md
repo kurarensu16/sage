@@ -1,12 +1,12 @@
-# SAGE System Development & Updates Report
+# ASPIRE System Development & Updates Report
 
-This document reports all architectural updates, new page components, layout enhancements, security refactorings, and cleanup operations implemented in SAGE (Smart Academic Grading and Evaluation System) since the baseline project initialization.
+This document reports all architectural updates, new page components, layout enhancements, security refactorings, and cleanup operations implemented in ASPIRE (Academic Support and Performance Advising with Intervention, Risk, and Evaluation) since the baseline project initialization.
 
 ---
 
 ## 1. Executive Summary of Changes
 
-The SAGE platform has been updated with several critical enhancements designed to address usability feedback, resolve broken layout navigation, establish robust data auditing labels, and deliver role-adaptive user controls. 
+The ASPIRE platform has been updated with several critical enhancements designed to address usability feedback, resolve broken layout navigation, establish robust data auditing labels, and deliver role-adaptive user controls.
 
 Key changes include:
 * **Student Section & Year Level Cascade**: Enforced program-level structure constraints by mapping and cascading College $\rightarrow$ Program $\rightarrow$ Year Level $\rightarrow$ Section.
@@ -24,41 +24,41 @@ Key changes include:
 * **Scope**: User registration, batch CSV importing, and user list filtering.
 * **Summary**: Standardized student accounts to include a mandatory `yearLevel` property. Added cascade filtering where changing a student's program or year level limits sections to those matching both properties (e.g. choosing **2nd Year** displays only second-year sections like `BSIT-2B`).
 * **Key Files**:
-  * [`mockDb.js`](file:///c:/Users/sadia/SAGE/src/lib/mockDb.js) — Updated seed database with year levels; added auto-migration schema self-healing helper.
-  * [`UserForm.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/UserForm.jsx) — Added year level selection grid, cascading logic, and input validations.
-  * [`UserList.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/UserList.jsx) — Reconfigured CSV/Excel parser to optionally support, derive, and assign year levels from student uploads. Added Program and Year Level filters to the main toolbar.
+  * [`mockDb.js`](../../src/lib/mockDb.js) — Updated seed database with year levels; added auto-migration schema self-healing helper.
+  * [`UserForm.jsx`](../../src/pages/admin/UserForm.jsx) — Added year level selection grid, cascading logic, and input validations.
+  * [`UserList.jsx`](../../src/pages/admin/UserList.jsx) — Reconfigured CSV/Excel parser to optionally support, derive, and assign year levels from student uploads. Added Program and Year Level filters to the main toolbar.
 
 ### Feature 2: Audit Logs Refactoring
 * **Scope**: Activity auditing and system labelling.
 * **Summary**: Replaced all references to "Activity Log" with "Audit Logs" to align with academic compliance standards. Modified sidebar layout icons to use the Lucide `Shield` indicator for high-priority visual presence.
 * **Key Files**:
-  * **[NEW]** [`AuditLog.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/AuditLog.jsx) — Page showing logs of administrative activities (renamed from `ActivityLog.jsx`).
-  * [`Sidebar.jsx`](file:///c:/Users/sadia/SAGE/src/components/layout/Sidebar.jsx) — Reconfigured admin sidebar routes to target `Audit Logs` with the `Shield` icon.
-  * [`App.jsx`](file:///c:/Users/sadia/SAGE/src/App.jsx) — Registered `/admin/auditlog` route.
-  * [`Dashboard.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/Dashboard.jsx) — Realigned activity log shortcut links.
+  * **[NEW]** [`AuditLog.jsx`](../../src/pages/admin/AuditLog.jsx) — Page showing logs of administrative activities (renamed from `ActivityLog.jsx`).
+  * [`Sidebar.jsx`](../../src/components/layout/Sidebar.jsx) — Reconfigured admin sidebar routes to target `Audit Logs` with the `Shield` icon.
+  * [`App.jsx`](../../src/App.jsx) — Registered `/admin/auditlog` route.
+  * [`Dashboard.jsx`](../../src/pages/admin/Dashboard.jsx) — Realigned activity log shortcut links.
 
 ### Feature 3: restored Notifications Routing
 * **Scope**: System alert portals.
 * **Summary**: Designed and registered notifications components for Admin and Dean portals. Restored the Topbar bell notifications icon pathing to dynamically open `/${role}/notifications`.
 * **Key Files**:
-  * **[NEW]** [`Notifications.jsx (Admin)`](file:///c:/Users/sadia/SAGE/src/pages/admin/Notifications.jsx) — Customized system notifications list for administrators.
-  * **[NEW]** [`Notifications.jsx (Dean)`](file:///c:/Users/sadia/SAGE/src/pages/dean/Notifications.jsx) — Customized notifications covering evaluation deadlines and performance thresholds.
-  * [`App.jsx`](file:///c:/Users/sadia/SAGE/src/App.jsx) — Registered `/admin/notifications` and `/dean/notifications` routes.
-  * [`Topbar.jsx`](file:///c:/Users/sadia/SAGE/src/components/layout/Topbar.jsx) — Linked notifications bell to dynamic path.
+  * **[NEW]** [`Notifications.jsx (Admin)`](../../src/pages/admin/Notifications.jsx) — Customized system notifications list for administrators.
+  * **[NEW]** [`Notifications.jsx (Dean)`](../../src/pages/dean/Notifications.jsx) — Customized notifications covering evaluation deadlines and performance thresholds.
+  * [`App.jsx`](../../src/App.jsx) — Registered `/admin/notifications` and `/dean/notifications` routes.
+  * [`Topbar.jsx`](../../src/components/layout/Topbar.jsx) — Linked notifications bell to dynamic path.
 
 ### Feature 4: Dynamic Settings Page
 * **Scope**: User preferences and profile configuration.
 * **Summary**: Implemented a unified settings panel loaded at `/${role}/settings` for all 4 roles. Supports profile updates, password complexity checking, role-specific notification toggles (EWS, grade releases, evaluative feedback), and admin maintenance features (JSON exports, cache clears).
 * **Key Files**:
-  * **[NEW]** [`Settings.jsx`](file:///c:/Users/sadia/SAGE/src/pages/shared/Settings.jsx) — Reusable settings component loaded by path prefix.
-  * [`App.jsx`](file:///c:/Users/sadia/SAGE/src/App.jsx) — Registered settings routes for Admin, Dean, Faculty, and Student roles.
-  * [`Topbar.jsx`](file:///c:/Users/sadia/SAGE/src/components/layout/Topbar.jsx) — Upgraded static settings button to dynamic Link component.
+  * **[NEW]** [`Settings.jsx`](../../src/pages/shared/Settings.jsx) — Reusable settings component loaded by path prefix.
+  * [`App.jsx`](../../src/App.jsx) — Registered settings routes for Admin, Dean, Faculty, and Student roles.
+  * [`Topbar.jsx`](../../src/components/layout/Topbar.jsx) — Upgraded static settings button to dynamic Link component.
 
 ### Feature 5: Header Navigation Cleanup
 * **Scope**: UI polish.
 * **Summary**: Removed the Help Center button (which was empty) and the static ChevronDown icon from the profile block to simplify the Topbar header layout and avoid broken menu expectations.
 * **Key Files**:
-  * [`Topbar.jsx`](file:///c:/Users/sadia/SAGE/src/components/layout/Topbar.jsx) — Removed Help Center button and chevron elements.
+  * [`Topbar.jsx`](../../src/components/layout/Topbar.jsx) — Removed Help Center button and chevron elements.
 
 ---
 
@@ -67,12 +67,12 @@ Key changes include:
 Below is the compilation of file status changes relative to the baseline commit:
 
 ### Files Added / Untracked
-- [`src/pages/shared/Settings.jsx`](file:///c:/Users/sadia/SAGE/src/pages/shared/Settings.jsx) (Dynamic Settings Component)
-- [`src/pages/admin/Notifications.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/Notifications.jsx) (Admin Notifications Component)
-- [`src/pages/dean/Notifications.jsx`](file:///c:/Users/sadia/SAGE/src/pages/dean/Notifications.jsx) (Dean Notifications Component)
-- [`src/pages/admin/AuditLog.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/AuditLog.jsx) (Admin Auditing Dashboard)
-- [`src/pages/admin/SubjectList.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/SubjectList.jsx) & [`SubjectForm.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/SubjectForm.jsx)
-- [`src/pages/admin/SectionList.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/SectionList.jsx) & [`SectionForm.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/SectionForm.jsx)
+- [`src/pages/shared/Settings.jsx`](../../src/pages/shared/Settings.jsx) (Dynamic Settings Component)
+- [`src/pages/admin/Notifications.jsx`](../../src/pages/admin/Notifications.jsx) (Admin Notifications Component)
+- [`src/pages/dean/Notifications.jsx`](../../src/pages/dean/Notifications.jsx) (Dean Notifications Component)
+- [`src/pages/admin/AuditLog.jsx`](../../src/pages/admin/AuditLog.jsx) (Admin Auditing Dashboard)
+- [`src/pages/admin/SubjectList.jsx`](../../src/pages/admin/SubjectList.jsx) & [`SubjectForm.jsx`](../../src/pages/admin/SubjectForm.jsx)
+- [`src/pages/admin/SectionList.jsx`](../../src/pages/admin/SectionList.jsx) & [`SectionForm.jsx`](../../src/pages/admin/SectionForm.jsx)
 
 ### Files Deleted
 - `src/pages/admin/ActivityLog.jsx` (Replaced by `AuditLog.jsx`)
@@ -80,12 +80,12 @@ Below is the compilation of file status changes relative to the baseline commit:
 - `DESIGN_SYSTEM (1).md` (Cleaned up temporary duplicate file)
 
 ### Core Files Modified
-- [`src/App.jsx`](file:///c:/Users/sadia/SAGE/src/App.jsx) (Configured all settings/notifications routes)
-- [`src/components/layout/Topbar.jsx`](file:///c:/Users/sadia/SAGE/src/components/layout/Topbar.jsx) (Linked headers, removed Help and chevron icons)
-- [`src/components/layout/Sidebar.jsx`](file:///c:/Users/sadia/SAGE/src/components/layout/Sidebar.jsx) (Updated Audit Log route, labels, and icons)
-- [`src/lib/mockDb.js`](file:///c:/Users/sadia/SAGE/src/lib/mockDb.js) (Added YearLevel values and schema auto-migration)
-- [`src/pages/admin/UserForm.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/UserForm.jsx) (Cascading filters, YearLevel selector)
-- [`src/pages/admin/UserList.jsx`](file:///c:/Users/sadia/SAGE/src/pages/admin/UserList.jsx) (YearLevel columns, CSV auto-derivations, new toolbars)
+- [`src/App.jsx`](../../src/App.jsx) (Configured all settings/notifications routes)
+- [`src/components/layout/Topbar.jsx`](../../src/components/layout/Topbar.jsx) (Linked headers, removed Help and chevron icons)
+- [`src/components/layout/Sidebar.jsx`](../../src/components/layout/Sidebar.jsx) (Updated Audit Log route, labels, and icons)
+- [`src/lib/mockDb.js`](../../src/lib/mockDb.js) (Added YearLevel values and schema auto-migration)
+- [`src/pages/admin/UserForm.jsx`](../../src/pages/admin/UserForm.jsx) (Cascading filters, YearLevel selector)
+- [`src/pages/admin/UserList.jsx`](../../src/pages/admin/UserList.jsx) (YearLevel columns, CSV auto-derivations, new toolbars)
 
 ---
 

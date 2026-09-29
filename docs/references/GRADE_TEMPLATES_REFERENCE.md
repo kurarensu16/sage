@@ -1,6 +1,6 @@
-# SAGE — Official Grade Computation Templates Reference
+# ASPIRE — Official Grade Computation Templates Reference
 
-This reference document catalogs the official institutional grading computation formulas and department-specific grading templates for **SAGE (Smart Academic Grading and Evaluation System)** at **Dr. Yanga's Colleges, Inc. (DYCI)**.
+This reference document catalogs the official institutional grading computation formulas and department-specific grading templates for **ASPIRE (Academic Support and Performance Advising with Intervention, Risk, and Evaluation)** at **Dr. Yanga's Colleges, Inc. (DYCI)**.
 
 ---
 

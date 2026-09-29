@@ -1,6 +1,6 @@
 # Developer Handoff: Academic & Faculty Performance Insights Redesign Specification
 
-This document provides a comprehensive technical specification to implement both the **Student Academic Insights** and the **Faculty Performance Insights** modules within the SAGE system.
+This document provides a comprehensive technical specification to implement both the **Student Academic Insights** and the **Faculty Performance Insights** modules within the ASPIRE system.
 
 ---
 ---
@@ -204,7 +204,7 @@ Instead of creating a new sidebar page, this function is built as an **integrate
 
 ## 2.2 Qualitative Perceptions & Quantitative Ratings Summarization
 
-This system is engineered to solve a massive academic bottleneck: instead of forcing the Dean or the Instructor to manually parse hundreds of written and numerical submissions, SAGE **automatically aggregates and summarizes student evaluations**.
+This system is engineered to solve a massive academic bottleneck: instead of forcing the Dean or the Instructor to manually parse hundreds of written and numerical submissions, ASPIRE **automatically aggregates and summarizes student evaluations**.
 
 This summary combines:
 1. **Summarized Quantitative Ratings**: Aggregates the raw numbers submitted by students across key parameters (Subject Knowledge, Communication, Methodology, etc.) to give a clean average rating per section.
@@ -382,7 +382,7 @@ The legacy "AI Performance Fitness Verdict" banner is replaced with a premium, t
 1. **Remove Sparkles & Legacy AI Indicators**: Replace all instances of `Sparkles` icon and labels like `"AI Performance Fitness Verdict"`, `"Fitness Index"`, and `"AI evaluation engine"`.
 2. **Introduce Growth Spotlight Component**:
    - Embed an aggregate trajectory spotlight section that parses `faculty_performance_insights` for the selected `facultyId`.
-   - Incorporate the forest/sage green themes (`bg-sage-50/40`, `border-sage-200`) and soft amber highlights (`bg-amber-50/15`, `border-amber-250`) to match SAGE brand design tokens exactly.
+   - Incorporate the forest/sage green themes (`bg-sage-50/40`, `border-sage-200`) and soft amber highlights (`bg-amber-50/15`, `border-amber-250`) to match ASPIRE brand design tokens exactly.
 3. **Database Snapshots**: Pull data directly from the new `faculty_performance_insights` table, matching the keys:
    - `overallRating`, `standing`, `trajectory` (replacing legacy `aiVerdict.summary`), `peakCriteria` and `devCriteria` metrics.
 
@@ -492,7 +492,7 @@ This section provides direct, step-by-step handoff lists for developers to imple
     const runningGwa = postedGrades.reduce((sum, sub) => sum + parseFloat(sub.periods[selectedPeriod].gwa), 0) / postedGrades.length;
     ```
 - [ ] **Step 5: Visual Polish**
-  - Render Dean's Lister predictions using SAGE custom forest/sage greens (`bg-sage-50/40`, `border-sage-200`) and soft amber highlights (`bg-amber-50/15`, `border-amber-250`). Avoid basic raw red/green styling.
+  - Render Dean's Lister predictions using ASPIRE custom forest/sage greens (`bg-sage-50/40`, `border-sage-200`) and soft amber highlights (`bg-amber-50/15`, `border-amber-250`). Avoid basic raw red/green styling.
 
 ---
 

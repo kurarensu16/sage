@@ -1,4 +1,4 @@
-# SAGE Major Update — Defense Questions (Panelist Style)
+# ASPIRE Major Update — Defense Questions (Panelist Style)
 
 Here are potential questions a defense panelist might ask for each phase. They are phrased in a direct, conversational style so you can practice how you would answer them during your actual capstone defense.
 

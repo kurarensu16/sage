@@ -1,10 +1,10 @@
 # ASPIRE Updated System Scope Document (v3.1)
 
-> **System Title**: **ASPIRE** (*Academic Support and Performance Advising with Intervention, Risk, and Evaluation*)  
-> **Institution**: Dr. Yanga's Colleges, Inc. (DYCI), Bocaue, Bulacan  
-> **Base Codebase**: SAGE (`sage/`)  
-> **Active Roles**: **4 Core Roles** (**Student**, **Faculty**, **Dean**, **Admin**)  
-> **Document Version**: **v3.1 (September 14, 2026)** — Official Thesis Scope Baseline (Aligned with `BG-RRL-RRS-Updated.docx`)  
+> **System Title**: **ASPIRE** (*Academic Support and Performance Advising with Intervention, Risk, and Evaluation*)
+> **Institution**: Dr. Yanga's Colleges, Inc. (DYCI), Bocaue, Bulacan
+> **Base Codebase**: ASPIRE (`sage/`)
+> **Active Roles**: **4 Core Roles** (**Student**, **Faculty**, **Dean**, **Admin**)
+> **Document Version**: **v3.1 (September 14, 2026)** — Official Thesis Scope Baseline (Aligned with `BG-RRL-RRS-Updated.docx`)
 > **Current Build Status**: **100% Synchronized with Official Capstone Scope**
 
 ```
@@ -22,7 +22,7 @@ Overall Scope: [█████████████████████�
 
 | Version | Release Date | Scope & Architectural Changes | Status |
 |---|---|---|---|
-| **v1.0** | Aug 18, 2026 | Legacy SAGE baseline (5 Portals, College Office, clearance lock overlays, dynamic eval form builder). | Archived |
+| **v1.0** | Aug 18, 2026 | Legacy ASPIRE baseline (5 Portals, College Office, clearance lock overlays, dynamic eval form builder). | Archived |
 | **v2.0** | Sep 09, 2026 | Initial ASPIRE conversion draft (Preliminary feature-centric proposal). | Archived |
 | **v3.0** | Sep 14, 2026 | Research-Defensible Scope reframing: 6-stage closed-loop pipeline, weighted risk model ($0\text{--}100$), trajectory detection, baseline/follow-up snapshots, 3-layer AI boundaries, complete College Office removal. | Superseded |
 | **v3.1** | **Sep 14, 2026** | **Current Official Thesis Baseline**: Complete removal of Student-to-Faculty evaluations (Faculty evaluates student ONLY) + **Mandatory Activity Title & Description Enforcement** for AI Academic Advisor metadata ingestion + Full alignment with `BG-RRL-RRS-Updated.docx`. | **ACTIVE OFFICIAL BASELINE** |

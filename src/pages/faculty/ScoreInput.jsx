@@ -1,14 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import StudentRow from '../../components/StudentRow';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus, X, AlertTriangle, AlertCircle, Settings, Sliders, CloudUpload } from 'lucide-react';
+import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus, X, AlertTriangle, AlertCircle, Settings, Sliders, CloudUpload, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { notifyGradesPosted } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
-import { getTransmutedGrade } from '../../lib/gradingMath';
+import {
+  calculateSemestralGrade,
+  calculateStoredTermRating,
+  createGradingFormulaSnapshot,
+  getGradingStoragePresentation,
+  getTransmutedGrade,
+  resolveGradingFormula
+} from '../../lib/gradingMath';
 import { triggerExcelExport } from '../../lib/excelExport';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
@@ -16,6 +23,11 @@ import { cn } from '../../lib/utils';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import { getClassPriorityRoster } from '../../lib/classRoomService';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
+import {
+  GRADE_MILESTONES,
+  getCanonicalGradePeriod,
+  getMilestoneForPostingTarget
+} from '../../lib/gradeMilestones';
 
 export default function ScoreInput() {
   const navigate = useNavigate();
@@ -65,7 +77,10 @@ export default function ScoreInput() {
   const [configActivityId, setConfigActivityId] = useState('');
   const [configTitle, setConfigTitle] = useState('');
   const [configDescription, setConfigDescription] = useState('');
+  const [configTopicTag, setConfigTopicTag] = useState('');
+  const [configComponentId, setConfigComponentId] = useState('');
   const [configMaxScore, setConfigMaxScore] = useState(20);
+  const [configIsReleased, setConfigIsReleased] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
 
   const [isAddActivityModalOpen, setIsAddActivityModalOpen] = useState(false);
@@ -73,6 +88,8 @@ export default function ScoreInput() {
   const [newActivityName, setNewActivityName] = useState('');
   const [newActivityMax, setNewActivityMax] = useState(20);
   const [newActivityDescription, setNewActivityDescription] = useState('');
+  const [newActivityTopicTag, setNewActivityTopicTag] = useState('');
+  const [newActivityComponentId, setNewActivityComponentId] = useState('');
 
 
 
@@ -91,6 +108,30 @@ export default function ScoreInput() {
 
   const isSummer = classInfo?.sections?.semester === 'Summer' || classInfo?.sections?.semester?.toLowerCase().includes('summer') || classInfo?.semester === 'Summer';
   const periodsList = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+  const gradingFormula = useMemo(() => {
+    const snapshot = classInfo?.grading_formula_snapshot;
+    const configuredComponents = snapshot?.components
+      || classInfo?.subjects?.grade_computations?.grade_computation_components
+      || null;
+    return resolveGradingFormula(configuredComponents, {
+      formulaAssigned: Boolean(snapshot || classInfo?.subjects?.computation_id)
+    });
+  }, [classInfo]);
+  const gradingFormulaSnapshot = useMemo(() => createGradingFormulaSnapshot(gradingFormula, {
+    computationId: classInfo?.grading_formula_snapshot?.computationId
+      || classInfo?.subjects?.computation_id
+      || null
+  }), [gradingFormula, classInfo]);
+  const gradingPresentation = useMemo(
+    () => getGradingStoragePresentation(gradingFormula),
+    [gradingFormula]
+  );
+  const repeatableGradingComponents = useMemo(
+    () => gradingFormula.ok
+      ? gradingFormula.components.filter(component => component.isMultiple)
+      : [],
+    [gradingFormula]
+  );
 
   // Initialize faculty name when profile loads
   useEffect(() => {
@@ -177,7 +218,12 @@ export default function ScoreInput() {
       ...exportMetadata
     };
 
-    triggerExcelExport(metadata, studentsWithGrades, selectedTab);
+    triggerExcelExport(metadata, studentsWithGrades, selectedTab, {
+      formula: gradingFormula,
+      activities,
+      maxItems,
+      isSummer
+    });
   };
 
   const handleExportPdf = (selectedTab) => {
@@ -361,6 +407,7 @@ export default function ScoreInput() {
             status,
             school_year,
             semester,
+            grading_formula_snapshot,
             subject_id,
             section_id,
             subjects ( 
@@ -501,7 +548,12 @@ export default function ScoreInput() {
                 slotKey: `act${idx + 1}`,
                 name: a.name || a.title || '',
                 max: parseFloat(a.max_score) || 20,
-                description: a.description || ''
+                description: a.description || '',
+                topicTag: a.topic_tag || '',
+                isReleased: Boolean(a.is_released),
+                releasedAt: a.released_at || null,
+                releasedBy: a.released_by || null,
+                componentId: a.component_id || null
               }));
             } else {
               loadedActivities[t] = [{
@@ -655,14 +707,23 @@ export default function ScoreInput() {
             };
           }
           // The final semestral remark override
-          if (row.grade_period === 'final') {
+          const canonicalPeriod = getCanonicalGradePeriod(row);
+          if (canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE) {
             scoresByStudent[row.student_id].customRemarks = row.remarks === 'passed' ? 'Passed' : row.remarks === 'failed' ? 'Failed' : row.remarks.toUpperCase();
             scoresByStudent[row.student_id].remarksNote = row.remarks_note || '';
             locksMap[row.student_id] = row.is_locked;
           }
 
           if (row.is_locked) {
-            if (row.grade_period === 'final') {
+            if (canonicalPeriod === GRADE_MILESTONES.MIDTERM_RATING) {
+              locked.add('Prelim');
+              locked.add('Midterm');
+              locked.add('Midterm Rating');
+            }
+            if (
+              canonicalPeriod === GRADE_MILESTONES.TENTATIVE_FINAL_RATING
+              || canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE
+            ) {
               locked.add('Final');
               locked.add('Semestral Grade');
             }
@@ -672,6 +733,15 @@ export default function ScoreInput() {
                 if (norm === 'final' || norm === 'semestral grade' || norm === 'semestral_grade') {
                   locked.add('Final');
                   locked.add('Semestral Grade');
+                }
+                if (norm === 'prelim' || norm === 'midterm' || norm === 'midterm rating' || norm === 'midterm_rating') {
+                  locked.add('Prelim');
+                  locked.add('Midterm');
+                  locked.add('Midterm Rating');
+                }
+                if (norm === 'semi-final' || norm === 'semi_final' || norm === 'tentative final rating' || norm === 'tentative_final_rating') {
+                  locked.add('Semi-Final');
+                  locked.add('Tentative Final Rating');
                 }
               });
             }
@@ -830,7 +900,14 @@ export default function ScoreInput() {
     setConfigActivityId(act.id);
     setConfigTitle(act.name || '');
     setConfigDescription(act.description || '');
+    setConfigTopicTag(act.topicTag || '');
+    setConfigComponentId(
+      act.componentId
+      || (repeatableGradingComponents.length === 1 ? repeatableGradingComponents[0].componentId : '')
+      || ''
+    );
     setConfigMaxScore(act.max || 20);
+    setConfigIsReleased(Boolean(act.isReleased));
     setIsConfigModalOpen(true);
   };
 
@@ -849,10 +926,33 @@ export default function ScoreInput() {
       alert('Maximum Score must be greater than 0.');
       return;
     }
+    if (repeatableGradingComponents.length > 1 && !configComponentId) {
+      alert('Select the grading component this activity belongs to.');
+      return;
+    }
 
     setSavingConfig(true);
     try {
       const isNew = !configActivityId || configActivityId.length <= 10;
+      const currentActivity = activities[configTerm]?.[configSlotIndex];
+
+      if (configIsReleased && isNew) {
+        alert('Save this activity as a draft and record student scores before releasing it.');
+        return;
+      }
+
+      if (configIsReleased && !currentActivity?.isReleased) {
+        const { count: recordedScoreCount, error: scoreCountError } = await supabase
+          .from('student_activity_scores')
+          .select('score_id', { count: 'exact', head: true })
+          .eq('activity_id', configActivityId);
+
+        if (scoreCountError) throw scoreCountError;
+        if (!recordedScoreCount) {
+          alert('Record at least one student score before releasing this activity.');
+          return;
+        }
+      }
       
       const payload = {
         class_record_id: classRecordId,
@@ -860,7 +960,12 @@ export default function ScoreInput() {
         name: trimmedTitle,
         title: trimmedTitle,
         max_score: configMaxScore,
-        description: trimmedDesc
+        description: trimmedDesc,
+        topic_tag: configTopicTag.trim() || null,
+        component_id: configComponentId || null,
+        is_released: configIsReleased,
+        released_at: configIsReleased ? currentActivity?.releasedAt || new Date().toISOString() : null,
+        released_by: configIsReleased ? currentActivity?.releasedBy || user?.id || null : null
       };
 
       if (!isNew) {
@@ -885,7 +990,12 @@ export default function ScoreInput() {
         slotKey: slotKey,
         name: savedAct.name || savedAct.title || trimmedTitle,
         max: parseFloat(savedAct.max_score),
-        description: savedAct.description || ''
+        description: savedAct.description || '',
+        topicTag: savedAct.topic_tag || '',
+        componentId: savedAct.component_id || null,
+        isReleased: Boolean(savedAct.is_released),
+        releasedAt: savedAct.released_at || null,
+        releasedBy: savedAct.released_by || null
       };
 
       const updatedActivities = {
@@ -917,8 +1027,10 @@ export default function ScoreInput() {
       setIsConfigModalOpen(false);
       
       // Show success
-      setPopupTitle('Activity Configured!');
-      setPopupDesc(`"${trimmedTitle}" is now configured for ${configTerm} term with max points of ${configMaxScore}. Column grading is now unlocked.`);
+      setPopupTitle(configIsReleased ? 'Activity Released' : 'Activity Saved as Draft');
+      setPopupDesc(configIsReleased
+        ? `"${trimmedTitle}" is now visible to enrolled students and can support ASPIRE advising.`
+        : `"${trimmedTitle}" remains faculty-only until you release it.`);
       setShowPopup(true);
     } catch (err) {
       console.error('Error saving activity config:', err);
@@ -938,6 +1050,10 @@ export default function ScoreInput() {
     }
     if (!trimmedDesc) {
       alert('Lesson Topic Scope / Description is mandatory for student AI diagnostics.');
+      return;
+    }
+    if (repeatableGradingComponents.length > 1 && !newActivityComponentId) {
+      alert('Select the grading component this activity belongs to.');
       return;
     }
 
@@ -969,7 +1085,14 @@ export default function ScoreInput() {
           name: trimmedName,
           title: trimmedName,
           max_score: Number(newActivityMax) || 20,
-          description: trimmedDesc
+          description: trimmedDesc,
+          topic_tag: newActivityTopicTag.trim() || null,
+          component_id: newActivityComponentId
+            || (repeatableGradingComponents.length === 1 ? repeatableGradingComponents[0].componentId : null)
+            || null,
+          is_released: false,
+          released_at: null,
+          released_by: null
         })
         .select()
         .single();
@@ -986,7 +1109,12 @@ export default function ScoreInput() {
         slotKey: actKey,
         name: savedAct.name || savedAct.title || trimmedName,
         max: parseFloat(savedAct.max_score) || Number(newActivityMax) || 20,
-        description: savedAct.description || trimmedDesc
+        description: savedAct.description || trimmedDesc,
+        topicTag: savedAct.topic_tag || '',
+        componentId: savedAct.component_id || null,
+        isReleased: Boolean(savedAct.is_released),
+        releasedAt: savedAct.released_at || null,
+        releasedBy: savedAct.released_by || null
       };
 
       const updatedList = [...validList, newAct];
@@ -1016,9 +1144,11 @@ export default function ScoreInput() {
       setIsAddActivityModalOpen(false);
       setNewActivityName('');
       setNewActivityDescription('');
+      setNewActivityTopicTag('');
+      setNewActivityComponentId('');
       
-      setPopupTitle('Activity Added!');
-      setPopupDesc(`"${trimmedName}" has been successfully added under ${term} period.`);
+      setPopupTitle('Activity Added as Draft');
+      setPopupDesc(`"${trimmedName}" is faculty-only until you record scores and release it.`);
       setShowPopup(true);
     } catch (err) {
       console.error('Error adding activity:', err);
@@ -1046,7 +1176,12 @@ export default function ScoreInput() {
 
             const legacyScores = { act1: 0, act2: 0, act3: 0, act4: 0, act5: 0, act6: 0 };
             termActs.forEach((act, idx) => {
-              const val = Number(termScores[act.id]) ?? Number(termScores[act.dbId]) ?? Number(termScores[act.slotKey]) ?? Number(termScores[`act${idx+1}`]) ?? 0;
+              const rawValue = termScores[act.id]
+                ?? termScores[act.dbId]
+                ?? termScores[act.slotKey]
+                ?? termScores[`act${idx + 1}`]
+                ?? 0;
+              const val = Number(rawValue) || 0;
               if (idx < 6) {
                 legacyScores[`act${idx+1}`] = val;
               }
@@ -1115,23 +1250,24 @@ export default function ScoreInput() {
 
   const handlePostGrades = async (targetMilestone = 'semestral') => {
     if (!classRecordId || students.length === 0) return;
+    if (!gradingFormula.ok) {
+      alert(`Grades cannot be posted: ${gradingFormula.error}`);
+      return;
+    }
 
     setPostingGrades(true);
     try {
-      let periodParam = 'final';
+      let periodParam = getMilestoneForPostingTarget(targetMilestone);
       let termNotificationName = 'Official Semestral Grade (SG)';
       let newMilestoneLock = 'Semestral Grade';
 
       if (targetMilestone === 'midterm') {
-        periodParam = 'midterm';
         termNotificationName = isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)';
         newMilestoneLock = 'Midterm Rating';
       } else if (targetMilestone === 'tfr') {
-        periodParam = 'final';
         termNotificationName = isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)';
         newMilestoneLock = 'Tentative Final Rating';
       } else {
-        periodParam = 'final';
         termNotificationName = 'Official Semestral Grade (SG)';
         newMilestoneLock = 'Semestral Grade';
       }
@@ -1174,29 +1310,54 @@ export default function ScoreInput() {
         return lower; // 'passed', 'failed', 'fda', 'dropped'
       };
 
+      if (!classInfo?.grading_formula_snapshot && gradingFormulaSnapshot) {
+        const { error: snapshotErr } = await supabase
+          .from('class_records')
+          .update({ grading_formula_snapshot: gradingFormulaSnapshot })
+          .eq('class_record_id', classRecordId)
+          .is('grading_formula_snapshot', null);
+
+        if (snapshotErr) throw snapshotErr;
+      }
+
       students.forEach(stud => {
         const STORAGE_KEY = `sage_scores_${classRecordId}_${stud.id}`;
         const draft = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
         
-        const getTermRating = (termName) => {
-          const tSc = draft[termName] || {};
-          const tMx = maxItems[termName] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
-          const tCs = (tSc.act1 || 0) + (tSc.act2 || 0) + (tSc.act3 || 0) + (tSc.act4 || 0) + (tSc.act5 || 0) + (tSc.act6 || 0);
-          const tCsMx = tMx.act1 + tMx.act2 + tMx.act3 + tMx.act4 + tMx.act5 + tMx.act6;
-          const tCsP = tCsMx > 0 ? (tCs / tCsMx) * 50 : 0;
-          const tChP = (tSc.char || 0) * 0.1;
-          const tExP = tMx.exam > 0 ? ((tSc.exam || 0) / tMx.exam) * 40 : 0;
-          return Math.min(100, Math.max(0, Math.round(tCsP + tChP + tExP)));
-        };
-        
-        const prelimRating = getTermRating('Prelim');
-        const midtermRating = getTermRating('Midterm');
-        const sfRating = getTermRating('Semi-Final');
-        const finalRating = getTermRating('Final');
-        
-        const mr = isSummer ? midtermRating : Math.round((prelimRating + midtermRating) / 2);
-        const tfr = isSummer ? finalRating : Math.round((sfRating + finalRating) / 2);
-        const finalSG = Math.round((mr + tfr) / 2);
+        const termResults = Object.fromEntries(['Prelim', 'Midterm', 'Semi-Final', 'Final'].map(termName => [
+          termName,
+          calculateStoredTermRating({
+            formula: gradingFormula,
+            termScores: draft[termName] || {},
+            maxItems: maxItems[termName] || {},
+            activities: activities[termName] || []
+          })
+        ]));
+        const requiredTerms = targetMilestone === 'midterm'
+          ? (isSummer ? ['Midterm'] : ['Prelim', 'Midterm'])
+          : targetMilestone === 'tfr'
+            ? (isSummer ? ['Final'] : ['Semi-Final', 'Final'])
+            : periodsList;
+        const invalidTerm = requiredTerms.find(term =>
+          !termResults[term].ok || !termResults[term].hasData || !termResults[term].isComplete
+        );
+        if (invalidTerm) {
+          const missing = termResults[invalidTerm].missingComponents?.join(', ');
+          const reason = termResults[invalidTerm].error
+            || (missing ? `Missing ${invalidTerm} components: ${missing}.` : `No scores are encoded for ${invalidTerm}.`);
+          throw new Error(`${stud.name}: ${reason}`);
+        }
+
+        const semesterResult = calculateSemestralGrade({
+          prelim: termResults.Prelim.rating,
+          midterm: termResults.Midterm.rating,
+          semiFinal: termResults['Semi-Final'].rating,
+          final: termResults.Final.rating,
+          isSummer
+        });
+        const mr = semesterResult.mr;
+        const tfr = semesterResult.tfr;
+        const finalSG = semesterResult.sg;
         
         let computedTermGrade = finalSG;
         if (targetMilestone === 'midterm') {
@@ -1242,7 +1403,8 @@ export default function ScoreInput() {
           posted_by: user.id,
           posted_at: new Date().toISOString(),
           is_locked: true,
-          locked_milestones: updatedLockedMilestones
+          locked_milestones: updatedLockedMilestones,
+          grading_formula_snapshot: gradingFormulaSnapshot
         };
 
         const existingId = oldRecord?.id;
@@ -1440,6 +1602,21 @@ export default function ScoreInput() {
     return a.name.localeCompare(b.name);
   });
 
+  const renderActivityReleaseStatus = (activity) => (
+    <span
+      className={cn(
+        "inline-flex items-center gap-0.5 rounded-full border px-1 py-0.5 font-sans text-[7px] font-bold leading-none",
+        activity.isReleased
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border-slate-200 bg-slate-100 text-slate-500"
+      )}
+      title={activity.isReleased ? 'Released to students' : 'Faculty-only draft'}
+    >
+      {activity.isReleased ? <Eye className="h-2 w-2" /> : <EyeOff className="h-2 w-2" />}
+      {activity.isReleased ? 'Released' : 'Draft'}
+    </span>
+  );
+
   return (
     <>
       {/* Header */}
@@ -1620,6 +1797,11 @@ export default function ScoreInput() {
                     if (!periodsList.includes(newActivityTerm)) {
                       setNewActivityTerm(periodsList[0] || 'Prelim');
                     }
+                    setNewActivityComponentId(
+                      repeatableGradingComponents.length === 1
+                        ? repeatableGradingComponents[0].componentId || ''
+                        : ''
+                    );
                     setIsAddActivityModalOpen(true);
                   }}
                   className="px-3.5 py-2 text-xs font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer whitespace-nowrap"
@@ -1653,12 +1835,12 @@ export default function ScoreInput() {
                             <th rowSpan={2} className="px-4 py-3 text-left font-bold uppercase tracking-wider sticky left-[136px] bg-slate-50 border-r border-slate-200 z-30 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Student Name</th>
                             {/* Prelim Period */}
                             {(periodsList.includes('Prelim') && (viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch')) && (
-                              <th colSpan={(activities.Prelim?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
+                              <th colSpan={(activities.Prelim?.length || 0) + (gradingPresentation.hasCharacter ? 6 : 5)} className="px-4 py-2 border-r border-slate-200 bg-sky-50 text-sky-850">PRELIMINARY GRADE</th>
                             )}
                             
                             {/* Midterm Period */}
                             {(periodsList.includes('Midterm') && (viewMode === 'All' || viewMode === 'Midterm' || viewMode === 'MidtermBatch')) && (
-                              <th colSpan={(activities.Midterm?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">MIDTERM GRADE</th>
+                              <th colSpan={(activities.Midterm?.length || 0) + (gradingPresentation.hasCharacter ? 6 : 5)} className="px-4 py-2 border-r border-slate-200 bg-indigo-50 text-indigo-850">MIDTERM GRADE</th>
                             )}
                             
                             {/* Midterm Rating */}
@@ -1668,12 +1850,12 @@ export default function ScoreInput() {
                             
                             {/* Semi-Final Period */}
                             {(periodsList.includes('Semi-Final') && (viewMode === 'All' || viewMode === 'Semi-Final' || viewMode === 'FinalBatch')) && (
-                              <th colSpan={(activities['Semi-Final']?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-amber-50 text-amber-850">SEMI-FINAL GRADE</th>
+                              <th colSpan={(activities['Semi-Final']?.length || 0) + (gradingPresentation.hasCharacter ? 6 : 5)} className="px-4 py-2 border-r border-slate-200 bg-amber-50 text-amber-850">SEMI-FINAL GRADE</th>
                             )}
                             
                             {/* Final Period */}
                             {(periodsList.includes('Final') && (viewMode === 'All' || viewMode === 'Final' || viewMode === 'FinalBatch')) && (
-                              <th colSpan={(activities.Final?.length || 0) + 6} className="px-4 py-2 border-r border-slate-200 bg-orange-50 text-orange-850">FINAL GRADE</th>
+                              <th colSpan={(activities.Final?.length || 0) + (gradingPresentation.hasCharacter ? 6 : 5)} className="px-4 py-2 border-r border-slate-200 bg-orange-50 text-orange-850">FINAL GRADE</th>
                             )}
                             
                             {/* Tentative Final Rating */}
@@ -1715,7 +1897,8 @@ export default function ScoreInput() {
                                       <div className="flex flex-col items-center justify-center gap-0.5">
                                         <span>{index + 1}</span>
                                         {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
-                                        {isConfigured && <span className="text-[7px] text-sky-750 font-sans block max-w-[40px] truncate" title={act.name}>{act.name}</span>}
+                                        {isConfigured && <span className="text-[7px] text-sky-750 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
+                                        {isConfigured && renderActivityReleaseStatus(act)}
                                       </div>
                                     </th>
                                   );
@@ -1723,8 +1906,10 @@ export default function ScoreInput() {
 
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-14">Exam</th>
+                                {gradingPresentation.hasCharacter && (
+                                  <th className="px-1.5 py-1.5 border-r border-slate-100 w-16" title={gradingPresentation.characterLabel}>{gradingPresentation.characterLabel}</th>
+                                )}
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-14" title={gradingPresentation.examLabel}>{gradingPresentation.examLabel}</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-sky-100/30 font-bold w-14 text-slate-800">Rating</th>
                               </>
@@ -1748,7 +1933,8 @@ export default function ScoreInput() {
                                       <div className="flex flex-col items-center justify-center gap-0.5">
                                         <span>{index + 1}</span>
                                         {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
-                                        {isConfigured && <span className="text-[7px] text-indigo-755 font-sans block max-w-[40px] truncate" title={act.name}>{act.name}</span>}
+                                        {isConfigured && <span className="text-[7px] text-indigo-755 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
+                                        {isConfigured && renderActivityReleaseStatus(act)}
                                       </div>
                                     </th>
                                   );
@@ -1756,8 +1942,10 @@ export default function ScoreInput() {
 
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-14">Exam</th>
+                                {gradingPresentation.hasCharacter && (
+                                  <th className="px-1.5 py-1.5 border-r border-slate-100 w-16" title={gradingPresentation.characterLabel}>{gradingPresentation.characterLabel}</th>
+                                )}
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-14" title={gradingPresentation.examLabel}>{gradingPresentation.examLabel}</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-indigo-100/30 font-bold w-14 text-slate-800">Rating</th>
                               </>
@@ -1781,7 +1969,8 @@ export default function ScoreInput() {
                                       <div className="flex flex-col items-center justify-center gap-0.5">
                                         <span>{index + 1}</span>
                                         {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
-                                        {isConfigured && <span className="text-[7px] text-amber-755 font-sans block max-w-[40px] truncate" title={act.name}>{act.name}</span>}
+                                        {isConfigured && <span className="text-[7px] text-amber-755 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
+                                        {isConfigured && renderActivityReleaseStatus(act)}
                                       </div>
                                     </th>
                                   );
@@ -1789,8 +1978,10 @@ export default function ScoreInput() {
 
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-14">Exam</th>
+                                {gradingPresentation.hasCharacter && (
+                                  <th className="px-1.5 py-1.5 border-r border-slate-100 w-16" title={gradingPresentation.characterLabel}>{gradingPresentation.characterLabel}</th>
+                                )}
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-14" title={gradingPresentation.examLabel}>{gradingPresentation.examLabel}</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-amber-100/30 font-bold w-14 text-slate-800">Rating</th>
                               </>
@@ -1814,7 +2005,8 @@ export default function ScoreInput() {
                                       <div className="flex flex-col items-center justify-center gap-0.5">
                                         <span>{index + 1}</span>
                                         {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
-                                        {isConfigured && <span className="text-[7px] text-orange-755 font-sans block max-w-[40px] truncate" title={act.name}>{act.name}</span>}
+                                        {isConfigured && <span className="text-[7px] text-orange-755 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
+                                        {isConfigured && renderActivityReleaseStatus(act)}
                                       </div>
                                     </th>
                                   );
@@ -1822,8 +2014,10 @@ export default function ScoreInput() {
 
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">Total</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-16">Char</th>
-                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-14">Exam</th>
+                                {gradingPresentation.hasCharacter && (
+                                  <th className="px-1.5 py-1.5 border-r border-slate-100 w-16" title={gradingPresentation.characterLabel}>{gradingPresentation.characterLabel}</th>
+                                )}
+                                <th className="px-1.5 py-1.5 border-r border-slate-100 w-14" title={gradingPresentation.examLabel}>{gradingPresentation.examLabel}</th>
                                 <th className="px-1.5 py-1.5 border-r border-slate-100 bg-slate-100/55 w-12">%</th>
                                 <th className="px-2 py-1.5 border-r border-slate-200 bg-orange-100/30 font-bold w-14 text-slate-800">Rating</th>
                               </>
@@ -1860,10 +2054,12 @@ export default function ScoreInput() {
                               <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
                                 {(activities.Prelim || []).reduce((acc, c) => acc + (c.max || 0), 0)}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">50%</td>
-                              <td className="p-1 border-r border-slate-100 w-16 bg-slate-100/50 text-center font-mono text-xs font-bold text-slate-400">
-                                {maxItems.Prelim.char}
-                              </td>
+                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.activityWeight}%</td>
+                              {gradingPresentation.hasCharacter && (
+                                <td className="p-1 border-r border-slate-100 w-16 bg-slate-100/50 text-center font-mono text-xs font-bold text-slate-400">
+                                  {maxItems.Prelim.char}
+                                </td>
+                              )}
                               <td 
                                 onClick={isPrelimLocked ? undefined : () => setEditingColumn({ period: 'Prelim', key: 'exam', label: 'Exam Max Score', value: maxItems.Prelim.exam })} 
                                 className={`p-1 border-r border-slate-100 w-14 text-center font-mono text-xs font-bold transition-colors ${
@@ -1874,7 +2070,7 @@ export default function ScoreInput() {
                               >
                                 {maxItems.Prelim.exam}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">40%</td>
+                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.examWeight}%</td>
                               <td className="px-2 py-3 font-mono font-bold bg-sky-100/80 border-r border-slate-200 text-sky-900 w-14 text-center text-[10px]">100%</td>
                             </>
                           )}
@@ -1898,10 +2094,12 @@ export default function ScoreInput() {
                               <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
                                 {(activities.Midterm || []).reduce((acc, c) => acc + (c.max || 0), 0)}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">50%</td>
-                              <td className="p-1 border-r border-slate-100 w-16 bg-indigo-50/50 text-center font-mono text-xs font-bold text-indigo-900">
-                                {maxItems.Midterm.char || 100}
-                              </td>
+                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.activityWeight}%</td>
+                              {gradingPresentation.hasCharacter && (
+                                <td className="p-1 border-r border-slate-100 w-16 bg-indigo-50/50 text-center font-mono text-xs font-bold text-indigo-900">
+                                  {maxItems.Midterm.char || 100}
+                                </td>
+                              )}
                               <td 
                                 onClick={isMidtermLocked ? undefined : () => setEditingColumn({ period: 'Midterm', key: 'exam', label: 'Exam Max Score', value: maxItems.Midterm.exam })} 
                                 className={`p-1 border-r border-slate-100 w-14 text-center font-mono text-xs font-bold transition-colors ${
@@ -1912,7 +2110,7 @@ export default function ScoreInput() {
                               >
                                 {maxItems.Midterm.exam}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">40%</td>
+                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.examWeight}%</td>
                               <td className="px-2 py-3 font-mono font-bold bg-indigo-100/80 border-r border-slate-200 text-indigo-900 w-14 text-center text-[10px]">100%</td>
                             </>
                           )}
@@ -1942,10 +2140,12 @@ export default function ScoreInput() {
                               <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
                                 {(activities['Semi-Final'] || []).reduce((acc, c) => acc + (c.max || 0), 0)}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">50%</td>
-                              <td className="p-1 border-r border-slate-100 w-16 bg-slate-100/50 text-center font-mono text-xs font-bold text-slate-400">
-                                {maxItems['Semi-Final'].char}
-                              </td>
+                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.activityWeight}%</td>
+                              {gradingPresentation.hasCharacter && (
+                                <td className="p-1 border-r border-slate-100 w-16 bg-slate-100/50 text-center font-mono text-xs font-bold text-slate-400">
+                                  {maxItems['Semi-Final'].char}
+                                </td>
+                              )}
                               <td 
                                 onClick={isSemiFinalLocked ? undefined : () => setEditingColumn({ period: 'Semi-Final', key: 'exam', label: 'Exam Max Score', value: maxItems['Semi-Final'].exam })} 
                                 className={`p-1 border-r border-slate-100 w-14 text-center font-mono text-xs font-bold transition-colors ${
@@ -1956,7 +2156,7 @@ export default function ScoreInput() {
                               >
                                 {maxItems['Semi-Final'].exam}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">40%</td>
+                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.examWeight}%</td>
                               <td className="px-2 py-3 font-mono font-bold bg-amber-100/80 border-r border-slate-200 text-amber-900 w-14 text-center text-[10px]">100%</td>
                             </>
                           )}
@@ -1982,10 +2182,12 @@ export default function ScoreInput() {
                               <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
                                 {(activities.Final || []).reduce((acc, c) => acc + (c.max || 0), 0)}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">50%</td>
-                              <td className="p-1 border-r border-slate-100 w-16 bg-slate-100/50 text-center font-mono text-xs font-bold text-slate-400">
-                                {maxItems.Final.char}
-                              </td>
+                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.activityWeight}%</td>
+                              {gradingPresentation.hasCharacter && (
+                                <td className="p-1 border-r border-slate-100 w-16 bg-slate-100/50 text-center font-mono text-xs font-bold text-slate-400">
+                                  {maxItems.Final.char}
+                                </td>
+                              )}
                               <td 
                                 onClick={isFinalLocked ? undefined : () => setEditingColumn({ period: 'Final', key: 'exam', label: 'Exam Max Score', value: maxItems.Final.exam })} 
                                 className={`p-1 border-r border-slate-100 w-14 text-center font-mono text-xs font-bold transition-colors ${
@@ -1996,7 +2198,7 @@ export default function ScoreInput() {
                               >
                                 {maxItems.Final.exam}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">40%</td>
+                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.examWeight}%</td>
                               <td className="px-2 py-3 font-mono font-bold bg-orange-100/80 border-r border-slate-200 text-orange-900 w-14 text-center text-[10px]">100%</td>
                             </>
                           )}
@@ -2051,6 +2253,8 @@ export default function ScoreInput() {
                               classCode={classRecordId}
                               maxItems={maxItems}
                               activities={activities}
+                              gradingFormula={gradingFormula}
+                              showCharacter={gradingPresentation.hasCharacter}
                               lockedMilestones={lockedMilestones}
                               studentLocked={studentLocks[student.id]}
                               periodsList={periodsList}
@@ -2153,6 +2357,9 @@ export default function ScoreInput() {
         classInfo={classInfo}
         students={compileStudentsWithGrades()}
         maxItems={maxItems}
+        activities={activities}
+        gradingFormula={gradingFormula}
+        isSummer={isSummer}
         metadata={exportMetadata}
         onMetadataChange={(updated) => setExportMetadata(prev => ({ ...prev, ...updated }))}
         onExportExcel={handleExportExcel}
@@ -2178,7 +2385,7 @@ export default function ScoreInput() {
             
             <div className="p-6 space-y-4">
               <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3.5 text-xs leading-relaxed">
-                <strong>💡 Important Notice:</strong> Before you can enter scores for this column, you must assign an official activity Title and Description. This will instantly update the Student Portal so students can track their specific assessment items.
+                <strong>Visibility policy:</strong> Saving as Draft keeps this activity faculty-only. Release it only when its recorded results are ready for students and the ASPIRE Advisor.
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -2212,6 +2419,43 @@ export default function ScoreInput() {
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                  Topic Tag <span className="font-normal normal-case text-slate-400">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={configTopicTag}
+                  onChange={(e) => setConfigTopicTag(e.target.value)}
+                  placeholder="e.g. Linked Lists, Cell Division"
+                  maxLength={100}
+                  className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all"
+                />
+                <p className="text-[10px] text-slate-400">Used to connect related assessment results without exposing an unofficial term grade.</p>
+              </div>
+
+              {repeatableGradingComponents.length > 1 && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                    Grading Component <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={configComponentId}
+                    onChange={(e) => setConfigComponentId(e.target.value)}
+                    className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-lg text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer"
+                  >
+                    <option value="">Select a component</option>
+                    {repeatableGradingComponents.map(component => (
+                      <option key={component.componentId || component.key} value={component.componentId || ''}>
+                        {component.name} ({component.weight}%)
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-400">This assignment determines which formula bucket receives the activity score.</p>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
                   Maximum Points / Score <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -2224,6 +2468,26 @@ export default function ScoreInput() {
                   className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all font-mono"
                 />
               </div>
+
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={configIsReleased}
+                  onChange={(e) => setConfigIsReleased(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sage-600 focus:ring-sage-500"
+                />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                    {configIsReleased ? <Eye className="h-3.5 w-3.5 text-emerald-600" /> : <EyeOff className="h-3.5 w-3.5 text-slate-500" />}
+                    {configIsReleased ? 'Released to students' : 'Faculty-only draft'}
+                  </span>
+                  <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">
+                    {configIsReleased
+                      ? 'Students can see this activity result and ASPIRE may use it as advising evidence.'
+                      : 'Students and the ASPIRE Advisor cannot access this activity result.'}
+                  </span>
+                </span>
+              </label>
             </div>
 
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
@@ -2237,11 +2501,11 @@ export default function ScoreInput() {
               <button 
                 type="button"
                 onClick={handleSaveConfig}
-                disabled={savingConfig || !configTitle.trim() || !configDescription.trim()}
+                disabled={savingConfig || !configTitle.trim() || !configDescription.trim() || (repeatableGradingComponents.length > 1 && !configComponentId)}
                 className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
               >
                 <Lock className="h-3.5 w-3.5" />
-                <span>{savingConfig ? 'Saving...' : 'Save & Unlock'}</span>
+                <span>{savingConfig ? 'Saving...' : configIsReleased ? 'Save & Release' : 'Save as Draft'}</span>
               </button>
             </div>
           </div>
@@ -2325,6 +2589,44 @@ export default function ScoreInput() {
 
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                    Topic Tag <span className="font-normal normal-case text-slate-400">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    disabled={isTermFull}
+                    value={newActivityTopicTag}
+                    onChange={(e) => setNewActivityTopicTag(e.target.value)}
+                    placeholder="e.g. Linked Lists, Cell Division"
+                    maxLength={100}
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all disabled:bg-slate-50 disabled:text-slate-450 shadow-2xs"
+                  />
+                </div>
+
+                {repeatableGradingComponents.length > 1 && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                      Grading Component <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      disabled={isTermFull}
+                      required
+                      value={newActivityComponentId}
+                      onChange={(e) => setNewActivityComponentId(e.target.value)}
+                      className="block w-full bg-white border border-slate-200 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all cursor-pointer disabled:bg-slate-50 disabled:text-slate-450 shadow-2xs"
+                    >
+                      <option value="">Select a component</option>
+                      {repeatableGradingComponents.map(component => (
+                        <option key={component.componentId || component.key} value={component.componentId || ''}>
+                          {component.name} ({component.weight}%)
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-slate-400">Required when the formula has multiple repeatable activity buckets.</p>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
                     Maximum Points / Score <span className="text-rose-500">*</span>
                   </label>
                   <input
@@ -2336,6 +2638,14 @@ export default function ScoreInput() {
                     onChange={(e) => setNewActivityMax(Number(e.target.value))}
                     className="block w-full px-3.5 py-2.5 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all font-mono disabled:bg-slate-50 disabled:text-slate-450 shadow-2xs"
                   />
+                </div>
+
+                <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                  <EyeOff className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">New activities begin as faculty-only drafts</p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Enter student scores first, then open the activity header to release it.</p>
+                  </div>
                 </div>
               </div>
 
@@ -2349,11 +2659,11 @@ export default function ScoreInput() {
                 </button>
                 <button 
                   type="button"
-                  disabled={isTermFull || !newActivityName.trim() || !newActivityDescription.trim()}
+                  disabled={isTermFull || !newActivityName.trim() || !newActivityDescription.trim() || (repeatableGradingComponents.length > 1 && !newActivityComponentId)}
                   onClick={handleAddActivitySubmit}
                   className="px-5 py-2.5 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
                 >
-                  Add Column
+                  Add Draft
                 </button>
               </div>
             </div>

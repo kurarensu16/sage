@@ -1,9 +1,9 @@
 # ASPIRE Comprehensive Cross-Document & Feature Audit Report (v3.1)
 
-> **Base Codebase**: SAGE (`sage/`)  
-> **Target System Title**: **ASPIRE** (*Academic Support and Performance Advising with Intervention, Risk, and Evaluation*)  
-> **Audit Date**: September 14, 2026  
-> **Document Version**: **v3.1 (September 14, 2026)** — Official Audit Baseline  
+> **Base Codebase**: ASPIRE (`sage/`)
+> **Target System Title**: **ASPIRE** (*Academic Support and Performance Advising with Intervention, Risk, and Evaluation*)
+> **Audit Date**: September 14, 2026
+> **Document Version**: **v3.1 (September 14, 2026)** — Official Audit Baseline
 
 ---
 
@@ -11,7 +11,7 @@
 
 | Version | Date | Status | Key Scope & Audit Alignments |
 |---|---|---|---|
-| **v1.0** | Aug 18, 2026 | Legacy | Original SAGE baseline (5 Portals, clearance locks, College Office). |
+| **v1.0** | Aug 18, 2026 | Legacy | Original ASPIRE baseline (5 Portals, clearance locks, College Office). |
 | **v2.0** | Sep 09, 2026 | Draft | Initial ASPIRE preliminary draft. |
 | **v3.0** | Sep 14, 2026 | Refined | 6-stage closed loop, weighted risk model ($0\text{--}100$), baseline/follow-up snapshots. |
 | **v3.1** | **Sep 14, 2026** | **ACTIVE** | **Current Official Audit Baseline**: Student-to-faculty evals 100% removed + **Mandatory Activity Title & Scope/Description Enforcement** for student AI advisor ingestion. |
@@ -55,9 +55,9 @@ All core planning artifacts—Scope Document v3.1, Implementation Plan v3.1, and
 
 ## 3. Four-Way Master Feature Comparison Matrix
 
-| Feature / Module | Legacy SAGE Thesis | Legacy ASPIRE Draft | Live Codebase (`sage/`) | Refined ASPIRE v3.1 | Audit Status |
+| Feature / Module | Legacy ASPIRE Thesis | Legacy ASPIRE Draft | Live Codebase (`sage/`) | Refined ASPIRE v3.1 | Audit Status |
 |---|:---:|:---:|:---:|:---:|---|
-| **System Branding** | SAGE | ASPIRE | SAGE | **ASPIRE** | 🔄 Reverted to **ASPIRE** |
+| **System Branding** | ASPIRE | ASPIRE | ASPIRE | **ASPIRE** | 🔄 Reverted to **ASPIRE** |
 | **Active Portals** | 5 Portals (incl. Office) | 5 Portals (incl. Guidance) | 5 Portals (incl. Office) | **4 Core Portals** (Student, Faculty, Dean, Admin) | 🗑️ **College Office Wiped Out** |
 | **Student Eval of Faculty** | Active (Survey Forms) | Not Present | Implemented | **100% REMOVED** | 🗑️ **Wiped Out (Faculty evaluates student ONLY)** |
 | **Prof Eval of Student Risk** | None | Class Risk Monitor | Partial View | **PRIMARY NEW FEATURE (HITL Modal + Snapshots)** | ✨ **Added (HITL Modal)** |
@@ -72,6 +72,6 @@ All core planning artifacts—Scope Document v3.1, Implementation Plan v3.1, and
 
 ## 4. Audit Finalization & Confirmation
 
-All core planning documents in [`SAGE to ASPIRE MAJOR UPDATE (09-14-26)`](file:///c:/Users/JC%20Gabriel/Downloads/SAGE/SAGE%20to%20ASPIRE%20MAJOR%20UPDATE%20%2809-14-26%29) are updated and synchronized with **v3.1 (September 14, 2026)**.
+All core planning documents in [`ASPIRE to ASPIRE MAJOR UPDATE (09-14-26)`](file:///c:/Users/JC%20Gabriel/Downloads/ASPIRE/ASPIRE%20to%20ASPIRE%20MAJOR%20UPDATE%20%2809-14-26%29) are updated and synchronized with **v3.1 (September 14, 2026)**.
 
 **Status**: Ready for implementation, database migration, and capstone presentation.

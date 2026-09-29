@@ -1,6 +1,6 @@
-# SAGE AI Agent Architecture
+# ASPIRE AI Agent Architecture
 
-Building intelligent agents into SAGE to fulfill **FR34** (Student Academic Recommendations) and **FR35** (Faculty Fitness Predictions), plus additional value-add agents that leverage existing data.
+Building intelligent agents into ASPIRE to fulfill **FR34** (Student Academic Recommendations) and **FR35** (Faculty Fitness Predictions), plus additional value-add agents that leverage existing data.
 
 ---
 
@@ -276,7 +276,7 @@ Faculty Evaluation Data:
 ```
 ┌─────────────────────────────────────────────────┐
 │                  React Frontend                  │
-│         (existing SAGE pages + new UI)           │
+│         (existing ASPIRE pages + new UI)           │
 └──────────────────────┬──────────────────────────┘
                        │ fetch / RPC
                        ▼
@@ -386,4 +386,4 @@ supabase/
 
 ---
 
-*End of AI Agent Architecture Proposal — SAGE, DYCI Capstone Project AY 2025-2026*
+*End of AI Agent Architecture Proposal — ASPIRE, DYCI Capstone Project AY 2025-2026*

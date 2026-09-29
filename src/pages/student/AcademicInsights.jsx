@@ -1,9 +1,9 @@
-import { 
-  getTransmutedGrade, 
-  GWA_TARGET_BENCHMARKS, 
-  simulateRequiredFinalRating 
+import {
+  getTransmutedGrade,
+  GWA_TARGET_BENCHMARKS,
+  simulateRequiredFinalRating
 } from '../../lib/gradingMath';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { useAuth } from '../../lib/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -17,54 +17,32 @@ import {
   Compass, 
   ShieldCheck, 
   Sparkles, 
-  Calculator, 
-  Sliders, 
-  BarChart3, 
+  Calculator,
+  BarChart3,
   UserCheck, 
   Clock, 
   AlertTriangle, 
-  Info,
   MessageSquare,
   Calendar,
   Send,
   CheckCircle2,
   X,
-  Plus
+  Plus,
+  Lock,
+  TrendingUp
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getAiAcademicInsight } from '../../lib/openrouter';
+import { evaluateAcademicAdvising } from '../../lib/advisingEngine';
+import AskAspirePanel from '../../components/student/AskAspirePanel';
 import { dispatchNotifications } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import { DetailSkeleton } from '../../components/common/Skeleton';
-
-// Helper to calculate term ratings from draft scores (DYCI Standard: 50% CS, 10% Char, 40% Exam)
-const calculateTermRating = (draftScores, maxSetup) => {
-  if (!draftScores) return null;
-  const max = maxSetup || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
-
-  const act1 = draftScores.act1 !== null ? draftScores.act1 : 0;
-  const act2 = draftScores.act2 !== null ? draftScores.act2 : 0;
-  const act3 = draftScores.act3 !== null ? draftScores.act3 : 0;
-  const act4 = draftScores.act4 !== null ? draftScores.act4 : 0;
-  const act5 = draftScores.act5 !== null ? draftScores.act5 : 0;
-  const act6 = draftScores.act6 !== null ? draftScores.act6 : 0;
-  const char = draftScores.char_rating !== null ? draftScores.char_rating : 0;
-  const exam = draftScores.exam !== null ? draftScores.exam : 0;
-
-  // Class Standing (50%)
-  const csSum = act1 + act2 + act3 + act4 + act5 + act6;
-  const csMax = max.act1 + max.act2 + max.act3 + max.act4 + max.act5 + max.act6;
-  const csPct = csMax > 0 ? (csSum / csMax) * 50 : 0;
-
-  // Character Rating (10%)
-  const charPct = char * 0.1;
-
-  // Term Exam (40%)
-  const examMax = max.exam;
-  const examPct = examMax > 0 ? (exam / examMax) * 40 : 0;
-
-  return Math.min(100, Math.max(0, Math.round(csPct + charPct + examPct)));
-};
+import {
+  GRADE_MILESTONES,
+  findPostedMilestone,
+  getCanonicalGradePeriod
+} from '../../lib/gradeMilestones';
 
 // Helper to compute academic verdict enum ('continue', 'at_risk', 'recommend_shift')
 const computeVerdict = (gwaNum, fdaRisk, absents, failingCount = 0) => {
@@ -135,14 +113,15 @@ export default function AcademicInsights() {
   const [hasEnrolledSubjects, setHasEnrolledSubjects] = useState(false);
 
   // Selector states
-  const [scope, setScope] = useState('overall'); // 'overall' or 'subject'
+  const [scope, setScope] = useState('overall'); // Today, My Courses, or My Progress
   const [selectedSubjectCode, setSelectedSubjectCode] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState('semestralGrade');
+  const [completedActionIds, setCompletedActionIds] = useState([]);
 
-  // Interactive What-If Simulator state
+  // Retained only for the future Grade Planning destination; not rendered in Advisor.
   const [simSubjectCode, setSimSubjectCode] = useState('');
   const [simTargetGwa, setSimTargetGwa] = useState('1.75');
-  const [simEstimatedCs, setSimEstimatedCs] = useState(85);
+  const [simEstimatedCs] = useState(85);
 
   // AI Guidance states
   const [aiCache, setAiCache] = useState(() => {
@@ -154,6 +133,8 @@ export default function AcademicInsights() {
     }
   });
   const [aiLoading, setAiLoading] = useState(false);
+  const [askAspireOpen, setAskAspireOpen] = useState(false);
+  const [askAspireSubjectCode, setAskAspireSubjectCode] = useState(null);
 
   // Direct Consultations states
   const [consultationRequests, setConsultationRequests] = useState([]);
@@ -166,6 +147,15 @@ export default function AcademicInsights() {
   });
   const [submittingConsult, setSubmittingConsult] = useState(false);
   const [consultFeedback, setConsultFeedback] = useState(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`aspire_advisor_actions_${user?.id || 'guest'}`);
+      setCompletedActionIds(saved ? JSON.parse(saved) : []);
+    } catch {
+      setCompletedActionIds([]);
+    }
+  }, [user?.id]);
 
   // Helper to persist insight to Supabase database table `student_academic_insights`
   const saveInsightToDb = useCallback(async (summaryText, verdictValue, basisSnapshot) => {
@@ -274,12 +264,30 @@ export default function AcademicInsights() {
             const { data: classActs } = await supabase
               .from('class_activities')
               .select('*')
-              .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000']);
+              .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000'])
+              .eq('is_released', true);
 
             // Fetch professor evaluations for student
             const { data: riskEvals } = await supabase
               .from('student_risk_evaluations')
-              .select('*')
+              .select(`
+                evaluation_id,
+                class_record_id,
+                student_id,
+                faculty_id,
+                term,
+                evaluation_context,
+                shared_academic_feedback,
+                advising_plan,
+                baseline_snapshot,
+                followup_snapshot,
+                refer_to_dean,
+                requires_tutoring,
+                status,
+                published_to_student_at,
+                created_at,
+                updated_at
+              `)
               .eq('student_id', user.id)
               .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000'])
               .order('created_at', { ascending: false });
@@ -289,6 +297,40 @@ export default function AcademicInsights() {
               .select('*')
               .eq('student_id', user.id)
               .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000']);
+
+            const activityIds = (classActs || []).map(activity => activity.activity_id);
+            const [{ data: activityScores }, { data: termScores }, { data: gradingColumns }] = await Promise.all([
+              activityIds.length > 0
+                ? supabase
+                    .from('student_activity_scores')
+                    .select('activity_id, score, updated_at')
+                    .eq('student_id', user.id)
+                    .in('activity_id', activityIds)
+                : Promise.resolve({ data: [] }),
+              classRecordIds.length > 0
+                ? supabase
+                    .from('student_term_scores')
+                    .select('class_record_id, term, char_rating, exam')
+                    .eq('student_id', user.id)
+                    .in('class_record_id', classRecordIds)
+                : Promise.resolve({ data: [] }),
+              classRecordIds.length > 0
+                ? supabase
+                    .from('class_grading_columns')
+                    .select('class_record_id, term, exam_max')
+                    .in('class_record_id', classRecordIds)
+                : Promise.resolve({ data: [] })
+            ]);
+
+            const activityScoreMap = new Map(
+              (activityScores || []).map(item => [item.activity_id, item])
+            );
+            const termScoreMap = new Map(
+              (termScores || []).map(item => [`${item.class_record_id}:${item.term}`, item])
+            );
+            const gradingColumnMap = new Map(
+              (gradingColumns || []).map(item => [`${item.class_record_id}:${item.term}`, item])
+            );
 
             const subMap = {};
             enrollsCheck?.forEach(e => {
@@ -303,13 +345,19 @@ export default function AcademicInsights() {
             });
 
             // Check if there is at least one officially posted Midterm or Final grade
-            const officialMilestonePeriods = ['midterm', 'midterm_rating', 'mr', 'final', 'semestral_grade', 'sg', 'tentative_final_rating'];
-            const officialPostedCount = (posted || []).filter(p => officialMilestonePeriods.includes(p.grade_period?.toLowerCase())).length;
+            const officialPostedCount = (posted || []).filter(p => [
+              GRADE_MILESTONES.MIDTERM_RATING,
+              GRADE_MILESTONES.TENTATIVE_FINAL_RATING,
+              GRADE_MILESTONES.SEMESTRAL_GRADE
+            ].includes(getCanonicalGradePeriod(p))).length;
             const officialMilestonesExist = officialPostedCount > 0;
             setHasOfficialMilestone(officialMilestonesExist);
 
             let totalRunningUnits = 0;
             let weightedRunningSum = 0;
+            const allClassStandingAverages = [];
+            const allExamAverages = [];
+            const allCharacterAverages = [];
 
             const computedSubjectsList = (classRecords || [])
               .filter(cr => subMap[cr.subject_id])
@@ -346,7 +394,7 @@ export default function AcademicInsights() {
                 const midterm = getTermRating('Midterm');
                 
                 // Check if official Midterm Rating row exists in posted_grades
-                const mrPostedRow = crPosted.find(p => p.grade_period === 'midterm_rating' || p.grade_period === 'mr');
+                const mrPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.MIDTERM_RATING);
                 let mr = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Prelim and Midterm components.` };
                 
                 if (mrPostedRow) {
@@ -375,7 +423,7 @@ export default function AcademicInsights() {
                 const final = getTermRating('Final');
 
                 // Check if official Tentative Final Rating row exists in posted_grades
-                const tfrPostedRow = crPosted.find(p => p.grade_period === 'tentative_final_rating' || p.grade_period === 'tfr');
+                const tfrPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.TENTATIVE_FINAL_RATING);
                 let tentativeFinalRating = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Semi-Final and Final components.` };
                 
                 if (tfrPostedRow) {
@@ -401,7 +449,7 @@ export default function AcademicInsights() {
                 }
 
                 // Check if official Semestral Grade row exists in posted_grades
-                const sgPostedRow = crPosted.find(p => p.grade_period === 'semestral_grade' || p.grade_period === 'sg');
+                const sgPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.SEMESTRAL_GRADE);
                 let semestralGrade = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting complete term components.` };
                 
                 if (sgPostedRow) {
@@ -440,8 +488,63 @@ export default function AcademicInsights() {
                 }
 
                 // Filter activities and latest evaluation for this class record
-                const subjectActivities = (classActs || []).filter(a => a.class_record_id === cr.class_record_id);
+                const subjectActivities = (classActs || [])
+                  .filter(a => a.class_record_id === cr.class_record_id)
+                  .map(activity => {
+                    const scoreRecord = activityScoreMap.get(activity.activity_id);
+                    const score = scoreRecord?.score === null || scoreRecord?.score === undefined
+                      ? null
+                      : Number(scoreRecord.score);
+                    const maxScore = Number(activity.max_score) || 0;
+                    return {
+                      ...activity,
+                      score,
+                      percentage: score !== null && maxScore > 0
+                        ? Math.round((score / maxScore) * 100)
+                        : null
+                    };
+                  });
                 const latestEval = (riskEvals || []).find(re => re.class_record_id === cr.class_record_id) || null;
+
+                const scoredActivities = subjectActivities.filter(activity => activity.score !== null && Number(activity.max_score) > 0);
+                const earnedActivityPoints = scoredActivities.reduce((sum, activity) => sum + activity.score, 0);
+                const availableActivityPoints = scoredActivities.reduce((sum, activity) => sum + Number(activity.max_score), 0);
+                const courseCsAvg = availableActivityPoints > 0
+                  ? Math.round((earnedActivityPoints / availableActivityPoints) * 100)
+                  : 0;
+
+                const postedTermNames = new Set(
+                  crPosted.map(item => {
+                    const key = getCanonicalGradePeriod(item);
+                    if (key === 'semi_final') return 'Semi-Final';
+                    if (key === 'prelim') return 'Prelim';
+                    if (key === 'midterm') return 'Midterm';
+                    if (key === 'final') return 'Final';
+                    return null;
+                  }).filter(Boolean)
+                );
+                const officialTermScores = [...postedTermNames]
+                  .map(term => termScoreMap.get(`${cr.class_record_id}:${term}`))
+                  .filter(Boolean);
+                const examPercentages = officialTermScores
+                  .map(termScore => {
+                    const max = Number(gradingColumnMap.get(`${cr.class_record_id}:${termScore.term}`)?.exam_max) || 40;
+                    return max > 0 ? (Number(termScore.exam) / max) * 100 : null;
+                  })
+                  .filter(value => value !== null && Number.isFinite(value));
+                const characterPercentages = officialTermScores
+                  .map(termScore => Number(termScore.char_rating))
+                  .filter(value => Number.isFinite(value) && value > 0);
+                const courseExamAvg = examPercentages.length > 0
+                  ? Math.round(examPercentages.reduce((sum, value) => sum + value, 0) / examPercentages.length)
+                  : 0;
+                const courseCharAvg = characterPercentages.length > 0
+                  ? Math.round(characterPercentages.reduce((sum, value) => sum + value, 0) / characterPercentages.length)
+                  : 0;
+
+                if (scoredActivities.length > 0) allClassStandingAverages.push(courseCsAvg);
+                if (courseExamAvg > 0) allExamAverages.push(courseExamAvg);
+                if (courseCharAvg > 0) allCharacterAverages.push(courseCharAvg);
 
                 return {
                   class_record_id: cr.class_record_id,
@@ -454,8 +557,10 @@ export default function AcademicInsights() {
                   activities: subjectActivities,
                   latestEvaluation: latestEval,
                   diagnostics: {
-                    csAvg: 0,
-                    examAvg: 0
+                    csAvg: courseCsAvg,
+                    scoredActivityCount: scoredActivities.length,
+                    examAvg: courseExamAvg,
+                    charAvg: courseCharAvg
                   },
                   periods: {
                     prelim,
@@ -562,7 +667,7 @@ export default function AcademicInsights() {
               studentName: `${profile?.first_name || 'Student'} ${profile?.last_name || ''}`.trim(),
               gwa: computedGwa,
               standing: gwaStanding,
-              totalUnits: totalRunningUnits,
+              totalUnits: computedSubjectsList.reduce((sum, subject) => sum + subject.credits, 0),
               trajectoryVerdict,
               trajectoryType,
               aiSummary: pregenData?.summary || null,
@@ -572,9 +677,19 @@ export default function AcademicInsights() {
                 message: dlMessage
               },
               diagnostics: {
-                csAvg: 0,
-                examAvg: 0,
-                charAvg: 0,
+                csAvg: allClassStandingAverages.length > 0
+                  ? Math.round(allClassStandingAverages.reduce((sum, value) => sum + value, 0) / allClassStandingAverages.length)
+                  : 0,
+                examAvg: allExamAverages.length > 0
+                  ? Math.round(allExamAverages.reduce((sum, value) => sum + value, 0) / allExamAverages.length)
+                  : 0,
+                charAvg: allCharacterAverages.length > 0
+                  ? Math.round(allCharacterAverages.reduce((sum, value) => sum + value, 0) / allCharacterAverages.length)
+                  : 0,
+                scoredActivityCount: computedSubjectsList.reduce(
+                  (count, subject) => count + (subject.diagnostics?.scoredActivityCount || 0),
+                  0
+                ),
                 attendanceRate,
                 absentCount: absentAtt,
                 fdaRisk: fdaFlags > 0 || absentAtt >= 4
@@ -605,7 +720,7 @@ export default function AcademicInsights() {
     loadInsights();
   }, [user, profile, updateAiCache]);
 
-  const studentStats = insight || {
+  const studentStats = useMemo(() => insight || ({
     studentName: `${profile?.first_name || 'Student'} ${profile?.last_name || ''}`.trim(),
     gwa: null,
     standing: hasEnrolledSubjects ? 'Pending Official Milestone Grades' : 'No Active Enrollment',
@@ -617,17 +732,183 @@ export default function AcademicInsights() {
     diagnostics: { csAvg: 0, examAvg: 0, charAvg: 0, attendanceRate: 100, absentCount: 0, fdaRisk: false },
     prioritySubject: null,
     subjects: []
-  };
+  }), [hasEnrolledSubjects, insight, profile?.first_name, profile?.last_name]);
 
-  const subjectsList = studentStats.subjects || [];
+  const subjectsList = useMemo(() => studentStats.subjects || [], [studentStats.subjects]);
+  const releasedScoredActivityCount = useMemo(() => subjectsList.reduce(
+    (count, subject) => count + (subject.activities || []).filter(
+      activity => activity.score !== null && activity.score !== undefined
+    ).length,
+    0
+  ), [subjectsList]);
+  const advisorEvaluation = useMemo(() => evaluateAcademicAdvising({
+    courses: subjectsList,
+    attendance: { absenceCount: studentStats.diagnostics.absentCount },
+    officialGwa: studentStats.gwa,
+    hasOfficialMilestone
+  }), [hasOfficialMilestone, studentStats.diagnostics.absentCount, studentStats.gwa, subjectsList]);
+  const advisorTone = {
+    critical: 'border-rose-200 bg-rose-50 text-rose-800',
+    high: 'border-amber-200 bg-amber-50 text-amber-900',
+    moderate: 'border-amber-200 bg-amber-50 text-amber-900',
+    low: 'border-sage-200 bg-sage-50 text-sage-900'
+  }[advisorEvaluation.severity] || 'border-slate-200 bg-slate-50 text-slate-800';
   const currentSubject = subjectsList.find(s => s.code === selectedSubjectCode) || subjectsList[0] || null;
   const simSubject = subjectsList.find(s => s.code === simSubjectCode) || subjectsList[0] || null;
+  const askAspireSubject = askAspireSubjectCode
+    ? subjectsList.find(subject => subject.code === askAspireSubjectCode) || null
+    : null;
 
-  // What-If Simulator Calculation
+  const scoredActivitiesForAsk = (askAspireSubject?.activities || [])
+    .filter(activity => activity.score !== null && activity.score !== undefined)
+    .sort((a, b) => (a.percentage ?? 101) - (b.percentage ?? 101));
+  const askRiskEvaluation = askAspireSubject?.latestEvaluation || null;
+  const overallAdvisorEvidence = [
+    { label: 'Released scored activities', value: String(releasedScoredActivityCount) },
+    ...(studentStats.gwa !== null
+      ? [{ label: 'Cumulative GWA', value: Number(studentStats.gwa).toFixed(2) }]
+      : []),
+    { label: 'Attendance', value: `${studentStats.diagnostics.attendanceRate}% · ${studentStats.diagnostics.absentCount} absence(s)` },
+    { label: 'Enrolled courses', value: `${subjectsList.length} course(s) · ${studentStats.totalUnits} units` },
+    ...(studentStats.prioritySubject
+      ? [{
+          label: 'Priority course',
+          value: studentStats.prioritySubject.runningGwa === '—'
+            ? `${studentStats.prioritySubject.code} · ${studentStats.prioritySubject.diagnostics?.csAvg || 0}% released activity average`
+            : `${studentStats.prioritySubject.code} · ${studentStats.prioritySubject.runningGwa} official GWA`
+        }]
+      : [])
+  ];
+  const askAspireEvidence = askAspireSubject
+    ? [
+        { label: 'Running course grade', value: askAspireSubject.runningGwa === '—' ? 'Awaiting official grade' : `${askAspireSubject.runningGwa} GWA` },
+        ...(askAspireSubject.diagnostics?.scoredActivityCount > 0
+          ? [{ label: 'Recorded activities', value: `${askAspireSubject.diagnostics.csAvg}% average` }]
+          : []),
+        ...(askAspireSubject.diagnostics?.examAvg > 0
+          ? [{ label: 'Official-term exams', value: `${askAspireSubject.diagnostics.examAvg}% average` }]
+          : []),
+        ...(scoredActivitiesForAsk[0]
+          ? [{
+              label: scoredActivitiesForAsk[0].title || scoredActivitiesForAsk[0].name || 'Lowest recorded activity',
+              value: `${scoredActivitiesForAsk[0].score}/${Number(scoredActivitiesForAsk[0].max_score)} (${scoredActivitiesForAsk[0].percentage}%)`
+            }]
+          : [])
+      ]
+    : overallAdvisorEvidence;
+
+  const getAdvisorActionKey = (item) => [
+    advisorEvaluation.signalType,
+    advisorEvaluation.courseCode || 'overall',
+    item.id
+  ].join(':');
+  const completedCurrentActionCount = advisorEvaluation.actions.filter(
+    item => completedActionIds.includes(getAdvisorActionKey(item))
+  ).length;
+  const toggleAdvisorAction = (item) => {
+    const actionKey = getAdvisorActionKey(item);
+    setCompletedActionIds(previous => {
+      const next = previous.includes(actionKey)
+        ? previous.filter(id => id !== actionKey)
+        : [...previous, actionKey];
+      localStorage.setItem(`aspire_advisor_actions_${user?.id || 'guest'}`, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const askAspireContext = {
+    contextKey: askAspireSubject
+      ? `${askAspireSubject.class_record_id}:${selectedPeriod}`
+      : `overall:${studentStats.gwa ?? 'pending'}`,
+    student: {
+      firstName: profile?.first_name || 'Student'
+    },
+    scope: askAspireSubject ? 'course' : 'overall',
+    periodLabel: askAspireSubject
+      ? PERIODS_MAPPING[selectedPeriod]
+      : hasOfficialMilestone
+        ? 'Latest official milestones'
+        : 'Released activity and attendance evidence',
+    officialStanding: {
+      gwa: studentStats.gwa,
+      standing: studentStats.standing,
+      trajectory: studentStats.trajectoryVerdict,
+      attendanceRate: studentStats.diagnostics.attendanceRate,
+      absenceCount: studentStats.diagnostics.absentCount,
+      fdaAdvisory: studentStats.diagnostics.fdaRisk
+    },
+    subject: askAspireSubject
+      ? {
+          code: askAspireSubject.code,
+          name: askAspireSubject.name,
+          instructor: askAspireSubject.instructor,
+          runningGwa: askAspireSubject.runningGwa,
+          selectedPeriod: askAspireSubject.periods?.[selectedPeriod] || null,
+          diagnostics: askAspireSubject.diagnostics,
+          sharedAcademicFeedback: askRiskEvaluation?.shared_academic_feedback || null,
+          activities: (askAspireSubject.activities || []).map(activity => ({
+            title: activity.title || activity.name,
+            description: activity.description || null,
+            topicTag: activity.topic_tag || null,
+            term: activity.term,
+            score: activity.score,
+            maxScore: Number(activity.max_score) || null,
+            percentage: activity.percentage
+          }))
+        }
+      : null,
+    courses: askAspireSubject
+      ? undefined
+      : subjectsList.map(subject => ({
+          code: subject.code,
+          name: subject.name,
+          runningGwa: subject.runningGwa,
+          classStandingAverage: subject.diagnostics?.csAvg || null,
+          examAverage: subject.diagnostics?.examAvg || null
+        })),
+    evidence: askAspireEvidence,
+    boundaries: {
+      advisoryOnly: true,
+      studentVisibleEvidenceOnly: true,
+      insufficientEvidenceMustBeAcknowledged: true
+    },
+    deterministicAdvisor: {
+      state: advisorEvaluation.state,
+      signalType: advisorEvaluation.signalType,
+      severity: advisorEvaluation.severity,
+      headline: advisorEvaluation.headline,
+      summary: advisorEvaluation.summary,
+      evidence: advisorEvaluation.evidence,
+      actions: advisorEvaluation.actions,
+      reviewTrigger: advisorEvaluation.reviewTrigger,
+      consultationRecommended: advisorEvaluation.consultationRecommended
+    }
+  };
+
+  const openAskAspire = (subjectCode = null) => {
+    setAskAspireSubjectCode(subjectCode);
+    setAskAspireOpen(true);
+  };
+
+  const openConsultationFromAskAspire = () => {
+    const subjectCode = askAspireSubject?.code || selectedSubjectCode || subjectsList[0]?.code || '';
+    setAskAspireOpen(false);
+    setConsultForm({
+      subjectCode,
+      category: 'General Academic Counseling',
+      schedule: '',
+      message: askAspireSubject
+        ? `I would like to discuss the academic insight and recommended next steps for ${askAspireSubject.code}.`
+        : 'I would like to discuss my current academic standing and recommended next steps.'
+    });
+    setConsultFeedback(null);
+    setIsConsultModalOpen(true);
+  };
+
+  // Calculation stays available for its planned relocation to Score Breakdown / Grade Planning.
   const targetBenchmark = GWA_TARGET_BENCHMARKS.find(b => b.gwa === simTargetGwa) || GWA_TARGET_BENCHMARKS[3];
   const simMr = simSubject?.periods?.midtermRating?.rating || (simSubject?.periods?.prelim?.rating || 75);
   const simSemiFinal = simSubject?.periods?.semiFinal?.rating || null;
-  
   const simResult = simulateRequiredFinalRating({
     mr: simMr,
     semiFinal: simSemiFinal,
@@ -716,7 +997,7 @@ export default function AcademicInsights() {
     }
 
     fetchAiGuidance();
-  }, [scope, selectedSubjectCode, selectedPeriod, loading, hasEnrolledSubjects, hasOfficialMilestone, studentStats, subjectsList, currentSubject, aiCache, saveInsightToDb, updateAiCache]);
+  }, [scope, selectedSubjectCode, selectedPeriod, loading, user, hasEnrolledSubjects, hasOfficialMilestone, studentStats, subjectsList, currentSubject, aiCache, saveInsightToDb, updateAiCache]);
 
   // Handler for explicit on-demand re-generation (only enabled when official grades exist)
   const handleRegenerateCurrentInsight = async (e) => {
@@ -922,7 +1203,7 @@ export default function AcademicInsights() {
   return (
     <>
       <PageHeader 
-        title="Academic Insights & Advisory Suite" 
+        title="ASPIRE Academic Advisor"
         breadcrumb="Student Portal" 
       >
         <button
@@ -957,8 +1238,7 @@ export default function AcademicInsights() {
             )}
           >
             <BrainCircuit className="h-4 w-4 text-sage-600" />
-            <span className="hidden sm:inline">Overall Advisory</span>
-            <span className="sm:hidden">Advisory</span>
+            <span>Today</span>
           </button>
 
           <button
@@ -970,28 +1250,21 @@ export default function AcademicInsights() {
                 : "text-slate-600 hover:text-slate-900"
             )}
           >
-            <BookOpen className="h-4 w-4 text-indigo-600" />
-            <span className="hidden sm:inline">Course Milestones</span>
-            <span className="sm:hidden">Courses</span>
+            <BookOpen className="h-4 w-4 text-sage-600" />
+            <span>My Courses</span>
           </button>
 
           <button
-            onClick={() => setScope('consultations')}
+            onClick={() => setScope('progress')}
             className={cn(
               "flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded-xl transition-all cursor-pointer text-center select-none",
-              scope === 'consultations'
+              scope === 'progress'
                 ? "bg-white text-sage-900 shadow-sm font-bold"
                 : "text-slate-600 hover:text-slate-900"
             )}
           >
-            <MessageSquare className="h-4 w-4 text-amber-600" />
-            <span className="hidden sm:inline">Faculty Consultations</span>
-            <span className="sm:hidden">Consultations</span>
-            {consultationRequests.filter(r => r.status === 'pending' || r.status === 'scheduled').length > 0 && (
-              <span className="text-[10px] bg-amber-100 text-amber-800 font-mono font-bold px-1.5 py-0.2 rounded-full">
-                {consultationRequests.filter(r => r.status === 'pending' || r.status === 'scheduled').length}
-              </span>
-            )}
+            <TrendingUp className="h-4 w-4 text-sage-600" />
+            <span>My Progress</span>
           </button>
         </div>
 
@@ -1048,7 +1321,7 @@ export default function AcademicInsights() {
               </div>
             </div>
 
-            {/* 2. SAGE AI Academic Advisor Guidance Box */}
+            {/* 2. Deterministic ASPIRE Academic Advisor Guidance */}
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 sm:p-6 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -1056,60 +1329,126 @@ export default function AcademicInsights() {
                     <BrainCircuit className="h-4.5 w-4.5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">SAGE AI Academic Counselor Guidance</h3>
-                    <p className="text-[11px] text-slate-400">Personalized pedagogical analysis tailored to your official term milestones</p>
+                    <h3 className="text-sm font-bold text-slate-900">Proactive academic guidance</h3>
+                    <p className="text-[11px] text-slate-400">Released activities, attendance, and official milestone evidence</p>
                   </div>
                 </div>
 
-                {hasOfficialMilestone && (
+                <div className="flex items-center gap-2">
+                  {hasOfficialMilestone && (
+                    <button
+                      onClick={handleRegenerateCurrentInsight}
+                      disabled={aiLoading}
+                      title="Generate fresh counseling guidance and update database record"
+                      className="text-xs font-semibold text-slate-600 hover:text-sage-700 flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={cn("h-3.5 w-3.5 text-sage-600", aiLoading && "animate-spin")} />
+                      <span className="hidden sm:inline">{aiLoading ? "Consulting..." : "Refresh"}</span>
+                    </button>
+                  )}
                   <button
-                    onClick={handleRegenerateCurrentInsight}
-                    disabled={aiLoading}
-                    title="Generate fresh counseling guidance and update database record"
-                    className="text-xs font-semibold text-slate-600 hover:text-sage-700 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-all cursor-pointer disabled:opacity-50"
+                    onClick={() => openAskAspire(null)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-sage-700 px-3 py-2 text-xs font-bold text-white hover:bg-sage-800 transition-colors cursor-pointer"
                   >
-                    <RefreshCw className={cn("h-3.5 w-3.5 text-sage-600", aiLoading && "animate-spin")} />
-                    <span>{aiLoading ? "Consulting AI..." : "Regenerate"}</span>
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    Ask ASPIRE
                   </button>
-                )}
+                </div>
               </div>
 
-              <div className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed bg-slate-50/70 border border-slate-200/80 rounded-xl p-4 sm:p-5">
-                {aiLoading && !aiCache['overall'] ? (
-                  <div className="flex items-center gap-2 text-xs text-slate-400 py-1">
-                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-sage-600"></div>
-                    <span>Synthesizing customized AI Counselor advice...</span>
-                  </div>
-                ) : !hasEnrolledSubjects ? (
-                  <div className="flex items-start gap-3 py-1 text-slate-500 not-italic">
-                    <Info className="h-4 w-4 text-slate-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-semibold text-slate-700">No Enrolled Courses Found</p>
-                      <p className="text-xs text-slate-500 font-normal mt-0.5">
-                        Counselor guidance will become active once you are enrolled in subjects and official term grades are posted.
-                      </p>
+              <div className={cn("rounded-xl border p-4 sm:p-5", advisorTone)}>
+                <div className="flex items-start gap-3">
+                  {advisorEvaluation.state === 'action_required' ? (
+                    <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                  ) : advisorEvaluation.state === 'building_evidence' || advisorEvaluation.state === 'no_evidence' ? (
+                    <Clock className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <ShieldCheck className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-bold">{advisorEvaluation.headline}</p>
+                      <span className="rounded-full border border-current/20 bg-white/60 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                        {advisorEvaluation.state.replaceAll('_', ' ')}
+                      </span>
                     </div>
+                    <p className="mt-1 text-xs font-normal leading-relaxed opacity-80">{advisorEvaluation.summary}</p>
+
+                    {advisorEvaluation.evidence.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {advisorEvaluation.evidence.map((item, index) => (
+                          <span key={item.id || `${item.label}-${index}`} className="rounded-lg border border-current/15 bg-white/70 px-2.5 py-1.5 text-[10px] font-semibold">
+                            {item.label}: <span className="font-mono font-bold">{item.value}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {advisorEvaluation.actions.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[10px] font-bold uppercase tracking-wide">Your next actions</p>
+                          <span className="text-[10px] font-semibold opacity-70">
+                            {completedCurrentActionCount}/{advisorEvaluation.actions.length} completed
+                          </span>
+                        </div>
+                        {advisorEvaluation.actions.map((item) => {
+                          const isComplete = completedActionIds.includes(getAdvisorActionKey(item));
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => toggleAdvisorAction(item)}
+                              className="flex w-full items-start gap-3 rounded-lg border border-current/15 bg-white/80 p-3 text-left transition-colors hover:bg-white cursor-pointer"
+                            >
+                              <span className={cn(
+                                'mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border',
+                                isComplete ? 'border-sage-600 bg-sage-600 text-white' : 'border-current/30 bg-white'
+                              )}>
+                                {isComplete && <CheckCircle2 className="h-3.5 w-3.5" />}
+                              </span>
+                              <span className="min-w-0">
+                                <span className={cn('block text-[11px] font-bold', isComplete && 'line-through opacity-60')}>{item.title}</span>
+                                <span className="mt-0.5 block text-[10px] font-normal leading-relaxed opacity-75">{item.description}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                        <p className="pt-1 text-[10px] font-medium opacity-70">
+                          Review after: {advisorEvaluation.reviewTrigger.replaceAll('_', ' ')}
+                        </p>
+                      </div>
+                    )}
+
+                    <p className="mt-3 text-[9px] font-medium opacity-60">{advisorEvaluation.boundaryStatement}</p>
                   </div>
-                ) : !hasOfficialMilestone ? (
-                  <div className="flex items-start gap-3 py-1 text-slate-600 not-italic">
-                    <Clock className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold text-slate-800">Awaiting Official Midterm or Final Grades</p>
-                      <p className="text-xs text-slate-500 font-normal mt-1 leading-relaxed">
-                        Personalized AI counselor analysis and trajectory forecasts are officially generated once your instructors finalize and publish Midterm Ratings (MR) or Final Semestral Grades (SG). Check back once the milestone evaluation period is completed.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="italic text-slate-800">
-                    "{aiCache['overall'] || studentStats.aiSummary || 'Maintain consistent attendance and active participation across all enrolled subjects.'}"
-                  </p>
-                )}
+                </div>
+              </div>
+
+              {hasOfficialMilestone && (aiLoading || aiCache.overall || studentStats.aiSummary) && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                  <span className="font-bold text-slate-800">Ask ASPIRE explanation: </span>
+                  {aiLoading && !aiCache.overall
+                    ? 'Preparing a plain-language explanation of the deterministic evidence...'
+                    : aiCache.overall || studentStats.aiSummary}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Available context</span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
+                  Released scored activities: <span className="text-slate-800">{releasedScoredActivityCount}</span>
+                </span>
+                {overallAdvisorEvidence.slice(0, 4).map(item => (
+                  <span key={`${item.label}-${item.value}`} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
+                    {item.label}: <span className="text-slate-800">{item.value}</span>
+                  </span>
+                ))}
               </div>
             </div>
 
             {/* 3. Component Strength & Weakness Diagnostic Grid */}
-            <div>
+            <div className="hidden" aria-hidden="true">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-sage-600" />
@@ -1124,25 +1463,37 @@ export default function AcademicInsights() {
                 <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2 shadow-2xs">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Standing (50%)</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
-                      {studentStats.diagnostics.csAvg >= 85 ? 'Strong Asset' : studentStats.diagnostics.csAvg > 0 ? 'Moderate' : 'Pending'}
+                    <span className={cn(
+                      "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                      releasedScoredActivityCount === 0
+                        ? "bg-slate-50 text-slate-500 border-slate-200"
+                        : studentStats.diagnostics.csAvg < 75
+                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                          : "bg-emerald-50 text-emerald-700 border-emerald-100"
+                    )}>
+                      {releasedScoredActivityCount === 0 ? 'Pending' : studentStats.diagnostics.csAvg < 75 ? 'Needs Attention' : studentStats.diagnostics.csAvg >= 85 ? 'Strong Asset' : 'On Track'}
                     </span>
                   </div>
                   <div className="flex items-baseline justify-between">
                     <span className="text-2xl font-extrabold font-mono text-slate-800">
-                      {studentStats.diagnostics.csAvg > 0 ? `${studentStats.diagnostics.csAvg}%` : '—'}
+                      {releasedScoredActivityCount > 0 ? `${studentStats.diagnostics.csAvg}%` : '—'}
                     </span>
                     <span className="text-xs text-slate-400 font-medium">Activities & Quizzes</span>
                   </div>
                   <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                     <div 
-                      className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
+                      className={cn(
+                        "h-full rounded-full transition-all duration-500",
+                        studentStats.diagnostics.csAvg < 75 ? "bg-amber-500" : "bg-emerald-500"
+                      )}
                       style={{ width: `${studentStats.diagnostics.csAvg || 0}%` }}
                     />
                   </div>
                   <p className="text-[11px] text-slate-500 leading-tight">
-                    {studentStats.diagnostics.csAvg > 0 
-                      ? "Reliable assignment completion. Keep submitting deliverables on schedule."
+                    {releasedScoredActivityCount > 0
+                      ? studentStats.diagnostics.csAvg < 75
+                        ? "Released activity evidence is below the 75% advising benchmark. Follow the action plan above."
+                        : "Released activity evidence is currently at or above the advising benchmark."
                       : "Class standing scores will compile as activities are graded."}
                   </p>
                 </div>
@@ -1248,7 +1599,8 @@ export default function AcademicInsights() {
             </div>
 
             {/* 4. Interactive "What-If" Final Exam Grade Simulator */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 sm:p-6 space-y-4">
+            {hasOfficialMilestone ? (
+              <div className="hidden bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 sm:p-6 space-y-4" aria-hidden="true">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600 border border-indigo-100">
@@ -1357,75 +1709,62 @@ export default function AcademicInsights() {
                 </div>
 
               </div>
-            </div>
+              </div>
+            ) : (
+              <div className="hidden rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs" aria-hidden="true">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-100 p-2 text-slate-500">
+                    <Lock className="h-4.5 w-4.5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">What-If Grade Simulator</h3>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                      Available after an official Midterm Rating is posted. Released activity results support study advice, but ASPIRE will not use them to predict or display an unofficial term grade.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
-            {/* 5. 3-Pillar Actionable Prescriptions */}
-            <div>
+            {/* 5. Deterministic Action Plan */}
+            <div className="hidden" aria-hidden="true">
               <div className="flex items-center gap-2 mb-3">
                 <Compass className="h-4 w-4 text-sage-600" />
-                <h3 className="text-sm font-bold text-slate-900">3-Pillar Actionable Prescription</h3>
+                <h3 className="text-sm font-bold text-slate-900">ASPIRE Action Plan</h3>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                
-                {/* Pillar 1: Priority Course Focus */}
-                <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-2.5 shadow-2xs">
-                  <div className="flex items-center gap-2 text-sage-700">
-                    <Target className="h-4 w-4 text-sage-600" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider">1. Priority Subject Focus</h4>
+                {advisorEvaluation.actions.length > 0 ? advisorEvaluation.actions.map((item, index) => (
+                  <div key={item.id} className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-2.5 shadow-2xs">
+                    <div className="flex items-center gap-2 text-sage-700">
+                      {index === 0 ? <Target className="h-4 w-4 text-sage-600" /> : index === 1 ? <BookOpen className="h-4 w-4 text-amber-600" /> : <UserCheck className="h-4 w-4 text-indigo-600" />}
+                      <h4 className="text-xs font-bold uppercase tracking-wider">{index + 1}. {item.title}</h4>
+                    </div>
+                    <p className="text-xs text-slate-500 leading-relaxed font-medium">{item.description}</p>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-extrabold text-slate-900">
-                      {studentStats.prioritySubject ? `${studentStats.prioritySubject.code} (${studentStats.prioritySubject.name})` : 'Awaiting Course Enrollment'}
-                    </p>
-                    <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                      {studentStats.prioritySubject 
-                        ? `Currently standing at GWA ${studentStats.prioritySubject.runningGwa}. Bringing this course to 1.75 will significantly improve your overall honors eligibility.`
-                        : 'Course recommendations will appear once enrolled in active subjects.'}
-                    </p>
+                )) : (
+                  <div className="md:col-span-3 rounded-xl border border-dashed border-slate-200 bg-white p-5 text-xs text-slate-500">
+                    Action items will appear when released academic evidence is available.
                   </div>
-                </div>
-
-                {/* Pillar 2: Component Strategy */}
-                <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-2.5 shadow-2xs">
-                  <div className="flex items-center gap-2 text-amber-700">
-                    <Sliders className="h-4 w-4 text-amber-600" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider">2. Component Strategy</h4>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-extrabold text-slate-900">
-                      Test Prep & Timed Quizzes
-                    </p>
-                    <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                      {studentStats.diagnostics.csAvg > 0 
-                        ? `Class standing average stands at ${studentStats.diagnostics.csAvg}%. Focus on active recall and practice tests before major milestone exams.`
-                        : 'Prepare organized study schedules for upcoming term assessments and quizzes.'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Pillar 3: Faculty Consultation */}
-                <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 space-y-2.5 shadow-2xs">
-                  <div className="flex items-center gap-2 text-indigo-700">
-                    <UserCheck className="h-4 w-4 text-indigo-600" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider">3. Instructor Consultation</h4>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-extrabold text-slate-900">
-                      {studentStats.prioritySubject?.instructor || 'Department Faculty Advisor'}
-                    </p>
-                    <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                      Schedule a 15-minute consultation to review challenging topics from earlier exams prior to the upcoming term assessment.
-                    </p>
-                  </div>
-                </div>
-
+                )}
               </div>
             </div>
 
-            {/* 6. Active Courses Running Standing Table */}
+            {/* Compact course overview; detailed evidence lives in My Courses. */}
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5 sm:p-6 space-y-3">
-              <h3 className="text-sm font-bold text-slate-900">Active Course Standing & Progress</h3>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Your courses</h3>
+                  <p className="mt-0.5 text-[11px] text-slate-500">Open a course to review released evidence and official milestones.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setScope('subject')}
+                  className="rounded-lg border border-sage-200 bg-sage-50 px-3 py-2 text-xs font-bold text-sage-700 hover:bg-sage-100 transition-colors cursor-pointer"
+                >
+                  View courses
+                </button>
+              </div>
               {subjectsList.length === 0 ? (
                 <div className="p-6 text-center text-slate-400 text-xs bg-slate-50 rounded-xl border border-dashed border-slate-200">
                   <BookOpen className="h-6 w-6 text-slate-300 mx-auto mb-1.5" />
@@ -1455,7 +1794,7 @@ export default function AcademicInsights() {
                           <td className="py-3 px-3 text-slate-600">{sub.instructor}</td>
                           <td className="py-3 px-3 text-center font-mono">{sub.credits}</td>
                           <td className="py-3 px-3 text-center font-mono">
-                            {sub.diagnostics?.csAvg > 0 ? `${sub.diagnostics.csAvg}%` : '—'}
+                            {sub.diagnostics?.scoredActivityCount > 0 ? `${sub.diagnostics.csAvg}%` : '—'}
                           </td>
                           <td className="py-3 px-3 text-center">
                             <span className="font-extrabold font-mono text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md">
@@ -1530,17 +1869,72 @@ export default function AcademicInsights() {
                         <p className="text-xs text-slate-500 font-medium">Instructor: {currentSubject.instructor}</p>
                       </div>
 
-                      <div className="text-left sm:text-right">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Running Course Grade</span>
-                        <span className="text-2xl sm:text-3xl font-extrabold font-mono text-sage-800">{currentSubject.runningGwa}</span>
+                      <div className="flex items-center gap-3 sm:justify-end">
+                        <div className="text-left sm:text-right">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Running Course Grade</span>
+                          <span className="text-2xl sm:text-3xl font-extrabold font-mono text-sage-800">{currentSubject.runningGwa}</span>
+                        </div>
+                        <button
+                          onClick={() => openAskAspire(currentSubject.code)}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-sage-700 px-3 py-2 text-xs font-bold text-white hover:bg-sage-800 transition-colors cursor-pointer"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          Ask ASPIRE
+                        </button>
                       </div>
+                    </div>
+
+                    {/* Released evidence remains useful before official Midterm/Final posting. */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 sm:p-5 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="h-4 w-4 text-sage-600" />
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-900">Released activity evidence</h4>
+                            <p className="text-[10px] text-slate-500">Used for study advice, never as an unofficial term grade.</p>
+                          </div>
+                        </div>
+                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600">
+                          {currentSubject.activities?.length || 0} released
+                        </span>
+                      </div>
+
+                      {currentSubject.activities?.length > 0 ? (
+                        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                          {currentSubject.activities.map((activity) => (
+                            <div key={activity.activity_id} className="rounded-lg border border-slate-200 bg-white p-3 space-y-1.5">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-xs font-bold text-slate-900">{activity.title || activity.name}</p>
+                                  <p className="text-[10px] text-slate-500">{activity.topic_tag || activity.term || 'Course activity'}</p>
+                                </div>
+                                <span className={cn(
+                                  'rounded-md px-2 py-1 text-[10px] font-mono font-bold',
+                                  activity.percentage === null
+                                    ? 'bg-slate-100 text-slate-500'
+                                    : activity.percentage < 75
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-emerald-100 text-emerald-800'
+                                )}>
+                                  {activity.score === null ? 'Not scored' : `${activity.score}/${Number(activity.max_score)} · ${activity.percentage}%`}
+                                </span>
+                              </div>
+                              {activity.description && <p className="text-[10px] leading-relaxed text-slate-500">{activity.description}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-500">
+                          No faculty-released activity result is available for this course yet.
+                        </div>
+                      )}
                     </div>
 
                     {/* Milestone Progression Selector */}
                     <div className="space-y-2">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Select Grading Milestone:</span>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-1.5">
-                        {Object.entries(PERIODS_MAPPING).map(([key]) => {
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Official grading milestones</span>
+                      <div className="grid grid-cols-2 gap-1.5 sm:max-w-md">
+                        {['midtermRating', 'semestralGrade'].map((key) => {
                           const periodData = currentSubject.periods?.[key];
                           const isAvailable = periodData && periodData.gwa !== '—';
                           return (
@@ -1608,14 +2002,16 @@ export default function AcademicInsights() {
                               <BrainCircuit className="h-4 w-4" />
                               <h4 className="text-xs font-bold uppercase tracking-wider">Milestone Diagnostic Insight</h4>
                             </div>
-                            <button
-                              onClick={handleRegenerateCurrentInsight}
-                              disabled={aiLoading}
-                              className="text-[11px] font-semibold text-slate-500 hover:text-sage-600 flex items-center gap-1 transition-colors px-2 py-0.5 rounded-md hover:bg-slate-100 cursor-pointer disabled:opacity-50"
-                            >
-                              <RefreshCw className={cn("h-3 w-3", aiLoading && "animate-spin text-sage-600")} />
-                              <span>{aiLoading ? "Consulting..." : "Regenerate"}</span>
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={handleRegenerateCurrentInsight}
+                                disabled={aiLoading}
+                                className="text-[11px] font-semibold text-slate-500 hover:text-sage-600 flex items-center gap-1 transition-colors px-2 py-1 rounded-md hover:bg-slate-100 cursor-pointer disabled:opacity-50"
+                              >
+                                <RefreshCw className={cn("h-3 w-3", aiLoading && "animate-spin text-sage-600")} />
+                                <span className="hidden sm:inline">{aiLoading ? "Consulting..." : "Refresh"}</span>
+                              </button>
+                            </div>
                           </div>
 
                           <div className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed italic bg-slate-50 p-3.5 rounded-lg border border-slate-200/60">
@@ -1632,7 +2028,7 @@ export default function AcademicInsights() {
 
                         {/* ASPIRE v3.1: Topic Scope Coverage Diagnostic */}
                         {currentSubject.activities && currentSubject.activities.length > 0 && (
-                          <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 space-y-3">
+                          <div className="hidden bg-white border border-slate-200 rounded-xl p-4 sm:p-5 space-y-3" aria-hidden="true">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2 text-slate-800">
                                 <BookOpen className="h-4 w-4 text-sage-600" />
@@ -1648,40 +2044,55 @@ export default function AcademicInsights() {
                                 <div key={act.activity_id} className="p-3 bg-slate-50 border border-slate-200/80 rounded-lg space-y-1">
                                   <div className="flex items-center justify-between">
                                     <span className="text-xs font-bold text-slate-900">{act.title || act.name}</span>
-                                    <span className="text-[10px] font-mono text-slate-500 font-semibold">{act.term} • {act.type}</span>
+                                    <span className="text-[10px] font-mono text-slate-500 font-semibold">{act.term}</span>
                                   </div>
                                   <p className="text-[11px] text-slate-600 leading-relaxed">
                                     {act.description || 'General curriculum activity covering weekly learning competencies.'}
                                   </p>
+                                  <div className="flex items-center justify-between pt-1 text-[10px]">
+                                    <span className="font-semibold text-slate-400">Recorded score</span>
+                                    <span className={cn(
+                                      'rounded-md px-2 py-0.5 font-mono font-bold',
+                                      act.percentage === null
+                                        ? 'bg-slate-200 text-slate-500'
+                                        : act.percentage < 75
+                                          ? 'bg-amber-100 text-amber-800'
+                                          : 'bg-emerald-100 text-emerald-800'
+                                    )}>
+                                      {act.score === null ? 'Not recorded' : `${act.score}/${Number(act.max_score)} · ${act.percentage}%`}
+                                    </span>
+                                  </div>
                                 </div>
                               ))}
                             </div>
                           </div>
                         )}
 
-                        {/* ASPIRE v3.1: Professor Evaluation & Recovery Plan Notes */}
+                        {/* Only explicitly student-visible guidance and tasks are rendered here. */}
                         {currentSubject.latestEvaluation && (
                           <div className="bg-amber-50/50 border border-amber-200/80 rounded-xl p-4 sm:p-5 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2 text-amber-900">
-                                <Target className="h-4 w-4 text-amber-600" />
-                                <h4 className="text-xs font-bold uppercase tracking-wider">Professor Risk Evaluation &amp; Recovery Plan</h4>
-                              </div>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 uppercase font-mono">
-                                Risk Score: {currentSubject.latestEvaluation.risk_score}/100
-                              </span>
+                            <div className="flex items-center gap-2 text-amber-900">
+                              <Target className="h-4 w-4 text-amber-600" />
+                              <h4 className="text-xs font-bold uppercase tracking-wider">Faculty Academic Guidance &amp; Recovery Plan</h4>
                             </div>
 
-                            {currentSubject.latestEvaluation.professor_notes && (
+                            {currentSubject.latestEvaluation.shared_academic_feedback && (
                               <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-amber-100 leading-relaxed">
-                                <strong>Instructor Notes:</strong> "{currentSubject.latestEvaluation.professor_notes}"
+                                <strong>Faculty Academic Guidance:</strong> {currentSubject.latestEvaluation.shared_academic_feedback}
                               </p>
                             )}
 
-                            {currentSubject.latestEvaluation.recovery_plan && (
-                              <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-amber-100 leading-relaxed">
-                                <strong>Intervention Strategy:</strong> {currentSubject.latestEvaluation.recovery_plan}
-                              </p>
+                            {Array.isArray(currentSubject.latestEvaluation.advising_plan) && currentSubject.latestEvaluation.advising_plan.length > 0 && (
+                              <div className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-amber-100 leading-relaxed">
+                                <strong className="block mb-1.5">Faculty advising plan</strong>
+                                <ul className="space-y-1 list-disc pl-4">
+                                  {currentSubject.latestEvaluation.advising_plan.map((task, index) => (
+                                    <li key={task.task_id || `${task.description}-${index}`}>
+                                      {task.description}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
                             )}
                           </div>
                         )}
@@ -1702,8 +2113,95 @@ export default function AcademicInsights() {
 
           </div>
         ) : (
-          /* ================= DIRECT CONSULTATIONS PANEL ================= */
-          <div className="space-y-5 sm:space-y-6 animate-fade-in text-left">
+          <>
+            {/* ================= MY PROGRESS ================= */}
+            <div className="space-y-5 sm:space-y-6 animate-fade-in text-left">
+              <div className="rounded-2xl border border-sage-800 bg-gradient-to-r from-sage-950 via-slate-900 to-sage-900 p-5 text-white shadow-md sm:p-6">
+                <span className="rounded-md border border-sage-700/50 bg-sage-800/60 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-widest text-sage-300">
+                  Follow-through
+                </span>
+                <h3 className="mt-2 text-xl font-extrabold font-display tracking-tight sm:text-2xl">My Progress</h3>
+                <p className="mt-1 max-w-xl text-xs leading-relaxed text-slate-300">
+                  Track the actions you completed and know exactly when ASPIRE will review your evidence again.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Actions completed</span>
+                  <span className="mt-1 block font-mono text-2xl font-extrabold text-slate-900">
+                    {completedCurrentActionCount}/{advisorEvaluation.actions.length}
+                  </span>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Released evidence</span>
+                  <span className="mt-1 block font-mono text-2xl font-extrabold text-slate-900">{releasedScoredActivityCount}</span>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Current advisor state</span>
+                  <span className="mt-1 block text-sm font-bold capitalize text-slate-900">{advisorEvaluation.state.replaceAll('_', ' ')}</span>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs sm:p-6">
+                <div className="flex flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">Current action checklist</h4>
+                    <p className="mt-0.5 text-[11px] text-slate-500">These actions come from the same evidence shown on Today.</p>
+                  </div>
+                  <span className="rounded-full border border-sage-200 bg-sage-50 px-2.5 py-1 text-[10px] font-bold capitalize text-sage-700">
+                    Review: {advisorEvaluation.reviewTrigger.replaceAll('_', ' ')}
+                  </span>
+                </div>
+
+                {advisorEvaluation.actions.length > 0 ? (
+                  <div className="mt-4 space-y-2.5">
+                    {advisorEvaluation.actions.map((item) => {
+                      const isComplete = completedActionIds.includes(getAdvisorActionKey(item));
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => toggleAdvisorAction(item)}
+                          className="flex w-full items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-left transition-colors hover:bg-slate-100 cursor-pointer"
+                        >
+                          <span className={cn(
+                            'mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border',
+                            isComplete ? 'border-sage-600 bg-sage-600 text-white' : 'border-slate-300 bg-white text-slate-400'
+                          )}>
+                            {isComplete && <CheckCircle2 className="h-3.5 w-3.5" />}
+                          </span>
+                          <span>
+                            <span className={cn('block text-xs font-bold text-slate-900', isComplete && 'line-through text-slate-500')}>{item.title}</span>
+                            <span className="mt-1 block text-[11px] leading-relaxed text-slate-500">{item.description}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-xs text-slate-500">
+                    Your progress plan will begin when faculty release academic evidence that supports a specific next step.
+                  </div>
+                )}
+
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[10px] text-slate-500">Need help with an action or your official record?</p>
+                  <button
+                    type="button"
+                    onClick={() => openAskAspire(null)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-sage-700 px-3 py-2 text-xs font-bold text-white hover:bg-sage-800 transition-colors cursor-pointer"
+                  >
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    Ask ASPIRE
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Consultation history is retained as a separate workflow, not an Advisor workspace. */}
+            <div className="hidden" aria-hidden="true">
+          <div className="space-y-5 sm:space-y-6 text-left">
             
             {/* Consultations Header Hero */}
             <div className="bg-gradient-to-r from-slate-900 via-sage-950 to-slate-900 rounded-2xl p-5 sm:p-6 text-white shadow-md border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1860,9 +2358,18 @@ export default function AcademicInsights() {
             )}
 
           </div>
+            </div>
+          </>
         )}
 
       </div>
+
+      <AskAspirePanel
+        open={askAspireOpen}
+        context={askAspireContext}
+        onClose={() => setAskAspireOpen(false)}
+        onRequestConsultation={openConsultationFromAskAspire}
+      />
 
       {/* ========================================================================= */}
       {/* DIRECT CONSULTATION REQUEST MODAL                                         */}
