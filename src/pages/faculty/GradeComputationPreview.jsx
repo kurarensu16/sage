@@ -67,6 +67,7 @@ export default function GradeComputationPreview() {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lockedMilestones, setLockedMilestones] = useState([]);
   const [postingGrades, setPostingGrades] = useState(false);
+  const [postSuccess, setPostSuccess] = useState(null);
 
   const [classInfo, setClassInfo] = useState(null);
   const [classesList, setClassesList] = useState([]);
@@ -817,7 +818,10 @@ export default function GradeComputationPreview() {
           ? `${changedStudentIds.length} student(s) with updated grades have been notified.`
           : 'Grades re-posted. No score changes detected for enrolled students.';
 
-      alert(`Successfully posted ${termNotificationName}! ${notifDetailText}`);
+      setPostSuccess({
+        title: `${termNotificationName} Posted`,
+        description: `${classInfo?.subjects?.code || 'Class'} grades were posted successfully. ${notifDetailText}`
+      });
     } catch (err) {
       console.error('Error posting grades to database:', err);
       alert('Failed to post grades: ' + err.message);
@@ -2181,6 +2185,42 @@ export default function GradeComputationPreview() {
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Grade Posting Success Modal */}
+        {postSuccess && (
+          <div
+            className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-xs sm:p-4 animate-in fade-in duration-200 text-center"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="grade-post-success-title"
+            onClick={() => setPostSuccess(null)}
+          >
+            <div
+              className="bg-white rounded-t-3xl sm:rounded-2xl p-5 sm:p-6 max-w-sm w-full shadow-2xl border border-slate-100 flex flex-col items-center space-y-4 animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full -mt-2 mb-1" />
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+                <CheckCircle2 className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 id="grade-post-success-title" className="text-base sm:text-lg font-bold text-slate-900 font-display">
+                  {postSuccess.title}
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  {postSuccess.description}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPostSuccess(null)}
+                className="w-full py-2.5 bg-sage-600 hover:bg-sage-700 text-white font-semibold text-xs sm:text-sm rounded-xl transition-colors shadow-2xs font-sans cursor-pointer"
+              >
+                Done
+              </button>
             </div>
           </div>
         )}
