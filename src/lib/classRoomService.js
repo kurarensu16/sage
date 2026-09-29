@@ -8,6 +8,17 @@ import { findMostAdvancedPostedGrade } from './gradeMilestones';
 // Note: riskEngine.js is now the single source of truth for all risk calculations (V4).
 
 /**
+ * Irregularity is class-contextual: a student is irregular for a class when
+ * they have no home block section or their home section differs from the
+ * class section. This mirrors get_class_attendance_roster in PostgreSQL.
+ */
+export function getEnrollmentType(studentSectionId, classSectionId) {
+  if (!studentSectionId) return 'Irregular';
+  if (!classSectionId) return 'Regular';
+  return studentSectionId === classSectionId ? 'Regular' : 'Irregular';
+}
+
+/**
  * Generates a clean, human-readable 6-8 character join code.
  * e.g., "CS3A-8X92"
  */
@@ -314,7 +325,8 @@ export async function getPendingJoinRequests(classRecordId) {
           first_name,
           last_name,
           email,
-          user_number
+          user_number,
+          section_id
         )
       `)
       .eq('class_record_id', classRecordId)
@@ -418,7 +430,8 @@ export async function getClassPriorityRoster(classRecordId) {
           first_name,
           last_name,
           email,
-          user_number
+          user_number,
+          section_id
         )
       `)
       .eq('section_id', cr.section_id)
@@ -516,6 +529,7 @@ export async function getClassPriorityRoster(classRecordId) {
 
     // 6. Calculate risk score for each student
     const priorityList = students.map(stud => {
+      const enrollmentType = getEnrollmentType(stud.section_id, cr.section_id);
       const studScores = (scores || []).filter(sc => sc.student_id === stud.user_id);
       const studAbsences = (attendances || []).filter(
         at => at.student_id === stud.user_id && (at.status === 'Absent' || at.status?.toLowerCase() === 'absent')
@@ -620,6 +634,9 @@ export async function getClassPriorityRoster(classRecordId) {
         last_name: stud.last_name,
         student_id_number: stud.user_number || stud.email?.split('@')[0],
         email: stud.email,
+        home_section_id: stud.section_id || null,
+        enrollment_type: enrollmentType,
+        is_irregular: enrollmentType === 'Irregular',
         current_gwa: approxGwa,
         failing_count: failingCount,
         absences: studAbsences,

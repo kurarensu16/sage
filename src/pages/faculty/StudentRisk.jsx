@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { getClassPriorityRoster } from '../../lib/classRoomService';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
+import EnrollmentTypeBadge from '../../components/common/EnrollmentTypeBadge';
 
 export default function StudentRisk({ mode = 'risk' }) {
   const navigate = useNavigate();
@@ -178,7 +179,10 @@ export default function StudentRisk({ mode = 'risk' }) {
                       return (
                         <tr key={student.user_id} className="hover:bg-slate-50/70 transition-colors">
                           <td className="px-4 py-3">
-                            <p className="text-xs font-bold text-slate-800">{student.last_name}, {student.first_name}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-xs font-bold text-slate-800">{student.last_name}, {student.first_name}</p>
+                              <EnrollmentTypeBadge enrollmentType={student.enrollment_type} />
+                            </div>
                             <p className="text-[10px] text-slate-400 font-mono">{student.student_id_number}</p>
                           </td>
                           <td className="px-4 py-3">

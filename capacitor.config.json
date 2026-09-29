@@ -1,6 +1,6 @@
 {
   "appId": "ph.edu.dyci.sage",
-  "appName": "SAGE",
+  "appName": "ASPIRE",
   "webDir": "dist",
   "server": {
     "androidScheme": "https",

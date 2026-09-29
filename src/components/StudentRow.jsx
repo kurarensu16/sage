@@ -8,6 +8,7 @@ import {
   resolveGradingFormula
 } from '../lib/gradingMath';
 import { calculateAcademicRisk } from '../lib/riskEngine';
+import EnrollmentTypeBadge from './common/EnrollmentTypeBadge';
 
 export default function StudentRow({
   student,
@@ -318,7 +319,10 @@ export default function StudentRow({
       </td>
       <td className={cn("px-4 py-3 text-left font-semibold text-slate-900 sticky left-[136px] border-r border-slate-200 z-10 w-60 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]", stickyBgClass)}>
         <div className="flex items-center justify-between gap-1.5">
-          <span className="truncate">{student.name}</span>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate">{student.name}</span>
+            <EnrollmentTypeBadge enrollmentType={student.enrollment_type} className="shrink-0" />
+          </div>
           {effectiveRiskScore >= 25 && (
             <button
               type="button"
