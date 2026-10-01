@@ -498,14 +498,6 @@ export default function GradeComputationPreview() {
         ? (hasMidtermScores || hasFinalScores) 
         : (hasPrelimScores || hasMidtermScores || hasSemiFinalScores || hasFinalScores);
 
-      const rawGwa = hasAnyScores ? getTransmutedGrade(sg) : null;
-      const autoRemarks = hasAnyScores ? getRemarks({ gwa: rawGwa, isComplete: !hasMissingComponents }) : 'Pending';
-      const draftRemarks = student.customRemarks || autoRemarks;
-      const isPassed = hasAnyScores && (draftRemarks === 'Passed' || (draftRemarks !== 'Failed' && draftRemarks !== 'FDA' && draftRemarks !== 'Dropped' && rawGwa !== null && rawGwa <= 3.00));
-      const isFDA = (student.absences || 0) >= 4;
-      const isHonor = isPassed && rawGwa !== null && rawGwa <= 1.75;
-      const isAtRisk = hasAnyScores ? (!isPassed || isFDA || (rawGwa !== null && rawGwa > 3.00)) : isFDA;
-
       const isPrelimMissing = !hasPrelimScores;
       const isMidtermMissing = !hasMidtermScores;
       const isSemiFinalMissing = !hasSemiFinalScores;
@@ -513,6 +505,14 @@ export default function GradeComputationPreview() {
       const hasMissingComponents = isSummer 
         ? (isMidtermMissing || isFinalMissing)
         : (isPrelimMissing || isMidtermMissing || isSemiFinalMissing || isFinalMissing);
+
+      const rawGwa = hasAnyScores ? getTransmutedGrade(sg) : null;
+      const autoRemarks = hasAnyScores ? getRemarks({ gwa: rawGwa, isComplete: !hasMissingComponents }) : 'Pending';
+      const draftRemarks = student.customRemarks || autoRemarks;
+      const isPassed = hasAnyScores && (draftRemarks === 'Passed' || (draftRemarks !== 'Failed' && draftRemarks !== 'FDA' && draftRemarks !== 'Dropped' && rawGwa !== null && rawGwa <= 3.00));
+      const isFDA = (student.absences || 0) >= 4;
+      const isHonor = isPassed && rawGwa !== null && rawGwa <= 1.75;
+      const isAtRisk = hasAnyScores ? (!isPassed || isFDA || (rawGwa !== null && rawGwa > 3.00)) : isFDA;
 
       return {
         ...student,

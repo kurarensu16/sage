@@ -14,8 +14,8 @@ The system dynamically inspects the client's operating system environment (`navi
 
 > [!IMPORTANT]
 > **APK Storage Location**: Where would you like the `.apk` file to be hosted?
-> 1. **Option A (Recommended)**: Public Supabase Storage bucket (e.g., `https://[project-ref].supabase.co/storage/v1/object/public/app-releases/sage-latest.apk`), enabling you to upload new APK versions anytime without rebuilding the web code.
-> 2. **Option B**: Bundled directly inside the web app's `public/downloads/sage-latest.apk` folder.
+> 1. **Option A (Recommended)**: Public Supabase Storage bucket (e.g., `https://[project-ref].supabase.co/storage/v1/object/public/app-releases/aspire.apk`), enabling you to upload new APK versions anytime without rebuilding the web code.
+> 2. **Option B**: Bundled directly inside the web app's `public/downloads/aspire.apk` folder.
 
 > [!NOTE]
 > **Platform Detection Accuracy**: Detection relies on `navigator.userAgent` and `navigator.maxTouchPoints` rather than screen width alone. This guarantees that **iPad and touch laptops are not mistakenly served Android `.apk` files**.
@@ -23,7 +23,7 @@ The system dynamically inspects the client's operating system environment (`navi
 ---
 
 ## ❓ Open Questions
-- What is the exact public URL or filename for the compiled ASPIRE Android APK? *(Default fallback: Supabase storage or `/downloads/sage-latest.apk`)*.
+- What is the exact public URL or filename for the compiled ASPIRE Android APK? *(Default fallback: Supabase storage or `/downloads/aspire.apk`)*.
 - Would you like a download banner to appear on the **Public Login page** for mobile visitors, or keep it strictly inside the **Sidebar / Navigation**?
 
 ---

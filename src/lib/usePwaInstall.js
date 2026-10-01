@@ -29,7 +29,7 @@ export function usePwaInstall() {
   const [activeTab, setActiveTab] = useState(platform);
 
   const apkDownloadUrl = import.meta.env.VITE_ANDROID_APK_URL || 
-    `${import.meta.env.VITE_SUPABASE_URL || 'https://ettnwknyhdhehoclrwwh.supabase.co'}/storage/v1/object/public/app-releases/sage.apk`;                 
+    `${import.meta.env.VITE_SUPABASE_URL || 'https://ettnwknyhdhehoclrwwh.supabase.co'}/storage/v1/object/public/app-releases/aspire.apk`;
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
@@ -61,7 +61,7 @@ export function usePwaInstall() {
     try {
       await logActivity(
         'APK Download',
-        `Android APK download initiated (Platform: ${platform}, Binary: sage.apk)`,
+        `Android APK download initiated (Platform: ${platform}, Binary: aspire.apk)`,
         actorName
       );
     } catch (logErr) {
@@ -70,7 +70,7 @@ export function usePwaInstall() {
 
     const link = document.createElement('a');
     link.href = apkDownloadUrl;
-    link.download = 'sage.apk';
+    link.download = 'aspire.apk';
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     document.body.appendChild(link);

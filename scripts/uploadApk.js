@@ -56,14 +56,14 @@ async function main() {
   }
 
   const debugApk = path.resolve('android/app/build/outputs/apk/debug/app-debug.apk');
-  const targetSageApk = path.resolve('android/app/build/outputs/apk/debug/sage.apk');
+  const targetAspireApk = path.resolve('android/app/build/outputs/apk/debug/aspire.apk');
 
   if (fs.existsSync(debugApk)) {
-    console.log('Syncing fresh app-debug.apk -> sage.apk locally...');
-    fs.copyFileSync(debugApk, targetSageApk);
+    console.log('Syncing fresh app-debug.apk -> aspire.apk locally...');
+    fs.copyFileSync(debugApk, targetAspireApk);
   }
 
-  const apkPath = fs.existsSync(targetSageApk) ? targetSageApk : debugApk;
+  const apkPath = fs.existsSync(targetAspireApk) ? targetAspireApk : debugApk;
   console.log('3. Reading APK from:', apkPath);
 
   if (!fs.existsSync(apkPath)) {
@@ -74,7 +74,7 @@ async function main() {
   const fileBuffer = fs.readFileSync(apkPath);
   console.log(`APK File Size: ${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB`);
 
-  console.log('4. Cleaning other files from bucket to keep only "sage.apk"...');
+  console.log('4. Cleaning other files from bucket to keep only "aspire.apk"...');
   const { data: existingFiles, error: listErr } = await supabase.storage
     .from(bucketName)
     .list();
@@ -83,7 +83,7 @@ async function main() {
     console.warn('Warning: Could not list bucket files:', listErr.message);
   } else if (existingFiles && existingFiles.length > 0) {
     const filesToRemove = existingFiles
-      .filter(f => f.name !== 'sage.apk')
+      .filter(f => f.name !== 'aspire.apk')
       .map(f => f.name);
 
     if (filesToRemove.length > 0) {
@@ -99,7 +99,7 @@ async function main() {
     }
   }
 
-  const fileName = 'sage.apk';
+  const fileName = 'aspire.apk';
   console.log(`5. Uploading "${fileName}" to Supabase Storage...`);
   const { data: uploadData, error: upErr } = await supabase.storage
     .from(bucketName)
@@ -120,7 +120,7 @@ async function main() {
   const res = await fetch(publicUrl, { method: 'HEAD' });
   console.log(`  -> ${fileName} HTTP status:`, res.status, res.statusText);
 
-  // List final bucket contents to verify only sage.apk exists
+  // List final bucket contents to verify only aspire.apk exists
   const { data: finalFiles } = await supabase.storage.from(bucketName).list();
   console.log('Final bucket contents:', finalFiles?.map(f => `${f.name} (${(f.metadata?.size / (1024 * 1024) || 0).toFixed(2)} MB)`));
   console.log(`Public Download URL: ${publicUrl}`);

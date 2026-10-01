@@ -37,24 +37,44 @@ export async function fetchClassReportDataset(classRecordId) {
     return { enrollments: [], activities: [], rows: [] };
   }
 
-  // 1. Fetch only approved enrollments with profile details
+  // 0. Resolve class_record → section_id + subject_id (enrollments table links by these, not class_record_id)
+  const { data: classRecord, error: crError } = await supabase
+    .from('class_records')
+    .select('class_record_id, section_id, subject_id')
+    .eq('class_record_id', classRecordId)
+    .maybeSingle();
+
+  if (crError) {
+    console.error('Error fetching class record:', crError);
+    throw crError;
+  }
+  if (!classRecord) {
+    console.warn('Class record not found:', classRecordId);
+    return { enrollments: [], activities: [], rows: [] };
+  }
+
+  // 1. Fetch only active enrollments with profile details
+  //    Table is 'enrollments' (not 'class_enrollments'), status column is 'status' (not 'approval_status')
   const { data: enrollments, error: enrollError } = await supabase
-    .from('class_enrollments')
+    .from('enrollments')
     .select(`
       enrollment_id,
       student_id,
-      approval_status,
+      status,
       users:student_id (
         user_id,
+        first_name,
+        last_name,
         email,
-        raw_user_meta_data
+        user_number
       )
     `)
-    .eq('class_record_id', classRecordId)
-    .eq('approval_status', 'approved');
+    .eq('section_id', classRecord.section_id)
+    .eq('subject_id', classRecord.subject_id)
+    .eq('status', 'active');
 
   if (enrollError) {
-    console.error('Error fetching class enrollments:', enrollError);
+    console.error('Error fetching enrollments:', enrollError);
     throw enrollError;
   }
 
@@ -70,20 +90,26 @@ export async function fetchClassReportDataset(classRecordId) {
     throw actError;
   }
 
-  // 3. Fetch activity scores
-  const { data: scores, error: scoreError } = await supabase
-    .from('student_activity_scores')
-    .select('score_id, activity_id, student_id, score, is_exempt')
-    .eq('class_record_id', classRecordId);
+  // 3. Fetch activity scores — student_activity_scores has no class_record_id;
+  //    query by activity_id list instead (matching ScoreInput.jsx pattern)
+  const activityIds = (activities || []).map(a => a.activity_id);
+  let scores = [];
+  if (activityIds.length > 0) {
+    const { data: scoreData, error: scoreError } = await supabase
+      .from('student_activity_scores')
+      .select('score_id, activity_id, student_id, score')
+      .in('activity_id', activityIds);
 
-  if (scoreError) {
-    console.error('Error fetching activity scores:', scoreError);
-    throw scoreError;
+    if (scoreError) {
+      console.error('Error fetching activity scores:', scoreError);
+      throw scoreError;
+    }
+    scores = scoreData || [];
   }
 
   // Build lookup index: `${activity_id}:${student_id}`
   const scoreMap = new Map();
-  (scores || []).forEach(row => {
+  scores.forEach(row => {
     scoreMap.set(`${row.activity_id}:${row.student_id}`, row);
   });
 
@@ -91,14 +117,13 @@ export async function fetchClassReportDataset(classRecordId) {
   const rows = [];
   (enrollments || []).forEach(enr => {
     const student = enr.users;
-    const meta = student?.raw_user_meta_data || {};
-    const studentName = meta.full_name || `${meta.first_name || ''} ${meta.last_name || ''}`.trim() || student?.email || 'Student';
-    const studentNumber = meta.student_number || meta.user_number || '—';
+    const studentName = `${student?.first_name || ''} ${student?.last_name || ''}`.trim() || student?.email || 'Student';
+    const studentNumber = student?.user_number || '—';
 
     (activities || []).forEach(act => {
       const scoreRecord = scoreMap.get(`${act.activity_id}:${enr.student_id}`);
       const rawScore = scoreRecord?.score;
-      const hasScore = rawScore !== null && rawScore !== undefined && !scoreRecord?.is_exempt;
+      const hasScore = rawScore !== null && rawScore !== undefined;
       const score = hasScore ? Number(rawScore) : null;
       const maxScore = Number(act.max_score || 100);
       const percentage = (hasScore && maxScore > 0)
@@ -117,7 +142,7 @@ export async function fetchClassReportDataset(classRecordId) {
         maxScore,
         percentage,
         status: getStudentStatus(percentage),
-        isExempt: !!scoreRecord?.is_exempt,
+        isExempt: false,
         isGraded: hasScore
       });
     });

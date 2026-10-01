@@ -328,7 +328,7 @@ export default function Dashboard() {
                   </span>
                 </div>
                 <h4 className="text-base font-bold font-display mt-2 text-white flex items-center gap-2">
-                  sage.apk
+                  aspire.apk
                 </h4>
                 <p className="text-[11px] text-sage-200/80 mt-0.5 font-mono truncate">
                   Supabase Storage • app-releases
