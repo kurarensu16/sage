@@ -4,8 +4,9 @@
 // =============================================================================
 
 import { supabase } from './supabase';
-import { PASSING_GRADE, HIGH_CUTOFF } from './constants';
+import { PASSING_GRADE, HIGH_CUTOFF, SAME_MARGIN } from './constants';
 import { isStudentAtRisk, computeUnifiedRisk } from './riskEngine';
+import * as XLSX from 'xlsx-js-style';
 
 /**
  * Determine a student's performance category based on institutional cutoffs.
@@ -252,4 +253,183 @@ export function buildActivityBreakdown(rows = []) {
       ? Math.round(item.sumPercentage / item.totalGraded)
       : null
   }));
+}
+
+/**
+ * Export class performance and student activity score sheet to Excel workbook (.xlsx).
+ *
+ * @param {object} params
+ * @param {object} params.selectedClass
+ * @param {Array} params.students
+ * @param {Array} params.activities
+ */
+export function exportClassPerformanceToExcel({ selectedClass, students = [], activities = [] }) {
+  if (!students || students.length === 0) return;
+
+  const dataToExport = students.map(s => {
+    const row = {
+      'Student Name': s.studentName,
+      'Student ID': s.studentNumber,
+      'Activities Graded': `${s.gradedCount} / ${s.activitiesCount}`,
+      'Overall Average': s.overallPercentage !== null ? `${s.overallPercentage}%` : '—',
+      'Performance Status': s.overallStatus || 'Ungraded',
+      'At-Risk Standing': s.isAtRisk ? 'At-Risk' : 'On Track'
+    };
+
+    (activities || []).forEach(act => {
+      const scoreObj = s.scores?.[act.activity_id];
+      const hasScore = scoreObj?.score !== null && scoreObj?.score !== undefined;
+      row[act.title] = hasScore
+        ? `${scoreObj.score} / ${act.max_score || 100} (${scoreObj.percentage}%)`
+        : '—';
+    });
+
+    return row;
+  });
+
+  const ws = XLSX.utils.json_to_sheet(dataToExport);
+  const wb = XLSX.utils.book_new();
+  const safeSheetName = (selectedClass?.subjects?.code || 'Performance').replace(/[\\/?*[\]]/g, '').slice(0, 31);
+  XLSX.utils.book_append_sheet(wb, ws, safeSheetName || 'Class Performance');
+
+  const filePrefix = selectedClass?.subjects?.code ? selectedClass.subjects.code.replace(/\s+/g, '_') : 'Class';
+  const filename = `${filePrefix}_Performance_Report_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+
+/**
+ * Fetch distinct courses taught by a faculty member grouped by subject code.
+ * Used for multi-term Performance Comparison.
+ *
+ * @param {string} facultyId
+ * @returns {Promise<Array<{ courseCode: string, courseName: string, classes: Array }>>}
+ */
+export async function fetchFacultyCourseHistory(facultyId) {
+  if (!facultyId) return [];
+
+  const { data, error } = await supabase
+    .from('class_records')
+    .select(`
+      class_record_id,
+      section_id,
+      subject_id,
+      semester,
+      school_year,
+      subjects:subject_id (code, name),
+      sections:section_id (name)
+    `)
+    .eq('faculty_id', facultyId)
+    .order('school_year', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching faculty course history:', error);
+    throw error;
+  }
+
+  // Group by subject code
+  const courseMap = new Map();
+  (data || []).forEach(cr => {
+    const code = cr.subjects?.code || 'UNKNOWN';
+    const name = cr.subjects?.name || 'Untitled Course';
+
+    if (!courseMap.has(code)) {
+      courseMap.set(code, {
+        courseCode: code,
+        courseName: name,
+        classes: []
+      });
+    }
+
+    courseMap.get(code).classes.push(cr);
+  });
+
+  return Array.from(courseMap.values());
+}
+
+/**
+ * Fetch performance metrics for a specific class record cohort.
+ *
+ * @param {string} classRecordId
+ * @returns {Promise<{ classSize: number, passingRate: number, atRiskRate: number, averageGrade: number, gradedCount: number, students: Array }>}
+ */
+export async function fetchTermCohortMetrics(classRecordId) {
+  if (!classRecordId) {
+    return { classSize: 0, passingRate: 0, atRiskRate: 0, averageGrade: 0, gradedCount: 0, students: [] };
+  }
+
+  const { rows } = await fetchClassReportDataset(classRecordId);
+  const students = aggregateByStudent(rows);
+  const classSize = students.length;
+
+  const gradedStudents = students.filter(s => s.overallPercentage !== null);
+  const gradedCount = gradedStudents.length;
+
+  const passingCount = gradedStudents.filter(s => s.overallPercentage >= PASSING_GRADE).length;
+  const passingRate = gradedCount > 0 ? Math.round((passingCount / gradedCount) * 100) : 0;
+
+  const atRiskCount = students.filter(s => s.isAtRisk).length;
+  const atRiskRate = classSize > 0 ? Math.round((atRiskCount / classSize) * 100) : 0;
+
+  const totalGradeSum = gradedStudents.reduce((acc, s) => acc + s.overallPercentage, 0);
+  const averageGrade = gradedCount > 0 ? Math.round(totalGradeSum / gradedCount) : 0;
+
+  return {
+    classSize,
+    passingRate,
+    atRiskRate,
+    averageGrade,
+    gradedCount,
+    students
+  };
+}
+
+/**
+ * Compare two cohort metrics (Current Term vs Previous Term) using institutional ±SAME_MARGIN tolerance.
+ *
+ * @param {object} current - Metrics from current class record
+ * @param {object} previous - Metrics from comparison class record
+ * @param {number} [margin=SAME_MARGIN]
+ * @returns {object}
+ */
+export function compareCohortMetrics(current, previous, margin = SAME_MARGIN) {
+  if (!current || !previous) {
+    return null;
+  }
+
+  // 1. Passing Rate (Higher is better)
+  const passDiff = current.passingRate - previous.passingRate;
+  const passTrend = passDiff > margin ? 'better' : passDiff < -margin ? 'worse' : 'about the same';
+
+  // 2. At-Risk Rate (Lower is better!)
+  const riskDiff = current.atRiskRate - previous.atRiskRate;
+  const riskTrend = riskDiff < -margin ? 'better' : riskDiff > margin ? 'worse' : 'about the same';
+
+  // 3. Average Grade (Higher is better)
+  const avgDiff = current.averageGrade - previous.averageGrade;
+  const avgTrend = avgDiff > margin ? 'better' : avgDiff < -margin ? 'worse' : 'about the same';
+
+  // 4. Class size delta
+  const sizeDiff = current.classSize - previous.classSize;
+
+  // 5. Generate plain-language summary
+  let summary;
+  if (passDiff > margin) {
+    summary = `Passing rate improved by ${passDiff}% compared to the reference term.`;
+  } else if (passDiff < -margin) {
+    summary = `Passing rate decreased by ${Math.abs(passDiff)}% compared to the reference term.`;
+  } else if (riskDiff < -margin) {
+    summary = `At-risk rate decreased by ${Math.abs(riskDiff)}% indicating improved academic retention.`;
+  } else if (riskDiff > margin) {
+    summary = `At-risk rate increased by ${riskDiff}%, suggesting higher student difficulty with current coursework.`;
+  } else {
+    summary = `Cohort performance is stable and about the same as the reference term (within ±${margin}% margin).`;
+  }
+
+  return {
+    passingRate: { current: current.passingRate, previous: previous.passingRate, diff: passDiff, trend: passTrend },
+    atRiskRate:  { current: current.atRiskRate,  previous: previous.atRiskRate,  diff: riskDiff, trend: riskTrend },
+    averageGrade:{ current: current.averageGrade,previous: previous.averageGrade,diff: avgDiff, trend: avgTrend },
+    classSize:   { current: current.classSize,   previous: previous.classSize,   diff: sizeDiff },
+    summary
+  };
 }
