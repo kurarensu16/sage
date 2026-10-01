@@ -1,8 +1,10 @@
+import { ATTENDANCE } from './academicPolicy.js';
+
 export const ADVISING_THRESHOLDS = Object.freeze({
   weakActivityPercentage: 75,
   minimumRelatedResults: 2,
-  attendanceWarningAbsences: 3,
-  fdaAbsences: 4
+  attendanceWarningAbsences: ATTENDANCE.nearFdaAbsences,
+  fdaAbsences: ATTENDANCE.fdaAbsences
 });
 
 const CATEGORY_PATTERNS = [
@@ -47,7 +49,11 @@ export function evaluateAcademicAdvising({
   officialGwa = null,
   hasOfficialMilestone = false
 } = {}) {
-  const absenceCount = Number(attendance.absenceCount) || 0;
+  const highestAttendanceCourse = (Array.isArray(attendance.byCourse) ? attendance.byCourse : [])
+    .map(course => ({ ...course, absenceCount: Number(course?.absenceCount) || 0 }))
+    .sort((a, b) => b.absenceCount - a.absenceCount)[0];
+  const absenceCount = highestAttendanceCourse?.absenceCount ?? (Number(attendance.absenceCount) || 0);
+  const attendanceCourseLabel = highestAttendanceCourse?.courseCode ? ` in ${highestAttendanceCourse.courseCode}` : '';
 
   if (courses.length === 0) {
     return {
@@ -71,8 +77,8 @@ export function evaluateAcademicAdvising({
       severity: 'critical',
       signalType: 'attendance_fda_threshold',
       headline: 'Attendance requires immediate faculty review',
-      summary: `${absenceCount} absences are recorded. This meets the institutional FDA advisory threshold and requires confirmation with your instructor.`,
-      evidence: [{ label: 'Recorded absences', value: `${absenceCount}/${ADVISING_THRESHOLDS.fdaAbsences}` }],
+      summary: `${absenceCount} absences are recorded${attendanceCourseLabel}. This meets the institutional FDA advisory threshold and requires confirmation with your instructor.`,
+      evidence: [{ label: 'Recorded absences', value: `${absenceCount}/${ADVISING_THRESHOLDS.fdaAbsences}${attendanceCourseLabel}` }],
       focusTopics: ['Attendance recovery'],
       actions: [
         action('contact-instructor', 'Contact your instructor', 'Confirm the attendance record and ask which recovery options remain available.'),
@@ -90,8 +96,8 @@ export function evaluateAcademicAdvising({
       severity: 'high',
       signalType: 'attendance_near_fda_threshold',
       headline: 'One more absence may trigger an FDA advisory',
-      summary: `${absenceCount} absences are recorded. Protect your attendance standing and clarify any disputed record before the next class meeting.`,
-      evidence: [{ label: 'Recorded absences', value: `${absenceCount}/${ADVISING_THRESHOLDS.fdaAbsences}` }],
+      summary: `${absenceCount} absences are recorded${attendanceCourseLabel}. Protect your attendance standing and clarify any disputed record before the next class meeting.`,
+      evidence: [{ label: 'Recorded absences', value: `${absenceCount}/${ADVISING_THRESHOLDS.fdaAbsences}${attendanceCourseLabel}` }],
       focusTopics: ['Attendance prevention'],
       actions: [
         action('review-attendance', 'Review your attendance record', 'Check the recorded dates and raise any discrepancy with your instructor.'),

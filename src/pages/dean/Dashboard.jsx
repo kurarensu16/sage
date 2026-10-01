@@ -19,6 +19,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { getTransmutedGrade, resolveGradingFormula } from '../../lib/gradingMath';
+import { computeStudentGwa, resolveOfficialGwa } from '../../lib/academicPolicy';
 import {
   computeTentativeGrade,
   computeTentativeGradeDetails,
@@ -47,7 +48,7 @@ function computeTermGwa(studentId, term, gradesByStudent, scoresMap, colMap, cla
   const termKey = term.toLowerCase().replace('-', '_');
   const posted = myGrades.find(g => g.grade_period === termKey);
   if (posted) {
-    const val = posted.effective_grade != null ? parseFloat(posted.effective_grade) : parseFloat(posted.computed_grade);
+    const val = resolveOfficialGwa(posted).gwa;
     if (!isNaN(val)) return val;
   }
 
@@ -58,7 +59,7 @@ function computeTermGwa(studentId, term, gradesByStudent, scoresMap, colMap, cla
   Object.keys(studentScores).forEach(classRecId => {
     const tSc = studentScores[classRecId]?.[term];
     if (tSc) {
-      const config = classConfigMap[classRecId] || {};
+      const config = classConfigMap[classRecId] ?? null;
       const details = computeTentativeGradeDetails(studentScores[classRecId], colMap[classRecId], config);
       const termRating = details.termRatings[term];
       if (termRating !== null && termRating !== undefined) {
@@ -328,7 +329,7 @@ export default function Dashboard() {
 
           // 1. Add posted grades
           myGrades.forEach(g => {
-            const val = g.effective_grade != null ? parseFloat(g.effective_grade) : parseFloat(g.computed_grade);
+            const val = resolveOfficialGwa(g).gwa;
             if (!isNaN(val)) {
               gradeValues.push(val);
             }
@@ -343,7 +344,7 @@ export default function Dashboard() {
               const tentativeVal = computeTentativeGrade(
                 classRecordScores,
                 classRecordCols,
-                classConfigMap[classRecId]
+                classConfigMap[classRecId] ?? null
               );
               if (tentativeVal !== null) {
                 gradeValues.push(tentativeVal);
@@ -351,9 +352,7 @@ export default function Dashboard() {
             }
           });
 
-          const avgGwa = gradeValues.length > 0
-            ? gradeValues.reduce((acc, v) => acc + v, 0) / gradeValues.length
-            : null;
+          const avgGwa = computeStudentGwa(gradeValues).gwa;
 
           const failingCount = gradeValues.filter(v => v > 3.00).length;
 
@@ -527,7 +526,7 @@ export default function Dashboard() {
             const gradeValues = [];
 
             myGrades.forEach(g => {
-              const val = g.effective_grade != null ? parseFloat(g.effective_grade) : parseFloat(g.computed_grade);
+              const val = resolveOfficialGwa(g).gwa;
               if (!isNaN(val)) gradeValues.push(val);
             });
 

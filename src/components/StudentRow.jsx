@@ -181,8 +181,7 @@ export default function StudentRow({
     }));
   };
 
-  const effectiveFormula = gradingFormula
-    || resolveGradingFormula(null, { formulaAssigned: false });
+  const effectiveFormula = gradingFormula || null;
 
   // Computes ratings through the same formula engine used by posting paths.
   const calcPeriodRating = (term) => {

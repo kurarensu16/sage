@@ -1,29 +1,30 @@
 import { supabase } from './supabase';
 
 export const NOTIFICATION_TITLES = {
-  grade_posted: '📊 New Grade Posted',
-  class_enrolled: '📚 Class Registration Success',
-  eval_window_open: '📝 Faculty Evaluation Open',
-  eval_closed: '🔒 Faculty Evaluation Closed',
-  eval_deadline_reminder: '⏰ Evaluation Deadline Reminder',
-  ews_alert: '⚠️ Early Warning System Alert',
-  ai_recommendation: '🧠 AI Counseling Ready',
-  class_assigned: '📋 New Class Assigned',
-  term_rollover_reminder: '⏰ Grade Submission Reminder',
-  override_approved: '✅ Grade Override Approved',
-  override_rejected: '❌ Grade Override Rejected',
-  risk_threshold: '⚠️ At-Risk Threshold Alert',
-  grades_pending: '📑 Grade Sheet Pending Approval',
-  override_request: '📝 Grade Override Pending',
-  eval_compiled: '⭐ Evaluation Reports Compiled',
-  compliance: '🛡️ Grading Compliance Alert',
-  roster_import: '📊 Student Roster Processed',
-  eval_window: '📅 Evaluation Window Status',
-  assignment: '👥 Subject Assignment Update',
-  security: '🔒 Administrative Security Alert',
-  database_sync: '🔄 Database Sync Success',
-  user_signup: '👤 New User Registered',
-  system: 'ℹ️ SAGE System Notice'
+  grade_posted: 'New Grade Posted',
+  grade_changed: 'Grade Updated',
+  class_enrolled: 'Class Registration Success',
+  eval_window_open: 'Faculty Evaluation Open',
+  eval_closed: 'Faculty Evaluation Closed',
+  eval_deadline_reminder: 'Evaluation Deadline Reminder',
+  ews_alert: 'Early Warning System Alert',
+  ai_recommendation: 'AI Counseling Ready',
+  class_assigned: 'New Class Assigned',
+  term_rollover_reminder: 'Grade Submission Reminder',
+  override_approved: 'Grade Override Approved',
+  override_rejected: 'Grade Override Rejected',
+  risk_threshold: 'At-Risk Threshold Alert',
+  grades_pending: 'Grade Sheet Pending Approval',
+  override_request: 'Grade Override Pending',
+  eval_compiled: 'Evaluation Reports Compiled',
+  compliance: 'Grading Compliance Alert',
+  roster_import: 'Student Roster Processed',
+  eval_window: 'Evaluation Window Status',
+  assignment: 'Subject Assignment Update',
+  security: 'Administrative Security Alert',
+  database_sync: 'Database Sync Success',
+  user_signup: 'New User Registered',
+  system: 'SAGE System Notice'
 };
 
 // Global broadcast channel for cross-client real-time alerts
@@ -623,6 +624,76 @@ export async function notifyRosterImported({
     await dispatchNotifications(list);
   } catch (err) {
     console.warn('Error in notifyRosterImported:', err);
+  }
+}
+
+/**
+ * Notify all students in a class when a grade milestone is locked.
+ * Idempotent: safe to call again after an unlock -> relock cycle.
+ * Uses upsert with onConflict on dedupe_key (supabase-js v2 compliant).
+ *
+ * @param {{ classRecordId: string, term: string, students: Array<{ student_id: string, remark?: string }>, subject: { code: string, name: string } }} params
+ */
+export async function notifyGradePosted({ classRecordId, term, students, subject }) {
+  if (!students?.length) return;
+
+  const rows = students.map((s) => ({
+    recipient_id: s.student_id,
+    type:         'grade_posted',
+    severity:     'info',
+    title:        'New Grade Posted',
+    link:         '/student/grades',
+    message:      `Your ${term} grade for ${subject.name} (${subject.code}) has been posted.`,
+    payload: {
+      subject_code:    subject.code,
+      subject_name:    subject.name,
+      term,
+      remark:          s.remark || 'Posted',
+      class_record_id: classRecordId,
+    },
+    dedupe_key: `grade_posted:${classRecordId}:${term}:${s.student_id}`,
+  }));
+
+  const { error } = await supabase
+    .from('notifications')
+    .upsert(rows, { onConflict: 'dedupe_key', ignoreDuplicates: true });
+
+  if (error) {
+    console.warn('Error in notifyGradePosted:', error);
+    throw error;
+  }
+}
+
+/**
+ * Notify a student when a posted grade is changed (unlock -> edit -> relock).
+ * Uses a revision counter in the dedupe key so each correction fires once.
+ *
+ * @param {{ classRecordId: string, term: string, studentId: string, subject: { code: string, name: string }, remark: string, revision: number }} params
+ */
+export async function notifyGradeChanged({ classRecordId, term, studentId, subject, remark, revision }) {
+  const { error } = await supabase
+    .from('notifications')
+    .upsert([{
+      recipient_id: studentId,
+      type:         'grade_changed',
+      severity:     'warning',
+      title:        'Grade Updated',
+      link:         '/student/grades',
+      message:      `Your ${term} grade for ${subject.name} (${subject.code}) has been updated.`,
+      payload: {
+        subject_code:    subject.code,
+        subject_name:    subject.name,
+        term,
+        remark,
+        class_record_id: classRecordId,
+        revision,
+      },
+      dedupe_key: `grade_changed:${classRecordId}:${term}:${studentId}:rev${revision}`,
+    }], { onConflict: 'dedupe_key', ignoreDuplicates: true });
+
+  if (error) {
+    console.warn('Error in notifyGradeChanged:', error);
+    throw error;
   }
 }
 

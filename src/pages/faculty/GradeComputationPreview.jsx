@@ -3,8 +3,10 @@ import {
   calculateStoredTermRating,
   createGradingFormulaSnapshot,
   getTransmutedGrade,
-  resolveGradingFormula
+  resolveGradingFormula,
+  toEffectiveGradeForPosting
 } from '../../lib/gradingMath';
+import { getRemarks } from '../../lib/academicPolicy';
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
@@ -35,7 +37,7 @@ import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { notifyGradesPosted } from '../../lib/notificationDispatcher';
+import { notifyGradesPosted, notifyGradePosted, notifyGradeChanged } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import { triggerExcelExport } from '../../lib/excelExport';
@@ -497,7 +499,7 @@ export default function GradeComputationPreview() {
         : (hasPrelimScores || hasMidtermScores || hasSemiFinalScores || hasFinalScores);
 
       const rawGwa = hasAnyScores ? getTransmutedGrade(sg) : null;
-      const autoRemarks = hasAnyScores ? (rawGwa <= 3.00 ? 'Passed' : 'Failed') : 'Pending';
+      const autoRemarks = hasAnyScores ? getRemarks({ gwa: rawGwa, isComplete: !hasMissingComponents }) : 'Pending';
       const draftRemarks = student.customRemarks || autoRemarks;
       const isPassed = hasAnyScores && (draftRemarks === 'Passed' || (draftRemarks !== 'Failed' && draftRemarks !== 'FDA' && draftRemarks !== 'Dropped' && rawGwa !== null && rawGwa <= 3.00));
       const isFDA = (student.absences || 0) >= 4;
@@ -736,7 +738,8 @@ export default function GradeComputationPreview() {
           computedTermGrade = stud.tfr;
         }
 
-        const effectiveGrade = targetMilestone === 'semestral' ? computedGWA : getTransmutedGrade(computedTermGrade);
+        const effectiveGrade = targetMilestone === 'semestral' ? computedGWA : toEffectiveGradeForPosting(computedTermGrade);
+        if (effectiveGrade === null) throw new Error(`${stud.name}: no complete rating is available for this milestone.`);
 
         const oldRecord = existingMap[stud.id];
         if (!isFirstPost) {
@@ -792,6 +795,24 @@ export default function GradeComputationPreview() {
         title: `${termNotificationName} Posted`,
         body: `📊 ${termNotificationName} posted for ${classInfo?.subjects?.code || 'class'} (${classInfo?.sections?.name || ''}).`
       });
+
+      // Dispatch structured idempotent notifications
+      try {
+        await notifyGradePosted({
+          classRecordId,
+          term: termNotificationName,
+          students: computedStudents.map(s => ({
+            student_id: s.id,
+            remark: s.remarks || 'Posted'
+          })),
+          subject: {
+            code: classInfo?.subjects?.code || '',
+            name: classInfo?.subjects?.name || classInfo?.subject_name || ''
+          }
+        });
+      } catch (err) {
+        console.warn('Error dispatching notifyGradePosted:', err);
+      }
 
       const targetSectionId = classInfo?.sections?.section_id || classInfo?.section_id;
       if (targetSectionId) {

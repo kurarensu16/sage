@@ -474,7 +474,7 @@ export default function ClassAttendance() {
 
       // Status Filter match
       if (statusFilter === 'all') return true;
-      if (statusFilter === 'fda') return student.absences >= 4 || student.absences >= 2;
+      if (statusFilter === 'fda') return student.absences >= 4;
       return student.status === statusFilter;
     });
   }, [roster, searchQuery, statusFilter]);

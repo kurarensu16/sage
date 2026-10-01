@@ -28,7 +28,7 @@ export default function ExportPreviewModal({
   const subjectCode = classInfo.subjects?.code || '';
   const subjectName = classInfo.subjects?.name || '';
   const sectionName = classInfo.sections?.name || '';
-  const effectiveFormula = gradingFormula || resolveGradingFormula(null, { formulaAssigned: false });
+  const effectiveFormula = gradingFormula || null;
 
   // Helpers to calculate student values
   const getComputedStudentRow = (student) => {

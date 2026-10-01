@@ -15,6 +15,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { DashboardSkeleton } from '../../components/common/Skeleton';
 import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
+import { computeStudentGwa, getGwaBand, resolveOfficialGwa } from '../../lib/academicPolicy';
 
 // Helper to check pending advising tasks
 const checkPendingAdvisingTasks = async (studentId) => {
@@ -150,9 +151,9 @@ export default function Dashboard() {
             class_record_id: classRecId,
             code: e.subjects?.code || 'SUBJ',
             name: e.subjects?.name || 'Subject Name',
-            credits: Number(e.subjects?.credit_units || 3.0),
+            credits: Number(e.subjects?.units || 0),
             professor: matchingClass?.faculty ? `Prof. ${matchingClass.faculty.first_name} ${matchingClass.faculty.last_name}` : 'Faculty Instructor',
-            grade: pGrade ? pGrade.computed_grade?.toFixed(2) : '—',
+            grade: pGrade ? resolveOfficialGwa(pGrade).gwa : null,
             status: pGrade ? 'Grades Posted' : 'Active'
           };
         });
@@ -160,21 +161,16 @@ export default function Dashboard() {
         setEnrolledSubjects(activeEnrolled);
 
         // 7. Calculate real-time GWA
-        const validGrades = activeEnrolled.filter(s => s.grade !== '—' && !isNaN(parseFloat(s.grade)));
+        const validGrades = activeEnrolled.filter(s => s.grade !== null && !isNaN(parseFloat(s.grade)));
         let resolvedGwa = '—';
         let resolvedStanding = 'No grades posted yet';
 
         if (validGrades.length > 0) {
-          const totalWeighted = validGrades.reduce((sum, s) => sum + (parseFloat(s.grade) * s.credits), 0);
-          const totalCreds = validGrades.reduce((sum, s) => sum + s.credits, 0);
-          const gwaNum = totalWeighted / totalCreds;
+          const gwaNum = computeStudentGwa(validGrades.map(s => s.grade)).gwa;
           resolvedGwa = gwaNum.toFixed(2);
           setCurrentGwa(resolvedGwa);
 
-          if (gwaNum <= 1.45) resolvedStanding = 'Excellent';
-          else if (gwaNum <= 1.75) resolvedStanding = 'Very Good';
-          else if (gwaNum <= 3.00) resolvedStanding = 'Satisfactory';
-          else resolvedStanding = 'Academic warning';
+          resolvedStanding = getGwaBand(gwaNum)?.label || 'Academic warning';
           setGwaStanding(resolvedStanding);
         } else {
           setCurrentGwa('—');

@@ -3,31 +3,9 @@
 // Institution: Dr. Yanga's Colleges, Inc. (DYCI)
 // =============================================================================
 
-const WEIGHT_TOLERANCE = 0.01;
+import { getHonorTier, toGwaOrNull, TRANSMUTATION_LADDER } from './academicPolicy.js';
 
-export const LEGACY_GRADING_COMPONENTS = Object.freeze([
-  Object.freeze({
-    key: 'class_standing',
-    name: 'Class Standing',
-    weight: 50,
-    maxScore: 100,
-    isMultiple: true
-  }),
-  Object.freeze({
-    key: 'character',
-    name: 'Character Rating',
-    weight: 10,
-    maxScore: 100,
-    isMultiple: false
-  }),
-  Object.freeze({
-    key: 'examination',
-    name: 'Major Examination',
-    weight: 40,
-    maxScore: 100,
-    isMultiple: false
-  })
-]);
+export const WEIGHT_TOLERANCE = 0.01;
 
 const toFiniteNumber = (value) => {
   if (value === null || value === undefined || value === '') return null;
@@ -50,8 +28,7 @@ const createComponentKey = (component, index) => {
 
 /**
  * Validates and normalizes a grading formula without assigning storage slots.
- * Configured formulas fail closed when invalid. The legacy formula is used only
- * when the subject has no assigned computation.
+ * Missing or invalid grading templates fail closed.
  *
  * @param {Array<Object>|null|undefined} components
  * @param {Object} [options]
@@ -61,11 +38,11 @@ const createComponentKey = (component, index) => {
 export function resolveGradingFormula(components, { formulaAssigned = Array.isArray(components) && components.length > 0 } = {}) {
   if (!formulaAssigned) {
     return {
-      ok: true,
-      source: 'legacy',
-      components: LEGACY_GRADING_COMPONENTS.map(component => ({ ...component })),
-      totalWeight: 100,
-      error: null
+      ok: false,
+      source: 'invalid',
+      components: [],
+      totalWeight: 0,
+      error: 'No grading template assigned to this subject.'
     };
   }
 
@@ -305,7 +282,7 @@ export function createGradingFormulaSnapshot(formula, { computationId = null } =
 }
 
 export function getGradingStoragePresentation(formula) {
-  const components = formula?.ok ? formula.components : LEGACY_GRADING_COMPONENTS;
+  const components = formula?.ok ? formula.components : [];
   const repeatableComponents = components.filter(component => component.isMultiple);
   const characterComponent = components.find(component => !component.isMultiple && /character/i.test(component.name));
   const primarySingleComponent = components.find(component => !component.isMultiple && component !== characterComponent);
@@ -397,6 +374,12 @@ export function calculateWeightedTermRating({ formula, componentScores = {} }) {
   const rawRating = hasData
     ? contributions.reduce((sum, component) => sum + component.contribution, 0)
     : null;
+  const encodedWeight = contributions
+    .filter(component => component.hasData)
+    .reduce((sum, component) => sum + (component.weight || 0), 0);
+  const ratingOnEncoded = encodedWeight > 0
+    ? Math.min(100, Math.max(0, Math.round((rawRating / encodedWeight) * 100)))
+    : null;
 
   return {
     ok: true,
@@ -406,6 +389,8 @@ export function calculateWeightedTermRating({ formula, componentScores = {} }) {
     isComplete: missingComponents.length === 0,
     contributions,
     missingComponents,
+    encodedWeight,
+    ratingOnEncoded,
     error: null
   };
 }
@@ -417,18 +402,11 @@ export function calculateWeightedTermRating({ formula, componentScores = {} }) {
  */
 export const getTransmutedGrade = (score) => {
   if (score === null || score === undefined || isNaN(score) || score === '') return 5.00;
-  const numScore = parseFloat(score);
-  if (numScore >= 98) return 1.00;
-  if (numScore >= 95) return 1.25;
-  if (numScore >= 92) return 1.50;
-  if (numScore >= 89) return 1.75;
-  if (numScore >= 86) return 2.00;
-  if (numScore >= 83) return 2.25;
-  if (numScore >= 80) return 2.50;
-  if (numScore >= 77) return 2.75;
-  if (numScore >= 75) return 3.00;
-  return 5.00;
+  return toGwaOrNull(score) ?? 5.00;
 };
+
+export { TRANSMUTATION_LADDER };
+export const toEffectiveGradeForPosting = (rating) => toGwaOrNull(rating);
 
 /**
  * Computes official term and semestral milestones supporting both 4-term regular semesters and 2-term summer terms.
@@ -447,9 +425,11 @@ export const calculateSemestralGrade = ({ prelim = null, midterm = null, semiFin
     const finalRating = final !== null && !isNaN(final) ? Math.round(parseFloat(final)) : null;
     const sg = (mr !== null && finalRating !== null) ? Math.round((mr + finalRating) / 2) : (finalRating ?? mr);
     const gwa = sg !== null ? getTransmutedGrade(sg).toFixed(2) : '—';
-    const remarks = sg !== null ? (parseFloat(gwa) <= 3.00 ? 'Passed' : 'Failed') : '—';
+    const termsEncoded = [mr, finalRating].filter(value => value !== null).length;
+    const isComplete = termsEncoded === 2;
+    const remarks = !isComplete ? 'In Progress' : (parseFloat(gwa) <= 3.00 ? 'Passed' : 'Failed');
 
-    return { mr, tfr: finalRating, sg, gwa, remarks };
+    return { mr, tfr: finalRating, sg, gwa, remarks, termsExpected: 2, termsEncoded, isComplete };
   }
 
   // Regular 4-term progression: Prelim, Midterm, Semi-Final, Final
@@ -463,9 +443,11 @@ export const calculateSemestralGrade = ({ prelim = null, midterm = null, semiFin
   const sg = (mr !== null && tfr !== null) ? Math.round((mr + tfr) / 2) : (tfr ?? mr);
 
   const gwa = sg !== null ? getTransmutedGrade(sg).toFixed(2) : '—';
-  const remarks = sg !== null ? (parseFloat(gwa) <= 3.00 ? 'Passed' : 'Failed') : '—';
+  const termsEncoded = [p, m, sf, f].filter(value => value !== null).length;
+  const isComplete = termsEncoded === 4;
+  const remarks = !isComplete ? 'In Progress' : (parseFloat(gwa) <= 3.00 ? 'Passed' : 'Failed');
 
-  return { mr, tfr, sg, gwa, remarks };
+  return { mr, tfr, sg, gwa, remarks, termsExpected: 4, termsEncoded, isComplete };
 };
 
 /**
@@ -478,33 +460,12 @@ export const calculateSemestralGrade = ({ prelim = null, midterm = null, semiFin
  * @returns {{ tier: 'Sapientia'|'Excellentia'|'Virtus'|null, isEligible: boolean, disqualificationReason: string|null }}
  */
 export const getPresidentsListTier = (gwa, hasGradeBelow200 = false, hasInc = false, units = 18, isIrregular = false) => {
-  if (gwa === null || gwa === undefined || gwa === '—') {
-    return { tier: null, isEligible: false, disqualificationReason: 'Pending Grades' };
-  }
-
-  const numGwa = parseFloat(gwa);
-  if (numGwa > 1.75) {
-    return { tier: null, isEligible: false, disqualificationReason: 'GWA exceeds 1.75 threshold (Sec 3.8.2)' };
-  }
-
-  if (hasGradeBelow200) {
-    return { tier: null, isEligible: false, disqualificationReason: 'Subject grade lower than 2.00 (Sec 3.8.4 / 5.2.5.1.3)' };
-  }
-
-  if (hasInc) {
-    return { tier: null, isEligible: false, disqualificationReason: 'Incomplete grade present (Sec 3.8.5)' };
-  }
-
-  if (isIrregular && units < 18) {
-    return { tier: null, isEligible: false, disqualificationReason: 'Irregular student underload (< 18 units) (Sec 3.8.6)' };
-  }
-
-  let tier = null;
-  if (numGwa <= 1.25) tier = 'Sapientia';
-  else if (numGwa <= 1.50) tier = 'Excellentia';
-  else if (numGwa <= 1.75) tier = 'Virtus';
-
-  return { tier, isEligible: true, disqualificationReason: null };
+  const result = getHonorTier(gwa, {
+    subjectGrades: hasGradeBelow200 ? [2.25] : [],
+    hasInc,
+    units
+  });
+  return { tier: result.tier, isEligible: result.isEligible, disqualificationReason: result.unmetRequirements[0] || null };
 };
 
 /**

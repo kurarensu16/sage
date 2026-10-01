@@ -3,7 +3,8 @@
 
 import { supabase } from './supabase';
 import { calculateAcademicRisk, computeTentativeGradeDetails } from './riskEngine';
-import { getTransmutedGrade, resolveGradingFormula } from './gradingMath';
+import { resolveGradingFormula } from './gradingMath';
+import { resolveOfficialGwa } from './academicPolicy';
 import { findMostAdvancedPostedGrade } from './gradeMilestones';
 // Note: riskEngine.js is now the single source of truth for all risk calculations (V4).
 
@@ -577,20 +578,12 @@ export async function getClassPriorityRoster(classRecordId) {
 
       // Tentative GWA computation
       let approxGwa = null;
-      if (finalPosted && finalPosted.effective_grade != null) {
-        approxGwa = parseFloat(finalPosted.effective_grade);
-      } else if (finalPosted && finalPosted.computed_grade != null) {
-        approxGwa = getTransmutedGrade(parseFloat(finalPosted.computed_grade));
-      } else if (hasValidScores) {
+      if (finalPosted) {
+        approxGwa = resolveOfficialGwa(finalPosted).gwa;
+      } else if (hasValidScores && tentativeDetails.isComplete) {
         approxGwa = tentativeDetails.gwa;
       }
 
-      const examAvg = examCount > 0 ? Math.round(examSumPct / examCount) : 100;
-      const failingCount = (approxGwa !== null && approxGwa > 3.00) ? 1 : 0;
-      // hasGradeBelow200: Scholarship Grade Floor Breach (DYCI Handbook Sec 3.8.4 / 5.2.5.1)
-      // Only relevant for PL/scholarship candidates (GWA ≤ 1.75) — NOT a general risk factor.
-      // The unified risk engine applies this only in its scholarship-specific path.
-      const hasGradeBelow200 = false;
 
       // Count zero submissions ONLY for activities that are actually configured (max > 0)
       let zeroSubmissionsCount = 0;
@@ -617,14 +610,12 @@ export async function getClassPriorityRoster(classRecordId) {
 
       const riskData = calculateAcademicRisk({
         currentGwa: approxGwa,
-        failingSubjectsCount: failingCount,
-        majorExamAverage: examAvg,
         absenceCount: studAbsences,
         previousTermRating: prelimRating,
         currentTermRating: midtermRating,
         consecutiveAbsences: studAbsences >= 2 ? 2 : 0,
         zeroSubmissionsCount,
-        hasGradeBelow200
+        isSummer: cr.semester === 'Summer'
       });
 
       return {
@@ -638,9 +629,9 @@ export async function getClassPriorityRoster(classRecordId) {
         enrollment_type: enrollmentType,
         is_irregular: enrollmentType === 'Irregular',
         current_gwa: approxGwa,
-        failing_count: failingCount,
+        failing_count: approxGwa !== null && approxGwa > 3 ? 1 : 0,
         absences: studAbsences,
-        exam_average: examAvg !== null ? examAvg : 100,
+        exam_average: examCount > 0 ? Math.round(examSumPct / examCount) : 100,
         term_ratings: termRatings,
         risk_score: riskData.composite_score,
         risk_level: riskData.risk_level,
