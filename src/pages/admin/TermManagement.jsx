@@ -3,7 +3,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Calendar, RefreshCw, AlertTriangle, CheckCircle, ShieldAlert, Database, ArrowRight, Check, X, ClipboardList } from 'lucide-react';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { notifyAdminActivity, notifyTermActivated } from '../../lib/notificationDispatcher';
+import { dispatchNotifications, notifyAdminActivity, notifyTermActivated } from '../../lib/notificationDispatcher';
 import { supabase } from '../../lib/supabase';
 import { cn } from '../../lib/utils';
 import SuccessModal from '../../components/SuccessModal';
@@ -224,14 +224,11 @@ export default function TermManagement() {
               recipient_id: facultyId,
               message: `Academic term rollover warning: Please lock and submit final grades for your active classes (AY ${activeTerm?.schoolYear || ''}).`,
               type: 'system',
-              is_read: false
+              title: 'Grade Submission Reminder',
+              severity: 'warning'
             }));
 
-            const { error } = await supabase
-              .from('notifications')
-              .insert(inserts);
-
-            if (error) throw error;
+            await dispatchNotifications(inserts);
 
             setSuccessModalMessage(`Reminders sent successfully! Dispatched notifications to ${uniqueFacultyIds.length} faculty members.`);
             setIsSuccessModalOpen(true);

@@ -6,7 +6,7 @@ import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Min
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { notifyGradesPosted } from '../../lib/notificationDispatcher';
+import { notifyGradesPosted, notifyGradePosted, notifyGradeChanged } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import {
   calculateSemestralGrade,
@@ -14,8 +14,10 @@ import {
   createGradingFormulaSnapshot,
   getGradingStoragePresentation,
   getTransmutedGrade,
-  resolveGradingFormula
+  resolveGradingFormula,
+  toEffectiveGradeForPosting
 } from '../../lib/gradingMath';
+import { getRemarks } from '../../lib/academicPolicy';
 import { triggerExcelExport } from '../../lib/excelExport';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
@@ -1372,7 +1374,7 @@ export default function ScoreInput() {
         }
 
         const rawGWA = getTransmutedGrade(finalSG);
-        const autoRemarks = rawGWA <= 3.00 ? 'Passed' : 'Failed';
+        const autoRemarks = getRemarks({ gwa: rawGWA, isComplete: finalSG !== null });
         const draftRemarks = draft.customRemarks || autoRemarks;
         const remarksLabel = mapRemarkToDb(draftRemarks);
         
@@ -1381,7 +1383,8 @@ export default function ScoreInput() {
           computedGWA = 3.00;
         }
 
-        const effectiveGrade = targetMilestone === 'semestral' ? computedGWA : getTransmutedGrade(computedTermGrade);
+        const effectiveGrade = targetMilestone === 'semestral' ? computedGWA : toEffectiveGradeForPosting(computedTermGrade);
+        if (effectiveGrade === null) throw new Error(`${stud.name}: no complete rating is available for this milestone.`);
 
         const oldRecord = existingMap[stud.id];
         if (!isFirstPost) {
@@ -1444,6 +1447,24 @@ export default function ScoreInput() {
         title: `${termNotificationName} Posted`,
         body: `📊 ${termNotificationName} posted for ${classInfo?.subjects?.code || 'subject'} (${classInfo?.sections?.name || ''}).`
       });
+
+      // Dispatch structured idempotent notifications
+      try {
+        await notifyGradePosted({
+          classRecordId,
+          term: termNotificationName,
+          students: students.map(s => ({
+            student_id: s.id,
+            remark: s.remarks || 'Posted'
+          })),
+          subject: {
+            code: classInfo?.subjects?.code || '',
+            name: classInfo?.subjects?.name || classInfo?.subject_name || ''
+          }
+        });
+      } catch (err) {
+        console.warn('Error dispatching notifyGradePosted:', err);
+      }
 
       // Dispatch notifications to enrolled students in section
       const targetSectionId = classInfo?.sections?.section_id || classInfo?.section_id;

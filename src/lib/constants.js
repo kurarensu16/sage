@@ -46,3 +46,8 @@ export const DYCI_ACADEMIC_PROGRAMS = {
     "Bachelor of Arts in Psychology"
   ]
 };
+
+// Institutional Academic & Analytics Cutoffs
+export const PASSING_GRADE = 75; // 3.00 on DYCI transmutation scale
+export const HIGH_CUTOFF   = 85; // "Performed Well" benchmark threshold
+export const SAME_MARGIN   = 2;  // +/- 2 pts margin of difference for term comparisons

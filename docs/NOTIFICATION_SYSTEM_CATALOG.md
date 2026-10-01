@@ -8,7 +8,7 @@ This document details the current state of notifications in the ASPIRE codebase,
 
 | Component / Layer | Current Status | Details |
 | :--- | :---: | :--- |
-| **Database Table (`notifications`)** | ✅ **Active** | Table exists with columns: `notification_id`, `recipient_id`, `type`, `message`, `is_read`, `created_at`. RLS disabled for smooth client access. |
+| **Database Table (`notifications`)** | ✅ **Active** | Table exists with columns: `notification_id`, `recipient_id`, `type`, `message`, `is_read`, `created_at`, `title`, `link`, `severity`, `payload`, `dedupe_key`, `read_at`. Schema v2 adds unique idempotency index on `dedupe_key`. RLS planned for activation following service-role write path migration. |
 | **Seed Data** | ✅ **Active** | `supabase/migrations/20260607180000_seed_notifications.sql` contains pre-populated mock notifications for Admin, Dean, Faculty, and Students. |
 | **Portal Pages** | ✅ **Active** | Dedicated notification views exist at: <br> • `/student/notifications`<br> • `/faculty/notifications`<br> • `/dean/notifications`<br> • `/office/notifications`<br> • `/admin/notifications` |
 | **Navigation Bar (Topbar)** | ⚠️ **Static Badge** | Bell icon exists with static unread indicator dot; links directly to role notification inbox. |
@@ -23,7 +23,8 @@ Students receive alerts regarding academic milestones, grading releases, evaluat
 
 | Notification Type (`type`) | Banner Title | Sample Message | Trigger Event | Target Navigation |
 | :--- | :--- | :--- | :--- | :--- |
-| `grade_posted` | **New Grade Posted** | *"Your final grades for Capstone Project 1 (IT401) have been officially posted."* | Faculty posts or updates term/final grades in Grade Sheet | `/student/grades` |
+| `grade_posted` | **New Grade Posted** | *"Your final grades for Capstone Project 1 (IT401) have been officially posted."* | Faculty posts term/final grades in Grade Sheet (idempotent dedupe) | `/student/grades` |
+| `grade_changed` | **Grade Updated** | *"Your Midterm grade for Capstone Project 1 (IT401) has been updated."* | Faculty unlocks, edits, and re-locks a posted grade milestone | `/student/grades` |
 | `class_enrolled` | **Class Registration Success** | *"You have been successfully registered into Introduction to Computing (ITC113 - BSIT-1A)."* | Subject assignment / student roster enrollment by Office/Admin | `/student/academic-insights` |
 | `eval_window_open` | **Faculty Evaluation Open** | *"Faculty evaluation period is now open. Please complete surveys for your instructors."* | Office publishes active evaluation window | `/student/faculty-evaluation` |
 | `eval_deadline_reminder`| **Evaluation Deadline Reminder** | *"Survey reminder: 3 days left to submit evaluations for your instructors."* | System automated schedule before evaluation window closes | `/student/faculty-evaluation` |
@@ -107,5 +108,18 @@ flowchart TD
 ### Key Technical Capabilities:
 1. **Zero External Server Dependency:** No Google Firebase project, billing, or `google-services.json` required.
 2. **Real-Time Delivery:** Supabase Realtime listens for new database notifications and triggers the native Android notification immediately.
-3. **Lock Screen Visibility:** Android displays notifications on the device lock screen according to user privacy settings.
+3. **Lock Screen Visibility & Privacy:** Android displays notifications on the device lock screen according to user privacy settings. Per RA 10173 privacy standards, lock screen banners omit academic failing remarks or sensitive grades.
 4. **On-Demand Testing:** A dedicated test button in Settings allows quick verification on physical devices during capstone defense demonstrations.
+
+---
+
+## 4. Multi-Channel Target Architecture
+
+The native popup architecture documented above represents Channel 1 of the comprehensive target delivery pipeline specified in [`NOTIFICATION_DELIVERY_ARCHITECTURE.md`](file:///c:/Users/sadia/SAGE/docs/update_plan/NOTIFICATION_DELIVERY_ARCHITECTURE.md):
+
+| Channel | Delivery Mechanism | Privacy Level | Fallback / Queue |
+| :--- | :--- | :--- | :--- |
+| **In-App Inbox** | Supabase Postgres + Realtime | Full academic detail behind auth | Permanent audit record |
+| **Push / Local** | `@capacitor/local-notifications` | Event summary only (no grade value on lock screen) | Local device dispatch |
+| **Email (Brevo)** | Edge Function + `denomailer` + `pg_cron` | Event notice + secure signed view token link | Atomic queue with retry backoff |
+| **Guardian** | Consent-gated fan-out (RA 10173) | Tokenized 7-day read-only summary link | Verification required before delivery |

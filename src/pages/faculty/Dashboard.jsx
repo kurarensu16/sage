@@ -183,7 +183,8 @@ export default function Dashboard() {
           .from('notifications')
           .select('*', { count: 'exact', head: true })
           .eq('recipient_id', user.id)
-          .eq('is_read', false);
+          .eq('is_read', false)
+          .is('dismissed_at', null);
 
         // 5. ASPIRE v3.1: Fetch Student Consultation Requests
         let loadedConsultations = [];

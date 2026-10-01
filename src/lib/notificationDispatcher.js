@@ -1,57 +1,40 @@
 import { supabase } from './supabase';
 
 export const NOTIFICATION_TITLES = {
-  grade_posted: '📊 New Grade Posted',
-  class_enrolled: '📚 Class Registration Success',
-  eval_window_open: '📝 Faculty Evaluation Open',
-  eval_closed: '🔒 Faculty Evaluation Closed',
-  eval_deadline_reminder: '⏰ Evaluation Deadline Reminder',
-  ews_alert: '⚠️ Early Warning System Alert',
-  ai_recommendation: '🧠 AI Counseling Ready',
-  class_assigned: '📋 New Class Assigned',
-  term_rollover_reminder: '⏰ Grade Submission Reminder',
-  override_approved: '✅ Grade Override Approved',
-  override_rejected: '❌ Grade Override Rejected',
-  risk_threshold: '⚠️ At-Risk Threshold Alert',
-  grades_pending: '📑 Grade Sheet Pending Approval',
-  override_request: '📝 Grade Override Pending',
-  eval_compiled: '⭐ Evaluation Reports Compiled',
-  compliance: '🛡️ Grading Compliance Alert',
-  roster_import: '📊 Student Roster Processed',
-  eval_window: '📅 Evaluation Window Status',
-  assignment: '👥 Subject Assignment Update',
-  security: '🔒 Administrative Security Alert',
-  database_sync: '🔄 Database Sync Success',
-  user_signup: '👤 New User Registered',
-  system: 'ℹ️ SAGE System Notice'
+  grade_posted: 'New Grade Posted',
+  grade_changed: 'Grade Updated',
+  class_enrolled: 'Class Registration Success',
+  eval_window_open: 'Faculty Evaluation Open',
+  eval_closed: 'Faculty Evaluation Closed',
+  eval_deadline_reminder: 'Evaluation Deadline Reminder',
+  ews_alert: 'Early Warning System Alert',
+  ai_recommendation: 'AI Counseling Ready',
+  class_assigned: 'New Class Assigned',
+  term_rollover_reminder: 'Grade Submission Reminder',
+  override_approved: 'Grade Override Approved',
+  override_rejected: 'Grade Override Rejected',
+  risk_threshold: 'At-Risk Threshold Alert',
+  grades_pending: 'Grade Sheet Pending Approval',
+  override_request: 'Grade Override Pending',
+  eval_compiled: 'Evaluation Reports Compiled',
+  compliance: 'Grading Compliance Alert',
+  roster_import: 'Student Roster Processed',
+  eval_window: 'Evaluation Window Status',
+  assignment: 'Subject Assignment Update',
+  consultation_request: 'New Consultation Request',
+  academic_advising: 'Academic Advising Notice',
+  dean_referral: 'Dean Referral Logged',
+  academic_notice: 'Academic Notice',
+  security: 'Administrative Security Alert',
+  database_sync: 'Database Sync Success',
+  user_signup: 'New User Registered',
+  system: 'SAGE System Notice'
 };
 
-// Global broadcast channel for cross-client real-time alerts
-let realtimeAlertChannel = null;
-function getRealtimeChannel() {
-  if (!realtimeAlertChannel) {
-    realtimeAlertChannel = supabase.channel('sage-realtime-alerts', {
-      config: { broadcast: { self: true } }
-    });
-    realtimeAlertChannel.subscribe();
-  }
-  return realtimeAlertChannel;
-}
-
-function generateUUID() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
-}
-
 /**
- * Insert notifications into Supabase database, trigger local native notification popup,
- * and broadcast to other active devices via Supabase Realtime Broadcast.
- * @param {Array<{ recipient_id: string, type: string, message: string, notification_id?: string }>} notificationList
+ * Dispatch notifications through the database's validated SECURITY DEFINER RPC.
+ * Clients never receive direct INSERT permission on the notifications table.
+ * @param {Array<{ recipient_id: string, type: string, message: string, title?: string, link?: string, severity?: string, payload?: object, dedupe_key?: string }>} notificationList
  */
 export async function dispatchNotifications(notificationList = []) {
   if (!notificationList || notificationList.length === 0) return;
@@ -59,45 +42,49 @@ export async function dispatchNotifications(notificationList = []) {
   try {
     const formatted = notificationList
       .map(n => ({
-        notification_id: n.notification_id || generateUUID(),
         recipient_id: n.recipient_id || n.recipientId,
         type: n.type || 'system',
         message: n.message,
-        is_read: false,
-        created_at: new Date().toISOString()
+        title: n.title || NOTIFICATION_TITLES[n.type || 'system'] || 'SAGE Notification',
+        link: n.link || null,
+        severity: n.severity || 'info',
+        payload: n.payload || {},
+        dedupe_key: n.dedupe_key || null
       }))
       .filter(n => Boolean(n.recipient_id && n.message));
 
     if (formatted.length === 0) return;
 
-    // 1. Insert into persistent database table with .select() to confirm IDs
     const { data: insertedRows, error } = await supabase
-      .from('notifications')
-      .insert(formatted)
-      .select();
+      .rpc('dispatch_notifications', { p_notifications: formatted });
 
     if (error) {
-      console.warn('Failed to insert notifications into database:', error);
+      throw error;
     }
 
-    const payloadList = (insertedRows && insertedRows.length > 0) ? insertedRows : formatted;
-
-    // 2. Send Realtime Broadcast — AuthContext on each device listens and shows native popups
-    try {
-      const channel = getRealtimeChannel();
-      for (const notif of payloadList) {
-        channel.send({
-          type: 'broadcast',
-          event: 'notification',
-          payload: notif
-        });
-      }
-    } catch (broadcastErr) {
-      console.warn('Realtime broadcast dispatch error:', broadcastErr);
-    }
+    return insertedRows || [];
   } catch (err) {
     console.warn('Error dispatching notifications:', err);
+    throw err;
   }
+}
+
+export async function markNotificationsRead(notificationIds = null) {
+  const { error } = await supabase
+    .rpc('mark_notifications_read', { p_notification_ids: notificationIds });
+  if (error) throw error;
+}
+
+export async function dismissNotifications(notificationIds) {
+  const { error } = await supabase
+    .rpc('dismiss_notifications', { p_notification_ids: notificationIds });
+  if (error) throw error;
+}
+
+export async function requeueNotificationDelivery(deliveryId) {
+  const { error } = await supabase
+    .rpc('requeue_notification_delivery', { p_delivery_id: deliveryId });
+  if (error) throw error;
 }
 
 /**
@@ -624,6 +611,62 @@ export async function notifyRosterImported({
   } catch (err) {
     console.warn('Error in notifyRosterImported:', err);
   }
+}
+
+/**
+ * Notify all students in a class when a grade milestone is locked.
+ * Idempotent: safe to call again after an unlock -> relock cycle.
+ * Uses upsert with onConflict on dedupe_key (supabase-js v2 compliant).
+ *
+ * @param {{ classRecordId: string, term: string, students: Array<{ student_id: string, remark?: string }>, subject: { code: string, name: string } }} params
+ */
+export async function notifyGradePosted({ classRecordId, term, students, subject }) {
+  if (!students?.length) return;
+
+  const rows = students.map((s) => ({
+    recipient_id: s.student_id,
+    type:         'grade_posted',
+    severity:     'info',
+    title:        'New Grade Posted',
+    link:         '/student/grades',
+    message:      `Your ${term} grade for ${subject.name} (${subject.code}) has been posted.`,
+    payload: {
+      subject_code:    subject.code,
+      subject_name:    subject.name,
+      term,
+      remark:          s.remark || 'Posted',
+      class_record_id: classRecordId,
+    },
+    dedupe_key: `grade_posted:${classRecordId}:${term}:${s.student_id}`,
+  }));
+
+  await dispatchNotifications(rows);
+}
+
+/**
+ * Notify a student when a posted grade is changed (unlock -> edit -> relock).
+ * Uses a revision counter in the dedupe key so each correction fires once.
+ *
+ * @param {{ classRecordId: string, term: string, studentId: string, subject: { code: string, name: string }, remark: string, revision: number }} params
+ */
+export async function notifyGradeChanged({ classRecordId, term, studentId, subject, remark, revision }) {
+  await dispatchNotifications([{
+      recipient_id: studentId,
+      type:         'grade_changed',
+      severity:     'warning',
+      title:        'Grade Updated',
+      link:         '/student/grades',
+      message:      `Your ${term} grade for ${subject.name} (${subject.code}) has been updated.`,
+      payload: {
+        subject_code:    subject.code,
+        subject_name:    subject.name,
+        term,
+        remark,
+        class_record_id: classRecordId,
+        revision,
+      },
+      dedupe_key: `grade_changed:${classRecordId}:${term}:${studentId}:rev${revision}`,
+    }]);
 }
 
 

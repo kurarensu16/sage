@@ -78,13 +78,7 @@ export default function Attendance() {
         const cr = (classRecords || []).find(c => c.subject_id === e.subject_id);
         const classLogs = (logs || []).filter(l => l.class_record_id === cr?.class_record_id);
         
-        // Sample demonstration logs if no records encoded yet for newly created semester
-        const displayLogs = classLogs.length > 0 ? classLogs : [
-          { attendance_id: '1', date: '2026-08-20', status: 'Present', remarks: 'On time and actively participated' },
-          { attendance_id: '2', date: '2026-08-18', status: 'Present', remarks: 'Completed lab exercise' },
-          { attendance_id: '3', date: '2026-08-15', status: 'Late', remarks: 'Arrived 10 mins late' },
-          { attendance_id: '4', date: '2026-08-13', status: 'Present', remarks: 'Normal attendance' }
-        ];
+        const displayLogs = classLogs;
 
         const presents = displayLogs.filter(l => (l.status || '').toLowerCase() === 'present').length;
         const lates = displayLogs.filter(l => (l.status || '').toLowerCase() === 'late').length;

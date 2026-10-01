@@ -3,6 +3,7 @@ import {
   GWA_TARGET_BENCHMARKS,
   simulateRequiredFinalRating
 } from '../../lib/gradingMath';
+import { computeStudentGwa, countAttendance, getAttendanceFlags, getGwaBand, getHonorTier } from '../../lib/academicPolicy';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { useAuth } from '../../lib/AuthContext';
@@ -235,17 +236,19 @@ export default function AcademicInsights() {
         // 3. Fetch attendance history
         const { data: attendanceData } = await supabase
           .from('attendance_records')
-          .select('status, is_fda')
+          .select('class_record_id, status, is_fda')
           .eq('student_id', user.id);
 
-        let totalAttSessions = attendanceData?.length || 0;
-        let presentAtt = attendanceData?.filter(a => a.status?.toLowerCase() === 'present').length || 0;
-        let lateAtt = attendanceData?.filter(a => a.status?.toLowerCase() === 'late').length || 0;
-        let absentAtt = attendanceData?.filter(a => a.status?.toLowerCase() === 'absent').length || 0;
-        let fdaFlags = attendanceData?.filter(a => a.is_fda || a.status?.toLowerCase() === 'fda').length || (absentAtt >= 4 ? 1 : 0);
-        let attendanceRate = totalAttSessions > 0 
-          ? Math.round(((presentAtt + (lateAtt * 0.5)) / totalAttSessions) * 100) 
-          : 100;
+        const attendanceSummary = countAttendance(attendanceData || []);
+        const attendanceByClass = Object.values((attendanceData || []).reduce((groups, record) => {
+          const key = record.class_record_id || 'unassigned';
+          groups[key] ||= [];
+          groups[key].push(record);
+          return groups;
+        }, {}));
+        const absentAtt = attendanceSummary.absences;
+        const fdaFlags = attendanceByClass.filter(records => getAttendanceFlags(countAttendance(records).absences).isFda).length;
+        const attendanceRate = attendanceSummary.attendanceRate;
 
         if (activeSectionId && enrollsCheck && enrollsCheck.length > 0) {
           const subjectIds = enrollsCheck.map(e => e.subject_id).filter(Boolean);
@@ -353,8 +356,7 @@ export default function AcademicInsights() {
             const officialMilestonesExist = officialPostedCount > 0;
             setHasOfficialMilestone(officialMilestonesExist);
 
-            let totalRunningUnits = 0;
-            let weightedRunningSum = 0;
+            const runningGwas = [];
             const allClassStandingAverages = [];
             const allExamAverages = [];
             const allCharacterAverages = [];
@@ -483,8 +485,7 @@ export default function AcademicInsights() {
 
                 const courseUnits = Number(subj.units) || 3;
                 if (runningGwaVal !== null && !isNaN(runningGwaVal)) {
-                  totalRunningUnits += courseUnits;
-                  weightedRunningSum += runningGwaVal * courseUnits;
+                  runningGwas.push(runningGwaVal);
                 }
 
                 // Filter activities and latest evaluation for this class record
@@ -560,7 +561,9 @@ export default function AcademicInsights() {
                     csAvg: courseCsAvg,
                     scoredActivityCount: scoredActivities.length,
                     examAvg: courseExamAvg,
-                    charAvg: courseCharAvg
+                    charAvg: courseCharAvg,
+                    absenceCount: countAttendance((attendanceData || []).filter(record => record.class_record_id === cr.class_record_id)).absences,
+                    attendanceRate: countAttendance((attendanceData || []).filter(record => record.class_record_id === cr.class_record_id)).attendanceRate
                   },
                   periods: {
                     prelim,
@@ -575,9 +578,7 @@ export default function AcademicInsights() {
               });
 
             // Compute GWA strictly when there are real posted running units (never default to a fake number)
-            const computedGwa = totalRunningUnits > 0 
-              ? parseFloat((weightedRunningSum / totalRunningUnits).toFixed(2))
-              : null;
+            const computedGwa = computeStudentGwa(runningGwas).gwa;
 
             // Trajectory and Standing classification
             let gwaStanding = 'No Grades Posted Yet';
@@ -588,24 +589,17 @@ export default function AcademicInsights() {
               trajectoryVerdict = 'FDA Advisory Risk';
               trajectoryType = 'critical';
             } else if (computedGwa !== null) {
-              if (computedGwa <= 1.45) {
-                gwaStanding = 'Excellent';
-                trajectoryVerdict = "1st Class Dean's List Pace";
-                trajectoryType = 'honors';
-              } else if (computedGwa <= 1.75) {
-                gwaStanding = 'Very Good';
-                trajectoryVerdict = "2nd Class Dean's List Pace";
+              gwaStanding = getGwaBand(computedGwa)?.label || 'Academic Warning';
+              if (computedGwa <= 1.75) {
+                trajectoryVerdict = "President's List pace";
                 trajectoryType = 'honors';
               } else if (computedGwa <= 2.50) {
-                gwaStanding = 'Satisfactory';
                 trajectoryVerdict = 'Steady Academic Progression';
                 trajectoryType = 'good';
               } else if (computedGwa <= 3.00) {
-                gwaStanding = 'Passing Margin';
                 trajectoryVerdict = 'Academic Warning Buffer';
                 trajectoryType = 'warning';
               } else {
-                gwaStanding = 'Academic Warning';
                 trajectoryVerdict = 'Intervention Required';
                 trajectoryType = 'critical';
               }
@@ -614,34 +608,19 @@ export default function AcademicInsights() {
               trajectoryVerdict = computedSubjectsList.length > 0 ? 'Awaiting Official Grade Posting' : 'Not Enrolled';
             }
 
-            // Latin Honors / DL eligibility (only calculated when posted grades exist)
+            // President's List eligibility is deterministic; probabilities are not fabricated.
             let dlCategory = 'Pending Official Grades';
-            let dlProbability = 0;
-            let dlMessage = 'Dean\'s Lister eligibility and academic honors forecasts will be determined once official Midterm or Final grades are published by the college.';
+            let dlMessage = 'President\'s List eligibility will be determined once official milestones are available.';
             
             if (computedGwa !== null) {
-              const hasDisqualifyingGrade = computedSubjectsList.some(sub => {
-                const r = parseFloat(sub.runningGwa);
-                return !isNaN(r) && r > 2.00;
+              const honors = getHonorTier(computedGwa, {
+                subjectGrades: computedSubjectsList.map(subject => subject.runningGwa),
+                units: computedSubjectsList.reduce((sum, subject) => sum + (Number(subject.credits) || 0), 0)
               });
-
-              if (hasDisqualifyingGrade) {
-                dlCategory = 'Not Eligible';
-                dlProbability = 0;
-                dlMessage = 'You are currently disqualified from Dean\'s Lister or Latin Honors because you have one or more courses with a grade above 2.00 (e.g. 2.25 or worse). Maintain a grade of 2.00 or better in all individual courses to qualify.';
-              } else if (computedGwa <= 1.45) {
-                dlCategory = "1st Class Dean's Lister";
-                dlProbability = 94;
-                dlMessage = `Your current average of ${computedGwa.toFixed(2)} qualifies you for 1st Class Dean's Lister honors! Keep your final semestral grades at 1.45 or better and all individual grades at 2.00 or better to secure the award.`;
-              } else if (computedGwa <= 1.75) {
-                dlCategory = "2nd Class Dean's Lister";
-                dlProbability = 85;
-                dlMessage = `Your current average of ${computedGwa.toFixed(2)} qualifies you for 2nd Class Dean's Lister honors! Strive for 1.45 to upgrade to 1st Class honors.`;
-              } else {
-                dlCategory = 'Not Eligible';
-                dlProbability = 0;
-                dlMessage = 'Your current average does not qualify for Dean\'s Lister honors. Focus on upcoming milestones to improve your score.';
-              }
+              dlCategory = honors.tier || 'Not Eligible';
+              dlMessage = honors.isEligible
+                ? `Your current average of ${computedGwa.toFixed(2)} meets the ${honors.tier} President's List criteria.`
+                : honors.unmetRequirements.join(' ');
             }
 
             // Identify Priority Subject for rescue/elevation (only if running GWA exists)
@@ -673,7 +652,6 @@ export default function AcademicInsights() {
               aiSummary: pregenData?.summary || null,
               dlEligibility: {
                 awardCategory: dlCategory,
-                probabilityPct: dlProbability,
                 message: dlMessage
               },
               diagnostics: {
@@ -728,7 +706,7 @@ export default function AcademicInsights() {
     trajectoryVerdict: hasEnrolledSubjects ? 'Awaiting Milestone Assessments' : 'Not Enrolled',
     trajectoryType: 'good',
     aiSummary: null,
-    dlEligibility: { awardCategory: 'Not Eligible', probabilityPct: 0, message: 'No enrolled courses for the current academic term.' },
+    dlEligibility: { awardCategory: 'Not Eligible', message: 'No enrolled courses for the current academic term.' },
     diagnostics: { csAvg: 0, examAvg: 0, charAvg: 0, attendanceRate: 100, absentCount: 0, fdaRisk: false },
     prioritySubject: null,
     subjects: []
@@ -743,7 +721,10 @@ export default function AcademicInsights() {
   ), [subjectsList]);
   const advisorEvaluation = useMemo(() => evaluateAcademicAdvising({
     courses: subjectsList,
-    attendance: { absenceCount: studentStats.diagnostics.absentCount },
+    attendance: {
+      absenceCount: studentStats.diagnostics.absentCount,
+      byCourse: subjectsList.map(subject => ({ courseCode: subject.code, absenceCount: subject.diagnostics?.absenceCount || 0 }))
+    },
     officialGwa: studentStats.gwa,
     hasOfficialMilestone
   }), [hasOfficialMilestone, studentStats.diagnostics.absentCount, studentStats.gwa, subjectsList]);
@@ -934,9 +915,6 @@ export default function AcademicInsights() {
         studentName: studentStats.studentName,
         gwa: studentStats.gwa !== null ? studentStats.gwa.toFixed(2) : '—',
         standing: studentStats.standing,
-        dlCategory: studentStats.dlEligibility?.awardCategory || 'Not Eligible',
-        dlProbability: studentStats.dlEligibility?.probabilityPct || 0,
-        dlMessage: studentStats.dlEligibility?.message || '',
         diagnostics: studentStats.diagnostics,
         subjects: subjectsList
       };
@@ -1014,9 +992,6 @@ export default function AcademicInsights() {
         studentName: studentStats.studentName,
         gwa: studentStats.gwa !== null ? studentStats.gwa.toFixed(2) : '—',
         standing: studentStats.standing,
-        dlCategory: studentStats.dlEligibility?.awardCategory || 'Not Eligible',
-        dlProbability: studentStats.dlEligibility?.probabilityPct || 0,
-        dlMessage: studentStats.dlEligibility?.message || '',
         diagnostics: studentStats.diagnostics,
         subjects: subjectsList
       };
@@ -1313,9 +1288,9 @@ export default function AcademicInsights() {
                   </span>
                 </div>
                 <div className="text-right">
-                  <span className="text-[10px] font-bold text-sage-300 uppercase tracking-wider block">Dean's List Chance</span>
+                  <span className="text-[10px] font-bold text-sage-300 uppercase tracking-wider block">President's List Standing</span>
                   <span className="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-400">
-                    {studentStats.gwa !== null ? `${studentStats.dlEligibility?.probabilityPct || 0}%` : '—'}
+                    {studentStats.gwa !== null ? studentStats.dlEligibility?.awardCategory || 'Not Eligible' : '—'}
                   </span>
                 </div>
               </div>

@@ -3,6 +3,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { BarChart3, Filter, CheckCircle, XCircle, AlertTriangle, Building2, GraduationCap, Layers } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { resolveOfficialGwa } from '../../lib/academicPolicy';
 
 // Program name to abbreviation mapping
 const PROGRAM_ABBREVIATIONS = {
@@ -36,8 +37,7 @@ const PROGRAM_ABBREVIATIONS = {
 
 // Compute the effective GWA for a posted_grade row
 function effectiveGWA(row) {
-  const g = row.effective_grade != null ? parseFloat(row.effective_grade) : parseFloat(row.computed_grade);
-  return isNaN(g) ? null : g;
+  return resolveOfficialGwa(row).gwa;
 }
 
 // Extract program abbreviation from section name, e.g. "BSIT-1B" -> "BSIT"

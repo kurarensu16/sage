@@ -3,8 +3,18 @@ import {
   calculateSemestralGrade,
   calculateStoredTermRating,
   calculateWeightedTermRating,
-  resolveGradingFormula
+  resolveGradingFormula,
+  toEffectiveGradeForPosting
 } from '../src/lib/gradingMath.js';
+import {
+  computeStudentGwa,
+  countAttendance,
+  getAttendanceFlags,
+  getHonorTier,
+  resolveOfficialGwa,
+  toGwaOrNull
+} from '../src/lib/academicPolicy.js';
+import { calculateAcademicRisk } from '../src/lib/riskEngine.js';
 import {
   GRADE_MILESTONES,
   findMostAdvancedPostedGrade,
@@ -94,6 +104,21 @@ presets.forEach(preset => {
     preset.isolatedExpected,
     `${preset.name} should honor its configured component weight`
   );
+  assert.equal(
+    isolatedResult.encodedWeight,
+    isolatedComponent.weight,
+    `${preset.name} encodedWeight should match component weight`
+  );
+  assert.equal(
+    isolatedResult.ratingOnEncoded,
+    100,
+    `${preset.name} ratingOnEncoded should be 100 for fully earned single component`
+  );
+  assert.equal(
+    isolatedResult.isComplete,
+    false,
+    `${preset.name} single component should be incomplete`
+  );
 
   if (formula.components.filter(component => component.isMultiple).length === 1) {
     const repeatable = formula.components.find(component => component.isMultiple);
@@ -118,9 +143,9 @@ presets.forEach(preset => {
 });
 
 const legacy = resolveGradingFormula(null, { formulaAssigned: false });
-assert.equal(legacy.ok, true);
-assert.equal(legacy.source, 'legacy');
-assert.equal(legacy.totalWeight, 100);
+assert.equal(legacy.ok, false);
+assert.equal(legacy.source, 'invalid');
+assert.match(legacy.error, /No grading template/i);
 
 const invalidAssignedFormula = resolveGradingFormula([], { formulaAssigned: true });
 assert.equal(invalidAssignedFormula.ok, false);
@@ -205,4 +230,18 @@ const advanced = findMostAdvancedPostedGrade([
 ]);
 assert.equal(advanced.grade_period, 'semestral_grade', 'Analytics must select one most-advanced grade per class');
 
-console.log(`Verified ${presets.length} grading presets, storage mapping, RLE safeguards, milestone identity, analytics reuse, legacy fallback, and summer isolation.`);
+assert.equal(toGwaOrNull(null), null, 'missing values must not become a failing GWA in write paths');
+assert.equal(toEffectiveGradeForPosting(null), null, 'posting helper must preserve missing ratings');
+assert.equal(resolveOfficialGwa({ computed_grade: 84 }).gwa, 2.25, 'raw stored ratings must be transmuted before use');
+assert.equal(resolveOfficialGwa({ effective_grade: null, computed_grade: null }).gwa, null, 'missing grade rows must stay missing');
+assert.equal(computeStudentGwa([{ gwa: 1 }, { gwa: 3, units: 9 }]).gwa, 2, 'official GWA is an unweighted subject mean');
+assert.equal(getHonorTier(1.5, { subjectGrades: [2], units: 18 }).tier, 'Excellentia');
+assert.equal(getHonorTier(1.5, { subjectGrades: [2.25], units: 18 }).isEligible, false);
+assert.equal(getHonorTier(1.5, { subjectGrades: [2], units: 15 }).isEligible, false);
+assert.deepEqual(countAttendance([{ status: 'Present' }, { status: 'Late' }, { status: 'Excused' }, { status: 'Absent' }]), { total: 4, absences: 1, attendanceRate: 75 });
+assert.equal(getAttendanceFlags(4).isFda, true);
+assert.equal(getAttendanceFlags(3).isFda, false);
+assert.equal(calculateAcademicRisk({ currentGwa: 2.25 }).composite_score, 28, 'GWA 2.25 must reach the moderate risk band');
+assert.equal(calculateAcademicRisk({ currentGwa: 4 }).composite_score, 55, 'failing GWA must be high risk without other factors');
+
+console.log(`Verified ${presets.length} grading presets, policy scale, attendance, honors, risk boundaries, milestone identity, and summer isolation.`);

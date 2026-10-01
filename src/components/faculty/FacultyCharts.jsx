@@ -4,6 +4,7 @@ import {
   PieChart as PieChartIcon, 
   BarChart3 
 } from 'lucide-react';
+import { PASSING_GRADE } from '../../lib/constants';
 
 // ── COLOR PALETTE (Strictly SAGE Semantic Tokens) ───────────────────────────
 const PALETTE = {
@@ -423,7 +424,7 @@ export function AssessmentComponentDistributionBar({ componentsData = [] }) {
     <div className="space-y-4">
       {componentsData.map((item, idx) => {
         const pct = Math.min(100, Math.max(0, item.avgScore || 0));
-        const isLow = pct < 75;
+        const isLow = pct < PASSING_GRADE;
         const barColor = isLow ? PALETTE.rose : pct >= 88 ? PALETTE.emerald : PALETTE.sage;
 
         return (

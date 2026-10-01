@@ -47,6 +47,8 @@ import FacultyNotifications from './pages/faculty/Notifications';
 import FacultyStudentRisk from './pages/faculty/StudentRisk';
 import FacultyConsultationRequests from './pages/faculty/ConsultationRequests';
 import FacultyEnrollmentRequests from './pages/faculty/EnrollmentRequests';
+import FacultyClassPerformance from './pages/faculty/ClassPerformance';
+import FacultyPerformanceComparison from './pages/faculty/PerformanceComparison';
 
 // Student Pages
 import StudentDashboard from './pages/student/Dashboard';
@@ -150,6 +152,8 @@ function App() {
               <Route path="/faculty/consultations" element={<FacultyConsultationRequests />} />
               <Route path="/faculty/enrollmentrequests" element={<FacultyEnrollmentRequests />} />
               <Route path="/faculty/classattendance" element={<FacultyClassAttendance />} />
+              <Route path="/faculty/reports/class-performance" element={<FacultyClassPerformance />} />
+              <Route path="/faculty/reports/comparison" element={<FacultyPerformanceComparison />} />
               <Route path="/faculty/notifications" element={<FacultyNotifications />} />
               <Route path="/faculty/settings" element={<Settings />} />
             </Route>

@@ -27,7 +27,9 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   Building2,
-  PlusCircle
+  PlusCircle,
+  BarChart2,
+  TrendingUp
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import SageLogo from './SageLogo';
@@ -130,6 +132,15 @@ const PORTAL_NAVIGATION = {
       icon: MessageSquare,
       items: [
         { to: '/faculty/consultations', label: 'Consultation Requests', icon: MessageSquare }
+      ]
+    },
+    {
+      id: 'reports',
+      label: 'Performance Reports',
+      icon: BarChart2,
+      items: [
+        { to: '/faculty/reports/class-performance', label: 'Class Performance', icon: BarChart2 },
+        { to: '/faculty/reports/comparison', label: 'Performance Comparison', icon: TrendingUp }
       ]
     }
   ],

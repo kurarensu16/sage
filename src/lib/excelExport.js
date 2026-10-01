@@ -1,8 +1,7 @@
 import {
   calculateSemestralGrade,
   calculateStoredTermRating,
-  getTransmutedGrade,
-  resolveGradingFormula
+  getTransmutedGrade
 } from './gradingMath';
 import * as XLSX from 'xlsx-js-style';
 
@@ -86,7 +85,7 @@ const getScore = (student, term, key) => {
 // ---------------------------------------------------------------------------
 const computeStudentRatings = (student, gradingOptions = {}) => {
   if (!student) return { name: '', mr: '', tfr: '', gwa: '' };
-  const formula = gradingOptions.formula || resolveGradingFormula(null, { formulaAssigned: false });
+  const formula = gradingOptions.formula || null;
 
   const getTermRating = (termName) => {
     const ts = student.periods?.[termName] || {};

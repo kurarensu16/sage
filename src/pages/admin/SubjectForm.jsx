@@ -220,7 +220,7 @@ export default function SubjectForm() {
     setLoading(true);
 
     try {
-      if (!formData.code.trim() || !formData.name.trim()) {
+      if (!formData.code.trim() || !formData.name.trim() || !formData.computationId) {
         throw new Error('Please fill in all required fields.');
       }
 
@@ -233,7 +233,7 @@ export default function SubjectForm() {
         name: formData.name.trim(),
         units: parseInt(formData.units, 10),
         department_id: formData.departmentId,
-        computation_id: formData.computationId || null
+        computation_id: formData.computationId
       };
 
       if (isEditMode) {
@@ -364,13 +364,14 @@ export default function SubjectForm() {
 
           {/* Grading System Template */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Grading System Template</label>
+            <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Grading System Template <span className="text-rose-500">*</span></label>
             <select
+              required
               value={formData.computationId}
               onChange={(e) => setFormData({...formData, computationId: e.target.value})}
               className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
             >
-              <option value="">No Template (Professor Defaults Standard)</option>
+              <option value="">Select a grading template</option>
               {allComputations.map(comp => (
                 <option key={comp.computation_id} value={comp.computation_id}>{comp.name}</option>
               ))}

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { cn, formatRelativeTime } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
+import { dismissNotifications, markNotificationsRead } from '../../lib/notificationDispatcher';
 import { useAuth } from '../../lib/AuthContext';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { CardListSkeleton } from '../../components/common/Skeleton';
@@ -45,6 +46,7 @@ export default function Notifications() {
           .from('notifications')
           .select('*')
           .eq('recipient_id', user.id)
+          .is('dismissed_at', null)
           .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -127,12 +129,7 @@ export default function Notifications() {
   const markAllRead = async () => {
     if (!user || notifications.length === 0) return;
     try {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('recipient_id', user.id);
-
-      if (error) throw error;
+      await markNotificationsRead();
       const updated = notifications.map(n => ({ ...n, read: true }));
       setNotifications(updated);
       setCachedData(`faculty_notifs_${user.id}`, updated);
@@ -144,12 +141,7 @@ export default function Notifications() {
 
   const markAsRead = async (id) => {
     try {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('notification_id', id);
-
-      if (error) throw error;
+      await markNotificationsRead([id]);
       const updated = notifications.map(n => n.id === id ? { ...n, read: true } : n);
       setNotifications(updated);
       if (user) setCachedData(`faculty_notifs_${user.id}`, updated);
@@ -213,12 +205,7 @@ export default function Notifications() {
     setIsDeleting(true);
     try {
       const idsToDelete = Array.from(selectedIds);
-      const { error } = await supabase
-        .from('notifications')
-        .delete()
-        .in('notification_id', idsToDelete);
-
-      if (error) throw error;
+      await dismissNotifications(idsToDelete);
       const remaining = notifications.filter(n => !selectedIds.has(n.id));
       setNotifications(remaining);
       setSelectedIds(new Set());

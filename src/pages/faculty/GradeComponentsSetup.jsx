@@ -67,11 +67,6 @@ export default function GradeComponentsSetup() {
             if (matchedTemplate) {
               setSelectedTemplateId(matchedTemplate.computation_id);
             }
-          } else {
-            const fallbackTemplate = templatesData.find(t => t.name === 'General / Professional Education Scale');
-            if (fallbackTemplate) {
-              setSelectedTemplateId(fallbackTemplate.computation_id);
-            }
           }
         }
 
@@ -179,7 +174,7 @@ export default function GradeComponentsSetup() {
           <div>
             <h4 className="font-bold text-xs sm:text-sm text-amber-900 font-display">Standardized Grading Weights Locked</h4>
             <p className="text-[11px] sm:text-xs text-amber-700 mt-0.5 leading-relaxed font-medium">
-              This class is bound to the official template: <strong className="text-amber-950 font-bold">"{adminTemplates.find(t => t.computation_id === selectedTemplateId)?.name || 'General / Professional Education Scale'}"</strong>.
+              This class is bound to the official template: <strong className="text-amber-950 font-bold">"{adminTemplates.find(t => t.computation_id === selectedTemplateId)?.name || 'No grading template assigned'}"</strong>.
               Manual adjustments and template customizations have been standardly configured by the Academic Administrator to maintain grading integrity across sections.
             </p>
           </div>

@@ -10,6 +10,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { dispatchNotifications } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import { resolveGradingFormula } from '../../lib/gradingMath';
+import { computeStudentGwa, HONORS, resolveOfficialGwa } from '../../lib/academicPolicy';
 import {
   calculateInterventionOutcome,
   computeTentativeGrade,
@@ -408,7 +409,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
 
           // Posted grades
           advancedGrades.forEach(g => {
-            const val = g.effective_grade != null ? parseFloat(g.effective_grade) : parseFloat(g.computed_grade);
+            const val = resolveOfficialGwa(g).gwa;
             if (!isNaN(val)) {
               subjectGradeList.push({
                 subjectCode: g.class_records?.subjects?.code || 'SUBJ',
@@ -428,7 +429,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
               const tentativeVal = computeTentativeGrade(
                 classRecordScores,
                 classRecordCols,
-                classConfigMap[classRecId]
+                classConfigMap[classRecId] ?? null
               );
               if (tentativeVal !== null) {
                 subjectGradeList.push({
@@ -442,9 +443,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
             }
           });
 
-          const avgGwa = subjectGradeList.length > 0
-            ? subjectGradeList.reduce((acc, item) => acc + item.val, 0) / subjectGradeList.length
-            : null;
+          const avgGwa = computeStudentGwa(subjectGradeList.map(item => item.val)).gwa;
 
           const failingItems = subjectGradeList.filter(item => item.val > 3.00);
           const failingCount = failingItems.length;
@@ -452,9 +451,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
           // Unified Risk Assessment via centralized ASPIRE 7-Rule Matrix (single source of truth)
           const riskAssessment = computeUnifiedRisk({
             avgGwa,
-            failingCount,
-            examAverage: 80,
-            individualSubjectGrades: subjectGradeList.map(item => item.val)
+            isComplete: !containsTentative
           });
 
           const severity = riskAssessment.risk_level;
@@ -481,7 +478,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
           if (isHonorsPace && subjectGradeList.length > 0) {
             // Find subject with highest grade value (highest numeric grade is lowest academic score)
             const highestGradeItem = [...subjectGradeList].sort((a, b) => b.val - a.val)[0];
-            if (highestGradeItem && highestGradeItem.val > 1.75) {
+            if (highestGradeItem && highestGradeItem.val > HONORS.subjectGradeFloor) {
               draggingSubject = highestGradeItem;
               plStatus = 'Honor Standing Vulnerable (Dragging Course)';
             }

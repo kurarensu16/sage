@@ -11,6 +11,7 @@ import {
   getTransmutedGrade,
   resolveGradingFormula
 } from './gradingMath.js';
+import { getRiskTierForScore, RISK_TIERS } from './academicPolicy.js';
 
 // ── V4 Risk Matrix Weights (Anchored to DYCI Transmutation Scale) ────────────
 // Individual components can exceed 100 (total potential: 135) but the final
@@ -24,12 +25,7 @@ export const RISK_WEIGHTS = {
   trajectory: 10   // Max 10 pts — Grade velocity decline between terms
 };
 
-export const RISK_TIERS = {
-  LOW:      { min: 0,  max: 24, label: 'low',      color: 'emerald' },
-  MODERATE: { min: 25, max: 49, label: 'moderate',  color: 'amber' },
-  HIGH:     { min: 50, max: 74, label: 'high',      color: 'rose' },
-  CRITICAL: { min: 75, max: 100, label: 'critical', color: 'rose' }
-};
+export { RISK_TIERS };
 
 /**
  * Computes an explainable 0-100 risk score and categorical classification.
@@ -57,25 +53,19 @@ export const RISK_TIERS = {
  *
  * @param {Object} params
  * @param {number|null} params.currentGwa - Student current running GWA (1.00 - 5.00)
- * @param {number} [params.failingSubjectsCount=0] - Number of subjects with rating < 75
- * @param {number} [params.majorExamAverage=100] - Average percentage score on major exams (0-100)
  * @param {number} [params.absenceCount=0] - Total recorded absences in subject
  * @param {number|null} [params.previousTermRating=null] - Previous term rating (e.g., Prelim: 82)
  * @param {number|null} [params.currentTermRating=null] - Current term rating (e.g., Midterm: 74)
  * @param {number} [params.consecutiveAbsences=0] - Consecutive absences count
  * @param {number} [params.zeroSubmissionsCount=0] - Number of zero-score submissions on configured activities
- * @param {boolean} [params.hasGradeBelow200=false] - PL-only: any subject grade > 2.00
  * @param {boolean} [params.isSummer=false] - Summer term flag
  * @returns {Object} Full explainable evaluation object
  */
 export function calculateAcademicRisk({
   currentGwa = null,
-  failingSubjectsCount = 0,
-  majorExamAverage = 100,
   absenceCount = 0,
   consecutiveAbsences = 0,
   zeroSubmissionsCount = 0,
-  hasGradeBelow200 = false,
   previousTermRating = null,
   currentTermRating = null,
   isSummer = false
@@ -95,12 +85,12 @@ export function calculateAcademicRisk({
     } else if (gwa <= 3.00) {
       // Moderate zone: GWA 2.01–3.00 (Fair to Passing Cut-off)
       // Scales linearly: 2.01→1pt, 2.50→~12pts, 3.00→25pts
-      gwaPoints = Math.round(((gwa - 2.00) / 1.00) * 25);
+      gwaPoints = 25 + Math.round(((gwa - 2.00) / 1.00) * 10);
       gwaDetail = `GWA ${gwa.toFixed(2)} — Watch zone (DL track at risk)`;
     } else {
       // High/Critical zone: GWA 3.01–5.00 (Below passing cut-off / Failed)
       // Scales linearly: 3.01→26pts, 4.00→43pts, 5.00→60pts
-      gwaPoints = Math.round(26 + ((gwa - 3.01) / 1.99) * 34);
+      gwaPoints = 50 + Math.round(((gwa - 3.01) / 1.99) * 10);
       gwaDetail = `GWA ${gwa.toFixed(2)} — Failing (below 75% cut-off)`;
     }
   }
@@ -170,23 +160,12 @@ export function calculateAcademicRisk({
   const compositeScore = Math.min(100, rawTotal);
 
   // ── CLASSIFICATION TIERS ────────────────────────────────────────────────────
-  let riskLevel = 'low';
-  let badgeColor = 'emerald';
-  if (compositeScore >= 75) {
-    riskLevel = 'critical';
-    badgeColor = 'rose';
-  } else if (compositeScore >= 50) {
-    riskLevel = 'high';
-    badgeColor = 'rose';
-  } else if (compositeScore >= 25) {
-    riskLevel = 'moderate';
-    badgeColor = 'amber';
-  }
+  const riskTier = getRiskTierForScore(compositeScore);
 
   return {
     composite_score: compositeScore,
-    risk_level: riskLevel,
-    badge_color: badgeColor,
+    risk_level: riskTier.label,
+    badge_color: riskTier.color,
     trajectory_delta: trajDelta,
     factors: {
       gwa: {
@@ -249,6 +228,7 @@ export function computeTentativeGradeDetails(classRecordScores, classRecordCols,
   const isSummer = Boolean(options.isSummer);
   const terms = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
   const termRatings = {};
+  const termDetails = {};
 
   terms.forEach(term => {
     const tSc = classRecordScores?.[term];
@@ -261,6 +241,7 @@ export function computeTentativeGradeDetails(classRecordScores, classRecordCols,
       maxItems: { ...tMx, char: tMx.char ?? 100 },
       activities: options.activitiesByTerm?.[term] || []
     });
+    termDetails[term] = result;
     if (result.ok && result.hasData) termRatings[term] = result.rating;
   });
 
@@ -275,7 +256,9 @@ export function computeTentativeGradeDetails(classRecordScores, classRecordCols,
   return {
     formula,
     termRatings,
+    termDetails,
     semesterResult,
+    isComplete: terms.every(term => termDetails[term]?.isComplete),
     gwa: semesterResult.sg === null ? null : getTransmutedGrade(semesterResult.sg)
   };
 }
@@ -307,32 +290,19 @@ export function computeTentativeGrade(classRecordScores, classRecordCols, option
  */
 export function computeUnifiedRisk({
   avgGwa = null,
-  failingCount = 0,
   absenceCount = 0,
-  examAverage = 100,
   zeroSubmissionsCount = 0,
   previousTermRating = null,
   currentTermRating = null,
   consecutiveAbsences = 0,
   isSummer = false,
-  individualSubjectGrades = []
+  isComplete = true
 }) {
-  // ── Scholarship Grade Floor Breach (DYCI Handbook Sec 3.8.4 / 5.2.5.1) ──
-  // ONLY relevant for President's List / scholarship candidates (GWA ≤ 1.75).
-  // A student with GWA 2.25 having a subject at 2.50 is NOT a "breach" — they
-  // were never PL-eligible. This flag should NEVER penalize the general population.
-  const isPlCandidate = avgGwa !== null && avgGwa <= 1.75;
-  const hasGradeBelow200 = isPlCandidate &&
-    individualSubjectGrades.some(g => g > 2.00);
-
   return calculateAcademicRisk({
-    currentGwa: avgGwa,
-    failingSubjectsCount: failingCount,
-    majorExamAverage: examAverage,
+    currentGwa: isComplete ? avgGwa : null,
     absenceCount,
     consecutiveAbsences,
     zeroSubmissionsCount,
-    hasGradeBelow200,
     previousTermRating,
     currentTermRating,
     isSummer
