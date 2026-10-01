@@ -103,7 +103,7 @@ Sideloading Gateway    Fallback for iOS                      & HTTPS Scheme     
 * **Panel Inquiry**: *"Why is the application not published on the Google Play Store or Apple App Store?"*
 * **Engineering Solution & Codebase Verification**:
   * ASPIRE implements a **Device-Aware Adaptive Distribution Gateway** via `src/lib/usePwaInstall.js` and `src/components/layout/SmartInstallModal.jsx`.
-  * **Android Clients**: When accessed from Android browsers, the portal automatically presents a direct **"Download Android App (.APK)"** trigger pulling `sage-latest.apk` from the public Supabase Storage bucket (`https://ettnwknyhdhehoclrwwh.supabase.co/storage/v1/object/public/app-releases/sage-latest.apk`) alongside a 3-step *"Install Unknown Apps"* security permission walkthrough.
+  * **Android Clients**: When accessed from Android browsers, the portal automatically presents a direct **"Download Android App (.APK)"** trigger pulling `aspire.apk` from the public Supabase Storage bucket (`https://ettnwknyhdhehoclrwwh.supabase.co/storage/v1/object/public/app-releases/aspire.apk`) alongside a 3-step *"Install Unknown Apps"* security permission walkthrough.
   * **Desktop Clients**: Triggers standard native browser PWA installation (`beforeinstallprompt`).
   * **Standalone App Suppression**: Install prompts automatically hide when running in standalone mode (`display-mode: standalone` or `Capacitor.isNativePlatform()`).
 * **Official Defense Justification**: ASPIRE is a closed institutional enterprise platform for Dr. Yanga's Colleges, Inc. Direct institutional sideloading eliminates recurring commercial store developer fees ($99/year Apple, $25 Google) and protects internal campus authentication endpoints from public search indexing and scraping.
@@ -176,7 +176,7 @@ Selected Option B   Latest Signed Binary            Public Supabase     user_pus
    * The final compiled Android Application Package binary with debug logs stripped, verified running on physical Android hardware.
 3. **Public APK Download / Hosting URL**:
    * The direct endpoint hosted on Supabase Public Storage:
-     `https://ettnwknyhdhehoclrwwh.supabase.co/storage/v1/object/public/app-releases/sage-latest.apk` (configurable via `VITE_ANDROID_APK_URL`).
+     `https://ettnwknyhdhehoclrwwh.supabase.co/storage/v1/object/public/app-releases/aspire.apk` (configurable via `VITE_ANDROID_APK_URL`).
 4. **Database Migration SQL File (`20260829_user_push_tokens.sql`)**:
    * The exact SQL script creating the `public.user_push_tokens` table for normalized multi-device token storage (`user_id`, `token`, `platform`, `updated_at`).
 5. **Demonstration Media (Screenshot / Short Screen Recording)**:

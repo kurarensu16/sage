@@ -188,7 +188,7 @@ export default function SmartInstallModal({
                     <div className="min-w-0">
                       <p className="font-semibold text-slate-900">Open Downloaded File</p>
                       <p className="text-slate-500 text-[11px] mt-0.5">
-                        Once finished, tap the completed download notification or open <code className="font-mono text-emerald-800 bg-emerald-50 px-1 py-0.5 rounded">sage.apk</code> from your <strong>Downloads</strong> folder.
+                        Once finished, tap the completed download notification or open <code className="font-mono text-emerald-800 bg-emerald-50 px-1 py-0.5 rounded">aspire.apk</code> from your <strong>Downloads</strong> folder.
                       </p>
                     </div>
                   </div>

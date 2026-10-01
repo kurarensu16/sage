@@ -3,7 +3,76 @@ import {
   calculateStoredTermRating,
   getTransmutedGrade
 } from './gradingMath';
+import { TRANSMUTATION_LADDER } from './academicPolicy';
 import * as XLSX from 'xlsx-js-style';
+
+// ---------------------------------------------------------------------------
+// Grading formula helpers — extract component weights from the resolved formula
+// ---------------------------------------------------------------------------
+const DEFAULT_WEIGHTS = { cs: 50, char: 10, exam: 40 };
+
+/**
+ * Extract CS / Character / Exam weights from the formula's components array.
+ * Falls back to DYCI default 50/10/40 if formula is missing or malformed.
+ */
+function extractComponentWeights(formula) {
+  if (!formula?.ok || !Array.isArray(formula.components) || formula.components.length === 0) {
+    return DEFAULT_WEIGHTS;
+  }
+
+  const lookup = (patterns) => {
+    const comp = formula.components.find(c =>
+      patterns.some(p => c.name.toLowerCase().includes(p))
+    );
+    return comp ? comp.weight : null;
+  };
+
+  return {
+    cs:   lookup(['class standing', 'classstanding', 'cs'])   ?? DEFAULT_WEIGHTS.cs,
+    char: lookup(['character', 'char'])                        ?? DEFAULT_WEIGHTS.char,
+    exam: lookup(['exam', 'major exam', 'final exam', 'term exam']) ?? DEFAULT_WEIGHTS.exam,
+  };
+}
+
+/**
+ * Build nested Excel IF formula for GWA transmutation from the canonical ladder.
+ * Produces: IF(ref>=98,1,IF(ref>=95,1.25,...,5))
+ */
+function buildTransmutationFormula(cellRef) {
+  let formula = String(TRANSMUTATION_LADDER[TRANSMUTATION_LADDER.length - 1].gwa === 3
+    ? '5'                             // below all thresholds → 5.00
+    : '5');
+  // Build from the bottom up (lowest threshold first = innermost IF)
+  for (let i = TRANSMUTATION_LADDER.length - 1; i >= 0; i--) {
+    const { minRating, gwa } = TRANSMUTATION_LADDER[i];
+    formula = `IF(${cellRef}>=${minRating},${gwa},${formula})`;
+  }
+  return formula;
+}
+
+/**
+ * Get the max scores and titles for a specific term's activity slots.
+ * Returns arrays of up to 6 items aligned to the 6 CS activity columns.
+ */
+function getTermActivityInfo(gradingOptions, termName) {
+  const acts = gradingOptions?.activities?.[termName] || [];
+  const maxItems = gradingOptions?.maxItems?.[termName] || {};
+
+  const maxScores = [];
+  const titles = [];
+  for (let i = 0; i < 6; i++) {
+    const act = acts[i];
+    if (act) {
+      maxScores.push(act.max || parseFloat(maxItems[`act${i + 1}`]) || 20);
+      titles.push(act.name || `Act ${i + 1}`);
+    } else {
+      const legacyMax = parseFloat(maxItems[`act${i + 1}`]);
+      maxScores.push(legacyMax > 0 ? legacyMax : 20);
+      titles.push(`${i + 1}`);
+    }
+  }
+  return { maxScores, titles };
+}
 
 // ---------------------------------------------------------------------------
 // Color palette extracted from SAGE_Grading_System_Mock.xlsx
@@ -248,7 +317,9 @@ export function buildSubjectProfile(ws, metadata, students, isSingleSheet = fals
 // ===========================================================================
 // RECORD SHEET
 // ===========================================================================
-export function buildRecordSheet(ws, metadata, students, isSingleSheet = false) {
+export function buildRecordSheet(ws, metadata, students, isSingleSheet = false, gradingOptions = {}) {
+  // Extract dynamic component weights from the grading formula
+  const W = extractComponentWeights(gradingOptions.formula);
   // Title row
   setCell(ws, 0, 0, 'RECORD SHEET FOR GENERAL EDUCATION SUBJECTS (SAGE-System)',
     false, null, null, { font: { bold: true }, alignment: { horizontal: 'center', vertical: 'center' } });
@@ -299,41 +370,43 @@ export function buildRecordSheet(ws, metadata, students, isSingleSheet = false) 
   setCell(ws, 5, 54, 'Equivalent', false, null, null, style.center);
   setCell(ws, 5, 55, 'Remarks',    false, null, null, style.center);
 
-  // ---- Row 6: CS detail numbers ----
-  const setCSDetails = (startCol) => {
-    for (let i = 0; i < 6; i++) setCell(ws, 6, startCol + i, i + 1, false, null, null, style.center);
+  // ---- Row 6: CS detail numbers / activity names ----
+  const termOrder = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+  const termStartCols = [3, 15, 28, 40];
+
+  const setCSDetails = (startCol, termName) => {
+    const { titles } = getTermActivityInfo(gradingOptions, termName);
+    for (let i = 0; i < 6; i++) {
+      setCell(ws, 6, startCol + i, titles[i] || `${i + 1}`, false, null, null, style.center);
+    }
     setCell(ws, 6, startCol + 6,  'Total', false, null, null, style.center);
-    setCell(ws, 6, startCol + 7,  '%',     false, null, null, style.center);
+    setCell(ws, 6, startCol + 7,  `${W.cs}%`, false, null, null, style.center);
     setCell(ws, 6, startCol + 9,  'Raw',   false, null, null, style.center);
-    setCell(ws, 6, startCol + 10, '%',     false, null, null, style.center);
+    setCell(ws, 6, startCol + 10, `${W.exam}%`, false, null, null, style.center);
   };
-  setCSDetails(3);
-  setCSDetails(15);
-  setCSDetails(28);
-  setCSDetails(40);
+  termOrder.forEach((t, idx) => setCSDetails(termStartCols[idx], t));
 
   // ---- Row 7: Column labels + Max Scores (amber) ----
   setCell(ws, 7, 0, 'No.',         false, null, null, style.label);
   setCell(ws, 7, 1, 'Student No.', false, null, null, style.label);
   setCell(ws, 7, 2, 'NAME',        false, null, null, style.label);
 
-  const setMaxScores = (startCol) => {
-    const maxVals = [20, 20, 20, 20, 20, 10];
+  const setMaxScores = (startCol, termName) => {
+    const { maxScores: maxVals } = getTermActivityInfo(gradingOptions, termName);
     maxVals.forEach((v, i) => setCell(ws, 7, startCol + i, v, false, null, null, style.maxScore));
 
     const startL = XLSX.utils.encode_col(startCol);
     const endL   = XLSX.utils.encode_col(startCol + 5);
     setCell(ws, 7, startCol + 6,  `SUM(${startL}8:${endL}8)`, true, null, null, style.maxScore);
-    setCell(ws, 7, startCol + 7,  50,  false, null, null, style.maxScore);
-    setCell(ws, 7, startCol + 8,  100, false, null, null, style.maxScore);
-    setCell(ws, 7, startCol + 9,  40,  false, null, null, style.maxScore);
-    setCell(ws, 7, startCol + 10, 40,  false, null, null, style.maxScore);
-    setCell(ws, 7, startCol + 11, 100, false, null, null, style.maxScore);
+    setCell(ws, 7, startCol + 7,  W.cs,  false, null, null, style.maxScore);
+    const charMax = gradingOptions?.maxItems?.[termName]?.char || 100;
+    setCell(ws, 7, startCol + 8,  charMax, false, null, null, style.maxScore);
+    const examMax = gradingOptions?.maxItems?.[termName]?.exam || 40;
+    setCell(ws, 7, startCol + 9,  examMax, false, null, null, style.maxScore);
+    setCell(ws, 7, startCol + 10, W.exam, false, null, null, style.maxScore);
+    setCell(ws, 7, startCol + 11, 100,    false, null, null, style.maxScore);
   };
-  setMaxScores(3);
-  setMaxScores(15);
-  setMaxScores(28);
-  setMaxScores(40);
+  termOrder.forEach((t, idx) => setMaxScores(termStartCols[idx], t));
 
   // ---- Student rows ----
   for (let i = 0; i < 60; i++) {
@@ -374,9 +447,10 @@ export function buildRecordSheet(ws, metadata, students, isSingleSheet = false) 
       }
 
       setCell(ws, r, t.startCol + 6,  `IF($C${rName}="","",SUM(${t.startL}${rName}:${t.endL}${rName}))`, true, null, 'n', style.center);
-      setCell(ws, r, t.startCol + 7,  `IF($C${rName}="","",IF(${t.totL}$8>0, (${t.totL}${rName}/${t.totL}$8)*50, 0))`, true, '0.0', 'n', style.center);
-      setCell(ws, r, t.startCol + 10, `IF($C${rName}="","",IF(${t.exRawL}$8>0, (${t.exRawL}${rName}/${t.exRawL}$8)*40, 0))`, true, '0.0', 'n', style.center);
-      setCell(ws, r, t.startCol + 11, `IF($C${rName}="","",ROUND(${t.csL}${rName}+(${t.charL}${rName}*0.1)+${t.exPctL}${rName},0))`, true, '0', 'n', style.headerDark);
+      // Dynamic weights from formula (CS%, Char%, Exam%)
+      setCell(ws, r, t.startCol + 7,  `IF($C${rName}="","",IF(${t.totL}$8>0, (${t.totL}${rName}/${t.totL}$8)*${W.cs}, 0))`, true, '0.0', 'n', style.center);
+      setCell(ws, r, t.startCol + 10, `IF($C${rName}="","",IF(${t.exRawL}$8>0, (${t.exRawL}${rName}/${t.exRawL}$8)*${W.exam}, 0))`, true, '0.0', 'n', style.center);
+      setCell(ws, r, t.startCol + 11, `IF($C${rName}="","",ROUND(${t.csL}${rName}+(${t.charL}${rName}*${W.char / 100})+${t.exPctL}${rName},0))`, true, '0', 'n', style.headerDark);
     });
 
     setCell(ws, r, 27, `IF($C${rName}="","",ROUND(AVERAGE(O${rName},AA${rName}),0))`, true, '0', 'n', style.headerDark);
@@ -394,14 +468,15 @@ export function buildRecordSheet(ws, metadata, students, isSingleSheet = false) 
       setCell(ws, r, 54, 'Drp.', false, null, 's', style.center);
       setCell(ws, r, 55, 'Drp', false, null, 's', style.center);
     } else if (student && remarkLower === 'passed') {
-      const base = `IF(BB${rName}>=98,1,IF(BB${rName}>=95,1.25,IF(BB${rName}>=92,1.5,IF(BB${rName}>=89,1.75,IF(BB${rName}>=86,2,IF(BB${rName}>=83,2.25,IF(BB${rName}>=80,2.5,IF(BB${rName}>=77,2.75,IF(BB${rName}>=75,3,5)))))))))`;
+      const base = buildTransmutationFormula(`BB${rName}`);
       setCell(ws, r, 54, `IF($C${rName}="","",IF(${base}<=3,${base},3.00))`, true, '0.00', 'n', style.center);
       setCell(ws, r, 55, 'Passed', false, null, 's', style.center);
     } else if (student && remarkLower === 'failed') {
       setCell(ws, r, 54, 5.00, false, '0.00', 'n', style.center);
       setCell(ws, r, 55, 'Failed', false, null, 's', style.center);
     } else {
-      setCell(ws, r, 54, `IF($C${rName}="","",IF(BB${rName}>=98,1,IF(BB${rName}>=95,1.25,IF(BB${rName}>=92,1.5,IF(BB${rName}>=89,1.75,IF(BB${rName}>=86,2,IF(BB${rName}>=83,2.25,IF(BB${rName}>=80,2.5,IF(BB${rName}>=77,2.75,IF(BB${rName}>=75,3,5))))))))))`, true, '0.00', 'n', style.center);
+      const transmutation = buildTransmutationFormula(`BB${rName}`);
+      setCell(ws, r, 54, `IF($C${rName}="","",${transmutation})`, true, '0.00', 'n', style.center);
       setCell(ws, r, 55, `IF($C${rName}="","",IF(BC${rName}<=3,"Passed","Failed"))`, true, null, 's', style.center);
     }
   }
@@ -632,7 +707,7 @@ export function triggerExcelExport(classroomMetadata, students, selectedTab = 'a
 
   if (selectedTab === 'all' || selectedTab === 'record') {
     const wsRecord = XLSX.utils.aoa_to_sheet([]);
-    buildRecordSheet(wsRecord, classroomMetadata, students, selectedTab === 'record');
+    buildRecordSheet(wsRecord, classroomMetadata, students, selectedTab === 'record', gradingOptions);
     XLSX.utils.book_append_sheet(wb, wsRecord, 'Record Sheet');
   }
 

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2732 2732">
+  <rect width="2732" height="2732" fill="#0B1739"/>
+  <g transform="translate(1016 900) scale(14)">
+    <path d="M25 30L10 38.75V33.75L25 25L40 33.75V38.75L25 30Z" fill="#FFFFFF"/>
+    <path d="M25 21.25L10 30V25L25 16.25L40 25V30L25 21.25Z" fill="#FFFFFF"/>
+    <path d="M25 12.5L10 21.25V16.25L25 7.5L40 16.25V21.25L25 12.5Z" fill="#FFFFFF"/>
+  </g>
+  <text x="1366" y="1680" text-anchor="middle" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="210" font-weight="700" letter-spacing="24">ASPIRE</text>
+  <text x="1366" y="1815" text-anchor="middle" fill="#AFC3F5" font-family="Arial, sans-serif" font-size="54" font-weight="600" letter-spacing="12">ACADEMIC SUPPORT AND PERFORMANCE</text>
+</svg>
