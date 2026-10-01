@@ -696,11 +696,11 @@ PHASE 3: SUBSEQUENT SPRINTS (EMAIL, ADVANCED ANALYTICS, RLS)
   [ ] 3.3   Supabase pg_cron and pg_net configured
   [ ] 3.4   send-email Edge Function deployed with denomailer and worker secret
   [ ] 3.5   Brevo SMTP credentials configured in remote Supabase vault
-  [ ] 3.6   notification_deliveries and notification_preferences migrations applied
+  [x] 3.6   notification_deliveries and notification_preferences migrations applied
   [ ] 3.7   Student Settings guardian consent capture UI built (RA 10173 compliance)
   [ ] 3.8   Tokenized signed view links generated for guardian grade delivery
   [ ] 3.9   react-pivottable React 19 compatibility verified or custom pivot fallback deployed
   [x] 3.10  Multi-term trajectory comparison and Excel export completed in Faculty Reports
-  [ ] 3.11  Admin notification delivery dashboard (/admin/notifications) deployed
+  [x] 3.11  Admin notification delivery dashboard (/admin/notifications) deployed
   [ ] 3.12  Phase 9 scholarship history and streak tracking deployed
 ```
