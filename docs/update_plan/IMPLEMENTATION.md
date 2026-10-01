@@ -643,52 +643,52 @@ Deploy `notification_deliveries` and `notification_preferences` with RLS (servic
 
 ```
 PHASE 1: ACADEMIC RULES UNIFICATION & SAFETY GATES
-  [ ] 1.1   Database migration 20261001090000 applied / validated (C14, C15)
-  [ ] 1.2   academicPolicy.js complete with official GWA, honors, and attendance semantics
-  [ ] 1.3   gradingMath.js calculateWeightedTermRating returns encodedWeight, ratingOnEncoded, isComplete
-  [ ] 1.4   gradingMath.js calculateSemestralGrade preserves mr, tfr, sg, gwa and returns termsExpected, termsEncoded, isComplete
-  [ ] 1.5   toEffectiveGradeForPosting() implemented as pure null guard (Decision D3)
-  [ ] 1.6   WEIGHT_TOLERANCE exported as public constant
-  [ ] 1.7   gradingMath.js:498 fixed (18-unit floor applied to regular & irregular students alike)
-  [ ] 1.8   gradingMath.js:480 getPresidentsListTier wired to policy
-  [ ] 1.9   resolveGradingFormula fails closed on null template (legacy fallback removed)
-  [ ] 1.10  riskEngine.js completeness gate & advising thresholds updated
-  [ ] 1.11  Dead parameters (failingSubjectsCount, majorExamAverage, hasGradeBelow200) removed from riskEngine.js
-  [ ] 1.12  riskUtils.js deleted; zero imports confirmed
-  [ ] 1.13  Honors 1.45 ladder and fake 94%/85% probabilities removed from AcademicInsights.jsx & student views
-  [ ] 1.14  dean/AtRiskStudents.jsx:484 floor updated to 2.00
-  [ ] 1.15  AcademicInsights.jsx attendance scoped per class_record_id; Late/Excused counted as attended
-  [ ] 1.16  riskEngine.js GWA piecewise step-discontinuity curve calibrated to match §3.3 zone table
-  [ ] 1.17  Formula passed to StudentRow.jsx, excelExport.js, ExportPreviewModal.jsx
-  [ ] 1.18  classRoomService.js getEnrollmentType aligned with SQL twin
-  [ ] 1.19  ScoreInput.jsx & GradeComputationPreview.jsx protected with toEffectiveGradeForPosting
-  [ ] 1.20  admin/GradeOverride.jsx remarks mapped via toDbRemark; INC/FDA display bug fixed
-  [ ] 1.21  dean/Dashboard.jsx & AtRiskStudents.jsx bare-subscript formulas guarded
-  [ ] 1.22  student/Dashboard.jsx units column bug and raw grade scale bug resolved
-  [ ] 1.23  classRoomService.js resolveOfficialGwa adopted (preserving home_section_id, enrollment_type, is_irregular)
-  [ ] 1.24  dean/Dashboard.jsx computeUnifiedRisk parameter set completed
-  [ ] 1.25  LocalStorage absence cache deleted from ScoreInput, StudentRow, PostedGradesView
-  [ ] 1.26  ClassAttendance.jsx FDA filter fixed to student.absences >= 4
-  [ ] 1.27  student/Attendance.jsx fabricated attendance records completely deleted
-  [ ] 1.28  advisingEngine.js attendance aggregated per course
-  [ ] 1.29  excelExport.js formula-aware weights and canonical ladder applied
-  [ ] 1.30  scripts/verifyGradingMath.js updated with assertions; npm run verify:grading GREEN
-  [ ] 1.31  Regression checks and build gates pass (npm run lint, npm run build)
-  [ ] 1.32  Verification report generated: docs/reports/ACADEMIC_RULES_VERIFICATION_RESPONSE_2026-10-01.md
-  [ ] 1.33  Working tree academic rules changes cleanly committed to git
+  [x] 1.1   Database migration 20261001090000 applied / validated (C14, C15)
+  [x] 1.2   academicPolicy.js complete with official GWA, honors, and attendance semantics
+  [x] 1.3   gradingMath.js calculateWeightedTermRating returns encodedWeight, ratingOnEncoded, isComplete
+  [x] 1.4   gradingMath.js calculateSemestralGrade preserves mr, tfr, sg, gwa and returns termsExpected, termsEncoded, isComplete
+  [x] 1.5   toEffectiveGradeForPosting() implemented as pure null guard (Decision D3)
+  [x] 1.6   WEIGHT_TOLERANCE exported as public constant
+  [x] 1.7   gradingMath.js:498 fixed (18-unit floor applied to regular & irregular students alike)
+  [x] 1.8   gradingMath.js:480 getPresidentsListTier wired to policy
+  [x] 1.9   resolveGradingFormula fails closed on null template (legacy fallback removed)
+  [x] 1.10  riskEngine.js completeness gate & advising thresholds updated
+  [x] 1.11  Dead parameters (failingSubjectsCount, majorExamAverage, hasGradeBelow200) removed from riskEngine.js
+  [x] 1.12  riskUtils.js deleted; zero imports confirmed
+  [x] 1.13  Honors 1.45 ladder and fake 94%/85% probabilities removed from AcademicInsights.jsx & student views
+  [x] 1.14  dean/AtRiskStudents.jsx:484 floor updated to 2.00
+  [x] 1.15  AcademicInsights.jsx attendance scoped per class_record_id; Late/Excused counted as attended
+  [x] 1.16  riskEngine.js GWA piecewise step-discontinuity curve calibrated to match §3.3 zone table
+  [x] 1.17  Formula passed to StudentRow.jsx, excelExport.js, ExportPreviewModal.jsx
+  [x] 1.18  classRoomService.js getEnrollmentType aligned with SQL twin
+  [x] 1.19  ScoreInput.jsx & GradeComputationPreview.jsx protected with toEffectiveGradeForPosting
+  [x] 1.20  admin/GradeOverride.jsx remarks mapped via toDbRemark; INC/FDA display bug fixed
+  [x] 1.21  dean/Dashboard.jsx & AtRiskStudents.jsx bare-subscript formulas guarded
+  [x] 1.22  student/Dashboard.jsx units column bug and raw grade scale bug resolved
+  [x] 1.23  classRoomService.js resolveOfficialGwa adopted (preserving home_section_id, enrollment_type, is_irregular)
+  [x] 1.24  dean/Dashboard.jsx computeUnifiedRisk parameter set completed
+  [x] 1.25  LocalStorage absence cache deleted from ScoreInput, StudentRow, PostedGradesView
+  [x] 1.26  ClassAttendance.jsx FDA filter fixed to student.absences >= 4
+  [x] 1.27  student/Attendance.jsx fabricated attendance records completely deleted
+  [x] 1.28  advisingEngine.js attendance aggregated per course
+  [x] 1.29  excelExport.js formula-aware weights and canonical ladder applied
+  [x] 1.30  scripts/verifyGradingMath.js updated with assertions; npm run verify:grading GREEN
+  [x] 1.31  Regression checks and build gates pass (npm run lint, npm run build)
+  [x] 1.32  Verification report generated: docs/reports/ACADEMIC_RULES_VERIFICATION_RESPONSE_2026-10-01.md
+  [x] 1.33  Working tree academic rules changes cleanly committed to git
 
 PHASE 2: IMMEDIATE NOTIFICATIONS & REPORT FOUNDATION
-  [ ] 2.1   Migration 20261001150000: notification schema v2 + guardians table scaffold
-  [ ] 2.2   notifyGradePosted() & notifyGradeChanged() implemented with upsert() and dedupe_key
-  [ ] 2.3   notifyGradePosted() wired into PostedGradesView.jsx lock handler
-  [ ] 2.4   NOTIFICATION_TITLES stripped of raw emoji strings
-  [ ] 2.5   NOTIFICATION_SYSTEM_CATALOG.md updated
-  [ ] 2.6   Faculty reports routes added to App.jsx (/faculty/reports/class-performance, /faculty/reports/comparison)
-  [ ] 2.7   constants.js: PASSING_GRADE, HIGH_CUTOFF, SAME_MARGIN exported; FacultyCharts.jsx updated
-  [ ] 2.8   reportsService.js built on single source of truth (isStudentAtRisk)
-  [ ] 2.9   ClassPerformance.jsx skeleton created (dropdown, filters, summary cards, table stub)
-  [ ] 2.10  PerformanceComparison.jsx placeholder created
-  [ ] 2.11  ClassPerformance at-risk card verified against StudentRisk.jsx
+  [x] 2.1   Migration 20261001150000: notification schema v2 + guardians table scaffold
+  [x] 2.2   notifyGradePosted() & notifyGradeChanged() implemented with upsert() and dedupe_key
+  [x] 2.3   notifyGradePosted() wired into ScoreInput / GradeComputationPreview lock handlers
+  [x] 2.4   NOTIFICATION_TITLES stripped of raw emoji strings
+  [x] 2.5   NOTIFICATION_SYSTEM_CATALOG.md updated
+  [x] 2.6   Faculty reports routes added to App.jsx (/faculty/reports/class-performance, /faculty/reports/comparison)
+  [x] 2.7   constants.js: PASSING_GRADE, HIGH_CUTOFF, SAME_MARGIN exported; FacultyCharts.jsx updated
+  [x] 2.8   reportsService.js built on single source of truth (isStudentAtRisk)
+  [x] 2.9   ClassPerformance.jsx skeleton created (dropdown, filters, summary cards, table stub)
+  [x] 2.10  PerformanceComparison.jsx placeholder created
+  [x] 2.11  ClassPerformance at-risk card verified against StudentRisk.jsx
 
 PHASE 3: SUBSEQUENT SPRINTS (EMAIL, ADVANCED ANALYTICS, RLS)
   [ ] 3.1   Client notification insert audit completed; write RPCs deployed
