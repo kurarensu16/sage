@@ -65,7 +65,8 @@ export const AuthProvider = ({ children }) => {
         .from('notifications')
         .select('*', { count: 'exact', head: true })
         .eq('recipient_id', userId)
-        .eq('is_read', false);
+        .eq('is_read', false)
+        .is('dismissed_at', null);
       if (!error && typeof count === 'number') {
         setUnreadCount(count);
       }
@@ -194,6 +195,7 @@ export const AuthProvider = ({ children }) => {
           .from('notifications')
           .select('notification_id')
           .eq('recipient_id', userId)
+          .is('dismissed_at', null)
           .order('created_at', { ascending: false })
           .limit(50);
         if (existing) {
@@ -214,13 +216,10 @@ export const AuthProvider = ({ children }) => {
 
       try {
         const rawTitle = NOTIFICATION_TITLES[notif.type] || 'SAGE Notification';
-        // Clean title (no emoji in title) for Android/MIUI system banner stability
-        const cleanTitle = rawTitle.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim() || 'Institutional Alert';
-        const prefixEmoji = (rawTitle.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u) || ['🔔'])[0];
 
         await showLocalNotification({
-          title: cleanTitle,
-          body: `${prefixEmoji} ${notif.message}`,
+          title: rawTitle,
+          body: notif.message,
           payload: notif
         });
       } catch (alertErr) {
@@ -237,6 +236,7 @@ export const AuthProvider = ({ children }) => {
           .select('*')
           .eq('recipient_id', userId)
           .eq('is_read', false)
+          .is('dismissed_at', null)
           .order('created_at', { ascending: false })
           .limit(20);
 
@@ -262,19 +262,8 @@ export const AuthProvider = ({ children }) => {
       }).then(l => { appStateListener = l; });
     }
 
-    // A. Realtime Broadcast channel (sub-second cross-device push)
-    const broadcastChannel = supabase
-      .channel('sage-realtime-alerts', { config: { broadcast: { self: true } } })
-      .on('broadcast', { event: 'notification' }, async (event) => {
-        const notif = event.payload;
-        if (notif && notif.recipient_id === userId) {
-          setUnreadCount((prev) => prev + 1);
-          await triggerInboundLocalNotification(notif);
-        }
-      })
-      .subscribe();
-
-    // B. Postgres changes channel (database persistence listener fallback)
+    // Database-backed realtime updates are protected by the notifications RLS
+    // policy. Do not use a public broadcast channel for notification payloads.
     const dbChannel = supabase
       .channel(`realtime-notifications-${userId}`)
       .on(
@@ -298,7 +287,6 @@ export const AuthProvider = ({ children }) => {
     return () => {
       clearInterval(pollerInterval);
       if (appStateListener) appStateListener.remove();
-      supabase.removeChannel(broadcastChannel);
       supabase.removeChannel(dbChannel);
     };
   }, [session?.user?.id, fetchUnreadCount]);

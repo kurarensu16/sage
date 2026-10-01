@@ -28,7 +28,7 @@ CREATE INDEX IF NOT EXISTS notifications_recipient_unread
 -- 4. Guardians Table (Scaffold only — consent-gated per RA 10173)
 CREATE TABLE IF NOT EXISTS guardians (
   guardian_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  student_id         UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  student_id         UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
   full_name          TEXT NOT NULL,
   relationship       TEXT,
   email              TEXT,
