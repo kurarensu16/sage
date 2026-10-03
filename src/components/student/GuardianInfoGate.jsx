@@ -87,7 +87,12 @@ export default function GuardianInfoGate() {
     setSaving(false);
 
     if (rpcError) {
-      setError(rpcError.message || 'Could not save guardian information. Please try again.');
+      // Hide technical SQL/Schema errors from the user
+      if (rpcError.message?.includes('schema cache') || rpcError.message?.includes('Could not find the function')) {
+        setError('An unexpected issue occurred while saving your contact details. Please try again shortly.');
+      } else {
+        setError(rpcError.message || 'Could not save guardian information. Please try again.');
+      }
       return;
     }
     setSatisfied(true);

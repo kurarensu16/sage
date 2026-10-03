@@ -21,11 +21,14 @@ import {
   Download,
   LayoutGrid,
   List,
-  Table2
+  Table2,
+  BarChart2
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import ReportsPivotPanel from '../../components/faculty/ReportsPivotPanel';
+import ClassAnalyticsPanel from '../../components/faculty/ClassAnalyticsPanel';
+import InfoModal from '../../components/InfoModal';
 
 export default function ClassPerformance() {
   const { user } = useAuth();
@@ -36,11 +39,13 @@ export default function ClassPerformance() {
   const [selectedClassId, setSelectedClassId] = useState(initialClassId);
   const [loadingClasses, setLoadingClasses] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
-  const [dataset, setDataset] = useState({ enrollments: [], activities: [], rows: [], gwaByStudent: {}, attendanceByStudent: {}, rosterByStudent: new Map() });
+  const [dataset, setDataset] = useState({ enrollments: [], activities: [], rows: [], postedDetailsByStudent: {}, attendanceByStudent: {}, rosterByStudent: new Map() });
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sortConfig, setSortConfig] = useState('name-asc');
   const [viewMode, setViewMode] = useState('summary');
   const [errorMsg, setErrorMsg] = useState(null);
+  const [infoModalData, setInfoModalData] = useState(null);
 
   // 1. Fetch faculty's assigned classes
   useEffect(() => {
@@ -106,8 +111,8 @@ export default function ClassPerformance() {
 
   // 3. Aggregate data by student (item 2.8: real GWA/attendance, not a fabricated proxy)
   const aggregatedStudents = useMemo(() => {
-    return aggregateByStudent(dataset.rows, dataset.gwaByStudent, dataset.attendanceByStudent, dataset.rosterByStudent);
-  }, [dataset.rows, dataset.gwaByStudent, dataset.attendanceByStudent, dataset.rosterByStudent]);
+    return aggregateByStudent(dataset.rows, dataset.postedDetailsByStudent, dataset.attendanceByStudent, dataset.rosterByStudent);
+  }, [dataset.rows, dataset.postedDetailsByStudent, dataset.attendanceByStudent, dataset.rosterByStudent]);
 
   // 4. Build summary cards metrics
   const summary = useMemo(() => {
@@ -135,7 +140,8 @@ export default function ClassPerformance() {
         Status: r.status || 'Ungraded',
         'At-Risk': student?.isAtRisk ? 'Yes' : 'No',
         'Grade (GWA)': student?.officialGwa ?? null,
-        Absences: student?.absenceCount ?? 0
+        Absences: student?.absenceCount ?? 0,
+        Tier: student?.overallStatus || 'Ungraded'
       };
     });
   }, [dataset.rows, aggregatedStudents]);
@@ -162,8 +168,25 @@ export default function ClassPerformance() {
       result = result.filter(s => s.isAtRisk);
     }
 
+    if (sortConfig === 'name-asc') {
+      result.sort((a, b) => a.studentName.localeCompare(b.studentName));
+    } else if (sortConfig === 'sg-desc') {
+      result.sort((a, b) => (b.overallPercentage || 0) - (a.overallPercentage || 0));
+    } else if (sortConfig === 'gwa-desc') {
+      result.sort((a, b) => (b.officialGwa || 5) - (a.officialGwa || 5)); // Best GWA is lower number, wait actually we want highest rank first, so lowest GWA
+    } else if (sortConfig === 'gwa-asc') {
+      result.sort((a, b) => (a.officialGwa || 5) - (b.officialGwa || 5)); 
+    } else if (sortConfig === 'absences-desc') {
+      result.sort((a, b) => (b.absenceCount || 0) - (a.absenceCount || 0));
+    } else if (sortConfig === 'risk-desc') {
+      result.sort((a, b) => {
+        if (a.isAtRisk === b.isAtRisk) return a.studentName.localeCompare(b.studentName);
+        return a.isAtRisk ? -1 : 1;
+      });
+    }
+
     return result;
-  }, [aggregatedStudents, searchTerm, statusFilter]);
+  }, [aggregatedStudents, searchTerm, statusFilter, sortConfig]);
 
   const selectedClass = classes.find(c => c.class_record_id === selectedClassId);
 
@@ -220,10 +243,16 @@ export default function ClassPerformance() {
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         {/* Total Students */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
+        <div 
+          className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between cursor-pointer group hover:border-slate-300 transition-all"
+          onClick={() => setInfoModalData({
+            title: "Enrolled Students",
+            message: "The total number of approved enrollments for this class record."
+          })}
+        >
+          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold group-hover:text-slate-700 transition-colors">
             <span>Enrolled Students</span>
-            <Users className="w-4 h-4 text-slate-400" />
+            <Users className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors" />
           </div>
           <div className="mt-2 font-mono text-2xl font-bold text-slate-900">
             {summary.total}
@@ -232,10 +261,16 @@ export default function ClassPerformance() {
         </div>
 
         {/* At-Risk Students */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-rose-600 text-xs font-semibold">
+        <div 
+          className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between cursor-pointer group hover:border-rose-300 transition-all"
+          onClick={() => setInfoModalData({
+            title: "At-Risk Students",
+            message: "Students classified in the High or Critical risk tiers by the ASPIRE Early Warning System. These students require immediate intervention."
+          })}
+        >
+          <div className="flex items-center justify-between text-rose-600 text-xs font-semibold group-hover:text-rose-700 transition-colors">
             <span>At-Risk Students</span>
-            <AlertTriangle className="w-4 h-4 text-rose-500" />
+            <AlertTriangle className="w-4 h-4 text-rose-500 group-hover:text-rose-600 transition-colors" />
           </div>
           <div className="mt-2 font-mono text-2xl font-bold text-rose-600">
             {summary.atRisk} <span className="text-xs text-rose-400 font-normal">({summary.atRiskPct}%)</span>
@@ -244,10 +279,16 @@ export default function ClassPerformance() {
         </div>
 
         {/* Performed Well */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-emerald-600 text-xs font-semibold">
+        <div 
+          className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between cursor-pointer group hover:border-emerald-300 transition-all"
+          onClick={() => setInfoModalData({
+            title: "Performed Well",
+            message: "Students excelling in the course with an overall Semestral Grade (SG) of 85% or higher, on track for the President's List."
+          })}
+        >
+          <div className="flex items-center justify-between text-emerald-600 text-xs font-semibold group-hover:text-emerald-700 transition-colors">
             <span>Performed Well</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-500 group-hover:text-emerald-600 transition-colors" />
           </div>
           <div className="mt-2 font-mono text-2xl font-bold text-emerald-600">
             {summary.wellCount}
@@ -256,10 +297,16 @@ export default function ClassPerformance() {
         </div>
 
         {/* Average */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-amber-600 text-xs font-semibold">
+        <div 
+          className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between cursor-pointer group hover:border-amber-300 transition-all"
+          onClick={() => setInfoModalData({
+            title: "Average",
+            message: "Students performing adequately with an overall Semestral Grade (SG) between 75% and 84%."
+          })}
+        >
+          <div className="flex items-center justify-between text-amber-600 text-xs font-semibold group-hover:text-amber-700 transition-colors">
             <span>Average</span>
-            <TrendingUp className="w-4 h-4 text-amber-500" />
+            <TrendingUp className="w-4 h-4 text-amber-500 group-hover:text-amber-600 transition-colors" />
           </div>
           <div className="mt-2 font-mono text-2xl font-bold text-amber-600">
             {summary.avgCount}
@@ -268,10 +315,16 @@ export default function ClassPerformance() {
         </div>
 
         {/* Struggling */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between col-span-2 lg:col-span-1">
-          <div className="flex items-center justify-between text-slate-600 text-xs font-semibold">
+        <div 
+          className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between col-span-2 lg:col-span-1 cursor-pointer group hover:border-slate-300 transition-all"
+          onClick={() => setInfoModalData({
+            title: "Struggling",
+            message: "Students who are currently failing the course (GWA > 3.00) or have an overall Semestral Grade (SG) below the 75% passing cut-off."
+          })}
+        >
+          <div className="flex items-center justify-between text-slate-600 text-xs font-semibold group-hover:text-slate-700 transition-colors">
             <span>Struggling</span>
-            <AlertCircle className="w-4 h-4 text-slate-400" />
+            <AlertCircle className="w-4 h-4 text-slate-400 group-hover:text-slate-500 transition-colors" />
           </div>
           <div className="mt-2 font-mono text-2xl font-bold text-slate-700">
             {summary.strCount}
@@ -324,32 +377,45 @@ export default function ClassPerformance() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setViewMode('pivot')}
+                  onClick={() => setViewMode('breakdown')}
                   className={cn(
                     "inline-flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold transition-all",
-                    viewMode === 'pivot' ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"
+                    viewMode === 'breakdown' ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"
                   )}
                 >
                   <Table2 className="w-3.5 h-3.5" />
-                  <span>Pivot</span>
+                  <span>Data Breakdown</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('analytics')}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold transition-all",
+                    viewMode === 'analytics' ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"
+                  )}
+                >
+                  <BarChart2 className="w-3.5 h-3.5" />
+                  <span>Class Analytics</span>
                 </button>
               </div>
 
               {/* Export to Excel */}
-              <button
-                type="button"
-                onClick={() => exportClassPerformanceToExcel({
-                  selectedClass,
-                  students: filteredStudents,
-                  activities: dataset.activities
-                })}
-                disabled={filteredStudents.length === 0}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sage-50 hover:bg-sage-100 text-sage-700 border border-sage-200 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
-                title="Export current view to Excel (.xlsx)"
-              >
-                <Download className="w-3.5 h-3.5 text-sage-600" />
-                <span>Export Excel</span>
-              </button>
+              {viewMode !== 'breakdown' && (
+                <button
+                  type="button"
+                  onClick={() => exportClassPerformanceToExcel({
+                    selectedClass,
+                    students: filteredStudents,
+                    activities: dataset.activities
+                  })}
+                  disabled={filteredStudents.length === 0}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sage-50 hover:bg-sage-100 text-sage-700 border border-sage-200 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+                  title="Export current view to Excel (.xlsx)"
+                >
+                  <Download className="w-3.5 h-3.5 text-sage-600" />
+                  <span>Export Excel</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -422,6 +488,21 @@ export default function ClassPerformance() {
             <div className="text-xs text-slate-500 font-medium">
               Showing <span className="font-mono font-bold text-slate-800">{filteredStudents.length}</span> of <span className="font-mono font-bold text-slate-800">{aggregatedStudents.length}</span> students
             </div>
+            
+            <div className="flex items-center gap-2">
+               <span className="text-slate-400 text-[11px] uppercase">Sort:</span>
+               <select 
+                 value={sortConfig} 
+                 onChange={(e) => setSortConfig(e.target.value)}
+                 className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg px-2 py-1 outline-none focus:border-sage-500"
+               >
+                 <option value="name-asc">Name (A-Z)</option>
+                 <option value="sg-desc">Highest SG%</option>
+                 <option value="gwa-asc">Best GWA</option>
+                 <option value="absences-desc">Most Absences</option>
+                 <option value="risk-desc">At-Risk First</option>
+               </select>
+            </div>
           </div>
         </div>
 
@@ -430,9 +511,13 @@ export default function ClassPerformance() {
           <div className="p-6">
             <TableSkeleton rows={8} cols={6} />
           </div>
-        ) : viewMode === 'pivot' ? (
+        ) : viewMode === 'breakdown' ? (
           <div className="p-4 sm:p-5">
-            <ReportsPivotPanel rows={pivotRows} />
+            <ReportsPivotPanel rows={pivotRows} onShowInfo={setInfoModalData} selectedClass={selectedClass} />
+          </div>
+        ) : viewMode === 'analytics' ? (
+          <div className="p-4 sm:p-5">
+            <ClassAnalyticsPanel students={filteredStudents} activities={dataset.activities} />
           </div>
         ) : filteredStudents.length === 0 ? (
           <div className="py-16 text-center text-slate-400">
@@ -450,10 +535,17 @@ export default function ClassPerformance() {
                   {viewMode === 'summary' && (
                     <th className="py-3 px-4 text-center">Activities Graded</th>
                   )}
+                  {viewMode === 'summary' && (
+                    <>
+                      <th className="py-3 px-4 text-right">Midterm Rating (MR)</th>
+                      <th className="py-3 px-4 text-right">Tentative Final (TFR)</th>
+                    </>
+                  )}
                   <th className="py-3 px-4 text-right">Overall Grade (SG)</th>
                   <th className="py-3 px-4 text-right" title="Official posted grade, or live tentative draft if unposted.">Grade (GWA)</th>
                   <th className="py-3 px-4 text-center" title="Absences recorded for this class via attendance_records.">Absences</th>
                   <th className="py-3 px-4 text-center">Performance Status</th>
+                  <th className="py-3 px-4 text-center">Remarks</th>
 
                   {/* Dynamic Activity Columns in Grid View Mode */}
                   {viewMode === 'grid' && dataset.activities.map(act => (
@@ -487,6 +579,16 @@ export default function ClassPerformance() {
                           {student.gradedCount} / {student.activitiesCount}
                         </td>
                       )}
+                      {viewMode === 'summary' && (
+                        <>
+                          <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-700">
+                            {student.mrPercentage !== null ? `${student.mrPercentage}%` : '—'}
+                          </td>
+                          <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-700">
+                            {student.tfrPercentage !== null ? `${student.tfrPercentage}%` : '—'}
+                          </td>
+                        </>
+                      )}
                       <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
                         {student.overallPercentage !== null ? `${student.overallPercentage}%` : '—'}
                       </td>
@@ -510,11 +612,26 @@ export default function ClassPerformance() {
                           {student.overallStatus || 'Ungraded'}
                         </span>
                       </td>
+                      <td className="py-3.5 px-4 text-center">
+                        {student.remarks ? (
+                          <span className={cn(
+                            "inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border",
+                            student.remarks === 'Passed'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-rose-50 text-rose-700 border-rose-200'
+                          )}>
+                            {student.remarks}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
 
                       {/* Dynamic Activity Scores in Grid View Mode */}
                       {viewMode === 'grid' && dataset.activities.map(act => {
                         const scoreData = student.scores?.[act.activity_id];
                         const hasScore = scoreData?.score !== null && scoreData?.score !== undefined;
+                        
                         return (
                           <td key={act.activity_id} className="py-3.5 px-4 text-center font-mono">
                             {hasScore ? (
@@ -549,6 +666,14 @@ export default function ClassPerformance() {
           </div>
         )}
       </div>
+      {/* Info Modal */}
+      <InfoModal 
+        isOpen={!!infoModalData}
+        title={infoModalData?.title}
+        message={infoModalData?.message}
+        onClose={() => setInfoModalData(null)}
+      />
+
     </div>
   );
 }

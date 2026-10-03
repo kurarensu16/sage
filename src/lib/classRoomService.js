@@ -579,12 +579,14 @@ export async function getClassPriorityRoster(classRecordId) {
         }
       });
 
-      // Tentative GWA computation
+      // Tentative GWA computation — ALWAYS prefer the live computation that matches
+      // the Score Sheet's current state. Only fall back to the posted grade if the
+      // tentative engine cannot produce a value (e.g. no scores at all).
       let approxGwa = null;
-      if (finalPosted) {
-        approxGwa = resolveOfficialGwa(finalPosted).gwa;
-      } else if (hasValidScores && tentativeDetails.isComplete) {
+      if (hasValidScores && tentativeDetails.gwa !== null) {
         approxGwa = tentativeDetails.gwa;
+      } else if (finalPosted) {
+        approxGwa = resolveOfficialGwa(finalPosted).gwa;
       }
 
 
@@ -643,6 +645,8 @@ export async function getClassPriorityRoster(classRecordId) {
         risk_analysis: riskData,
         evaluation: evalMap[stud.user_id] || null,
         sg_percentage: tentativeDetails.semesterResult?.sg ?? null,
+        mr_percentage: tentativeDetails.semesterResult?.mr ?? null,
+        tfr_percentage: tentativeDetails.semesterResult?.tfr ?? null,
         is_complete: tentativeDetails.isComplete
       };
     });
