@@ -641,7 +641,9 @@ export async function getClassPriorityRoster(classRecordId) {
         badge_color: riskData.badge_color,
         trajectory_delta: riskData.trajectory_delta,
         risk_analysis: riskData,
-        evaluation: evalMap[stud.user_id] || null
+        evaluation: evalMap[stud.user_id] || null,
+        sg_percentage: tentativeDetails.semesterResult?.sg ?? null,
+        is_complete: tentativeDetails.isComplete
       };
     });
 

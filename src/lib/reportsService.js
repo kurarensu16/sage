@@ -8,6 +8,7 @@ import { PASSING_GRADE, HIGH_CUTOFF, SAME_MARGIN } from './constants';
 import { computeUnifiedRisk } from './riskEngine';
 import { RISK_TIERS, resolveOfficialGwa, countAttendance } from './academicPolicy';
 import { findMostAdvancedPostedGrade } from './gradeMilestones';
+import { getClassPriorityRoster } from './classRoomService';
 import * as XLSX from 'xlsx-js-style';
 
 /**
@@ -191,7 +192,14 @@ export async function fetchClassReportDataset(classRecordId) {
     });
   });
 
-  return { enrollments: enrollments || [], activities: activities || [], rows, gwaByStudent, attendanceByStudent };
+  // 6. Fetch the dynamic risk roster (which handles actual formulas and tentative grades)
+  const rosterData = await getClassPriorityRoster(classRecordId);
+  const rosterByStudent = new Map();
+  (rosterData || []).forEach(s => {
+    rosterByStudent.set(s.user_id, s);
+  });
+
+  return { enrollments: enrollments || [], activities: activities || [], rows, gwaByStudent, attendanceByStudent, rosterByStudent };
 }
 
 /**
@@ -201,9 +209,10 @@ export async function fetchClassReportDataset(classRecordId) {
  * @param {Array} rows
  * @param {Object<string, number|null>} [gwaByStudent] - real official GWA for this class, by student_id (item 2.8)
  * @param {Object<string, number>} [attendanceByStudent] - real absence count for this class, by student_id
+ * @param {Map<string, Object>} [rosterByStudent] - dynamic roster data including tentative grades
  * @returns {Array}
  */
-export function aggregateByStudent(rows = [], gwaByStudent = {}, attendanceByStudent = {}) {
+export function aggregateByStudent(rows = [], gwaByStudent = {}, attendanceByStudent = {}, rosterByStudent = new Map()) {
   const studentMap = new Map();
 
   rows.forEach(row => {
@@ -235,37 +244,41 @@ export function aggregateByStudent(rows = [], gwaByStudent = {}, attendanceByStu
   });
 
   return Array.from(studentMap.values()).map(stud => {
-    const overallPercentage = stud.gradedCount > 0
-      ? Math.round(stud.totalPercentage / stud.gradedCount)
-      : null;
+    const rosterData = rosterByStudent.get(stud.studentId);
+    
+    // Dynamic Handle: use the real database formula SG percentage instead of an unweighted average.
+    // If not available, fallback to the old unweighted logic (e.g. if roster computation fails).
+    let overallPercentage = null;
+    if (rosterData && rosterData.sg_percentage !== null && rosterData.sg_percentage !== undefined) {
+      overallPercentage = Math.round(Number(rosterData.sg_percentage));
+    } else if (stud.gradedCount > 0) {
+      overallPercentage = Math.round(stud.totalPercentage / stud.gradedCount);
+    }
 
-    // Unified risk integration using single source of truth (riskEngine.computeUnifiedRisk).
-    // FIXED (item 2.8): previously approximated with a binary pass/fail GWA proxy (2.00/3.50)
-    // derived from in-progress activity percentages. Now uses this student's real official GWA
-    // for this class (resolveOfficialGwa on the most advanced posted milestone) and real
-    // attendance, matching the same inputs StudentRisk.jsx uses for the same student/class —
-    // so this report's at-risk flag can no longer silently disagree with that page. When no
-    // milestone has been posted yet for this class, avgGwa stays null (missing, not fabricated
-    // as failing) — same "unencoded is not zero" rule applied everywhere else in this codebase.
-    const realGwa = Number.isFinite(gwaByStudent[stud.studentId]) ? gwaByStudent[stud.studentId] : null;
-    const absenceCount = attendanceByStudent[stud.studentId] || 0;
-    const riskResult = computeUnifiedRisk({
-      avgGwa: realGwa,
-      absenceCount,
-      consecutiveAbsences: absenceCount >= 2 ? 2 : 0
-    });
-    const riskLevel = riskResult?.risk_level || 'low';
-    // RISK_TIERS.MODERATE.min (25), matching StudentRisk.jsx's faculty-facing "needs
-    // attention" threshold — not the stricter isStudentAtRisk() (high/critical only)
-    // that dean/admin KPI counts use. Reports-Module-Plan-Faculty-Side.md §13.4 is
-    // explicit that this card must reuse StudentRisk's definition, not a second one.
-    const isAtRisk = (riskResult?.composite_score || 0) >= RISK_TIERS.MODERATE.min;
+    // Official vs Tentative GWA check
+    let realGwa = null;
+    let isTentative = false;
+    
+    if (rosterData && Number.isFinite(rosterData.current_gwa)) {
+      realGwa = rosterData.current_gwa; // Always use the live dynamic grade to match Score Sheet
+      // It's tentative if no grade is posted, OR if the live grade has advanced beyond the posted grade
+      if (!Number.isFinite(gwaByStudent[stud.studentId]) || gwaByStudent[stud.studentId] !== realGwa) {
+        isTentative = true;
+      }
+    } else if (Number.isFinite(gwaByStudent[stud.studentId])) {
+      realGwa = gwaByStudent[stud.studentId]; // Fallback to posted if roster fails
+    }
+
+    const absenceCount = rosterData ? rosterData.absences : (attendanceByStudent[stud.studentId] || 0);
+    const riskLevel = rosterData ? rosterData.risk_level : 'low';
+    const isAtRisk = rosterData ? ((rosterData.risk_score || 0) >= RISK_TIERS.MODERATE.min) : false;
 
     return {
       ...stud,
       overallPercentage,
       overallStatus: getStudentStatus(overallPercentage),
       officialGwa: realGwa,
+      isTentative,
       absenceCount,
       riskLevel,
       isAtRisk
@@ -358,7 +371,8 @@ export function exportClassPerformanceToExcel({ selectedClass, students = [], ac
       'Student Name': s.studentName,
       'Student ID': s.studentNumber,
       'Activities Graded': `${s.gradedCount} / ${s.activitiesCount}`,
-      'Overall Average': s.overallPercentage !== null ? `${s.overallPercentage}%` : '—',
+      'Overall Grade (SG)': s.overallPercentage !== null ? `${s.overallPercentage}%` : '—',
+      'Grade (GWA)': s.officialGwa !== null ? `${s.officialGwa.toFixed(2)}${s.isTentative ? ' (Tentative)' : ''}` : '—',
       'Performance Status': s.overallStatus || 'Ungraded',
       'At-Risk Standing': s.isAtRisk ? 'At-Risk' : 'On Track'
     };
@@ -445,7 +459,7 @@ export async function fetchTermCohortMetrics(classRecordId) {
   }
 
   const { rows } = await fetchClassReportDataset(classRecordId);
-  const students = aggregateByStudent(rows);
+  const students = aggregateByStudent(rows, {}, {}, new Map()); // Note: Term cohort metrics may need full rosterData if exact formulas are needed there
   const classSize = students.length;
 
   const gradedStudents = students.filter(s => s.overallPercentage !== null);

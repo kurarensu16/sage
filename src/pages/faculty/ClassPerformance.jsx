@@ -36,7 +36,7 @@ export default function ClassPerformance() {
   const [selectedClassId, setSelectedClassId] = useState(initialClassId);
   const [loadingClasses, setLoadingClasses] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
-  const [dataset, setDataset] = useState({ enrollments: [], activities: [], rows: [], gwaByStudent: {}, attendanceByStudent: {} });
+  const [dataset, setDataset] = useState({ enrollments: [], activities: [], rows: [], gwaByStudent: {}, attendanceByStudent: {}, rosterByStudent: new Map() });
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewMode, setViewMode] = useState('summary');
@@ -106,8 +106,8 @@ export default function ClassPerformance() {
 
   // 3. Aggregate data by student (item 2.8: real GWA/attendance, not a fabricated proxy)
   const aggregatedStudents = useMemo(() => {
-    return aggregateByStudent(dataset.rows, dataset.gwaByStudent, dataset.attendanceByStudent);
-  }, [dataset.rows, dataset.gwaByStudent, dataset.attendanceByStudent]);
+    return aggregateByStudent(dataset.rows, dataset.gwaByStudent, dataset.attendanceByStudent, dataset.rosterByStudent);
+  }, [dataset.rows, dataset.gwaByStudent, dataset.attendanceByStudent, dataset.rosterByStudent]);
 
   // 4. Build summary cards metrics
   const summary = useMemo(() => {
@@ -450,8 +450,8 @@ export default function ClassPerformance() {
                   {viewMode === 'summary' && (
                     <th className="py-3 px-4 text-center">Activities Graded</th>
                   )}
-                  <th className="py-3 px-4 text-right">Overall Average</th>
-                  <th className="py-3 px-4 text-right" title="Official posted grade for this class, resolved from posted_grades — independent of the in-progress activity average to its left.">Official Grade (GWA)</th>
+                  <th className="py-3 px-4 text-right">Overall Grade (SG)</th>
+                  <th className="py-3 px-4 text-right" title="Official posted grade, or live tentative draft if unposted.">Grade (GWA)</th>
                   <th className="py-3 px-4 text-center" title="Absences recorded for this class via attendance_records.">Absences</th>
                   <th className="py-3 px-4 text-center">Performance Status</th>
 
@@ -491,7 +491,16 @@ export default function ClassPerformance() {
                         {student.overallPercentage !== null ? `${student.overallPercentage}%` : '—'}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
-                        {student.officialGwa !== null ? student.officialGwa.toFixed(2) : '—'}
+                        {student.officialGwa !== null ? (
+                          <div className="flex flex-col items-end">
+                            <span>{student.officialGwa.toFixed(2)}</span>
+                            {student.isTentative && (
+                              <span className="text-[9px] font-sans font-semibold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded mt-0.5" title="Live draft from Score Sheet. Not yet officially posted to the Dean.">
+                                Tentative
+                              </span>
+                            )}
+                          </div>
+                        ) : '—'}
                       </td>
                       <td className="py-3.5 px-4 text-center font-mono">
                         {student.absenceCount}
