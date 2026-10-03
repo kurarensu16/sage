@@ -8,6 +8,7 @@ import {
   resolveGradingFormula
 } from '../lib/gradingMath';
 import { calculateAcademicRisk } from '../lib/riskEngine';
+import { RISK_TIERS } from '../lib/academicPolicy';
 import EnrollmentTypeBadge from './common/EnrollmentTypeBadge';
 
 export default function StudentRow({
@@ -227,8 +228,11 @@ export default function StudentRow({
   const tfr = semestralCalc.tfr !== null ? semestralCalc.tfr : '—';
   const sg = semestralCalc.sg !== null ? semestralCalc.sg : '—';
 
-  const storedAbsences = localStorage.getItem(`sage_absences_${classCode}_${student.id}`);
-  const absences = storedAbsences !== null ? parseInt(storedAbsences) : 0;
+  // Absences come from the `student` prop (fetched from attendance_records by the
+  // parent page and kept in its own state), not a localStorage cache — a stale or
+  // unwritten cache previously made this silently read 0 whenever this page was
+  // opened without ScoreInput having run first in the same browser.
+  const absences = Number.isFinite(student?.absences) ? student.absences : 0;
   const isFDA = absences >= 4;
 
   const rawGrade = semestralCalc.sg !== null ? semestralCalc.gwa : '—';
@@ -285,14 +289,17 @@ export default function StudentRow({
   };
 
   const currentGwaNum = semestralCalc.sg !== null ? parseFloat(semestralCalc.gwa) : null;
+  // failingSubjectsCount/majorExamAverage/hasGradeBelow200 used to be passed here, but
+  // calculateAcademicRisk's signature no longer accepts them (C12) — they were silently
+  // discarded. isSummer was already computed above but never threaded in, so summer
+  // classes were silently evaluated as regular terms for the stricter summer attendance
+  // check at riskEngine.js:116.
   const liveRiskData = calculateAcademicRisk({
     currentGwa: currentGwaNum,
-    failingSubjectsCount: (currentGwaNum !== null && currentGwaNum > 3.00) ? 1 : 0,
-    majorExamAverage: 85,
     absenceCount: absences,
     previousTermRating: prelimResult.rating,
     currentTermRating: midtermResult.rating,
-    hasGradeBelow200: false // Scholarship floor breach is NOT a general risk factor (see riskUtils.js)
+    isSummer
   });
 
   const effectiveRiskScore = liveRiskData.composite_score;
@@ -322,23 +329,23 @@ export default function StudentRow({
             <span className="truncate">{student.name}</span>
             <EnrollmentTypeBadge enrollmentType={student.enrollment_type} className="shrink-0" />
           </div>
-          {effectiveRiskScore >= 25 && (
+          {effectiveRiskScore >= RISK_TIERS.MODERATE.min && (
             <button
               type="button"
               onClick={() => onSelectRiskStudent && onSelectRiskStudent(student)}
               className={cn(
                 "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold shrink-0 border transition-all",
-                effectiveRiskScore >= 75 ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 cursor-pointer" :
-                  effectiveRiskScore >= 50 ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 cursor-pointer" :
+                effectiveRiskScore >= RISK_TIERS.CRITICAL.min ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 cursor-pointer" :
+                  effectiveRiskScore >= RISK_TIERS.HIGH.min ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 cursor-pointer" :
                     "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 hover:border-amber-300 cursor-pointer"
               )}
               title="Click to evaluate student risk & interventions"
             >
               <span className={cn(
                 "w-1.5 h-1.5 rounded-full",
-                effectiveRiskScore >= 50 ? "bg-rose-500 animate-pulse" : "bg-amber-500"
+                effectiveRiskScore >= RISK_TIERS.HIGH.min ? "bg-rose-500 animate-pulse" : "bg-amber-500"
               )} />
-              {effectiveRiskScore >= 75 ? 'Critical' : effectiveRiskScore >= 50 ? 'High' : 'Watch'}
+              {effectiveRiskScore >= RISK_TIERS.CRITICAL.min ? 'Critical' : effectiveRiskScore >= RISK_TIERS.HIGH.min ? 'High' : 'Watch'}
             </button>
           )}
         </div>

@@ -15,7 +15,10 @@ import { findMostAdvancedPostedGrade } from './gradeMilestones';
  */
 export function getEnrollmentType(studentSectionId, classSectionId) {
   if (!studentSectionId) return 'Irregular';
-  if (!classSectionId) return 'Regular';
+  // A class with no section assigned can't match any student's section, so the
+  // SQL twin's `u.section_id = v_section_id` compares against NULL and evaluates
+  // to NULL (never TRUE), falling through its CASE to 'Irregular'. Match that.
+  if (!classSectionId) return 'Irregular';
   return studentSectionId === classSectionId ? 'Regular' : 'Irregular';
 }
 

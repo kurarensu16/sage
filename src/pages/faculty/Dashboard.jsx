@@ -31,7 +31,6 @@ import {
 } from '../../components/faculty/FacultyCharts';
 import { getClassPriorityRoster } from '../../lib/classRoomService';
 import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
-import { getTransmutedGrade } from '../../lib/gradingMath';
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
@@ -312,13 +311,17 @@ export default function Dashboard() {
           const trajectory = termNames.map(termName => {
             const rList = termRatings[termName] || [];
             if (rList.length > 0) {
+              // Per Unify-Academic-Rules-Across-ASPIRE.md Step 15 (C11): a cohort mean of
+              // 0-100 ratings is not anybody's GWA. Previously this averaged the ratings
+              // THEN transmuted the average into a field literally called `avgGwa` —
+              // presented to faculty as "Class GWA" when it was never a real GWA at all.
+              // Kept as the raw average rating (0-100%); never transmute a cohort mean.
               const avgR = rList.reduce((a, b) => a + b, 0) / rList.length;
-              const gwa = getTransmutedGrade(avgR);
               const pass = Math.round((rList.filter(r => r >= 75).length / rList.length) * 100);
-              return { term: termName, avgGwa: gwa, passRate: pass, examAvg: Math.round(avgR) };
+              return { term: termName, avgRating: Math.round(avgR), passRate: pass, examAvg: Math.round(avgR) };
             }
-            return { term: termName, avgGwa: null, passRate: null, examAvg: null };
-          }).filter(d => d.avgGwa !== null); // Only include terms with actual data
+            return { term: termName, avgRating: null, passRate: null, examAvg: null };
+          }).filter(d => d.avgRating !== null); // Only include terms with actual data
 
           setTrajectoryData(trajectory);
         }

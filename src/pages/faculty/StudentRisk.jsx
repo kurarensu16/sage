@@ -6,6 +6,7 @@ import { TableSkeleton } from '../../components/common/Skeleton';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { getClassPriorityRoster } from '../../lib/classRoomService';
+import { RISK_TIERS } from '../../lib/academicPolicy';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
 import EnrollmentTypeBadge from '../../components/common/EnrollmentTypeBadge';
 
@@ -79,9 +80,16 @@ export default function StudentRisk({ mode = 'risk' }) {
   });
   const uniqueStudents = Array.from(uniqueStudentsMap.values());
 
+  // Threshold is RISK_TIERS.MODERATE.min (25), not the prior hardcoded 20 — this page
+  // deliberately shows Moderate-and-worse (a broader "needs attention" list for faculty),
+  // not just the stricter High/Critical-only isStudentAtRisk() used for dean/Reports KPI
+  // counting. RISK_TIERS is contiguous and exhaustive (0-100, no gaps), so `score >= 25`
+  // is already equivalent to "level is moderate, high, or critical" — the previous
+  // risk_level OR-clauses were redundant with it AND the `>= 20` constant wrongly pulled
+  // in students actually in the LOW tier (score 20-24) onto an "At-Risk Students" page.
   const visibleStudents = isEvaluateMode
     ? uniqueStudents
-    : uniqueStudents.filter(student => (student.risk_score || 0) >= 20 || student.risk_level === 'high' || student.risk_level === 'critical' || student.risk_level === 'moderate');
+    : uniqueStudents.filter(student => (student.risk_score || 0) >= RISK_TIERS.MODERATE.min);
 
   const handleEvaluationSaved = (saved) => {
     setStudents(prev => prev.map(student => (

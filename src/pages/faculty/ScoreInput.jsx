@@ -6,7 +6,7 @@ import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Min
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { notifyGradesPosted, notifyGradePosted, notifyGradeChanged } from '../../lib/notificationDispatcher';
+import { notifyGradePosted, notifyGradeChanged } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import {
   calculateSemestralGrade,
@@ -186,12 +186,9 @@ export default function ScoreInput() {
       const draftRaw = localStorage.getItem(STORAGE_KEY);
       const draft = draftRaw ? JSON.parse(draftRaw) : {};
       
-      const storedAbsences = localStorage.getItem(`sage_absences_${classRecordId}_${student.id}`);
-      const absences = storedAbsences !== null ? parseInt(storedAbsences) : 0;
-
       return {
         ...student,
-        absences,
+        absences: student.absences ?? 0,
         periods: {
           Prelim: draft.Prelim || {},
           Midterm: draft.Midterm || {},
@@ -588,7 +585,11 @@ export default function ScoreInput() {
           setActivities(loadedActivities);
         }
 
-        // Fetch actual absences count from Supabase to sync with StudentRow
+        // Fetch actual absences count from Supabase and merge into state directly —
+        // was previously written to localStorage and re-read by StudentRow / here /
+        // PostedGradesView, which left PostedGradesView (no writer in its own route)
+        // always reading 0, and any of these screens reading a stale count if opened
+        // out of order. The DB is the only source of truth now.
         const { data: absenceData } = await supabase
           .from('attendance_records')
           .select('student_id')
@@ -600,10 +601,7 @@ export default function ScoreInput() {
           absenceData.forEach(rec => {
             absenceCounts[rec.student_id] = (absenceCounts[rec.student_id] || 0) + 1;
           });
-          studentList.forEach(student => {
-            const count = absenceCounts[student.id] || 0;
-            localStorage.setItem(`sage_absences_${classRecordId}_${student.id}`, count.toString());
-          });
+          setStudents(prev => prev.map(s => ({ ...s, absences: absenceCounts[s.id] || 0 })));
         }
 
         // 4. Fetch saved term scores from db
@@ -1304,6 +1302,16 @@ export default function ScoreInput() {
 
       const postRows = [];
       const changedStudentIds = [];
+      // Captured per student so the grade_posted/grade_changed dispatch below can thread the
+      // real term rating/GWA into the notification payload (needed for the guardian email's
+      // "grade for that specific term" line) without a second pass or re-querying posted_grades.
+      const studentGradeResults = {};
+      // Per-student remark, captured alongside changedStudentIds, for the grade_changed
+      // dispatch below. gradeChangeRevision is shared by every student in this single post
+      // invocation so a retried/duplicate click dedupes, while a genuinely later relock gets
+      // a fresh revision and notifies again.
+      const changedStudentRemarks = [];
+      const gradeChangeRevision = Date.now();
       const updatedLockedMilestones = Array.from(new Set([
         ...lockedMilestones, 
         newMilestoneLock,
@@ -1386,6 +1394,8 @@ export default function ScoreInput() {
         const effectiveGrade = targetMilestone === 'semestral' ? computedGWA : toEffectiveGradeForPosting(computedTermGrade);
         if (effectiveGrade === null) throw new Error(`${stud.name}: no complete rating is available for this milestone.`);
 
+        studentGradeResults[stud.id] = { rating: computedTermGrade, gwa: effectiveGrade };
+
         const oldRecord = existingMap[stud.id];
         if (!isFirstPost) {
           if (
@@ -1395,6 +1405,7 @@ export default function ScoreInput() {
             oldRecord.remarks !== remarksLabel
           ) {
             changedStudentIds.push(stud.id);
+            changedStudentRemarks.push({ student_id: stud.id, student_name: stud.name, remark: remarksLabel });
           }
         }
 
@@ -1455,7 +1466,10 @@ export default function ScoreInput() {
           term: termNotificationName,
           students: students.map(s => ({
             student_id: s.id,
-            remark: s.remarks || 'Posted'
+            student_name: s.name,
+            remark: s.remarks || 'Posted',
+            rating: studentGradeResults[s.id]?.rating ?? null,
+            gwa: studentGradeResults[s.id]?.gwa ?? null
           })),
           subject: {
             code: classInfo?.subjects?.code || '',
@@ -1466,26 +1480,31 @@ export default function ScoreInput() {
         console.warn('Error dispatching notifyGradePosted:', err);
       }
 
-      // Dispatch notifications to enrolled students in section
-      const targetSectionId = classInfo?.sections?.section_id || classInfo?.section_id;
-      if (targetSectionId) {
-        if (isFirstPost) {
-          await notifyGradesPosted({
-            sectionId: targetSectionId,
-            subjectCode: classInfo?.subjects?.code || '',
-            termName: termNotificationName,
-            facultyName: actorName,
-            isUpdate: false
-          });
-        } else if (changedStudentIds.length > 0) {
-          await notifyGradesPosted({
-            sectionId: targetSectionId,
-            subjectCode: classInfo?.subjects?.code || '',
-            termName: termNotificationName,
-            facultyName: actorName,
-            studentIds: changedStudentIds,
-            isUpdate: true
-          });
+      // On first post, notifyGradePosted() above already notified every student in the
+      // roster (idempotent, deduped per class_record_id+term+student) — nothing further
+      // to dispatch here. On a relock, that call no-ops for every student via dedupe, so
+      // students whose grade actually changed get a distinct grade_changed notification
+      // instead (also deduped, per-revision, so a doubled click can't double-notify).
+      if (!isFirstPost && changedStudentRemarks.length > 0) {
+        for (const { student_id, student_name, remark } of changedStudentRemarks) {
+          try {
+            await notifyGradeChanged({
+              classRecordId,
+              term: termNotificationName,
+              studentId: student_id,
+              studentName: student_name,
+              subject: {
+                code: classInfo?.subjects?.code || '',
+                name: classInfo?.subjects?.name || classInfo?.subject_name || ''
+              },
+              remark,
+              rating: studentGradeResults[student_id]?.rating ?? null,
+              gwa: studentGradeResults[student_id]?.gwa ?? null,
+              revision: gradeChangeRevision
+            });
+          } catch (err) {
+            console.warn('Error dispatching notifyGradeChanged:', err);
+          }
         }
       }
 

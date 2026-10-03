@@ -59,7 +59,10 @@ function computeTermGwa(studentId, term, gradesByStudent, scoresMap, colMap, cla
   Object.keys(studentScores).forEach(classRecId => {
     const tSc = studentScores[classRecId]?.[term];
     if (tSc) {
-      const config = classConfigMap[classRecId] ?? null;
+      // `?? {}`, not `?? null` — computeTentativeGradeDetails's `options` param only
+      // defaults to `{}` when passed `undefined`; an explicit `null` throws
+      // (`Cannot read properties of null (reading 'formula')`), confirmed by execution.
+      const config = classConfigMap[classRecId] ?? {};
       const details = computeTentativeGradeDetails(studentScores[classRecId], colMap[classRecId], config);
       const termRating = details.termRatings[term];
       if (termRating !== null && termRating !== undefined) {
@@ -200,7 +203,7 @@ export default function Dashboard() {
           classroomsFiltered.map(record => record.subjects?.computation_id).filter(Boolean)
         )];
         const classRecordIds = classroomsFiltered.map(record => record.class_record_id);
-        const [{ data: computationData }, { data: activityData }] = await Promise.all([
+        const [{ data: computationData }, { data: activityData }, { data: attendanceData }] = await Promise.all([
           computationIds.length > 0
             ? supabase
                 .from('grade_computations')
@@ -212,8 +215,32 @@ export default function Dashboard() {
                 .from('class_activities')
                 .select('activity_id, class_record_id, term, name, max_score, component_id')
                 .in('class_record_id', classRecordIds)
+            : Promise.resolve({ data: [] }),
+          classRecordIds.length > 0
+            ? supabase
+                .from('attendance_records')
+                .select('student_id, class_record_id')
+                .in('class_record_id', classRecordIds)
+                .eq('status', 'Absent')
             : Promise.resolve({ data: [] })
         ]);
+
+        // Per student, per class_record_id absence counts (C10: FDA is a per-course
+        // rule, never a cross-course sum). The department KPI below reduces this to
+        // each student's worst course — consistent with how AcademicInsights.jsx and
+        // advisingEngine.js already evaluate FDA as `some(course => absences >= 4)`
+        // rather than summing absences across every class a student is enrolled in.
+        const absencesByStudentClass = {};
+        (attendanceData || []).forEach(rec => {
+          absencesByStudentClass[rec.student_id] ||= {};
+          absencesByStudentClass[rec.student_id][rec.class_record_id] =
+            (absencesByStudentClass[rec.student_id][rec.class_record_id] || 0) + 1;
+        });
+        const worstCourseAbsences = (studentId) => {
+          const byClass = absencesByStudentClass[studentId];
+          if (!byClass) return 0;
+          return Math.max(0, ...Object.values(byClass));
+        };
         const activityIds = (activityData || []).map(activity => activity.activity_id);
         const { data: granularScoreData } = activityIds.length > 0
           ? await supabase
@@ -344,7 +371,7 @@ export default function Dashboard() {
               const tentativeVal = computeTentativeGrade(
                 classRecordScores,
                 classRecordCols,
-                classConfigMap[classRecId] ?? null
+                classConfigMap[classRecId] ?? {}
               );
               if (tentativeVal !== null) {
                 gradeValues.push(tentativeVal);
@@ -353,8 +380,6 @@ export default function Dashboard() {
           });
 
           const avgGwa = computeStudentGwa(gradeValues).gwa;
-
-          const failingCount = gradeValues.filter(v => v > 3.00).length;
 
           if (avgGwa !== null) {
             allStudentGwas.push(avgGwa);
@@ -370,7 +395,24 @@ export default function Dashboard() {
               gwaDist.failing++;
             }
 
-            const riskResult = computeUnifiedRisk({ avgGwa, failingCount });
+            // `failingCount` used to be passed here, but it isn't a real
+            // computeUnifiedRisk parameter name — it was silently discarded every
+            // time. Threading real attendance instead: absenceCount is this
+            // student's worst single course (per C10 — FDA is per-course, never a
+            // cross-course sum), with the same `>= 2` consecutiveAbsences heuristic
+            // classRoomService.js's getClassPriorityRoster already uses for
+            // per-class rosters. Trajectory (previousTermRating/currentTermRating)
+            // and isSummer are left at their defaults rather than fabricated —
+            // neither generalizes cleanly to a department-wide aggregate (a
+            // student can be in both a Summer and a regular class at once across
+            // different subjects), and the plan's own Unify-Academic-Rules audit
+            // already flags trajectory coverage as "open by design, not blocking".
+            const absenceCount = worstCourseAbsences(s.user_id);
+            const riskResult = computeUnifiedRisk({
+              avgGwa,
+              absenceCount,
+              consecutiveAbsences: absenceCount >= 2 ? 2 : 0
+            });
             if (isStudentAtRisk(riskResult.risk_level)) {
               highRiskCount++;
             } else if (isStudentModerateRisk(riskResult.risk_level)) {
@@ -441,12 +483,16 @@ export default function Dashboard() {
         });
 
         // ── 1. Multi-Term Academic Trajectory ─────────────────────────────────
+        // A term with zero posted/tentative grades yet (e.g. Final before anyone has
+        // final grades) is genuinely unknown — never invented. Previously this branch
+        // projected a plausible-looking GWA from a hardcoded delta plus fabricated
+        // honors/at-risk/pass-rate counts, shown to the dean with no indication they
+        // were invented. Matches the same "never fabricate" standard already enforced
+        // everywhere else in this codebase (ungraded activities excluded from
+        // averages, Phase 9 scholarship streaks deferred for the same reason).
         const termProgression = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
-        let runningAvg = allStudentGwas.length > 0 
-          ? parseFloat((allStudentGwas.reduce((a, b) => a + b, 0) / allStudentGwas.length).toFixed(2))
-          : 1.85;
 
-        const traj = termProgression.map((termName, tIdx) => {
+        const traj = termProgression.map((termName) => {
           const termGrades = [];
           deptStudents.forEach(s => {
             const g = computeTermGwa(s.user_id, termName, gradesByStudent, scoresMap, colMap, classConfigMap);
@@ -454,24 +500,13 @@ export default function Dashboard() {
           });
 
           const count = termGrades.length;
-          let avg, honors, atRisk, passing, passRate;
+          if (count === 0) return null;
 
-          if (count > 0) {
-            avg = parseFloat((termGrades.reduce((a, b) => a + b, 0) / count).toFixed(2));
-            runningAvg = avg;
-            honors = termGrades.filter(g => g <= 1.75).length;
-            atRisk = termGrades.filter(g => g > 3.00).length;
-            passing = termGrades.filter(g => g <= 3.00).length;
-            passRate = Math.round((passing / count) * 100);
-          } else {
-            // Projection for forthcoming terms based on term weights
-            const delta = tIdx === 2 ? -0.05 : tIdx === 3 ? -0.08 : 0.02;
-            avg = parseFloat(Math.max(1.10, Math.min(3.25, runningAvg + delta)).toFixed(2));
-            honors = Math.max(1, Math.round(deptStudents.length * 0.25));
-            atRisk = Math.max(0, Math.round(highRiskCount * 0.75));
-            passing = Math.max(0, deptStudents.length - atRisk);
-            passRate = deptStudents.length > 0 ? Math.round((passing / deptStudents.length) * 100) : 88;
-          }
+          const avg = parseFloat((termGrades.reduce((a, b) => a + b, 0) / count).toFixed(2));
+          const honors = termGrades.filter(g => g <= 1.75).length;
+          const atRisk = termGrades.filter(g => g > 3.00).length;
+          const passing = termGrades.filter(g => g <= 3.00).length;
+          const passRate = Math.round((passing / count) * 100);
 
           return {
             term: termName,
@@ -479,9 +514,9 @@ export default function Dashboard() {
             passRate,
             honorsCount: honors,
             atRiskCount: atRisk,
-            total: count > 0 ? count : (deptStudents.length || 16)
+            total: count
           };
-        });
+        }).filter(Boolean); // terms with no real data yet don't appear on the trajectory at all
         setTrajectoryData(traj);
 
         // ── 2. College Academic Health Distribution (Donut Chart) ─────────────
@@ -536,6 +571,10 @@ export default function Dashboard() {
                 const tVal = computeTentativeGrade(
                   studentScores[cId],
                   colMap[cId],
+                  // Bare subscript is intentional: an `undefined` miss correctly
+                  // triggers computeTentativeGrade's own `options = {}` default and
+                  // fails closed to `gwa: null`. Do NOT change this to `?? null` —
+                  // see the two sibling sites in this file for why that throws instead.
                   classConfigMap[cId]
                 );
                 if (tVal !== null) gradeValues.push(tVal);
@@ -546,7 +585,18 @@ export default function Dashboard() {
               const studentAvg = gradeValues.reduce((a, b) => a + b, 0) / gradeValues.length;
               secGwas.push(studentAvg);
               if (studentAvg <= 1.75) secHonors++;
-              if (studentAvg > 3.00 || gradeValues.some(v => v > 3.00)) secAtRisk++;
+              // Unified onto the canonical computeUnifiedRisk()/isStudentAtRisk() (item (c)) —
+              // this was a third, separate pure-GWA-failing rule in a file that already computes
+              // the department-wide highRiskCount via the shared engine above (line ~411). Reuses
+              // the same worstCourseAbsences() helper so a section's at-risk count agrees with the
+              // department-wide one for the same student, instead of a second hand-rolled copy.
+              const secAbsenceCount = worstCourseAbsences(s.user_id);
+              const secRiskResult = computeUnifiedRisk({
+                avgGwa: studentAvg,
+                absenceCount: secAbsenceCount,
+                consecutiveAbsences: secAbsenceCount >= 2 ? 2 : 0
+              });
+              if (isStudentAtRisk(secRiskResult.risk_level)) secAtRisk++;
             }
           });
 

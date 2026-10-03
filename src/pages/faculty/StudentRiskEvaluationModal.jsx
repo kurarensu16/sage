@@ -54,10 +54,15 @@ export default function StudentRiskEvaluationModal({
   // Compute live explainable risk metrics
   const riskAnalysis = useMemo(() => {
     if (!student) return null;
+    // failingSubjectsCount/majorExamAverage used to be passed here, but
+    // calculateAcademicRisk's signature no longer accepts them (C12) — they were
+    // silently discarded (the exam-average fallback divergence this caused across
+    // call sites was dead input, never a correctness bug once C12 landed).
+    // isSummer isn't threaded in: `student` (from getClassPriorityRoster) doesn't
+    // expose the class's semester, so it isn't available here without widening
+    // that roster's return shape — left at its default rather than guessed.
     return calculateAcademicRisk({
       currentGwa: student.current_gwa || null,
-      failingSubjectsCount: student.failing_count || 0,
-      majorExamAverage: student.exam_average !== undefined ? student.exam_average : 75,
       absenceCount: student.absences || 0,
       previousTermRating: student.term_ratings?.Prelim || null,
       currentTermRating: student.term_ratings?.Midterm || null

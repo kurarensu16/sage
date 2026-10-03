@@ -28,6 +28,7 @@ import {
   getClassPriorityRoster 
 } from '../../lib/classRoomService';
 import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
+import { RISK_TIERS } from '../../lib/academicPolicy';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
 import FacultyCreateClassroomModal from './FacultyCreateClassroomModal';
 import { cn } from '../../lib/utils';
@@ -571,7 +572,7 @@ export default function ClassRecordsList() {
                       {priorityStudents.map((stud) => (
                         <tr key={stud.user_id} className={cn(
                           "hover:bg-slate-50/80 transition-colors",
-                          stud.risk_score >= 50 && "bg-rose-50/30"
+                          stud.risk_score >= RISK_TIERS.HIGH.min && "bg-rose-50/30"
                         )}>
                           <td className="py-2 pl-3 pr-2">
                             <div className="font-semibold text-slate-900">
@@ -613,14 +614,14 @@ export default function ClassRecordsList() {
                           <td className="py-2 px-2 text-center">
                             <span className={cn(
                               "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold border",
-                              stud.risk_score >= 75 ? "bg-rose-50 text-rose-700 border-rose-200" :
-                              stud.risk_score >= 50 ? "bg-rose-50 text-rose-700 border-rose-200" :
-                              stud.risk_score >= 25 ? "bg-amber-50 text-amber-700 border-amber-200" :
+                              stud.risk_score >= RISK_TIERS.CRITICAL.min ? "bg-rose-50 text-rose-700 border-rose-200" :
+                              stud.risk_score >= RISK_TIERS.HIGH.min ? "bg-rose-50 text-rose-700 border-rose-200" :
+                              stud.risk_score >= RISK_TIERS.MODERATE.min ? "bg-amber-50 text-amber-700 border-amber-200" :
                               "bg-emerald-50 text-emerald-700 border-emerald-200"
                             )}>
                               <span className={cn(
                                 "w-1.5 h-1.5 rounded-full",
-                                stud.risk_score >= 50 ? "bg-rose-600" : stud.risk_score >= 25 ? "bg-amber-500" : "bg-emerald-500"
+                                stud.risk_score >= RISK_TIERS.HIGH.min ? "bg-rose-600" : stud.risk_score >= RISK_TIERS.MODERATE.min ? "bg-amber-500" : "bg-emerald-500"
                               )} />
                               {stud.risk_score}/100
                             </span>

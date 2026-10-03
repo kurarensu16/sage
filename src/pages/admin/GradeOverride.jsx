@@ -5,6 +5,18 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { notifyAdminGradeOverride } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
+import { getRemarks, toDbRemark, toDisplayRemark } from '../../lib/academicPolicy';
+
+// Badge color per DB remark value. Only 'passed' reads as success — every other state
+// (failed, FDA, incomplete, dropped) is visually distinct, never collapsed to one "Failed" look.
+const REMARK_BADGE_CLASS = {
+  passed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  failed: 'bg-rose-50 text-rose-700 border-rose-200',
+  fda: 'bg-rose-50 text-rose-700 border-rose-200',
+  incomplete: 'bg-amber-50 text-amber-700 border-amber-200',
+  dropped: 'bg-slate-100 text-slate-600 border-slate-200'
+};
+const remarkBadgeClass = (dbRemark) => REMARK_BADGE_CLASS[String(dbRemark || '').trim().toLowerCase()] || REMARK_BADGE_CLASS.failed;
 
 export default function GradeOverride() {
   const { user } = useAuth();
@@ -162,7 +174,7 @@ export default function GradeOverride() {
       return;
     }
 
-    const remarks = parsedGrade <= 3.00 ? 'passed' : 'failed';
+    const remarks = toDbRemark(getRemarks({ gwa: parsedGrade, isComplete: true }));
 
     try {
       const { error: updateErr } = await supabase
@@ -313,12 +325,8 @@ export default function GradeOverride() {
 
                       <div className="text-right">
                         <div className="text-lg font-bold font-mono text-slate-950">{grade.computedGrade.toFixed(2)}</div>
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border ${
-                          grade.remarks === 'passed' 
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                            : 'bg-rose-50 text-rose-700 border-rose-200'
-                        }`}>
-                          {grade.remarks === 'passed' ? 'Passed' : 'Failed'}
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border ${remarkBadgeClass(grade.remarks)}`}>
+                          {toDisplayRemark(grade.remarks)}
                         </span>
                       </div>
                     </div>
@@ -368,12 +376,8 @@ export default function GradeOverride() {
                           {grade.computedGrade.toFixed(2)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${
-                            grade.remarks === 'passed' 
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                              : 'bg-rose-50 text-rose-700 border-rose-200'
-                          }`}>
-                            {grade.remarks === 'passed' ? 'Passed' : 'Failed'}
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${remarkBadgeClass(grade.remarks)}`}>
+                            {toDisplayRemark(grade.remarks)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

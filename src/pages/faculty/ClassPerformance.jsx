@@ -9,21 +9,23 @@ import {
   buildSummaryCards,
   exportClassPerformanceToExcel
 } from '../../lib/reportsService';
-import { 
-  Users, 
-  AlertTriangle, 
-  CheckCircle2, 
-  TrendingUp, 
+import {
+  Users,
+  AlertTriangle,
+  CheckCircle2,
+  TrendingUp,
   AlertCircle,
   FileSpreadsheet,
   Search,
   BookOpen,
   Download,
   LayoutGrid,
-  List
+  List,
+  Table2
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { TableSkeleton } from '../../components/common/Skeleton';
+import ReportsPivotPanel from '../../components/faculty/ReportsPivotPanel';
 
 export default function ClassPerformance() {
   const { user } = useAuth();
@@ -34,7 +36,7 @@ export default function ClassPerformance() {
   const [selectedClassId, setSelectedClassId] = useState(initialClassId);
   const [loadingClasses, setLoadingClasses] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
-  const [dataset, setDataset] = useState({ enrollments: [], activities: [], rows: [] });
+  const [dataset, setDataset] = useState({ enrollments: [], activities: [], rows: [], gwaByStudent: {}, attendanceByStudent: {} });
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewMode, setViewMode] = useState('summary');
@@ -102,15 +104,41 @@ export default function ClassPerformance() {
     setSearchParams({ id: newId });
   };
 
-  // 3. Aggregate data by student
+  // 3. Aggregate data by student (item 2.8: real GWA/attendance, not a fabricated proxy)
   const aggregatedStudents = useMemo(() => {
-    return aggregateByStudent(dataset.rows);
-  }, [dataset.rows]);
+    return aggregateByStudent(dataset.rows, dataset.gwaByStudent, dataset.attendanceByStudent);
+  }, [dataset.rows, dataset.gwaByStudent, dataset.attendanceByStudent]);
 
   // 4. Build summary cards metrics
   const summary = useMemo(() => {
     return buildSummaryCards(aggregatedStudents);
   }, [aggregatedStudents]);
+
+  // 4b. Flatten the raw student-x-activity rows into the pivot panel's dataset.
+  // Field names here are the human-readable labels the pivot panel shows verbatim in its
+  // dropdowns, so this is deliberately NOT the camelCase dataset shape. Grade/GWA and
+  // Absences come from aggregateByStudent's real posted-grade/attendance data (item 2.8) —
+  // every activity row for a student carries the SAME class-level GWA/absence value, since
+  // those are per-class facts, not per-activity ones.
+  const pivotRows = useMemo(() => {
+    const studentById = new Map(aggregatedStudents.map(s => [s.studentId, s]));
+    return dataset.rows.map(r => {
+      const student = studentById.get(r.studentId);
+      return {
+        Student: r.studentName,
+        'Student ID': r.studentNumber,
+        Activity: r.activityTitle || 'Unnamed Activity',
+        Term: r.activityTerm || '—',
+        Score: r.score,
+        'Max Score': r.maxScore,
+        Percentage: r.percentage,
+        Status: r.status || 'Ungraded',
+        'At-Risk': student?.isAtRisk ? 'Yes' : 'No',
+        'Grade (GWA)': student?.officialGwa ?? null,
+        Absences: student?.absenceCount ?? 0
+      };
+    });
+  }, [dataset.rows, aggregatedStudents]);
 
   // 5. Filter students by search term and status category
   const filteredStudents = useMemo(() => {
@@ -294,6 +322,17 @@ export default function ClassPerformance() {
                   <LayoutGrid className="w-3.5 h-3.5" />
                   <span>Activity Grid</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('pivot')}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-3 py-1 rounded-lg font-semibold transition-all",
+                    viewMode === 'pivot' ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"
+                  )}
+                >
+                  <Table2 className="w-3.5 h-3.5" />
+                  <span>Pivot</span>
+                </button>
               </div>
 
               {/* Export to Excel */}
@@ -391,6 +430,10 @@ export default function ClassPerformance() {
           <div className="p-6">
             <TableSkeleton rows={8} cols={6} />
           </div>
+        ) : viewMode === 'pivot' ? (
+          <div className="p-4 sm:p-5">
+            <ReportsPivotPanel rows={pivotRows} />
+          </div>
         ) : filteredStudents.length === 0 ? (
           <div className="py-16 text-center text-slate-400">
             <FileSpreadsheet className="w-10 h-10 mx-auto mb-2 text-slate-300 stroke-1" />
@@ -408,8 +451,10 @@ export default function ClassPerformance() {
                     <th className="py-3 px-4 text-center">Activities Graded</th>
                   )}
                   <th className="py-3 px-4 text-right">Overall Average</th>
+                  <th className="py-3 px-4 text-right" title="Official posted grade for this class, resolved from posted_grades — independent of the in-progress activity average to its left.">Official Grade (GWA)</th>
+                  <th className="py-3 px-4 text-center" title="Absences recorded for this class via attendance_records.">Absences</th>
                   <th className="py-3 px-4 text-center">Performance Status</th>
-                  
+
                   {/* Dynamic Activity Columns in Grid View Mode */}
                   {viewMode === 'grid' && dataset.activities.map(act => (
                     <th key={act.activity_id} className="py-3 px-4 text-center min-w-[120px]">
@@ -444,6 +489,12 @@ export default function ClassPerformance() {
                       )}
                       <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
                         {student.overallPercentage !== null ? `${student.overallPercentage}%` : '—'}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
+                        {student.officialGwa !== null ? student.officialGwa.toFixed(2) : '—'}
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-mono">
+                        {student.absenceCount}
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <span className={cn("inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border", statusColor)}>

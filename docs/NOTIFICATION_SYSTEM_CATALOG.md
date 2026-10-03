@@ -8,11 +8,11 @@ This document details the current state of notifications in the ASPIRE codebase,
 
 | Component / Layer | Current Status | Details |
 | :--- | :---: | :--- |
-| **Database Table (`notifications`)** | ✅ **Active** | Table exists with columns: `notification_id`, `recipient_id`, `type`, `message`, `is_read`, `created_at`, `title`, `link`, `severity`, `payload`, `dedupe_key`, `read_at`. Schema v2 adds unique idempotency index on `dedupe_key`. RLS planned for activation following service-role write path migration. |
+| **Database Table (`notifications`)** | ✅ **Active** | Table exists with columns: `notification_id`, `recipient_id`, `type`, `message`, `is_read`, `created_at`, `title`, `link`, `severity`, `payload`, `dedupe_key`, `read_at`, `dismissed_at`. Schema v2 adds unique idempotency index on `dedupe_key`. **RLS is enabled** (`supabase/migrations/20261001170000_secure_notification_access.sql`) — all client writes go through the `dispatch_notifications()` SECURITY DEFINER RPC; confirmed zero remaining raw `.insert()` calls into this table from client code. |
 | **Seed Data** | ✅ **Active** | `supabase/migrations/20260607180000_seed_notifications.sql` contains pre-populated mock notifications for Admin, Dean, Faculty, and Students. |
 | **Portal Pages** | ✅ **Active** | Dedicated notification views exist at: <br> • `/student/notifications`<br> • `/faculty/notifications`<br> • `/dean/notifications`<br> • `/office/notifications`<br> • `/admin/notifications` |
 | **Navigation Bar (Topbar)** | ⚠️ **Static Badge** | Bell icon exists with static unread indicator dot; links directly to role notification inbox. |
-| **Native Device Popups (Android)** | 🔄 **In Progress** | Push notifications package crashed without Firebase. Transitioning to **`@capacitor/local-notifications`** to provide offline native heads-up popups and lockscreen alerts. |
+| **Native Device Popups (Android)** | ✅ **Active** | `@capacitor/local-notifications` (`package.json`) is installed and wired in `src/lib/notificationService.js` / `AuthContext.jsx` — no longer "in progress." Fires from a 4-second poller and a Supabase Realtime subscription on `notifications` INSERT, both funneled through one `triggerInboundLocalNotification()` function. |
 
 ---
 
@@ -23,13 +23,15 @@ Students receive alerts regarding academic milestones, grading releases, evaluat
 
 | Notification Type (`type`) | Banner Title | Sample Message | Trigger Event | Target Navigation |
 | :--- | :--- | :--- | :--- | :--- |
-| `grade_posted` | **New Grade Posted** | *"Your final grades for Capstone Project 1 (IT401) have been officially posted."* | Faculty posts term/final grades in Grade Sheet (idempotent dedupe) | `/student/grades` |
-| `grade_changed` | **Grade Updated** | *"Your Midterm grade for Capstone Project 1 (IT401) has been updated."* | Faculty unlocks, edits, and re-locks a posted grade milestone | `/student/grades` |
+| `grade_posted` | **New Grade Posted** | *"Your Final grade for Capstone Project 1 (IT401) has been posted. Remark: Passed. If you have questions about your academic standing, please consult your adviser."* | Faculty posts term/final grades in Grade Sheet (idempotent dedupe) | `/student/grades` |
+| `grade_changed` | **Grade Updated** | *"Your Midterm grade for Capstone Project 1 (IT401) has been updated. Remark: Passed. If you have questions about your academic standing, please consult your adviser."* | Faculty unlocks, edits, and re-locks a posted grade milestone | `/student/grades` |
 | `class_enrolled` | **Class Registration Success** | *"You have been successfully registered into Introduction to Computing (ITC113 - BSIT-1A)."* | Subject assignment / student roster enrollment by Office/Admin | `/student/academic-insights` |
 | `eval_window_open` | **Faculty Evaluation Open** | *"Faculty evaluation period is now open. Please complete surveys for your instructors."* | Office publishes active evaluation window | `/student/faculty-evaluation` |
 | `eval_deadline_reminder`| **Evaluation Deadline Reminder** | *"Survey reminder: 3 days left to submit evaluations for your instructors."* | System automated schedule before evaluation window closes | `/student/faculty-evaluation` |
-| `ews_alert` | **Early Warning System Alert** | *"Early Warning System: You have been flagged as at-risk due to low exam scores."* | AI/Diagnostic engine detects low class standing or exam risk | `/student/academic-insights` |
-| `ai_recommendation` | **AI Counseling Ready** | *"AI Counseling: Your customized academic counseling verdict is ready for review."* | Student Advisor AI generates new intervention strategies | `/student/academic-insights` |
+| `eval_closed` | **Faculty Evaluation Closed** | *"The faculty evaluation survey period for [subject] (Prof. [name]) has officially closed. Thank you for your submission!"* | Faculty or Office closes an evaluation window | `/student/faculty-evaluation` |
+| `ews_alert` | **Early Warning System Alert** | *"Academic Early Warning: You have received an early warning academic advisory with running GWA 2.85. Please consult your department chair or college advisor."* | Dean issues an EWS advisory from the At-Risk Students queue, or a dean directive is recorded against the student | `/student/academic-insights` |
+| `ai_recommendation` | **AI Counseling Ready** | *"Your personalized academic AI trajectory guidance and counseling report is ready."* | Student Advisor AI generates new intervention strategies | `/student/academic-insights` |
+| `academic_advising` | **Academic Advising Notice** | *"Official Academic Advising Notice: An academic intervention plan for [subject] was submitted by your professor. Review your Advising Inbox."* | Faculty submits a student risk evaluation with an advising plan | `/student/academic-insights` |
 
 ---
 
@@ -43,7 +45,9 @@ Faculty members receive notifications regarding teaching loads, grade submission
 | `override_approved` | **Grade Override Approved** | *"Your grade override request for student Sophia Bernardo has been approved by the Dean's Office."* | Dean approves pending grade change request | `/faculty/class-records` |
 | `override_rejected` | **Grade Override Rejected** | *"Your override request for student Ava Corpuz has been rejected by the Dean's Office."* | Dean rejects pending grade change request | `/faculty/class-records` |
 | `eval_window_open` | **Evaluation Window Open** | *"Evaluation window open: Please encourage your students to complete the faculty evaluation survey."* | Office starts student evaluation window | `/faculty/evaluations` |
-| `risk_threshold` | **At-Risk Student Flagged** | *"EWS alert: Student Carl Abalos in your section BSIT-1A has been flagged as at-risk."* | EWS diagnostic detects student falling below passing threshold | `/faculty/at-risk-monitoring` |
+| `risk_threshold` | **At-Risk Threshold Alert** | *"At-Risk Student Flagged: Issued academic advisory for [student] ([section]) with running GWA [X]."* | Dean issues an advisory for a student in this faculty member's section from the At-Risk Students queue | `/faculty/at-risk-monitoring` |
+| `consultation_request` | **New Consultation Request** | *"[Student] requested a consultation regarding [topic] in [course code]."* | Student submits a consultation request from Academic Insights | `/faculty/consultation-requests` |
+| `dean_referral` | **Dean Referral Logged** | *"Faculty Referral Logged: Flagged case for student [name] submitted for Dean review."* | Confirmation to the faculty member themselves after they mark "Refer to Dean" when saving a student risk evaluation — this does NOT notify the dean; it is a receipt for the referring faculty member | `/faculty/at-risk-monitoring` |
 
 ---
 
@@ -55,7 +59,8 @@ Deans receive high-level governance alerts, approval requests, evaluation summar
 | `grades_pending` | **Grade Sheet Pending Approval** | *"Prof. Amanda Rivera submitted final grade sheets for IT401 (Capstone Project 1) for your approval."* | Faculty locks and submits completed grade sheet | `/dean/grade-approvals` |
 | `override_request` | **Grade Override Pending** | *"Professor Danilo Santos requested grade record correction for student Sophia Bernardo."* | Faculty submits override request for unlocked/locked grade | `/dean/grade-overrides` |
 | `eval_compiled` | **Evaluation Reports Compiled** | *"Student evaluation window closed. Consolidated faculty evaluation feedback is now compiled."* | Office closes evaluation window and compiles scores | `/dean/faculty-evaluations` |
-| `risk_threshold` | **College Risk Threshold Alert** | *"At-risk warning: 12% of students in the College of Computer Studies are currently flagged on risk thresholds."* | Analytics engine calculates college-wide risk quota | `/dean/at-risk-dashboard` |
+| `academic_notice` | **Academic Notice** | *"[Directive label] for [student] ([subject]). Directives: [notes]."* | Dean processes an item in the At-Risk discussion queue — a confirmation copy is sent to themselves alongside the faculty-facing `academic_notice` and the student-facing `ews_alert` dispatched in the same action | `/dean/at-risk-dashboard` |
+| `risk_threshold` | ⚠️ **Not yet implemented** | — | The architecture doc describes a college-wide risk quota alert to the dean (e.g. "12% of students are flagged"); no dispatcher in the codebase currently sends `risk_threshold` to a dean — every current `risk_threshold` dispatch targets the faculty member whose section the flagged student is in (see Faculty Portal table above). Keeping this row to track the gap rather than deleting the planned feature. | `/dean/at-risk-dashboard` |
 
 ---
 
@@ -108,18 +113,18 @@ flowchart TD
 ### Key Technical Capabilities:
 1. **Zero External Server Dependency:** No Google Firebase project, billing, or `google-services.json` required.
 2. **Real-Time Delivery:** Supabase Realtime listens for new database notifications and triggers the native Android notification immediately.
-3. **Lock Screen Visibility & Privacy:** Android displays notifications on the device lock screen according to user privacy settings. Per RA 10173 privacy standards, lock screen banners omit academic failing remarks or sensitive grades.
+3. **Lock Screen Visibility & Privacy:** Android displays notifications on the device lock screen according to user privacy settings. `AuthContext.jsx`'s `triggerInboundLocalNotification()` is the single chokepoint every inbound notification passes through (both the 4-second poller and the Realtime subscription route through it), and it substitutes a generic "Open ASPIRE to view details" body for `ews_alert`, `risk_threshold`, `academic_advising`, `dean_referral`, `academic_notice`, `grade_posted`, and `grade_changed` — the seven types confirmed to embed a specific student's GWA, remark, flagged name, or intervention directive in their `message` field. `grade_posted`/`grade_changed` were added to this list once `message` was updated to carry the remark plus an adviser-consult line (item (i) of `IMPLEMENTATION_CORRECTIONS.md`) — `message` is the authenticated in-app inbox's full-detail text, which is why it can't be shown as-is on a lock screen. Every other type's `message` is shown on the banner as-is.
 4. **On-Demand Testing:** A dedicated test button in Settings allows quick verification on physical devices during capstone defense demonstrations.
 
 ---
 
 ## 4. Multi-Channel Target Architecture
 
-The native popup architecture documented above represents Channel 1 of the comprehensive target delivery pipeline specified in [`NOTIFICATION_DELIVERY_ARCHITECTURE.md`](file:///c:/Users/sadia/SAGE/docs/update_plan/NOTIFICATION_DELIVERY_ARCHITECTURE.md):
+The native popup architecture documented above represents Channel 1 of the comprehensive target delivery pipeline specified in [`NOTIFICATION_DELIVERY_ARCHITECTURE.md`](update_plan/NOTIFICATION_DELIVERY_ARCHITECTURE.md). See `update_plan/IMPLEMENTATION.md`'s SECTION 10 for what was actually built for the Email row below vs. that architecture doc's original design draft — the two differ (Gmail SMTP instead of Brevo; different `notification_deliveries` column names than first proposed).
 
-| Channel | Delivery Mechanism | Privacy Level | Fallback / Queue |
+| Channel | Delivery Mechanism | Privacy Level | Status |
 | :--- | :--- | :--- | :--- |
-| **In-App Inbox** | Supabase Postgres + Realtime | Full academic detail behind auth | Permanent audit record |
-| **Push / Local** | `@capacitor/local-notifications` | Event summary only (no grade value on lock screen) | Local device dispatch |
-| **Email (Brevo)** | Edge Function + `denomailer` + `pg_cron` | Event notice + secure signed view token link | Atomic queue with retry backoff |
-| **Guardian** | Consent-gated fan-out (RA 10173) | Tokenized 7-day read-only summary link | Verification required before delivery |
+| **In-App Inbox** | Supabase Postgres + Realtime, `dispatch_notifications()` RPC | Full academic detail behind auth | ✅ Live |
+| **Push / Local** | `@capacitor/local-notifications` | Event summary only for the 5 sensitive types (no grade/risk detail on lock screen); other types shown as-is | ✅ Live |
+| **Email** | Edge Function (`supabase/functions/send-email`) + `denomailer` + `pg_cron`, Gmail SMTP (team decision — not Brevo; see `IMPLEMENTATION.md` 3.3–3.5) | `grade_posted`/`grade_changed` only for now — event notice + portal link, no grade value in the body | ⚠️ Code written 2026-10-02, **not yet deployed** — migration not applied, secrets not set, function not deployed. See `IMPLEMENTATION.md` SECTION 10's runbook. |
+| **Guardian** | Consent-gated fan-out (RA 10173), tokenized 7-day read-only summary link | Tokenized 7-day read-only summary link | ❌ Not built — `guardians` table exists (schema + RLS only), but there is no consent UI, no fan-out logic, and no signed-link generation anywhere in the codebase (`IMPLEMENTATION.md` 3.7/3.8). |

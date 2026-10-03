@@ -5,7 +5,9 @@
 
 import { supabase } from './supabase';
 import { PASSING_GRADE, HIGH_CUTOFF, SAME_MARGIN } from './constants';
-import { isStudentAtRisk, computeUnifiedRisk } from './riskEngine';
+import { computeUnifiedRisk } from './riskEngine';
+import { RISK_TIERS, resolveOfficialGwa, countAttendance } from './academicPolicy';
+import { findMostAdvancedPostedGrade } from './gradeMilestones';
 import * as XLSX from 'xlsx-js-style';
 
 /**
@@ -113,6 +115,47 @@ export async function fetchClassReportDataset(classRecordId) {
     scoreMap.set(`${row.activity_id}:${row.student_id}`, row);
   });
 
+  // 4. Real official GWA for this class, where already posted — never fabricated. Multiple
+  //    milestone rows can exist per student (Prelim/MR/TFR/SG); take the most advanced one,
+  //    same helper AcademicInsights.jsx/SummaryReports.jsx already use for this exact problem.
+  const { data: postedGrades, error: postedError } = await supabase
+    .from('posted_grades')
+    .select('student_id, grade_period, computed_grade, effective_grade, locked_milestones')
+    .eq('class_record_id', classRecordId);
+  if (postedError) {
+    console.error('Error fetching posted grades:', postedError);
+    throw postedError;
+  }
+  const postedByStudent = new Map();
+  (postedGrades || []).forEach(row => {
+    if (!postedByStudent.has(row.student_id)) postedByStudent.set(row.student_id, []);
+    postedByStudent.get(row.student_id).push(row);
+  });
+  const gwaByStudent = {};
+  postedByStudent.forEach((studentRows, studentId) => {
+    const advanced = findMostAdvancedPostedGrade(studentRows);
+    gwaByStudent[studentId] = advanced ? resolveOfficialGwa(advanced).gwa : null;
+  });
+
+  // 5. Real attendance for this class — never a fabricated absence count.
+  const { data: attendanceRows, error: attendanceError } = await supabase
+    .from('attendance_records')
+    .select('student_id, status')
+    .eq('class_record_id', classRecordId);
+  if (attendanceError) {
+    console.error('Error fetching attendance records:', attendanceError);
+    throw attendanceError;
+  }
+  const attendanceByStudentRaw = new Map();
+  (attendanceRows || []).forEach(row => {
+    if (!attendanceByStudentRaw.has(row.student_id)) attendanceByStudentRaw.set(row.student_id, []);
+    attendanceByStudentRaw.get(row.student_id).push(row);
+  });
+  const attendanceByStudent = {};
+  attendanceByStudentRaw.forEach((studentRows, studentId) => {
+    attendanceByStudent[studentId] = countAttendance(studentRows).absences;
+  });
+
   // Construct flat dataset rows
   const rows = [];
   (enrollments || []).forEach(enr => {
@@ -148,7 +191,7 @@ export async function fetchClassReportDataset(classRecordId) {
     });
   });
 
-  return { enrollments: enrollments || [], activities: activities || [], rows };
+  return { enrollments: enrollments || [], activities: activities || [], rows, gwaByStudent, attendanceByStudent };
 }
 
 /**
@@ -156,9 +199,11 @@ export async function fetchClassReportDataset(classRecordId) {
  * Excludes ungraded (null) activities from the average.
  *
  * @param {Array} rows
+ * @param {Object<string, number|null>} [gwaByStudent] - real official GWA for this class, by student_id (item 2.8)
+ * @param {Object<string, number>} [attendanceByStudent] - real absence count for this class, by student_id
  * @returns {Array}
  */
-export function aggregateByStudent(rows = []) {
+export function aggregateByStudent(rows = [], gwaByStudent = {}, attendanceByStudent = {}) {
   const studentMap = new Map();
 
   rows.forEach(row => {
@@ -194,17 +239,34 @@ export function aggregateByStudent(rows = []) {
       ? Math.round(stud.totalPercentage / stud.gradedCount)
       : null;
 
-    // Unified risk integration using single source of truth
+    // Unified risk integration using single source of truth (riskEngine.computeUnifiedRisk).
+    // FIXED (item 2.8): previously approximated with a binary pass/fail GWA proxy (2.00/3.50)
+    // derived from in-progress activity percentages. Now uses this student's real official GWA
+    // for this class (resolveOfficialGwa on the most advanced posted milestone) and real
+    // attendance, matching the same inputs StudentRisk.jsx uses for the same student/class —
+    // so this report's at-risk flag can no longer silently disagree with that page. When no
+    // milestone has been posted yet for this class, avgGwa stays null (missing, not fabricated
+    // as failing) — same "unencoded is not zero" rule applied everywhere else in this codebase.
+    const realGwa = Number.isFinite(gwaByStudent[stud.studentId]) ? gwaByStudent[stud.studentId] : null;
+    const absenceCount = attendanceByStudent[stud.studentId] || 0;
     const riskResult = computeUnifiedRisk({
-      gwa: overallPercentage !== null ? (overallPercentage < PASSING_GRADE ? 3.5 : 2.0) : null
+      avgGwa: realGwa,
+      absenceCount,
+      consecutiveAbsences: absenceCount >= 2 ? 2 : 0
     });
-    const riskLevel = riskResult?.riskLevel || 'low';
-    const isAtRisk = isStudentAtRisk(riskLevel);
+    const riskLevel = riskResult?.risk_level || 'low';
+    // RISK_TIERS.MODERATE.min (25), matching StudentRisk.jsx's faculty-facing "needs
+    // attention" threshold — not the stricter isStudentAtRisk() (high/critical only)
+    // that dean/admin KPI counts use. Reports-Module-Plan-Faculty-Side.md §13.4 is
+    // explicit that this card must reuse StudentRisk's definition, not a second one.
+    const isAtRisk = (riskResult?.composite_score || 0) >= RISK_TIERS.MODERATE.min;
 
     return {
       ...stud,
       overallPercentage,
       overallStatus: getStudentStatus(overallPercentage),
+      officialGwa: realGwa,
+      absenceCount,
       riskLevel,
       isAtRisk
     };

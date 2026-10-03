@@ -429,7 +429,11 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
               const tentativeVal = computeTentativeGrade(
                 classRecordScores,
                 classRecordCols,
-                classConfigMap[classRecId] ?? null
+                // `?? {}`, not `?? null` — computeTentativeGrade's `options` param only
+                // defaults to `{}` when passed `undefined`; an explicit `null` throws
+                // (`Cannot read properties of null (reading 'formula')`), confirmed by
+                // execution. A thrown error here aborts this whole .map() mid-iteration.
+                classConfigMap[classRecId] ?? {}
               );
               if (tentativeVal !== null) {
                 subjectGradeList.push({
