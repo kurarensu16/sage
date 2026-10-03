@@ -209,6 +209,24 @@ export const AuthProvider = ({ children }) => {
     };
     initBaseline();
 
+    // Types whose `message` embeds a specific student's GWA, risk status, remark, or
+    // advising/referral detail (confirmed by reading each dispatcher: ews_alert and
+    // risk_threshold literally interpolate a running GWA; academic_advising and
+    // dean_referral name the flagged student and intervention directives;
+    // academic_notice carries dean directive text; grade_posted/grade_changed carry
+    // the remark plus an adviser-consult line per item (i) of
+    // IMPLEMENTATION_CORRECTIONS.md). Per
+    // docs/update_plan/NOTIFICATION_DELIVERY_ARCHITECTURE.md §6: "Push / lock
+    // screen: Event only. Never the grade, the remark, or the risk status" — and
+    // its standing rule that nothing naming a student's risk or failing status
+    // leaves the authenticated app. This function fires for every unread/incoming
+    // notification regardless of type, so the filtering has to happen here rather
+    // than relying on each dispatcher to self-censor.
+    const SENSITIVE_PUSH_TYPES = new Set([
+      'ews_alert', 'risk_threshold', 'academic_advising', 'dean_referral', 'academic_notice',
+      'grade_posted', 'grade_changed'
+    ]);
+
     const triggerInboundLocalNotification = async (notif) => {
       if (!notif || !notif.notification_id || !notif.message) return;
       if (displayedNotificationIds.current.has(notif.notification_id)) return;
@@ -216,10 +234,13 @@ export const AuthProvider = ({ children }) => {
 
       try {
         const rawTitle = NOTIFICATION_TITLES[notif.type] || 'SAGE Notification';
+        const body = SENSITIVE_PUSH_TYPES.has(notif.type)
+          ? `${rawTitle}. Open ASPIRE to view details.`
+          : notif.message;
 
         await showLocalNotification({
           title: rawTitle,
-          body: notif.message,
+          body,
           payload: notif
         });
       } catch (alertErr) {

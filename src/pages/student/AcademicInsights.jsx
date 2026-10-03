@@ -3,7 +3,7 @@ import {
   GWA_TARGET_BENCHMARKS,
   simulateRequiredFinalRating
 } from '../../lib/gradingMath';
-import { computeStudentGwa, countAttendance, getAttendanceFlags, getGwaBand, getHonorTier } from '../../lib/academicPolicy';
+import { computeStudentGwa, countAttendance, getAttendanceFlags, getGwaBand, getHonorTier, HONORS, toGwaOrNull } from '../../lib/academicPolicy';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import { useAuth } from '../../lib/AuthContext';
@@ -80,18 +80,38 @@ const generateDynamicInsight = (termName, rating, gwa, status) => {
     return `${baseText} Maintain your class participation and complete all upcoming tasks.`;
   }
 
-  if (numericGwa <= 1.45) {
+  // Routed through the canonical GWA_BANDS ladder instead of a raw 1.45 literal —
+  // Sapientia/Excellentia both read as "Outstanding" here since this is advisory
+  // message tone, not the honors tier label itself (that's shown separately via
+  // getHonorTier elsewhere on this page).
+  const bandLabel = getGwaBand(numericGwa)?.label;
+  if (bandLabel === 'Sapientia' || bandLabel === 'Excellentia') {
     return `${baseText} Outstanding result! You are demonstrating exceptional mastery of the course materials and are on track for honors.`;
-  } else if (numericGwa <= 1.75) {
+  } else if (bandLabel === 'Virtus') {
     return `${baseText} Strong academic standing. You are maintaining a highly competitive position in this class.`;
-  } else if (numericGwa <= 2.50) {
+  } else if (bandLabel === 'Satisfactory') {
     return `${baseText} Good, stable performance. Consistent efforts will keep you securely on track.`;
-  } else if (numericGwa <= 3.00) {
+  } else if (bandLabel === 'Passing Margin') {
     return `${baseText} Passing grade. Focus on reviewing core topics to build a safer margin.`;
   } else {
     return `${baseText} Warning: This rating is currently below passing. We recommend reaching out to your instructor or coordinator for guidance.`;
   }
 };
+
+// A row existing in posted_grades does not by itself mean a real grade was recorded —
+// a milestone row can be created with computed_grade/effective_grade still null before
+// any components are scored. Treating that as a "Posted" 5.00 (the old getTransmutedGrade
+// NaN fallback) fabricated a failing grade and an "Academic Warning" standing for students
+// with zero graded work. Only a row with an actual finite rating counts as posted.
+function resolvePostedTermRating(row) {
+  const effective = row?.effective_grade !== null && row?.effective_grade !== undefined
+    ? Number(row.effective_grade)
+    : null;
+  const rating = Number.isFinite(parseFloat(row?.computed_grade)) ? parseFloat(row.computed_grade) : null;
+  const gwa = Number.isFinite(effective) ? effective : toGwaOrNull(rating);
+  if (gwa === null) return null;
+  return { rating: rating ?? 0, gwa: gwa.toFixed(2) };
+}
 
 // Period display mappings
 const PERIODS_MAPPING = {
@@ -370,25 +390,23 @@ export default function AcademicInsights() {
                 const getTermRating = (termName) => {
                   const dbTermKey = termName.toLowerCase().replace('-', '_');
                   const postedRow = crPosted.find(p => p.grade_period === dbTermKey || p.grade_period === termName.toLowerCase());
-                  if (postedRow) {
-                    const rating = parseFloat(postedRow.computed_grade);
-                    const gwa = postedRow.effective_grade !== null 
-                      ? Number(postedRow.effective_grade).toFixed(2) 
-                      : getTransmutedGrade(parseFloat(postedRow.computed_grade)).toFixed(2);
+                  const resolved = postedRow ? resolvePostedTermRating(postedRow) : null;
+                  if (resolved) {
                     return {
-                      rating,
-                      gwa,
+                      rating: resolved.rating,
+                      gwa: resolved.gwa,
                       status: 'Posted',
-                      insight: generateDynamicInsight(termName, rating, gwa, 'Posted')
+                      insight: generateDynamicInsight(termName, resolved.rating, resolved.gwa, 'Posted')
                     };
                   }
-                  
-                  // Grade is NOT posted yet: MUST NOT calculate or display any draft grades
-                  return { 
-                    rating: 0, 
-                    gwa: '—', 
-                    status: 'Pending', 
-                    insight: `Awaiting officially posted ${termName} grade from instructor and college dean.` 
+
+                  // Grade is NOT posted yet (or the row exists with no real score encoded):
+                  // MUST NOT calculate or display any draft/fabricated grade.
+                  return {
+                    rating: 0,
+                    gwa: '—',
+                    status: 'Pending',
+                    insight: `Awaiting officially posted ${termName} grade from instructor and college dean.`
                   };
                 };
 
@@ -399,16 +417,13 @@ export default function AcademicInsights() {
                 const mrPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.MIDTERM_RATING);
                 let mr = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Prelim and Midterm components.` };
                 
-                if (mrPostedRow) {
-                  const rating = parseFloat(mrPostedRow.computed_grade);
-                  const gwa = mrPostedRow.effective_grade !== null 
-                    ? Number(mrPostedRow.effective_grade).toFixed(2) 
-                    : getTransmutedGrade(rating).toFixed(2);
+                const mrResolved = mrPostedRow ? resolvePostedTermRating(mrPostedRow) : null;
+                if (mrResolved) {
                   mr = {
-                    rating,
-                    gwa,
+                    rating: mrResolved.rating,
+                    gwa: mrResolved.gwa,
                     status: 'Posted',
-                    insight: generateDynamicInsight('Midterm Rating', rating, gwa, 'Posted')
+                    insight: generateDynamicInsight('Midterm Rating', mrResolved.rating, mrResolved.gwa, 'Posted')
                   };
                 } else if (prelim.status === 'Posted' && midterm.status === 'Posted') {
                   const avgRating = Math.round((prelim.rating + midterm.rating) / 2);
@@ -428,16 +443,13 @@ export default function AcademicInsights() {
                 const tfrPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.TENTATIVE_FINAL_RATING);
                 let tentativeFinalRating = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting Semi-Final and Final components.` };
                 
-                if (tfrPostedRow) {
-                  const rating = parseFloat(tfrPostedRow.computed_grade);
-                  const gwa = tfrPostedRow.effective_grade !== null 
-                    ? Number(tfrPostedRow.effective_grade).toFixed(2) 
-                    : getTransmutedGrade(rating).toFixed(2);
+                const tfrResolved = tfrPostedRow ? resolvePostedTermRating(tfrPostedRow) : null;
+                if (tfrResolved) {
                   tentativeFinalRating = {
-                    rating,
-                    gwa,
+                    rating: tfrResolved.rating,
+                    gwa: tfrResolved.gwa,
                     status: 'Posted',
-                    insight: generateDynamicInsight('Tentative Final Rating', rating, gwa, 'Posted')
+                    insight: generateDynamicInsight('Tentative Final Rating', tfrResolved.rating, tfrResolved.gwa, 'Posted')
                   };
                 } else if (semiFinal.status === 'Posted' && final.status === 'Posted') {
                   const avgRating = Math.round((semiFinal.rating + final.rating) / 2);
@@ -454,16 +466,13 @@ export default function AcademicInsights() {
                 const sgPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.SEMESTRAL_GRADE);
                 let semestralGrade = { rating: 0, gwa: '—', status: 'Pending', insight: `Awaiting complete term components.` };
                 
-                if (sgPostedRow) {
-                  const rating = parseFloat(sgPostedRow.computed_grade);
-                  const gwa = sgPostedRow.effective_grade !== null 
-                    ? Number(sgPostedRow.effective_grade).toFixed(2) 
-                    : getTransmutedGrade(rating).toFixed(2);
+                const sgResolved = sgPostedRow ? resolvePostedTermRating(sgPostedRow) : null;
+                if (sgResolved) {
                   semestralGrade = {
-                    rating,
-                    gwa,
+                    rating: sgResolved.rating,
+                    gwa: sgResolved.gwa,
                     status: 'Posted',
-                    insight: generateDynamicInsight('Semestral Grade', rating, gwa, 'Posted')
+                    insight: generateDynamicInsight('Semestral Grade', sgResolved.rating, sgResolved.gwa, 'Posted')
                   };
                 } else if (mr.status === 'Posted' && tentativeFinalRating.status === 'Posted') {
                   const avgRating = Math.round((mr.rating + tentativeFinalRating.rating) / 2);
@@ -476,12 +485,17 @@ export default function AcademicInsights() {
                   };
                 }
 
-                // Running GWA is strictly derived ONLY from officially posted milestones
+                // Running GWA is strictly derived ONLY from officially posted milestones.
+                // milestoneStage records WHICH posted row backs that number, since different
+                // professors post Prelim/MR/TFR/Semestral Grade on different schedules — a
+                // Prelim-only reading is not as settled as a Semestral Grade one, and the UI
+                // needs to say so rather than presenting every subject's number as equally final.
                 let runningGwaVal = null;
-                if (semestralGrade.status === 'Posted') runningGwaVal = parseFloat(semestralGrade.gwa);
-                else if (tentativeFinalRating.status === 'Posted') runningGwaVal = parseFloat(tentativeFinalRating.gwa);
-                else if (mr.status === 'Posted') runningGwaVal = parseFloat(mr.gwa);
-                else if (prelim.status === 'Posted') runningGwaVal = parseFloat(prelim.gwa);
+                let milestoneStage = null;
+                if (semestralGrade.status === 'Posted') { runningGwaVal = parseFloat(semestralGrade.gwa); milestoneStage = 'Semestral Grade'; }
+                else if (tentativeFinalRating.status === 'Posted') { runningGwaVal = parseFloat(tentativeFinalRating.gwa); milestoneStage = 'Tentative Final Rating'; }
+                else if (mr.status === 'Posted') { runningGwaVal = parseFloat(mr.gwa); milestoneStage = 'Midterm Rating'; }
+                else if (prelim.status === 'Posted') { runningGwaVal = parseFloat(prelim.gwa); milestoneStage = 'Prelim'; }
 
                 const courseUnits = Number(subj.units) || 3;
                 if (runningGwaVal !== null && !isNaN(runningGwaVal)) {
@@ -555,6 +569,8 @@ export default function AcademicInsights() {
                   credits: courseUnits,
                   instructor: cr.faculty ? `Prof. ${cr.faculty.first_name} ${cr.faculty.last_name}` : 'TBA',
                   runningGwa: runningGwaVal !== null ? runningGwaVal.toFixed(2) : '—',
+                  milestoneStage,
+                  isFinalized: milestoneStage === 'Semestral Grade',
                   activities: subjectActivities,
                   latestEvaluation: latestEval,
                   diagnostics: {
@@ -580,6 +596,19 @@ export default function AcademicInsights() {
             // Compute GWA strictly when there are real posted running units (never default to a fake number)
             const computedGwa = computeStudentGwa(runningGwas).gwa;
 
+            // Completeness context: different professors post Prelim/MR/TFR/Semestral Grade on
+            // different schedules, so computedGwa is often a blend of subjects at very different
+            // stages. Every verdict below scales its WORDING (never the underlying math) to how
+            // much of the term is actually posted, so a 1-subject Prelim reading is never shown
+            // with the same confidence as a fully posted term.
+            const totalSubjectCount = computedSubjectsList.length;
+            const postedSubjectCount = runningGwas.length;
+            const finalizedSubjectCount = computedSubjectsList.filter(s => s.isFinalized).length;
+            const isFullyFinalized = totalSubjectCount > 0 && finalizedSubjectCount === totalSubjectCount;
+            const completenessNote = totalSubjectCount > 0
+              ? `Based on ${postedSubjectCount} of ${totalSubjectCount} enrolled subject${totalSubjectCount === 1 ? '' : 's'} currently graded.`
+              : null;
+
             // Trajectory and Standing classification
             let gwaStanding = 'No Grades Posted Yet';
             let trajectoryVerdict = 'Awaiting Grade Posting';
@@ -591,16 +620,16 @@ export default function AcademicInsights() {
             } else if (computedGwa !== null) {
               gwaStanding = getGwaBand(computedGwa)?.label || 'Academic Warning';
               if (computedGwa <= 1.75) {
-                trajectoryVerdict = "President's List pace";
+                trajectoryVerdict = isFullyFinalized ? "President's List pace" : "Trending Toward President's List";
                 trajectoryType = 'honors';
               } else if (computedGwa <= 2.50) {
-                trajectoryVerdict = 'Steady Academic Progression';
+                trajectoryVerdict = isFullyFinalized ? 'Steady Academic Progression' : 'Currently Steady';
                 trajectoryType = 'good';
               } else if (computedGwa <= 3.00) {
-                trajectoryVerdict = 'Academic Warning Buffer';
+                trajectoryVerdict = isFullyFinalized ? 'Academic Warning Buffer' : 'Watch Zone — Early Signs';
                 trajectoryType = 'warning';
               } else {
-                trajectoryVerdict = 'Intervention Required';
+                trajectoryVerdict = isFullyFinalized ? 'Intervention Required' : 'Early Warning — Needs Attention';
                 trajectoryType = 'critical';
               }
             } else {
@@ -608,19 +637,38 @@ export default function AcademicInsights() {
               trajectoryVerdict = computedSubjectsList.length > 0 ? 'Awaiting Official Grade Posting' : 'Not Enrolled';
             }
 
-            // President's List eligibility is deterministic; probabilities are not fabricated.
+            // President's List eligibility itself is deterministic (getHonorTier is the single
+            // canonical source of truth, unchanged here) — only the wording around the result
+            // scales with completeness, never the eligibility determination.
             let dlCategory = 'Pending Official Grades';
             let dlMessage = 'President\'s List eligibility will be determined once official milestones are available.';
-            
+
             if (computedGwa !== null) {
               const honors = getHonorTier(computedGwa, {
                 subjectGrades: computedSubjectsList.map(subject => subject.runningGwa),
                 units: computedSubjectsList.reduce((sum, subject) => sum + (Number(subject.credits) || 0), 0)
               });
               dlCategory = honors.tier || 'Not Eligible';
-              dlMessage = honors.isEligible
-                ? `Your current average of ${computedGwa.toFixed(2)} meets the ${honors.tier} President's List criteria.`
-                : honors.unmetRequirements.join(' ');
+
+              if (honors.isEligible) {
+                dlMessage = isFullyFinalized
+                  ? `Your official GWA of ${computedGwa.toFixed(2)} meets the ${honors.tier} President's List criteria.`
+                  : `You're a possible ${honors.tier} President's List candidate based on your current performance across ${postedSubjectCount} of ${totalSubjectCount} graded subjects — this may shift as more grades are posted.`;
+              } else if (!isFullyFinalized) {
+                // A §3.8.4 subject-floor violation coming only from a not-yet-finalized subject
+                // is still recoverable — say so, rather than reading as a permanent disqualification.
+                const floorViolators = computedSubjectsList.filter(subject => {
+                  const grade = parseFloat(subject.runningGwa);
+                  return Number.isFinite(grade) && grade > HONORS.subjectGradeFloor;
+                });
+                const onlyProvisionalViolators = floorViolators.length > 0
+                  && floorViolators.every(subject => !subject.isFinalized);
+                dlMessage = onlyProvisionalViolators
+                  ? `${honors.unmetRequirements.join(' ')} The subject${floorViolators.length === 1 ? '' : 's'} involved ${floorViolators.length === 1 ? 'is' : 'are'} still early-stage (${floorViolators.map(s => s.milestoneStage).join(', ')}) — this may still recover as more grades are posted.`
+                  : honors.unmetRequirements.join(' ');
+              } else {
+                dlMessage = honors.unmetRequirements.join(' ');
+              }
             }
 
             // Identify Priority Subject for rescue/elevation (only if running GWA exists)
@@ -650,6 +698,13 @@ export default function AcademicInsights() {
               trajectoryVerdict,
               trajectoryType,
               aiSummary: pregenData?.summary || null,
+              completeness: {
+                totalSubjectCount,
+                postedSubjectCount,
+                finalizedSubjectCount,
+                isFullyFinalized,
+                note: completenessNote
+              },
               dlEligibility: {
                 awardCategory: dlCategory,
                 message: dlMessage
@@ -756,7 +811,7 @@ export default function AcademicInsights() {
           label: 'Priority course',
           value: studentStats.prioritySubject.runningGwa === '—'
             ? `${studentStats.prioritySubject.code} · ${studentStats.prioritySubject.diagnostics?.csAvg || 0}% released activity average`
-            : `${studentStats.prioritySubject.code} · ${studentStats.prioritySubject.runningGwa} official GWA`
+            : `${studentStats.prioritySubject.code} · ${studentStats.prioritySubject.runningGwa} official GWA (based on ${studentStats.prioritySubject.milestoneStage || 'no official milestone yet'}${studentStats.prioritySubject.isFinalized ? '' : ' — not yet final'})`
         }]
       : [])
   ];
@@ -915,6 +970,10 @@ export default function AcademicInsights() {
         studentName: studentStats.studentName,
         gwa: studentStats.gwa !== null ? studentStats.gwa.toFixed(2) : '—',
         standing: studentStats.standing,
+        trajectoryVerdict: studentStats.trajectoryVerdict,
+        trajectoryType: studentStats.trajectoryType,
+        dlEligibility: studentStats.dlEligibility,
+        completeness: studentStats.completeness,
         diagnostics: studentStats.diagnostics,
         subjects: subjectsList
       };
@@ -992,6 +1051,10 @@ export default function AcademicInsights() {
         studentName: studentStats.studentName,
         gwa: studentStats.gwa !== null ? studentStats.gwa.toFixed(2) : '—',
         standing: studentStats.standing,
+        trajectoryVerdict: studentStats.trajectoryVerdict,
+        trajectoryType: studentStats.trajectoryType,
+        dlEligibility: studentStats.dlEligibility,
+        completeness: studentStats.completeness,
         diagnostics: studentStats.diagnostics,
         subjects: subjectsList
       };
@@ -1272,10 +1335,16 @@ export default function AcademicInsights() {
                   {studentStats.standing}
                 </h2>
                 <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
-                  {subjectsList.length > 0 
+                  {subjectsList.length > 0
                     ? `Evaluated against DYCI 4-Term progression standards across ${subjectsList.length} enrolled subjects (${studentStats.totalUnits} Units).`
                     : 'No active course enrollments recorded for this academic term.'}
                 </p>
+                {studentStats.completeness?.note && !studentStats.completeness.isFullyFinalized && (
+                  <p className="text-[11px] text-sage-300/90 italic">
+                    {studentStats.completeness.note} Professors post Prelim/Midterm/Semi-Final/Final
+                    grades on their own schedule, so this is a live snapshot, not a final result.
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center gap-6 border-t md:border-t-0 md:border-l border-sage-800/80 pt-3 md:pt-0 md:pl-6 justify-between md:justify-end">
@@ -1292,6 +1361,9 @@ export default function AcademicInsights() {
                   <span className="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-400">
                     {studentStats.gwa !== null ? studentStats.dlEligibility?.awardCategory || 'Not Eligible' : '—'}
                   </span>
+                  {studentStats.gwa !== null && !studentStats.completeness?.isFullyFinalized && (
+                    <span className="block text-[10px] text-sage-300/80 italic mt-0.5">Provisional</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1775,6 +1847,11 @@ export default function AcademicInsights() {
                             <span className="font-extrabold font-mono text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md">
                               {sub.runningGwa}
                             </span>
+                            {sub.milestoneStage && (
+                              <span className="block text-[10px] text-slate-400 mt-1">
+                                {sub.isFinalized ? `Final (${sub.milestoneStage})` : `As of ${sub.milestoneStage}`}
+                              </span>
+                            )}
                           </td>
                           <td className="py-3 px-3 text-right">
                             {sub.runningGwa !== '—' ? (
@@ -1848,6 +1925,13 @@ export default function AcademicInsights() {
                         <div className="text-left sm:text-right">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Running Course Grade</span>
                           <span className="text-2xl sm:text-3xl font-extrabold font-mono text-sage-800">{currentSubject.runningGwa}</span>
+                          {currentSubject.milestoneStage && (
+                            <span className="block text-[11px] text-slate-400 mt-0.5">
+                              {currentSubject.isFinalized
+                                ? `Final — Semestral Grade posted`
+                                : `As of ${currentSubject.milestoneStage} — not yet final`}
+                            </span>
+                          )}
                         </div>
                         <button
                           onClick={() => openAskAspire(currentSubject.code)}

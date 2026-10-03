@@ -6,6 +6,8 @@ import html2pdf from 'html2pdf.js';
 import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
 import { useAuth } from '../../lib/AuthContext';
 import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
+import { resolveOfficialGwa, computeStudentGwa } from '../../lib/academicPolicy';
+import { calculateAcademicRisk } from '../../lib/riskEngine';
 
 export default function SummaryReports() {
   const { profile } = useAuth();
@@ -103,11 +105,20 @@ export default function SummaryReports() {
               return deptName === deptFilter;
             })
             .map(c => {
+              // resolveOfficialGwa, not a raw effective_grade/computed_grade ternary — the
+              // ternary fell back to computed_grade (a 0-100% raw score) whenever
+              // effective_grade was null, then compared that raw percentage directly
+              // against the 1.00-5.00 GWA cutoff below. A computed_grade of e.g. 84 would
+              // never be <= 3.00, so it was always counted as failed.
               const grades = advancedPostedGrades.filter(g => g.class_record_id === c.class_record_id);
-              const sum = grades.reduce((acc, curr) => acc + Number(curr.effective_grade !== null ? curr.effective_grade : curr.computed_grade), 0);
-              const avg = grades.length > 0 ? sum / grades.length : 1.75;
-              const passedCount = grades.filter(g => Number(g.effective_grade !== null ? g.effective_grade : g.computed_grade) <= 3.00).length;
-              
+              const gwas = grades.map(g => resolveOfficialGwa(g).gwa).filter(g => g !== null);
+              const sum = gwas.reduce((acc, g) => acc + g, 0);
+              // null (not a fabricated 1.75), and real passedCount (not a fabricated
+              // enrolled-1) when nothing is posted yet — "no grades yet" is not
+              // representable as a plausible-looking number without lying about it.
+              const avg = gwas.length > 0 ? sum / gwas.length : null;
+              const passedCount = gwas.filter(g => g <= 3.00).length;
+
               const enrolled = enrollCountMap[`${c.section_id}|${c.subject_id}`] || c.enrolledCount || 0;
 
               return {
@@ -117,7 +128,7 @@ export default function SummaryReports() {
                 faculty: c.faculty ? `${c.faculty.first_name} ${c.faculty.last_name}` : 'Unassigned',
                 enrolled: enrolled,
                 averageGwa: avg,
-                passed: grades.length > 0 ? passedCount : Math.max(0, enrolled - 1)
+                passed: passedCount
               };
             });
           setReportData(list);
@@ -165,44 +176,16 @@ export default function SummaryReports() {
               };
             });
 
-          // If no formal evaluations in database yet for this college, aggregate from student grade data
-          if (list.length === 0) {
-            const studentUsers = (usersData || []).filter(u => 
-              u.role === 'student' && 
-              (u.departments?.name === deptFilter || u.sections?.departments?.name === deptFilter)
-            );
-            
-            const studentGradesMap = {};
-            advancedPostedGrades.forEach(g => {
-              if (termClassRecordIds.has(g.class_record_id)) {
-                if (!studentGradesMap[g.student_id]) studentGradesMap[g.student_id] = [];
-                studentGradesMap[g.student_id].push(Number(g.effective_grade !== null ? g.effective_grade : g.computed_grade));
-              }
-            });
-
-            studentUsers.forEach(s => {
-              const grades = studentGradesMap[s.user_id] || [];
-              const gwa = grades.length > 0 ? grades.reduce((a, b) => a + b, 0) / grades.length : null;
-              if (gwa !== null) {
-                const isPL = gwa <= 1.75;
-                const isAtRisk = gwa >= 2.50;
-                if (isPL || isAtRisk) {
-                  list.push({
-                    studentName: `${s.first_name} ${s.last_name}`,
-                    section: s.sections?.name || '—',
-                    subject: 'Academic Standing',
-                    context: isPL ? "President's Lister Pace" : "Academic Passing Pace",
-                    initialRisk: isPL ? 'HONORS TIER' : (gwa > 3.0 ? 'CRITICAL RISK' : 'MODERATE RISK'),
-                    baselineGwa: (gwa + (isAtRisk ? 0.25 : -0.10)).toFixed(2),
-                    followupGwa: gwa.toFixed(2),
-                    outcome: isPL ? 'Honors Maintained' : (gwa <= 3.0 ? 'Stabilized' : 'Needs Dean Intervention'),
-                    faculty: 'College Academic Board'
-                  });
-                }
-              }
-            });
-          }
-
+          // Previously, when no formal evaluations existed yet for this college, this
+          // branch synthesized an entire fake "intervention outcomes" dataset from raw
+          // grades: a fabricated baselineGwa (current GWA +0.25/-0.10, invented, not a
+          // real historical snapshot), a fabricated status label, and a hardcoded
+          // "College Academic Board" faculty name — none of it backed by a real
+          // evaluation record, with nothing in the UI disclosing that. Removed. An
+          // honest empty table (no special-cased message needed — this report has no
+          // existing "no data" treatment to match, unlike the grade-distribution one
+          // above) is correct here: no formal evaluations means there is nothing to
+          // report, not an invented one.
           setReportData(list);
         } else {
           // At-risk student audit filtered by selected college (official posted grades only)
@@ -218,25 +201,29 @@ export default function SummaryReports() {
               if (!studentGradesMap[g.student_id]) {
                 studentGradesMap[g.student_id] = [];
               }
-              studentGradesMap[g.student_id].push(Number(g.effective_grade !== null ? g.effective_grade : g.computed_grade));
+              // resolveOfficialGwa, not a raw effective_grade/computed_grade ternary —
+              // see the fix above for why that fell back to a raw 0-100% score.
+              const resolvedGwa = resolveOfficialGwa(g).gwa;
+              if (resolvedGwa !== null) studentGradesMap[g.student_id].push(resolvedGwa);
             }
           });
 
           const list = studentUsers.map(s => {
             const grades = studentGradesMap[s.user_id] || [];
-            let gwa = null;
-            if (grades.length > 0) {
-              const sum = grades.reduce((acc, curr) => acc + curr, 0);
-              gwa = sum / grades.length;
-            } else {
-              if (s.email === 'j.smith@student.sage.edu') gwa = 3.25;
-            }
+            // Previously hardcoded `if (s.email === 'j.smith@student.sage.edu') gwa = 3.25`
+            // — a fabricated grade for one specific demo account, live in production
+            // logic. Removed; a student with no posted grades has gwa === null, same as
+            // everyone else with no data, handled honestly below.
+            const gwa = computeStudentGwa(grades).gwa;
 
-            let risk = 'Low Risk';
-            if (gwa !== null) {
-              if (gwa > 3.00) risk = 'High Risk';
-              else if (gwa >= 2.75 && gwa <= 3.00) risk = 'Medium Risk';
-            }
+            // Unified onto the canonical calculateAcademicRisk()/RISK_TIERS (item (c)) — this
+            // file used to run its own standalone 3-tier GWA-only model (High >3.00, Medium
+            // 2.75-3.00) that could disagree with StudentRisk.jsx/dean Dashboard.jsx for the
+            // same student. No attendance/trajectory data is queried in this report, so the
+            // composite score here is GWA-only too, but it's now the SAME GWA-only evaluation
+            // the shared engine would produce, not a second hand-rolled copy of it.
+            const riskLevel = gwa !== null ? calculateAcademicRisk({ currentGwa: gwa }).risk_level : 'low';
+            const risk = { low: 'Low Risk', moderate: 'Medium Risk', high: 'High Risk', critical: 'Critical Risk' }[riskLevel] || 'Low Risk';
 
             return {
               name: `${s.first_name} ${s.last_name}`,
@@ -245,7 +232,8 @@ export default function SummaryReports() {
               gwa: gwa,
               risk: risk
             };
-          }).filter(s => s.risk !== 'Low Risk' || (s.gwa !== null && s.gwa > 2.50)); // Show warnings with posted grades
+          }).filter(s => s.risk !== 'Low Risk'); // The canonical model already flags any GWA > 2.00
+          // as at least Medium Risk, so the old "gwa > 2.50" supplementary catch is redundant now.
           setReportData(list);
         }
       } catch (err) {
@@ -609,7 +597,9 @@ export default function SummaryReports() {
                         <td className="py-2.5 text-center font-mono">
                           {row.passed || 0} ({row.enrolled > 0 ? Math.round(((row.passed || 0) / row.enrolled) * 100) : 0}%)
                         </td>
-                        <td className="py-2.5 text-center font-mono font-bold">{row.averageGwa?.toFixed(2) || '0.00'}</td>
+                        <td className="py-2.5 text-center font-mono font-bold">
+                          {typeof row.averageGwa === 'number' ? row.averageGwa.toFixed(2) : 'No grades yet'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -675,8 +665,8 @@ export default function SummaryReports() {
                         </td>
                         <td className="py-2.5 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            row.risk === 'High Risk' 
-                              ? 'bg-rose-50 text-rose-700 border border-rose-200' 
+                            row.risk === 'Critical Risk' || row.risk === 'High Risk'
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
                               : 'bg-amber-50 text-amber-700 border border-amber-200'
                           }`}>
                             {row.risk}

@@ -5,53 +5,8 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { notifyAdminActivity } from '../../lib/notificationDispatcher';
-
-const OFFICIAL_DYCI_PRESETS = [
-  {
-    name: 'General Education Core',
-    description: 'Standard institutional lecture scale: 50% Class Standing, 40% Major Examination, 10% Character Rating.',
-    components: [
-      { name: 'Class Standing (Formative)', weight: 50, max_score: 20, is_multiple: true },
-      { name: 'Major Examination', weight: 40, max_score: 40, is_multiple: false },
-      { name: 'Character Rating', weight: 10, max_score: 100, is_multiple: false }
-    ]
-  },
-  {
-    name: 'Health Sciences (Theory)',
-    description: 'Theoretical lecture scale: 30% Class Standing, 60% Major Examination, 10% Character Rating.',
-    components: [
-      { name: 'Class Standing (Formative)', weight: 30, max_score: 20, is_multiple: true },
-      { name: 'Major Examination', weight: 60, max_score: 100, is_multiple: false },
-      { name: 'Character Rating', weight: 10, max_score: 100, is_multiple: false }
-    ]
-  },
-  {
-    name: 'Health Sciences (RLE / Clinical Practicum)',
-    description: 'Clinical practicum: 50% Checklist Rating, 20% NCP & Case Study, 20% Rubrics, 10% Quizzes.',
-    components: [
-      { name: 'Checklist Rating', weight: 50, max_score: 100, is_multiple: true },
-      { name: 'Nursing Care Plan & Case Study', weight: 20, max_score: 100, is_multiple: true },
-      { name: 'Rubric Assessment', weight: 20, max_score: 100, is_multiple: false },
-      { name: 'Quizzes & Written Outputs', weight: 10, max_score: 50, is_multiple: true }
-    ]
-  },
-  {
-    name: 'Maritime Studies (Lecture)',
-    description: 'Maritime theoretical lecture scale: 60% Class Standing and 40% Major Examination.',
-    components: [
-      { name: 'Class Standing', weight: 60, max_score: 100, is_multiple: true },
-      { name: 'Major Examination', weight: 40, max_score: 100, is_multiple: false }
-    ]
-  },
-  {
-    name: 'Maritime Studies (Laboratory / Simulator)',
-    description: 'Maritime simulator/practical scale: 40% Systematic Exercises, 60% Demonstration of Competence.',
-    components: [
-      { name: 'Systematic Exercises', weight: 40, max_score: 100, is_multiple: true },
-      { name: 'Demonstration of Competence', weight: 60, max_score: 100, is_multiple: false }
-    ]
-  }
-];
+import { WEIGHT_TOLERANCE } from '../../lib/gradingMath';
+import { OFFICIAL_DYCI_PRESETS } from '../../lib/officialGradingPresets';
 
 export default function GradeComputationsList() {
   const { user, profile } = useAuth();
@@ -177,8 +132,13 @@ export default function GradeComputationsList() {
       return;
     }
 
-    if (totalWeight !== 100) {
-      setErrorMsg(`Total weights must sum to exactly 100%. (Current: ${totalWeight}%)`);
+    // WEIGHT_TOLERANCE, not a strict !== 100 — floating-point summation of decimal
+    // weights (e.g. 41.9 + 48.3 + 9.8) can land on 99.99999999999999, a completely
+    // valid 100% split that the grading engine itself accepts via the same
+    // tolerance. The strict check was rejecting admin-entered formulas the engine
+    // would happily compute. Verified by brute-force search before fixing.
+    if (Math.abs(totalWeight - 100) > WEIGHT_TOLERANCE) {
+      setErrorMsg(`Total weights must sum to 100%. (Current: ${totalWeight}%)`);
       return;
     }
 
@@ -630,8 +590,8 @@ export default function GradeComputationsList() {
                 <div className="flex items-center justify-between px-1">
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Total Weighted Sum:</span>
                   <span className={`font-mono text-xs sm:text-sm font-extrabold px-2.5 py-0.5 rounded-full border ${
-                    totalWeight === 100 
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
+                    Math.abs(totalWeight - 100) <= WEIGHT_TOLERANCE
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
                       : 'bg-rose-50 text-rose-700 border-rose-100'
                   }`}>
                     {totalWeight}% / 100%

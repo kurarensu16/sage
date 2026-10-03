@@ -135,6 +135,24 @@ function sanitizeInsightContext(input: any) {
     studentName: text(input?.studentName, 160),
     gwa: text(input?.gwa, 20),
     standing: text(input?.standing, 160),
+    trajectoryVerdict: text(input?.trajectoryVerdict, 160),
+    trajectoryType: text(input?.trajectoryType, 20),
+    // Different professors post Prelim/MR/TFR/Semestral Grade on different schedules, so the
+    // overall GWA is often a partial-term blend. completeness/dlEligibility carry that nuance
+    // (e.g. "possible candidate based on current performance") so the model explains the
+    // same provisional framing the student-facing UI already shows, rather than treating a
+    // partial snapshot as a final result.
+    dlEligibility: {
+      awardCategory: text(input?.dlEligibility?.awardCategory, 60),
+      message: text(input?.dlEligibility?.message, 500)
+    },
+    completeness: {
+      totalSubjectCount: Number.isFinite(input?.completeness?.totalSubjectCount) ? input.completeness.totalSubjectCount : null,
+      postedSubjectCount: Number.isFinite(input?.completeness?.postedSubjectCount) ? input.completeness.postedSubjectCount : null,
+      finalizedSubjectCount: Number.isFinite(input?.completeness?.finalizedSubjectCount) ? input.completeness.finalizedSubjectCount : null,
+      isFullyFinalized: Boolean(input?.completeness?.isFullyFinalized),
+      note: text(input?.completeness?.note, 200)
+    },
     subjectCode: text(input?.subjectCode, 40),
     subjectName: text(input?.subjectName, 160),
     periodLabel: text(input?.periodLabel, 120),
@@ -176,8 +194,13 @@ Rules:
 4. Unencoded future terms are missing, not zero. Do not treat them as failures.
 5. Absences do not deduct grade points. Four or more absences may support an FDA recommendation, but faculty makes the official decision.
 6. If records are insufficient, say: "The available course records do not provide enough information to confirm that."
-7. Use no more than 120 words and at most three practical actions.
-8. Return JSON only with exactly this shape:
+7. When context.completeness.isFullyFinalized is false, treat the GWA, standing, and President's
+   List eligibility as a current, in-progress reading, not a final result — use language like
+   "based on your current performance" or "possible candidate," matching context.dlEligibility's
+   own wording, and mention how many subjects are graded so far if context.completeness.note is
+   present. Never say a partial-term reading "confirms" or "finalizes" anything.
+8. Use no more than 120 words and at most three practical actions.
+9. Return JSON only with exactly this shape:
 {"message":"student-facing explanation","actions":["action"],"consultation_recommended":false,"boundary_statement":"${BOUNDARY_STATEMENT}"}
 
 Request mode: ${mode}.`

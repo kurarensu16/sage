@@ -63,6 +63,19 @@ export function getHonorTier(gwa, { subjectGrades = [], hasInc = false, units = 
 }
 
 export const getRemarks = ({ gwa, isComplete = true } = {}) => !isComplete || gwa === null || gwa === undefined || !Number.isFinite(Number(gwa)) ? 'In Progress' : Number(gwa) <= GRADE_SCALE.passingCutoff ? 'Passed' : 'Failed';
+
+// Canonical remark vocabulary. Display labels are what the UI shows; DB values are the
+// lowercase enum `posted_grades.remarks` actually stores. One mapping, both directions —
+// so INC/FDA/Dropped never collapse to a binary Passed/Failed in either direction.
+export const REMARKS = Object.freeze({ PASSED: 'Passed', FAILED: 'Failed', IN_PROGRESS: 'In Progress', INCOMPLETE: 'Incomplete (INC)', FDA: 'FDA', DROPPED: 'Dropped' });
+export const DB_REMARKS = Object.freeze({ PASSED: 'passed', FAILED: 'failed', INCOMPLETE: 'incomplete', FDA: 'fda', DROPPED: 'dropped' });
+const DISPLAY_TO_DB = Object.freeze({ passed: DB_REMARKS.PASSED, failed: DB_REMARKS.FAILED, inc: DB_REMARKS.INCOMPLETE, incomplete: DB_REMARKS.INCOMPLETE, fda: DB_REMARKS.FDA, dropped: DB_REMARKS.DROPPED });
+const DB_TO_DISPLAY = Object.freeze({ passed: REMARKS.PASSED, failed: REMARKS.FAILED, incomplete: REMARKS.INCOMPLETE, fda: REMARKS.FDA, dropped: REMARKS.DROPPED });
+// Any unencoded/no-verdict case ('In Progress', null, unrecognized) must not silently post
+// as a passing grade — callers posting to the DB should gate on isComplete before calling this.
+export const toDbRemark = (displayRemark) => DISPLAY_TO_DB[String(displayRemark || '').trim().toLowerCase()] ?? DB_REMARKS.FAILED;
+// Never collapses an unrecognized/legacy value to "Failed" silently — surfaces it as-is instead.
+export const toDisplayRemark = (dbRemark) => DB_TO_DISPLAY[String(dbRemark || '').trim().toLowerCase()] ?? (dbRemark || REMARKS.IN_PROGRESS);
 export const getRiskTierForScore = (score) => Object.values(RISK_TIERS).find(tier => Math.max(0, Math.min(100, Number(score) || 0)) >= tier.min && Math.max(0, Math.min(100, Number(score) || 0)) <= tier.max) || RISK_TIERS.LOW;
 export const normalizeAttendanceStatus = (status) => ATTENDANCE.statuses.find(item => item.toLowerCase() === String(status || '').trim().toLowerCase()) || null;
 export function countAttendance(records = []) { const statuses = records.map(record => normalizeAttendanceStatus(record?.status ?? record)).filter(Boolean); const absences = statuses.filter(status => status === 'Absent').length; return { total: statuses.length, absences, attendanceRate: statuses.length ? Math.round(((statuses.length - absences) / statuses.length) * 100) : 100 }; }

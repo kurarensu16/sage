@@ -198,12 +198,9 @@ export default function PostedGradesView() {
       const draftRaw = localStorage.getItem(STORAGE_KEY);
       const draft = draftRaw ? JSON.parse(draftRaw) : {};
       
-      const storedAbsences = localStorage.getItem(`sage_absences_${classRecordId}_${student.id}`);
-      const absences = storedAbsences !== null ? parseInt(storedAbsences) : 0;
-
       return {
         ...student,
-        absences,
+        absences: student.absences ?? 0,
         periods: {
           Prelim: draft.Prelim || {},
           Midterm: draft.Midterm || {},
@@ -724,6 +721,21 @@ export default function PostedGradesView() {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
         });
 
+        // Fetch real absences from attendance_records — this page previously had no
+        // writer for its localStorage absence cache at all, so every student here
+        // always read 0 absences regardless of their actual record, unless the
+        // faculty happened to open ScoreInput for the same class first in the same
+        // browser (coincidental, not reliable). The DB is the only source of truth.
+        const { data: absenceData } = await supabase
+          .from('attendance_records')
+          .select('student_id')
+          .eq('class_record_id', classRecordId)
+          .eq('status', 'Absent');
+        const absenceCounts = {};
+        (absenceData || []).forEach(rec => {
+          absenceCounts[rec.student_id] = (absenceCounts[rec.student_id] || 0) + 1;
+        });
+
         const compiled = studentList.map(stud => {
           const dbData = scoresByStudent[stud.id] || {};
           const pgRow = findPostedMilestone(
@@ -732,6 +744,7 @@ export default function PostedGradesView() {
           );
           return {
             ...stud,
+            absences: absenceCounts[stud.id] || 0,
             customRemarks: dbData.customRemarks || '',
             remarksNote: dbData.remarksNote || '',
             computedGrade: pgRow ? pgRow.computed_grade : null,

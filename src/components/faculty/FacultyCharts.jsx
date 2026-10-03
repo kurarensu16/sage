@@ -27,7 +27,7 @@ const PALETTE = {
 
 // ── 1. FACULTY PERFORMANCE TRAJECTORY LINE CHART (BÉZIER CURVE) ─────────────
 export function FacultyPerformanceTrajectoryChart({ trajectoryData = [] }) {
-  const [activeMetric, setActiveMetric] = useState('avgGwa'); // 'avgGwa' | 'passRate' | 'examAvg'
+  const [activeMetric, setActiveMetric] = useState('avgRating'); // 'avgRating' | 'passRate' | 'examAvg'
   const [hoveredIdx, setHoveredIdx] = useState(null);
 
   if (!trajectoryData || trajectoryData.length === 0) {
@@ -51,24 +51,18 @@ export function FacultyPerformanceTrajectoryChart({ trajectoryData = [] }) {
   const pointsCount = trajectoryData.length;
   const getX = (idx) => padLeft + (idx / Math.max(1, pointsCount - 1)) * plotWidth;
 
-  // GWA scale: 1.00 (top) to 3.50 (bottom)
-  const minGwa = 1.00;
-  const maxGwa = 3.50;
-  const getGwaY = (val) => {
-    const clamped = Math.max(minGwa, Math.min(maxGwa, val || 2.25));
-    const ratio = (clamped - minGwa) / (maxGwa - minGwa);
-    return padTop + ratio * plotHeight;
-  };
-
-  // Percentage scale (0 - 100%)
+  // All three metrics (avgRating, passRate, examAvg) are 0-100% values — one
+  // shared percentage scale. (Previously avgRating/"avgGwa" plotted on a separate
+  // 1.00-3.50 GWA-decimal axis; that assumed the value was a transmuted GWA, which
+  // it never genuinely was — see the fix in Dashboard.jsx for why.)
   const getPctY = (pct) => {
-    const clamped = Math.max(50, Math.min(100, pct || 75));
+    const clamped = Math.max(50, Math.min(100, pct || PASSING_GRADE));
     const ratio = (100 - clamped) / 50;
     return padTop + ratio * plotHeight;
   };
 
   const getY = (d) => {
-    if (activeMetric === 'avgGwa') return getGwaY(d.avgGwa);
+    if (activeMetric === 'avgRating') return getPctY(d.avgRating);
     if (activeMetric === 'passRate') return getPctY(d.passRate);
     return getPctY(d.examAvg);
   };
@@ -91,10 +85,10 @@ export function FacultyPerformanceTrajectoryChart({ trajectoryData = [] }) {
     x: getX(idx),
     y: getY(d),
     term: d.term,
-    val: activeMetric === 'avgGwa' 
-      ? d.avgGwa?.toFixed(2) 
-      : activeMetric === 'passRate' 
-        ? `${d.passRate}%` 
+    val: activeMetric === 'avgRating'
+      ? `${d.avgRating}%`
+      : activeMetric === 'passRate'
+        ? `${d.passRate}%`
         : `${d.examAvg}%`
   }));
 
@@ -109,14 +103,14 @@ export function FacultyPerformanceTrajectoryChart({ trajectoryData = [] }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 p-0.5 bg-slate-100 rounded-lg border border-slate-200">
           <button
-            onClick={() => setActiveMetric('avgGwa')}
+            onClick={() => setActiveMetric('avgRating')}
             className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
-              activeMetric === 'avgGwa' 
-                ? 'bg-white text-slate-900 shadow-2xs' 
+              activeMetric === 'avgRating'
+                ? 'bg-white text-slate-900 shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Class GWA
+            Avg Term Rating %
           </button>
           <button
             onClick={() => setActiveMetric('passRate')}
@@ -143,7 +137,7 @@ export function FacultyPerformanceTrajectoryChart({ trajectoryData = [] }) {
         <div className="flex items-center gap-3 text-[11px] text-slate-500">
           <span className="flex items-center gap-1">
             <span className="w-2.5 h-2.5 rounded-full bg-sage-600"></span>
-            {activeMetric === 'avgGwa' ? 'Avg GWA (Lower is Better)' : 'Score % (Higher is Better)'}
+            Score % (Higher is Better)
           </span>
         </div>
       </div>
@@ -164,9 +158,7 @@ export function FacultyPerformanceTrajectoryChart({ trajectoryData = [] }) {
           {/* Grid lines */}
           {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
             const y = padTop + ratio * plotHeight;
-            const label = activeMetric === 'avgGwa'
-              ? (minGwa + ratio * (maxGwa - minGwa)).toFixed(2)
-              : `${Math.round(100 - ratio * 50)}%`;
+            const label = `${Math.round(100 - ratio * 50)}%`;
 
             return (
               <g key={`grid-${idx}`}>
@@ -274,7 +266,7 @@ export function FacultyPerformanceTrajectoryChart({ trajectoryData = [] }) {
               {points[hoveredIdx].val}
             </span>
             <span className="text-[9px] text-slate-400">
-              {activeMetric === 'avgGwa' ? 'Transmuted Class Average' : activeMetric === 'passRate' ? 'Class Passing Percentage' : 'Class Exam Average'}
+              {activeMetric === 'avgRating' ? 'Average Term Rating' : activeMetric === 'passRate' ? 'Class Passing Percentage' : 'Class Exam Average'}
             </span>
           </div>
         )}
@@ -410,7 +402,7 @@ export function StudentRiskInterventionDonut({ riskData = {} }) {
 
 // ── 3. ASSESSMENT COMPONENT DISTRIBUTION BAR CHART ──────────────────────────
 export function AssessmentComponentDistributionBar({ componentsData = [] }) {
-  // Default structure: [ { component: 'Class Standing (50%)', avgScore: 82, target: 75 }, ... ]
+  // Default structure: [ { component: 'Class Standing (50%)', avgScore: 82, target: PASSING_GRADE }, ... ]
   if (!componentsData || componentsData.length === 0) {
     return (
       <div className="h-56 flex flex-col items-center justify-center text-slate-400 text-xs">
@@ -447,11 +439,11 @@ export function AssessmentComponentDistributionBar({ componentsData = [] }) {
 
             {/* Bar Background */}
             <div className="relative w-full h-3.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
-              {/* Target 75% indicator line */}
-              <div 
+              {/* Target indicator line at the institutional passing-grade benchmark */}
+              <div
                 className="absolute top-0 bottom-0 w-0.5 bg-slate-400 z-10 opacity-70"
-                style={{ left: '75%' }}
-                title="75% Minimum Passing Benchmark"
+                style={{ left: `${PASSING_GRADE}%` }}
+                title={`${PASSING_GRADE}% Minimum Passing Benchmark`}
               />
               
               {/* Fill Bar */}
@@ -470,7 +462,7 @@ export function AssessmentComponentDistributionBar({ componentsData = [] }) {
       <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
         <span className="flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-          75% Minimum Passing Benchmark
+          {PASSING_GRADE}% Minimum Passing Benchmark
         </span>
         <span>Based on enrolled student scores</span>
       </div>

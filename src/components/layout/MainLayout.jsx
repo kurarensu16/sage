@@ -4,6 +4,7 @@ import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import BottomNav from './BottomNav';
 import OfflineBadge from '../pwa/OfflineBadge';
+import GuardianInfoGate from '../student/GuardianInfoGate';
 import { useAuth } from '../../lib/AuthContext';
 import { DashboardSkeleton } from '../common/Skeleton';
 
@@ -51,6 +52,7 @@ export default function MainLayout() {
 
       <BottomNav />
       <OfflineBadge />
+      <GuardianInfoGate />
     </div>
   );
 }

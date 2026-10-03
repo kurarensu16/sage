@@ -21,10 +21,11 @@ import {
   AlertTriangle,
   Layers,
   ArrowRight,
-  Sparkles
+  Sparkles,
+  BarChart2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 export default function PerformanceComparison() {
   const { user } = useAuth();
 
@@ -32,6 +33,10 @@ export default function PerformanceComparison() {
   const [selectedCourseCode, setSelectedCourseCode] = useState('');
   const [targetClassId, setTargetClassId] = useState('');
   const [referenceClassId, setReferenceClassId] = useState('');
+
+  const [comparisonMode, setComparisonMode] = useState('ab'); // 'ab' or 'range'
+  const [rangeStartClassId, setRangeStartClassId] = useState('');
+  const [rangeEndClassId, setRangeEndClassId] = useState('');
 
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
@@ -59,6 +64,8 @@ export default function PerformanceComparison() {
             } else {
               setReferenceClassId('');
             }
+            setRangeStartClassId(firstCourse.classes[0].class_record_id);
+            setRangeEndClassId(firstCourse.classes[firstCourse.classes.length - 1].class_record_id);
           }
         }
       } catch (err) {
@@ -84,9 +91,13 @@ export default function PerformanceComparison() {
     if (course && course.classes.length > 0) {
       setTargetClassId(course.classes[0].class_record_id);
       setReferenceClassId(course.classes.length > 1 ? course.classes[1].class_record_id : '');
+      setRangeStartClassId(course.classes[0].class_record_id);
+      setRangeEndClassId(course.classes[course.classes.length - 1].class_record_id);
     } else {
       setTargetClassId('');
       setReferenceClassId('');
+      setRangeStartClassId('');
+      setRangeEndClassId('');
     }
   };
 
@@ -147,11 +158,75 @@ export default function PerformanceComparison() {
   const targetClass = selectedCourse?.classes?.find(c => c.class_record_id === targetClassId);
   const referenceClass = selectedCourse?.classes?.find(c => c.class_record_id === referenceClassId);
 
+  const chartData = useMemo(() => {
+    if (!targetMetrics || !referenceMetrics || !targetClass || !referenceClass) return [];
+    
+    // Fallbacks to 0 if null just for rendering the chart
+    return [
+      {
+        name: 'Passing Rate (%)',
+        ['Target Class']: targetMetrics.passingRate || 0,
+        ['Reference Class']: referenceMetrics.passingRate || 0,
+      },
+      {
+        name: 'At-Risk Rate (%)',
+        ['Target Class']: targetMetrics.atRiskRate || 0,
+        ['Reference Class']: referenceMetrics.atRiskRate || 0,
+      },
+      {
+        name: 'Class Average (%)',
+        ['Target Class']: targetMetrics.averageGrade || 0,
+        ['Reference Class']: referenceMetrics.averageGrade || 0,
+      }
+    ];
+  }, [targetMetrics, referenceMetrics, targetClass, referenceClass]);
+
+  const trendChartData = useMemo(() => {
+    if (!rangeStartClassId || !rangeEndClassId || historicalData.length === 0) return [];
+    
+    const startIndex = historicalData.findIndex(h => h.class_record_id === rangeStartClassId);
+    const endIndex = historicalData.findIndex(h => h.class_record_id === rangeEndClassId);
+    
+    if (startIndex === -1 || endIndex === -1) return [];
+    
+    const minIdx = Math.min(startIndex, endIndex);
+    const maxIdx = Math.max(startIndex, endIndex);
+    
+    return historicalData.slice(minIdx, maxIdx + 1).map(d => ({
+      name: `${d.semester} A.Y. ${d.school_year}`,
+      'Passing Rate': d.metrics?.passingRate || 0,
+      'At-Risk Rate': d.metrics?.atRiskRate || 0,
+      'Class Average': d.metrics?.averageGrade || 0
+    }));
+  }, [historicalData, rangeStartClassId, rangeEndClassId]);
+
+  const rangeSummary = useMemo(() => {
+    if (trendChartData.length < 2) return "Not enough terms selected to generate a trend analysis. Please select a wider range.";
+    
+    const start = trendChartData[0];
+    const end = trendChartData[trendChartData.length - 1];
+    
+    const passDiff = end['Passing Rate'] - start['Passing Rate'];
+    const riskDiff = end['At-Risk Rate'] - start['At-Risk Rate'];
+    
+    if (passDiff > 5 && riskDiff < -5) {
+      return `Over the selected ${trendChartData.length} terms, passing rates improved by ${passDiff}% while at-risk students dropped by ${Math.abs(riskDiff)}%. This indicates a strong positive trajectory in student mastery.`;
+    } else if (passDiff < -5 && riskDiff > 5) {
+      return `Over the selected ${trendChartData.length} terms, passing rates declined by ${Math.abs(passDiff)}% while at-risk students increased by ${riskDiff}%. Consider reviewing curriculum pacing across this timeframe.`;
+    } else if (passDiff > 2) {
+      return `Passing rates have trended positively, improving by ${passDiff}% from the start of the selected period.`;
+    } else if (passDiff < -2) {
+      return `Passing rates have decreased by ${Math.abs(passDiff)}% across the selected period.`;
+    } else {
+      return `Performance has remained relatively stable across the selected ${trendChartData.length} terms.`;
+    }
+  }, [trendChartData]);
+
   return (
     <div className="space-y-6 text-left">
       <PageHeader
         title="Performance Comparison"
-        subtitle="Multi-term cohort comparison and trajectory analysis for identical course codes"
+        subtitle="Multi-term class comparison and trend analysis for identical course codes"
       />
 
       {/* Top Bar: Subject and Term Selector */}
@@ -179,9 +254,32 @@ export default function PerformanceComparison() {
           </div>
         </div>
 
-        {/* Target vs Reference Term Selectors */}
-        {selectedCourse && selectedCourse.classes.length > 0 && (
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+        {/* Mode Toggle & Selectors */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-4">
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg w-max">
+            <button
+              onClick={() => setComparisonMode('ab')}
+              className={cn(
+                "px-3 py-1.5 rounded-md text-xs font-semibold transition-all",
+                comparisonMode === 'ab' ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              )}
+            >
+              A/B Compare
+            </button>
+            <button
+              onClick={() => setComparisonMode('range')}
+              className={cn(
+                "px-3 py-1.5 rounded-md text-xs font-semibold transition-all",
+                comparisonMode === 'range' ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              )}
+            >
+              Trend Range
+            </button>
+          </div>
+
+          {/* Target vs Reference Term Selectors */}
+          {selectedCourse && selectedCourse.classes.length > 0 && comparisonMode === 'ab' && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold text-slate-400 uppercase">Target:</span>
               <select
@@ -217,7 +315,45 @@ export default function PerformanceComparison() {
               </select>
             </div>
           </div>
-        )}
+          )}
+
+          {/* Range Mode Selectors */}
+          {selectedCourse && selectedCourse.classes.length > 0 && comparisonMode === 'range' && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase">From:</span>
+                <select
+                  value={rangeStartClassId}
+                  onChange={(e) => setRangeStartClassId(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:border-sage-500 cursor-pointer"
+                >
+                  {selectedCourse.classes.map(c => (
+                    <option key={c.class_record_id} value={c.class_record_id}>
+                      {c.semester} A.Y. {c.school_year}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <span className="hidden sm:inline text-slate-300 font-bold">to</span>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase">To:</span>
+                <select
+                  value={rangeEndClassId}
+                  onChange={(e) => setRangeEndClassId(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:border-sage-500 cursor-pointer"
+                >
+                  {selectedCourse.classes.map(c => (
+                    <option key={c.class_record_id} value={c.class_record_id}>
+                      {c.semester} A.Y. {c.school_year}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {errorMsg && (
@@ -228,17 +364,61 @@ export default function PerformanceComparison() {
       )}
 
       {/* Pedagogical Disclaimer Banner */}
-      <div className="bg-sage-50/70 border border-sage-200/80 rounded-2xl p-4 flex items-start gap-3 text-xs text-sage-900 font-medium">
-        <Info className="w-4 h-4 text-sage-600 flex-shrink-0 mt-0.5" />
-        <div className="leading-relaxed">
-          <span className="font-bold text-sage-950">Trend Indicator Notice: </span>
-          Comparative metrics reflect cohort trajectory and grade distributions across distinct student populations. Variations serve as observational indicators to guide instructional refinement, rather than isolated proof of instructional efficacy.
+      <div className="bg-sage-50/70 border border-sage-200/80 rounded-xl p-3 flex items-center gap-3 text-xs text-sage-900 font-medium">
+        <Info className="w-4 h-4 text-sage-600 flex-shrink-0" />
+        <div>
+          <span className="font-bold text-sage-950">Note: </span>
+          Variations between classes serve as guides for instructional refinement, not definitive proof of efficacy.
         </div>
       </div>
 
       {loadingMetrics ? (
         <div className="bg-white rounded-2xl border border-slate-200/90 p-8">
           <TableSkeleton rows={4} cols={4} />
+        </div>
+      ) : comparisonMode === 'range' ? (
+        <div className="space-y-6">
+          {/* Executive Summary Card for Range */}
+          <div className="bg-gradient-to-br from-white via-sage-50/50 to-sage-100/50 rounded-2xl border border-sage-200 shadow-sm p-6 flex items-start gap-4 text-slate-800 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-sage-300 rounded-full blur-3xl opacity-20 translate-x-1/3 -translate-y-1/3 group-hover:opacity-40 transition-opacity duration-700"></div>
+            <div className="w-10 h-10 rounded-xl bg-sage-100 border border-sage-200 flex items-center justify-center flex-shrink-0 shadow-inner z-10 relative">
+              <Sparkles className="w-5 h-5 text-sage-600" />
+            </div>
+            <div className="space-y-1.5 z-10 relative">
+              <div className="text-[11px] font-bold text-sage-600 uppercase tracking-wider flex items-center gap-2">
+                Longitudinal Trend Analysis
+                <span className="w-1.5 h-1.5 rounded-full bg-sage-500 animate-pulse"></span>
+              </div>
+              <p className="text-sm sm:text-base font-semibold text-slate-800 leading-relaxed">
+                {rangeSummary}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-2 font-medium">
+                Analyzing a span of {trendChartData.length} academic terms.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 pb-8 overflow-hidden h-[400px]">
+            <h4 className="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-sage-600" />
+              Trend Range Overview
+            </h4>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trendChartData} margin={{ top: 0, right: 0, left: -20, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} domain={[0, 100]} />
+                <Tooltip 
+                  cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '3 3' }} 
+                  contentStyle={{ borderRadius: '8px', fontSize: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
+                />
+                <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                <Line type="monotone" dataKey="Passing Rate" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="At-Risk Rate" stroke="#ef4444" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="Class Average" stroke="#4f46e5" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       ) : !comparison ? (
         <div className="bg-white rounded-2xl border border-slate-200/90 p-8 sm:p-12 text-center max-w-xl mx-auto space-y-3">
@@ -251,18 +431,20 @@ export default function PerformanceComparison() {
       ) : (
         <>
           {/* Executive Summary Card */}
-          <div className="bg-gradient-to-r from-sage-50 via-white to-slate-50 rounded-2xl border border-sage-200/90 shadow-2xs p-5 flex items-start gap-3.5">
-            <div className="w-9 h-9 rounded-xl bg-sage-600 text-white flex items-center justify-center flex-shrink-0 shadow-2xs">
-              <Sparkles className="w-4 h-4" />
+          <div className="bg-gradient-to-br from-white via-sage-50/50 to-sage-100/50 rounded-2xl border border-sage-200 shadow-sm p-6 flex items-start gap-4 text-slate-800 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-sage-300 rounded-full blur-3xl opacity-20 translate-x-1/3 -translate-y-1/3 group-hover:opacity-40 transition-opacity duration-700"></div>
+            <div className="w-10 h-10 rounded-xl bg-sage-100 border border-sage-200 flex items-center justify-center flex-shrink-0 shadow-inner z-10 relative">
+              <Sparkles className="w-5 h-5 text-sage-600" />
             </div>
-            <div className="space-y-1">
-              <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">
+            <div className="space-y-1.5 z-10 relative">
+              <div className="text-[11px] font-bold text-sage-600 uppercase tracking-wider flex items-center gap-2">
                 Executive Trend Analysis
+                <span className="w-1.5 h-1.5 rounded-full bg-sage-500 animate-pulse"></span>
               </div>
-              <p className="text-xs sm:text-sm font-semibold text-slate-900 leading-snug">
+              <p className="text-sm sm:text-base font-semibold text-slate-800 leading-relaxed">
                 {comparison.summary}
               </p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-500 mt-2 font-medium">
                 Comparing {targetClass?.semester} A.Y. {targetClass?.school_year} ({targetClass?.sections?.name}) against {referenceClass?.semester} A.Y. {referenceClass?.school_year} ({referenceClass?.sections?.name}) with ±{SAME_MARGIN}% tolerance.
               </p>
             </div>
@@ -271,17 +453,18 @@ export default function PerformanceComparison() {
           {/* Comparative KPI Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {/* Passing Rate */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between">
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all duration-300 p-4 flex flex-col justify-between relative overflow-hidden group">
+              <div className="absolute top-0 left-0 w-1 h-full bg-emerald-400 opacity-50 group-hover:opacity-100 transition-opacity duration-300"></div>
               <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
                 <span>Passing Rate</span>
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
               </div>
               <div className="mt-3 flex items-baseline gap-2">
                 <span className="font-mono text-2xl font-bold text-slate-900">
-                  {comparison.passingRate.current}%
+                  {comparison.passingRate.current !== null ? `${comparison.passingRate.current}%` : 'N/A'}
                 </span>
                 <span className="text-xs font-mono text-slate-400">
-                  vs {comparison.passingRate.previous}%
+                  vs {comparison.passingRate.previous !== null ? `${comparison.passingRate.previous}%` : 'N/A'}
                 </span>
               </div>
               <div className="mt-2 flex items-center gap-1.5 text-xs">
@@ -303,21 +486,28 @@ export default function PerformanceComparison() {
                     About the same (±{SAME_MARGIN}%)
                   </span>
                 )}
+                {comparison.passingRate.trend === 'insufficient' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                    <AlertTriangle className="w-3 h-3 text-slate-400" />
+                    Pending Data
+                  </span>
+                )}
               </div>
             </div>
 
             {/* At-Risk Rate (Lower is better) */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between">
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all duration-300 p-4 flex flex-col justify-between relative overflow-hidden group">
+              <div className="absolute top-0 left-0 w-1 h-full bg-rose-400 opacity-50 group-hover:opacity-100 transition-opacity duration-300"></div>
               <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
                 <span>At-Risk Quota</span>
                 <AlertTriangle className="w-4 h-4 text-rose-500" />
               </div>
               <div className="mt-3 flex items-baseline gap-2">
                 <span className="font-mono text-2xl font-bold text-rose-600">
-                  {comparison.atRiskRate.current}%
+                  {comparison.atRiskRate.current !== null ? `${comparison.atRiskRate.current}%` : 'N/A'}
                 </span>
                 <span className="text-xs font-mono text-slate-400">
-                  vs {comparison.atRiskRate.previous}%
+                  vs {comparison.atRiskRate.previous !== null ? `${comparison.atRiskRate.previous}%` : 'N/A'}
                 </span>
               </div>
               <div className="mt-2 flex items-center gap-1.5 text-xs">
@@ -339,21 +529,28 @@ export default function PerformanceComparison() {
                     About the same (±{SAME_MARGIN}%)
                   </span>
                 )}
+                {comparison.atRiskRate.trend === 'insufficient' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                    <AlertTriangle className="w-3 h-3 text-slate-400" />
+                    Pending Data
+                  </span>
+                )}
               </div>
             </div>
 
             {/* Average Course Grade */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between">
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all duration-300 p-4 flex flex-col justify-between relative overflow-hidden group">
+              <div className="absolute top-0 left-0 w-1 h-full bg-sage-400 opacity-50 group-hover:opacity-100 transition-opacity duration-300"></div>
               <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-                <span>Cohort Average</span>
+                <span>Class Average</span>
                 <TrendingUp className="w-4 h-4 text-sage-600" />
               </div>
               <div className="mt-3 flex items-baseline gap-2">
                 <span className="font-mono text-2xl font-bold text-slate-900">
-                  {comparison.averageGrade.current}%
+                  {comparison.averageGrade.current !== null ? `${comparison.averageGrade.current}%` : 'N/A'}
                 </span>
                 <span className="text-xs font-mono text-slate-400">
-                  vs {comparison.averageGrade.previous}%
+                  vs {comparison.averageGrade.previous !== null ? `${comparison.averageGrade.previous}%` : 'N/A'}
                 </span>
               </div>
               <div className="mt-2 flex items-center gap-1.5 text-xs">
@@ -375,11 +572,18 @@ export default function PerformanceComparison() {
                     About the same
                   </span>
                 )}
+                {comparison.averageGrade.trend === 'insufficient' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                    <AlertTriangle className="w-3 h-3 text-slate-400" />
+                    Pending Data
+                  </span>
+                )}
               </div>
             </div>
 
             {/* Enrolled Cohort Size */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between">
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all duration-300 p-4 flex flex-col justify-between relative overflow-hidden group">
+              <div className="absolute top-0 left-0 w-1 h-full bg-slate-300 opacity-50 group-hover:opacity-100 transition-opacity duration-300"></div>
               <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
                 <span>Class Enrollment</span>
                 <Users className="w-4 h-4 text-slate-400" />
@@ -393,9 +597,31 @@ export default function PerformanceComparison() {
                 </span>
               </div>
               <div className="mt-2 text-xs text-slate-500 font-medium">
-                Cohort delta: <span className="font-mono font-bold text-slate-700">{comparison.classSize.diff >= 0 ? `+${comparison.classSize.diff}` : comparison.classSize.diff}</span> students
+                Class size difference: <span className="font-mono font-bold text-slate-700">{comparison.classSize.diff >= 0 ? `+${comparison.classSize.diff}` : comparison.classSize.diff}</span> students
               </div>
             </div>
+          </div>
+
+          {/* Visual Comparison Chart */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 pb-8 overflow-hidden h-[260px]">
+            <h4 className="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
+              <BarChart2 className="w-4 h-4 text-sage-600" />
+              Target vs. Reference Overview
+            </h4>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} />
+                <Tooltip 
+                  cursor={{ fill: '#f1f5f9' }} 
+                  contentStyle={{ borderRadius: '8px', fontSize: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} 
+                />
+                <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                <Bar dataKey="Target Class" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={36} />
+                <Bar dataKey="Reference Class" fill="#94a3b8" radius={[4, 4, 0, 0]} barSize={36} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </>
       )}
@@ -405,7 +631,7 @@ export default function PerformanceComparison() {
         <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-slate-900 text-xs sm:text-sm">
             <Calendar className="w-4 h-4 text-sage-600" />
-            <span>Multi-Term Cohort Trajectory ({selectedCourseCode})</span>
+            <span>Multi-Term Class Trajectory ({selectedCourseCode})</span>
           </div>
           <div className="text-xs text-slate-400 font-medium">
             {historicalData.length} recorded {historicalData.length === 1 ? 'term' : 'terms'}

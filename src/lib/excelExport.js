@@ -9,14 +9,25 @@ import * as XLSX from 'xlsx-js-style';
 // ---------------------------------------------------------------------------
 // Grading formula helpers — extract component weights from the resolved formula
 // ---------------------------------------------------------------------------
+// This fallback only affects the weight *labels* embedded in the exported Excel
+// sheet's own live formula text (e.g. the CS/Char/Exam split shown in a formula
+// cell) — it never reaches the actual posted grade values, which already fail
+// closed independently via calculateStoredTermRating()/calculateWeightedTermRating()
+// returning null when no valid formula is supplied. Step 10a threads a real
+// resolved formula into every caller of buildRecordSheet(), so this should be
+// unreachable in normal use; it's a last-resort guard against blank Excel
+// formula cells, not a silent substitution of real grade data. Logged (not
+// silent) so a missing/malformed formula reaching this far is still visible.
 const DEFAULT_WEIGHTS = { cs: 50, char: 10, exam: 40 };
 
 /**
  * Extract CS / Character / Exam weights from the formula's components array.
- * Falls back to DYCI default 50/10/40 if formula is missing or malformed.
+ * Falls back to the DYCI default 50/10/40 (logged, never silent) if the formula
+ * is missing or malformed.
  */
 function extractComponentWeights(formula) {
   if (!formula?.ok || !Array.isArray(formula.components) || formula.components.length === 0) {
+    console.warn('excelExport: no valid grading formula supplied — Excel formula weights fall back to 50/10/40 CS/Char/Exam defaults for display only; posted grade values are unaffected.');
     return DEFAULT_WEIGHTS;
   }
 
@@ -27,10 +38,17 @@ function extractComponentWeights(formula) {
     return comp ? comp.weight : null;
   };
 
+  const cs = lookup(['class standing', 'classstanding', 'cs']);
+  const char = lookup(['character', 'char']);
+  const exam = lookup(['exam', 'major exam', 'final exam', 'term exam']);
+  if (cs === null || char === null || exam === null) {
+    console.warn('excelExport: formula is missing a recognizable Class Standing/Character/Exam component — unmatched components fall back to DYCI defaults for display only.');
+  }
+
   return {
-    cs:   lookup(['class standing', 'classstanding', 'cs'])   ?? DEFAULT_WEIGHTS.cs,
-    char: lookup(['character', 'char'])                        ?? DEFAULT_WEIGHTS.char,
-    exam: lookup(['exam', 'major exam', 'final exam', 'term exam']) ?? DEFAULT_WEIGHTS.exam,
+    cs:   cs   ?? DEFAULT_WEIGHTS.cs,
+    char: char ?? DEFAULT_WEIGHTS.char,
+    exam: exam ?? DEFAULT_WEIGHTS.exam,
   };
 }
 

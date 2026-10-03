@@ -4,14 +4,18 @@ import {
   calculateStoredTermRating,
   calculateWeightedTermRating,
   resolveGradingFormula,
-  toEffectiveGradeForPosting
+  toEffectiveGradeForPosting,
+  WEIGHT_TOLERANCE
 } from '../src/lib/gradingMath.js';
 import {
   computeStudentGwa,
   countAttendance,
   getAttendanceFlags,
   getHonorTier,
+  getRemarks,
   resolveOfficialGwa,
+  toDbRemark,
+  toDisplayRemark,
   toGwaOrNull
 } from '../src/lib/academicPolicy.js';
 import { calculateAcademicRisk } from '../src/lib/riskEngine.js';
@@ -21,58 +25,14 @@ import {
   getCanonicalGradePeriod
 } from '../src/lib/gradeMilestones.js';
 import { computeTentativeGradeDetails } from '../src/lib/riskEngine.js';
+import { OFFICIAL_DYCI_PRESETS } from '../src/lib/officialGradingPresets.js';
 
-const presets = [
-  {
-    name: 'General Education Core',
-    isolatedKey: 'class_standing',
-    isolatedExpected: 50,
-    components: [
-      { key: 'class_standing', name: 'Class Standing (Formative)', weight: 50, max_score: 20, is_multiple: true },
-      { key: 'major_examination', name: 'Major Examination', weight: 40, max_score: 40, is_multiple: false },
-      { key: 'character_rating', name: 'Character Rating', weight: 10, max_score: 100, is_multiple: false }
-    ]
-  },
-  {
-    name: 'Health Sciences (Theory)',
-    isolatedKey: 'class_standing',
-    isolatedExpected: 30,
-    components: [
-      { key: 'class_standing', name: 'Class Standing (Formative)', weight: 30, max_score: 20, is_multiple: true },
-      { key: 'major_examination', name: 'Major Examination', weight: 60, max_score: 100, is_multiple: false },
-      { key: 'character_rating', name: 'Character Rating', weight: 10, max_score: 100, is_multiple: false }
-    ]
-  },
-  {
-    name: 'Health Sciences (RLE / Clinical Practicum)',
-    isolatedKey: 'checklist_rating',
-    isolatedExpected: 50,
-    components: [
-      { key: 'checklist_rating', name: 'Checklist Rating', weight: 50, max_score: 100, is_multiple: true },
-      { key: 'nursing_care_plan', name: 'Nursing Care Plan & Case Study', weight: 20, max_score: 100, is_multiple: true },
-      { key: 'rubric_assessment', name: 'Rubric Assessment', weight: 20, max_score: 100, is_multiple: false },
-      { key: 'quizzes', name: 'Quizzes & Written Outputs', weight: 10, max_score: 50, is_multiple: true }
-    ]
-  },
-  {
-    name: 'Maritime Studies (Lecture)',
-    isolatedKey: 'class_standing',
-    isolatedExpected: 60,
-    components: [
-      { key: 'class_standing', name: 'Class Standing', weight: 60, max_score: 100, is_multiple: true },
-      { key: 'major_examination', name: 'Major Examination', weight: 40, max_score: 100, is_multiple: false }
-    ]
-  },
-  {
-    name: 'Maritime Studies (Laboratory / Simulator)',
-    isolatedKey: 'systematic_exercises',
-    isolatedExpected: 40,
-    components: [
-      { key: 'systematic_exercises', name: 'Systematic Exercises', weight: 40, max_score: 100, is_multiple: true },
-      { key: 'demonstration', name: 'Demonstration of Competence', weight: 60, max_score: 100, is_multiple: false }
-    ]
-  }
-];
+// Presets are consumed directly from the same shared module the admin "Apply Preset"
+// UI uses — no local duplicate of the institutional values, and no hardcoded
+// key/isolatedKey/isolatedExpected test-only fields (IMPLEMENTATION_CORRECTIONS item
+// (k)). The "isolated" component under test is simply each template's first
+// component, resolved generically after resolveGradingFormula assigns real keys.
+const presets = OFFICIAL_DYCI_PRESETS;
 
 presets.forEach(preset => {
   const formula = resolveGradingFormula(preset.components, { formulaAssigned: true });
@@ -90,18 +50,18 @@ presets.forEach(preset => {
     `${preset.name} should produce 100 for perfect scores`
   );
 
-  const isolatedComponent = formula.components.find(component => component.key === preset.isolatedKey);
+  const isolatedComponent = formula.components[0];
   const isolatedResult = calculateWeightedTermRating({
     formula,
     componentScores: {
-      [preset.isolatedKey]: isolatedComponent.isMultiple
+      [isolatedComponent.key]: isolatedComponent.isMultiple
         ? [{ score: isolatedComponent.maxScore, maxScore: isolatedComponent.maxScore }]
         : { score: isolatedComponent.maxScore, maxScore: isolatedComponent.maxScore }
     }
   });
   assert.equal(
     isolatedResult.rating,
-    preset.isolatedExpected,
+    isolatedComponent.weight,
     `${preset.name} should honor its configured component weight`
   );
   assert.equal(
@@ -243,5 +203,98 @@ assert.equal(getAttendanceFlags(4).isFda, true);
 assert.equal(getAttendanceFlags(3).isFda, false);
 assert.equal(calculateAcademicRisk({ currentGwa: 2.25 }).composite_score, 28, 'GWA 2.25 must reach the moderate risk band');
 assert.equal(calculateAcademicRisk({ currentGwa: 4 }).composite_score, 55, 'failing GWA must be high risk without other factors');
+
+// ── GWA risk step-discontinuity curve: full boundary pin set (Unify-Academic-Rules Step 10) ──
+assert.equal(calculateAcademicRisk({ currentGwa: 2.00 }).composite_score, 0, 'GWA 2.00 sits at the honors-safe boundary (LOW)');
+assert.equal(calculateAcademicRisk({ currentGwa: 2.01 }).composite_score, 25, 'crossing 2.00 is categorical: band opens at 25 (MODERATE)');
+assert.equal(calculateAcademicRisk({ currentGwa: 2.50 }).composite_score, 30, 'GWA 2.50 mid-watch-zone pin');
+assert.equal(calculateAcademicRisk({ currentGwa: 3.00 }).composite_score, 35, 'GWA 3.00 is the top of the watch zone (still MODERATE)');
+assert.equal(calculateAcademicRisk({ currentGwa: 3.01 }).composite_score, 50, 'crossing 3.00 opens the failing zone at 50 (HIGH)');
+assert.equal(calculateAcademicRisk({ currentGwa: 5.00 }).composite_score, 60, 'GWA 5.00 is the worst-case GWA-only score');
+
+// ── Attendance / FDA risk factor zones (0-50 pts) ───────────────────────────────────────────
+assert.equal(calculateAcademicRisk({ absenceCount: 0 }).composite_score, 0, '0 absences contributes no attendance risk');
+assert.equal(calculateAcademicRisk({ absenceCount: 2 }).composite_score, 10, '2 absences is the early-warning zone (10 pts)');
+assert.equal(calculateAcademicRisk({ absenceCount: 3 }).composite_score, 25, '3 absences approaches the FDA threshold (25 pts)');
+assert.equal(calculateAcademicRisk({ absenceCount: 4 }).composite_score, 50, '4 absences triggers the FDA recommendation (50 pts, HIGH)');
+assert.equal(getAttendanceFlags(4).isFda, true, 'FDA threshold is >= 4 unexcused absences');
+assert.equal(getAttendanceFlags(2).isWarning, true, '2 absences crosses the early-warning flag');
+
+// ── calculateWeightedTermRating: missingComponents field (completeness, not just isComplete) ──
+{
+  const partial = resolveGradingFormula(presets[0].components, { formulaAssigned: true });
+  const examOnly = calculateWeightedTermRating({
+    formula: partial,
+    componentScores: { major_examination: { score: 40, maxScore: 40 } }
+  });
+  assert.equal(examOnly.isComplete, false, 'a formula with only one encoded component must be incomplete');
+  assert.deepEqual(
+    examOnly.missingComponents,
+    ['Class Standing (Formative)', 'Character Rating'],
+    'missingComponents must name every component with no encoded data'
+  );
+}
+
+// ── calculateSemestralGrade: regular 4-term completeness & 'In Progress' remark ────────────
+{
+  const completeRegular = calculateSemestralGrade({ prelim: 90, midterm: 90, semiFinal: 90, final: 90 });
+  assert.equal(completeRegular.termsExpected, 4, 'regular semester expects 4 terms');
+  assert.equal(completeRegular.termsEncoded, 4);
+  assert.equal(completeRegular.isComplete, true);
+  assert.notEqual(completeRegular.remarks, 'In Progress', 'a fully-encoded semester must not read as In Progress');
+
+  const incompleteRegular = calculateSemestralGrade({ prelim: 90, midterm: 90, semiFinal: 90, final: null });
+  assert.equal(incompleteRegular.termsEncoded, 3);
+  assert.equal(incompleteRegular.isComplete, false);
+  assert.equal(incompleteRegular.remarks, 'In Progress', 'a missing Final must yield In Progress, never Passed/Failed');
+}
+
+// ── calculateSemestralGrade: summer 2-term completeness & 'In Progress' remark ─────────────
+{
+  const completeSummer = calculateSemestralGrade({ midterm: 90, final: 90, isSummer: true });
+  assert.equal(completeSummer.termsExpected, 2, 'summer term expects only 2 terms');
+  assert.equal(completeSummer.termsEncoded, 2);
+  assert.equal(completeSummer.isComplete, true);
+
+  const incompleteSummer = calculateSemestralGrade({ midterm: 90, final: null, isSummer: true });
+  assert.equal(incompleteSummer.termsEncoded, 1);
+  assert.equal(incompleteSummer.isComplete, false);
+  assert.equal(incompleteSummer.remarks, 'In Progress', 'a missing summer Final must yield In Progress');
+}
+
+// ── WEIGHT_TOLERANCE: floating-point-safe total-weight validation ──────────────────────────
+assert.equal(WEIGHT_TOLERANCE, 0.01);
+{
+  // 41.9 + 48.3 + 9.8 sums to 99.99999999999999 under IEEE 754 — must still resolve.
+  const floatSafe = resolveGradingFormula([
+    { name: 'A', weight: 41.9, max_score: 100 },
+    { name: 'B', weight: 48.3, max_score: 100 },
+    { name: 'C', weight: 9.8, max_score: 100 }
+  ], { formulaAssigned: true });
+  assert.equal(floatSafe.ok, true, 'a formula within WEIGHT_TOLERANCE of 100% must resolve despite float rounding');
+
+  const genuinelyInvalid = resolveGradingFormula([
+    { name: 'A', weight: 50, max_score: 100 },
+    { name: 'B', weight: 40, max_score: 100 }
+  ], { formulaAssigned: true });
+  assert.equal(genuinelyInvalid.ok, false, 'a formula genuinely off by more than WEIGHT_TOLERANCE must still fail closed');
+}
+
+// ── President's List 18-unit floor applies unconditionally (no irregular-student exemption) ──
+assert.equal(getHonorTier(1.5, { subjectGrades: [2], units: 18 }).isEligible, true, 'exactly 18 units must satisfy the floor');
+assert.equal(getHonorTier(1.5, { subjectGrades: [2], units: 17 }).isEligible, false, '17 units must fail the floor regardless of enrollment type');
+
+// ── Null-safe posting & remark vocabulary round-trips ───────────────────────────────────────
+assert.equal(toEffectiveGradeForPosting(84), 2.25, 'a real rating must still transmute normally through the posting guard');
+assert.equal(toEffectiveGradeForPosting(NaN), null, 'NaN must never be posted as a failing grade');
+assert.equal(getRemarks({ gwa: 2, isComplete: false }), 'In Progress', 'incomplete must win over a passing gwa value');
+assert.equal(getRemarks({ gwa: 3.00, isComplete: true }), 'Passed', 'the 3.00 passing cutoff is inclusive');
+assert.equal(getRemarks({ gwa: 3.01, isComplete: true }), 'Failed');
+assert.equal(toDbRemark('Passed'), 'passed');
+assert.equal(toDisplayRemark('passed'), 'Passed');
+assert.equal(toDisplayRemark('fda'), 'FDA');
+assert.equal(toDisplayRemark('incomplete'), 'Incomplete (INC)');
+assert.equal(toDisplayRemark('dropped'), 'Dropped');
+assert.equal(toDisplayRemark('some_future_legacy_value'), 'some_future_legacy_value', 'unrecognized remarks must surface as-is, never collapse to Failed');
 
 console.log(`Verified ${presets.length} grading presets, policy scale, attendance, honors, risk boundaries, milestone identity, and summer isolation.`);

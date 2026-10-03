@@ -29,9 +29,9 @@ import {
   StudentRiskInterventionDonut, 
   AssessmentComponentDistributionBar 
 } from '../../components/faculty/FacultyCharts';
+import InfoModal from '../../components/InfoModal';
 import { getClassPriorityRoster } from '../../lib/classRoomService';
 import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
-import { getTransmutedGrade } from '../../lib/gradingMath';
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
@@ -59,6 +59,7 @@ export default function Dashboard() {
   const [facultyNotes, setFacultyNotes] = useState('');
   const [resolving, setResolving] = useState(false);
   const [resolveFeedback, setResolveFeedback] = useState(null);
+  const [infoModalData, setInfoModalData] = useState(null);
 
   // Analytics states
   const [trajectoryData, setTrajectoryData] = useState([]);
@@ -312,13 +313,17 @@ export default function Dashboard() {
           const trajectory = termNames.map(termName => {
             const rList = termRatings[termName] || [];
             if (rList.length > 0) {
+              // Per Unify-Academic-Rules-Across-ASPIRE.md Step 15 (C11): a cohort mean of
+              // 0-100 ratings is not anybody's GWA. Previously this averaged the ratings
+              // THEN transmuted the average into a field literally called `avgGwa` —
+              // presented to faculty as "Class GWA" when it was never a real GWA at all.
+              // Kept as the raw average rating (0-100%); never transmute a cohort mean.
               const avgR = rList.reduce((a, b) => a + b, 0) / rList.length;
-              const gwa = getTransmutedGrade(avgR);
               const pass = Math.round((rList.filter(r => r >= 75).length / rList.length) * 100);
-              return { term: termName, avgGwa: gwa, passRate: pass, examAvg: Math.round(avgR) };
+              return { term: termName, avgRating: Math.round(avgR), passRate: pass, examAvg: Math.round(avgR) };
             }
-            return { term: termName, avgGwa: null, passRate: null, examAvg: null };
-          }).filter(d => d.avgGwa !== null); // Only include terms with actual data
+            return { term: termName, avgRating: null, passRate: null, examAvg: null };
+          }).filter(d => d.avgRating !== null); // Only include terms with actual data
 
           setTrajectoryData(trajectory);
         }
@@ -564,10 +569,16 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-sage-300 transition-all flex flex-col justify-between">
+          <div 
+            className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-amber-300 transition-all flex flex-col justify-between cursor-pointer group"
+            onClick={() => setInfoModalData({
+              title: "Pending Posts",
+              message: "The number of handled classes that have ongoing terms and where final grades have not yet been posted."
+            })}
+          >
             <div className="flex justify-between items-start">
-              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider">Pending Posts</span>
-              <div className="p-1.5 sm:p-2 bg-amber-50 text-amber-600 rounded-xl">
+              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider group-hover:text-amber-600 transition-colors">Pending Posts</span>
+              <div className="p-1.5 sm:p-2 bg-amber-50 text-amber-600 rounded-xl group-hover:bg-amber-100 transition-colors">
                 <FileText className="h-4 w-4" />
               </div>
             </div>
@@ -577,10 +588,16 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-sage-300 transition-all flex flex-col justify-between">
+          <div 
+            className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-sky-300 transition-all flex flex-col justify-between cursor-pointer group"
+            onClick={() => setInfoModalData({
+              title: "Consultations",
+              message: "The number of pending consultation requests from your students that require your approval or scheduling."
+            })}
+          >
             <div className="flex justify-between items-start">
-              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider">Consultations</span>
-              <div className="p-1.5 sm:p-2 bg-sky-50 text-sky-600 rounded-xl">
+              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider group-hover:text-sky-600 transition-colors">Consultations</span>
+              <div className="p-1.5 sm:p-2 bg-sky-50 text-sky-600 rounded-xl group-hover:bg-sky-100 transition-colors">
                 <MessageSquare className="h-4 w-4" />
               </div>
             </div>
@@ -590,10 +607,16 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-sage-300 transition-all flex flex-col justify-between">
+          <div 
+            className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-indigo-300 transition-all flex flex-col justify-between cursor-pointer group"
+            onClick={() => setInfoModalData({
+              title: "Interventions",
+              message: "The number of students whose risk level has triggered an intervention, such as a Dean referral or an evaluated improvement plan."
+            })}
+          >
             <div className="flex justify-between items-start">
-              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider">Interventions</span>
-              <div className="p-1.5 sm:p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider group-hover:text-indigo-600 transition-colors">Interventions</span>
+              <div className="p-1.5 sm:p-2 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-100 transition-colors">
                 <Target className="h-4 w-4" />
               </div>
             </div>
@@ -605,10 +628,16 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-sage-300 transition-all flex flex-col justify-between">
+          <div 
+            className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-purple-300 transition-all flex flex-col justify-between cursor-pointer group"
+            onClick={() => setInfoModalData({
+              title: "Notifications",
+              message: "Unread system alerts, messages from the Dean, or important updates regarding your classes and students."
+            })}
+          >
             <div className="flex justify-between items-start">
-              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider">Notifications</span>
-              <div className="p-1.5 sm:p-2 bg-purple-50 text-purple-600 rounded-xl">
+              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider group-hover:text-purple-600 transition-colors">Notifications</span>
+              <div className="p-1.5 sm:p-2 bg-purple-50 text-purple-600 rounded-xl group-hover:bg-purple-100 transition-colors">
                 <AlertCircle className="h-4 w-4" />
               </div>
             </div>
@@ -618,9 +647,15 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="col-span-2 sm:col-span-1 bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-sage-300 transition-all flex flex-col justify-between">
+          <div 
+            className="col-span-2 sm:col-span-1 bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-rose-300 transition-all flex flex-col justify-between cursor-pointer group"
+            onClick={() => setInfoModalData({
+              title: "At-Risk Students",
+              message: "Students classified in the High or Critical risk tiers by the ASPIRE Early Warning System across all your handled classes. These students require immediate intervention."
+            })}
+          >
             <div className="flex justify-between items-start">
-              <span className="text-[10px] sm:text-xs font-semibold text-rose-500 uppercase tracking-wider">At-Risk Students</span>
+              <span className="text-[10px] sm:text-xs font-semibold text-rose-500 uppercase tracking-wider group-hover:text-rose-600 transition-colors">At-Risk Students</span>
               <div className="p-1.5 sm:p-2 bg-rose-50 text-rose-600 rounded-xl">
                 <Users className="h-4 w-4" />
               </div>
@@ -1185,6 +1220,14 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Info Modal */}
+      <InfoModal 
+        isOpen={!!infoModalData}
+        title={infoModalData?.title}
+        message={infoModalData?.message}
+        onClose={() => setInfoModalData(null)}
+      />
     </>
   );
 }

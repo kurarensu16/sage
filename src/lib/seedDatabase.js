@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { OFFICIAL_DYCI_PRESETS } from './officialGradingPresets';
 
 // Seed data
 const defaultDepartments = [
@@ -107,22 +108,29 @@ export async function seedDatabase() {
     const { data: existingComps } = await supabase.from('grade_computations').select('computation_id, name');
     const existingCompNames = (existingComps || []).map(c => c.name);
 
-    if (!existingCompNames.includes('General Education Core')) {
+    // Sourced from officialGradingPresets.js (the same module the admin "Apply Preset" UI uses)
+    // instead of a second hardcoded copy, so the seeded default can never silently drift from it.
+    const defaultPreset = OFFICIAL_DYCI_PRESETS.find(p => p.name === 'General Education Core');
+    if (defaultPreset && !existingCompNames.includes(defaultPreset.name)) {
       const { data: insertedComp, error: compErr } = await supabase
         .from('grade_computations')
         .insert({
-          name: 'General Education Core',
-          description: 'Standard institutional lecture scale: 50% Class Standing, 40% Major Examination, 10% Character Rating.'
+          name: defaultPreset.name,
+          description: defaultPreset.description
         })
         .select()
         .single();
 
       if (!compErr && insertedComp) {
-        await supabase.from('grade_computation_components').insert([
-          { computation_id: insertedComp.computation_id, name: 'Class Standing (Formative)', weight: 50, max_score: 20, is_multiple: true },
-          { computation_id: insertedComp.computation_id, name: 'Major Examination', weight: 40, max_score: 40, is_multiple: false },
-          { computation_id: insertedComp.computation_id, name: 'Character Rating', weight: 10, max_score: 100, is_multiple: false }
-        ]);
+        await supabase.from('grade_computation_components').insert(
+          defaultPreset.components.map(component => ({
+            computation_id: insertedComp.computation_id,
+            name: component.name,
+            weight: component.weight,
+            max_score: component.max_score,
+            is_multiple: component.is_multiple
+          }))
+        );
 
         // Link subjects without a computation_id to this default template
         await supabase

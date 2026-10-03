@@ -1,4 +1,5 @@
 import { getTransmutedGrade } from '../../lib/gradingMath';
+import { computeStudentGwa, getGwaBand } from '../../lib/academicPolicy';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
@@ -277,8 +278,10 @@ export default function MyGradesList() {
           };
         });
 
-        let totalOfficialUnits = 0;
-        let weightedOfficialSum = 0;
+        // Plain mean (C11), not credit-weighted — see the fix below where this is
+        // consumed. "Sum of all GWA per subject, divided by the number of subjects";
+        // units are an 18-unit honors-eligibility gate elsewhere, never a weight here.
+        const officialGwas = [];
 
         const mappedGrades = (classRecords || [])
           .filter(cr => subMap[cr.subject_id])
@@ -380,8 +383,7 @@ export default function MyGradesList() {
             if (officialGrade !== '—') {
               const numGrade = parseFloat(officialGrade);
               if (!isNaN(numGrade)) {
-                totalOfficialUnits += subj.units;
-                weightedOfficialSum += numGrade * subj.units;
+                officialGwas.push(numGrade);
               }
             }
 
@@ -405,15 +407,20 @@ export default function MyGradesList() {
 
         setGrades(mappedGrades);
 
-        const offGwa = totalOfficialUnits > 0 ? (weightedOfficialSum / totalOfficialUnits) : null;
+        const offGwa = computeStudentGwa(officialGwas).gwa;
 
         setOfficialGwa(offGwa);
 
+        // Routed through the canonical GWA_BANDS ladder instead of a raw 1.45
+        // literal. Sapientia/Excellentia both read as "Excellent" and
+        // Satisfactory/Passing Margin both read as "Satisfactory" here since this
+        // is a coarser 4-tier display label, not the honors tier itself.
         const getStanding = (gwaNum) => {
           if (gwaNum === null) return 'No grades posted yet';
-          if (gwaNum <= 1.45) return 'Excellent';
-          if (gwaNum <= 1.75) return 'Very Good';
-          if (gwaNum <= 3.00) return 'Satisfactory';
+          const bandLabel = getGwaBand(gwaNum)?.label;
+          if (bandLabel === 'Sapientia' || bandLabel === 'Excellentia') return 'Excellent';
+          if (bandLabel === 'Virtus') return 'Very Good';
+          if (bandLabel === 'Satisfactory' || bandLabel === 'Passing Margin') return 'Satisfactory';
           return 'Academic warning';
         };
 

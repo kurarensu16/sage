@@ -11,7 +11,7 @@ import {
   getTransmutedGrade,
   resolveGradingFormula
 } from './gradingMath.js';
-import { getRiskTierForScore, RISK_TIERS } from './academicPolicy.js';
+import { getRiskTierForScore, RISK_TIERS, ATTENDANCE } from './academicPolicy.js';
 
 // ── V4 Risk Matrix Weights (Anchored to DYCI Transmutation Scale) ────────────
 // Individual components can exceed 100 (total potential: 135) but the final
@@ -101,19 +101,19 @@ export function calculateAcademicRisk({
   let attendPoints = 0;
   let attendDetail = `${absenceCount} absence(s)`;
 
-  if (absenceCount >= 4) {
+  if (absenceCount >= ATTENDANCE.fdaAbsences) {
     attendPoints = 50;
     attendDetail = `${absenceCount} absences — FDA recommendation triggered (Faculty Choice)`;
-  } else if (absenceCount === 3) {
+  } else if (absenceCount === ATTENDANCE.nearFdaAbsences) {
     attendPoints = 25;
     attendDetail = "3 absences — Approaching FDA threshold";
-  } else if (absenceCount === 2) {
+  } else if (absenceCount === ATTENDANCE.warningAbsences) {
     attendPoints = 10;
     attendDetail = "2 absences — Early warning";
   }
 
   // Summer term amplifier: absences are more impactful in compressed 6-week terms
-  if (isSummer && absenceCount >= 2 && attendPoints < 50) {
+  if (isSummer && absenceCount >= ATTENDANCE.warningAbsences && attendPoints < 50) {
     attendPoints = Math.min(50, Math.round(attendPoints * 1.5));
     attendDetail += " (Summer amplified)";
   }

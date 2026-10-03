@@ -163,7 +163,13 @@ export async function notifyEvaluationWindowOpen({
 }
 
 /**
- * Notify students when term or final grades are released.
+ * @deprecated Unused as of 2026-10-02. ScoreInput.jsx and GradeComputationPreview.jsx used to
+ * call this (with no dedupe_key) alongside the already-deduped notifyGradePosted(), causing
+ * every student to receive two notifications on first post. Both call sites now use
+ * notifyGradePosted() (first post / idempotent re-post) and notifyGradeChanged() (relock with
+ * an actual change) exclusively. Kept here only in case something still imports it; do not
+ * wire this back in — it has no dedupe_key and targets by section rather than by the real
+ * per-student roster, independent of whether a student is actually enrolled in this class.
  */
 export async function notifyGradesPosted({
   sectionId,
@@ -623,18 +629,33 @@ export async function notifyRosterImported({
 export async function notifyGradePosted({ classRecordId, term, students, subject }) {
   if (!students?.length) return;
 
+  // `message` is the full-detail, authenticated in-app inbox text — per
+  // NOTIFICATION_DELIVERY_ARCHITECTURE.md §6/item (i), it carries the remark plus a
+  // prompt to consult an adviser. Deliberately NOT an auto-generated "you may need
+  // to shift courses" judgment call — that's a human adviser's call, never the
+  // system's. Because this field also feeds the device push banner (see
+  // AuthContext.jsx's triggerInboundLocalNotification), 'grade_posted' is in that
+  // file's SENSITIVE_PUSH_TYPES denylist so the lock screen still only shows a
+  // generic event notice, never this remark.
   const rows = students.map((s) => ({
     recipient_id: s.student_id,
     type:         'grade_posted',
     severity:     'info',
     title:        'New Grade Posted',
     link:         '/student/grades',
-    message:      `Your ${term} grade for ${subject.name} (${subject.code}) has been posted.`,
+    message:      `Your ${term} grade for ${subject.name} (${subject.code}) has been posted. Remark: ${s.remark || 'Posted'}. If you have questions about your academic standing, please consult your adviser.`,
     payload: {
       subject_code:    subject.code,
       subject_name:    subject.name,
       term,
       remark:          s.remark || 'Posted',
+      // Never read by the student's own message/push text above — only by the guardian
+      // email template (send-email Edge Function), which is a separate, non-privacy-safe
+      // channel by explicit product decision. rating/gwa default to null when the caller
+      // couldn't resolve them, same null-is-missing-not-zero rule used everywhere else.
+      rating:          Number.isFinite(s.rating) ? s.rating : null,
+      gwa:             Number.isFinite(s.gwa) ? s.gwa : null,
+      student_name:    s.student_name || null,
       class_record_id: classRecordId,
     },
     dedupe_key: `grade_posted:${classRecordId}:${term}:${s.student_id}`,
@@ -649,19 +670,24 @@ export async function notifyGradePosted({ classRecordId, term, students, subject
  *
  * @param {{ classRecordId: string, term: string, studentId: string, subject: { code: string, name: string }, remark: string, revision: number }} params
  */
-export async function notifyGradeChanged({ classRecordId, term, studentId, subject, remark, revision }) {
+export async function notifyGradeChanged({ classRecordId, term, studentId, studentName, subject, remark, rating, gwa, revision }) {
+  // Same full-detail-in-message / generic-push-banner split as notifyGradePosted
+  // above — 'grade_changed' is also in AuthContext.jsx's SENSITIVE_PUSH_TYPES.
   await dispatchNotifications([{
       recipient_id: studentId,
       type:         'grade_changed',
       severity:     'warning',
       title:        'Grade Updated',
       link:         '/student/grades',
-      message:      `Your ${term} grade for ${subject.name} (${subject.code}) has been updated.`,
+      message:      `Your ${term} grade for ${subject.name} (${subject.code}) has been updated. Remark: ${remark}. If you have questions about your academic standing, please consult your adviser.`,
       payload: {
         subject_code:    subject.code,
         subject_name:    subject.name,
         term,
         remark,
+        rating:          Number.isFinite(rating) ? rating : null,
+        gwa:             Number.isFinite(gwa) ? gwa : null,
+        student_name:    studentName || null,
         class_record_id: classRecordId,
         revision,
       },

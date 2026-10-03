@@ -80,8 +80,8 @@ export default function GradeDistribution() {
     failedCount: 0,
     brackets: {
       excellent: { count: 0, pct: 0 },   // 1.00 – 1.50
-      good:      { count: 0, pct: 0 },   // 1.75 – 2.50
-      passing:   { count: 0, pct: 0 },   // 2.75 – 3.00
+      good:      { count: 0, pct: 0 },   // 1.51 – 2.50
+      passing:   { count: 0, pct: 0 },   // 2.51 – 3.00
       failing:   { count: 0, pct: 0 }    // > 3.00
     }
   });
@@ -251,9 +251,14 @@ export default function GradeDistribution() {
           const passed = grades.filter(g => g <= 3.00).length;
           const failed = grades.filter(g => g > 3.00).length;
 
+          // Contiguous, gap-free bracket boundaries. Previously 1.51-1.74 and
+          // 2.51-2.74 matched no bracket at all — those students vanished from this
+          // breakdown entirely while still being counted in passedCount/failedCount
+          // above, so the two totals silently disagreed. Each bracket's lower bound
+          // now starts exactly where the previous one's upper bound ends.
           const exc  = grades.filter(g => g >= 1.00 && g <= 1.50).length;
-          const gd   = grades.filter(g => g >= 1.75 && g <= 2.50).length;
-          const pass = grades.filter(g => g >= 2.75 && g <= 3.00).length;
+          const gd   = grades.filter(g => g >  1.50 && g <= 2.50).length;
+          const pass = grades.filter(g => g >  2.50 && g <= 3.00).length;
           const fail = grades.filter(g => g > 3.00).length;
 
           setStats({
@@ -518,8 +523,8 @@ export default function GradeDistribution() {
 
                   {[
                     { label: 'Excellent (1.00 – 1.50)', key: 'excellent', color: 'bg-emerald-500' },
-                    { label: 'Good & Satisfactory (1.75 – 2.50)', key: 'good', color: 'bg-sage-600' },
-                    { label: 'Passing (2.75 – 3.00)', key: 'passing', color: 'bg-amber-500' },
+                    { label: 'Good & Satisfactory (1.51 – 2.50)', key: 'good', color: 'bg-sage-600' },
+                    { label: 'Passing (2.51 – 3.00)', key: 'passing', color: 'bg-amber-500' },
                     { label: 'Failing (> 3.00)', key: 'failing', color: 'bg-rose-500' },
                   ].map(({ label, key, color }) => {
                     const bracket = stats.brackets[key];

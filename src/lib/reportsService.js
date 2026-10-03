@@ -5,7 +5,10 @@
 
 import { supabase } from './supabase';
 import { PASSING_GRADE, HIGH_CUTOFF, SAME_MARGIN } from './constants';
-import { isStudentAtRisk, computeUnifiedRisk } from './riskEngine';
+import { computeUnifiedRisk } from './riskEngine';
+import { RISK_TIERS, resolveOfficialGwa, countAttendance } from './academicPolicy';
+import { findMostAdvancedPostedGrade } from './gradeMilestones';
+import { getClassPriorityRoster } from './classRoomService';
 import * as XLSX from 'xlsx-js-style';
 
 /**
@@ -113,6 +116,47 @@ export async function fetchClassReportDataset(classRecordId) {
     scoreMap.set(`${row.activity_id}:${row.student_id}`, row);
   });
 
+  // 4. Real official GWA for this class, where already posted — never fabricated. Multiple
+  //    milestone rows can exist per student (Prelim/MR/TFR/SG); take the most advanced one,
+  //    same helper AcademicInsights.jsx/SummaryReports.jsx already use for this exact problem.
+  const { data: postedGrades, error: postedError } = await supabase
+    .from('posted_grades')
+    .select('student_id, grade_period, computed_grade, effective_grade, locked_milestones')
+    .eq('class_record_id', classRecordId);
+  if (postedError) {
+    console.error('Error fetching posted grades:', postedError);
+    throw postedError;
+  }
+  const postedByStudent = new Map();
+  (postedGrades || []).forEach(row => {
+    if (!postedByStudent.has(row.student_id)) postedByStudent.set(row.student_id, []);
+    postedByStudent.get(row.student_id).push(row);
+  });
+  const postedDetailsByStudent = {};
+  postedByStudent.forEach((studentRows, studentId) => {
+    const advanced = findMostAdvancedPostedGrade(studentRows);
+    postedDetailsByStudent[studentId] = advanced ? { gwa: resolveOfficialGwa(advanced).gwa, period: advanced.grade_period } : null;
+  });
+
+  // 5. Real attendance for this class — never a fabricated absence count.
+  const { data: attendanceRows, error: attendanceError } = await supabase
+    .from('attendance_records')
+    .select('student_id, status')
+    .eq('class_record_id', classRecordId);
+  if (attendanceError) {
+    console.error('Error fetching attendance records:', attendanceError);
+    throw attendanceError;
+  }
+  const attendanceByStudentRaw = new Map();
+  (attendanceRows || []).forEach(row => {
+    if (!attendanceByStudentRaw.has(row.student_id)) attendanceByStudentRaw.set(row.student_id, []);
+    attendanceByStudentRaw.get(row.student_id).push(row);
+  });
+  const attendanceByStudent = {};
+  attendanceByStudentRaw.forEach((studentRows, studentId) => {
+    attendanceByStudent[studentId] = countAttendance(studentRows).absences;
+  });
+
   // Construct flat dataset rows
   const rows = [];
   (enrollments || []).forEach(enr => {
@@ -148,7 +192,14 @@ export async function fetchClassReportDataset(classRecordId) {
     });
   });
 
-  return { enrollments: enrollments || [], activities: activities || [], rows };
+  // 6. Fetch the dynamic risk roster (which handles actual formulas and tentative grades)
+  const rosterData = await getClassPriorityRoster(classRecordId);
+  const rosterByStudent = new Map();
+  (rosterData || []).forEach(s => {
+    rosterByStudent.set(s.user_id, s);
+  });
+
+  return { enrollments: enrollments || [], activities: activities || [], rows, postedDetailsByStudent, attendanceByStudent, rosterByStudent };
 }
 
 /**
@@ -156,9 +207,12 @@ export async function fetchClassReportDataset(classRecordId) {
  * Excludes ungraded (null) activities from the average.
  *
  * @param {Array} rows
+ * @param {Object<string, number|null>} [gwaByStudent] - real official GWA for this class, by student_id (item 2.8)
+ * @param {Object<string, number>} [attendanceByStudent] - real absence count for this class, by student_id
+ * @param {Map<string, Object>} [rosterByStudent] - dynamic roster data including tentative grades
  * @returns {Array}
  */
-export function aggregateByStudent(rows = []) {
+export function aggregateByStudent(rows = [], postedDetailsByStudent = {}, attendanceByStudent = {}, rosterByStudent = new Map()) {
   const studentMap = new Map();
 
   rows.forEach(row => {
@@ -190,23 +244,72 @@ export function aggregateByStudent(rows = []) {
   });
 
   return Array.from(studentMap.values()).map(stud => {
-    const overallPercentage = stud.gradedCount > 0
-      ? Math.round(stud.totalPercentage / stud.gradedCount)
-      : null;
+    const rosterData = rosterByStudent.get(stud.studentId);
+    
+    // Dynamic Handle: use the real database formula SG percentage instead of an unweighted average.
+    // If not available, fallback to the old unweighted logic (e.g. if roster computation fails).
+    let overallPercentage = null;
+    let mrPercentage = null;
+    let tfrPercentage = null;
 
-    // Unified risk integration using single source of truth
-    const riskResult = computeUnifiedRisk({
-      gwa: overallPercentage !== null ? (overallPercentage < PASSING_GRADE ? 3.5 : 2.0) : null
-    });
-    const riskLevel = riskResult?.riskLevel || 'low';
-    const isAtRisk = isStudentAtRisk(riskLevel);
+    if (rosterData && rosterData.sg_percentage !== null && rosterData.sg_percentage !== undefined) {
+      overallPercentage = Math.round(Number(rosterData.sg_percentage));
+      mrPercentage = rosterData.mr_percentage !== null ? Math.round(Number(rosterData.mr_percentage)) : null;
+      tfrPercentage = rosterData.tfr_percentage !== null ? Math.round(Number(rosterData.tfr_percentage)) : null;
+    } else if (stud.gradedCount > 0) {
+      overallPercentage = Math.round(stud.totalPercentage / stud.gradedCount);
+    }
+
+
+    // Official vs Tentative GWA check: "they are all tentative unless SG is posted"
+    let realGwa = null;
+    let isTentative = true; // Assume tentative by default unless proven otherwise
+    
+    const posted = postedDetailsByStudent[stud.studentId];
+
+    if (rosterData && Number.isFinite(rosterData.current_gwa)) {
+      realGwa = rosterData.current_gwa; // Always use the live dynamic grade to match Score Sheet
+      // It is ONLY NOT tentative if the Semestral Grade (SG) is posted AND it perfectly matches the live computed GWA.
+      if (posted && posted.period === 'SG' && posted.gwa === realGwa) {
+        isTentative = false;
+      }
+    } else if (posted && Number.isFinite(posted.gwa)) {
+      realGwa = posted.gwa; // Fallback to posted if roster fails
+      // If roster failed but we have a posted SG, it's official. If it's a Midterm etc, it's tentative.
+      if (posted.period === 'SG') {
+        isTentative = false;
+      }
+    }
+
+    const absenceCount = rosterData ? rosterData.absences : (attendanceByStudent[stud.studentId] || 0);
+    const riskLevel = rosterData ? rosterData.risk_level : 'low';
+    const isAtRisk = riskLevel === 'high' || riskLevel === 'critical';
+
+    // Derive performance status from SG%, but override when GWA contradicts it:
+    // A student with GWA > 3.00 is factually failing, regardless of SG%.
+    let overallStatus = getStudentStatus(overallPercentage);
+    if (realGwa !== null && realGwa > 3.00 && overallStatus !== 'Struggling') {
+      overallStatus = 'Struggling';
+    }
+
+    // Remarks (Passed / Failed) derived from GWA, matching Score Sheet logic
+    let remarks = null;
+    if (realGwa !== null) {
+      remarks = realGwa <= 3.00 ? 'Passed' : 'Failed';
+    }
 
     return {
       ...stud,
       overallPercentage,
-      overallStatus: getStudentStatus(overallPercentage),
+      mrPercentage,
+      tfrPercentage,
+      overallStatus,
+      officialGwa: realGwa,
+      isTentative,
+      absenceCount,
       riskLevel,
-      isAtRisk
+      isAtRisk,
+      remarks
     };
   });
 }
@@ -296,7 +399,8 @@ export function exportClassPerformanceToExcel({ selectedClass, students = [], ac
       'Student Name': s.studentName,
       'Student ID': s.studentNumber,
       'Activities Graded': `${s.gradedCount} / ${s.activitiesCount}`,
-      'Overall Average': s.overallPercentage !== null ? `${s.overallPercentage}%` : '—',
+      'Overall Grade (SG)': s.overallPercentage !== null ? `${s.overallPercentage}%` : '—',
+      'Grade (GWA)': s.officialGwa !== null ? `${s.officialGwa.toFixed(2)}${s.isTentative ? ' (Tentative)' : ''}` : '—',
       'Performance Status': s.overallStatus || 'Ungraded',
       'At-Risk Standing': s.isAtRisk ? 'At-Risk' : 'On Track'
     };
@@ -319,6 +423,46 @@ export function exportClassPerformanceToExcel({ selectedClass, students = [], ac
 
   const filePrefix = selectedClass?.subjects?.code ? selectedClass.subjects.code.replace(/\s+/g, '_') : 'Class';
   const filename = `${filePrefix}_Performance_Report_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+
+/**
+ * Export the Data Breakdown (Pivot) matrix to Excel.
+ *
+ * @param {object} params
+ * @param {object} params.selectedClass
+ * @param {object} params.pivot The generated pivot object (rowValues, colValues, matrix, colTotals, grandTotal)
+ * @param {string} params.aggregator
+ * @param {string} params.valField
+ * @param {string} params.rowField
+ */
+export function exportDataBreakdownToExcel({ selectedClass, pivot, aggregator, valField, rowField }) {
+  if (!pivot || !pivot.matrix || pivot.matrix.length === 0) return;
+
+  const dataToExport = pivot.matrix.map(row => {
+    const rowObj = { [rowField || 'Row']: row.rowValue };
+    row.cells.forEach((cell, idx) => {
+      rowObj[pivot.colValues[idx]] = (cell !== null && cell !== undefined) ? cell : '—';
+    });
+    rowObj['Total'] = (row.rowTotal !== null && row.rowTotal !== undefined) ? row.rowTotal : '—';
+    return rowObj;
+  });
+
+  // Add the footer row for colTotals and grandTotal
+  const footerRow = { [rowField || 'Row']: 'Total' };
+  pivot.colTotals.forEach((colTotal, idx) => {
+    footerRow[pivot.colValues[idx]] = (colTotal !== null && colTotal !== undefined) ? colTotal : '—';
+  });
+  footerRow['Total'] = (pivot.grandTotal !== null && pivot.grandTotal !== undefined) ? pivot.grandTotal : '—';
+  dataToExport.push(footerRow);
+
+  const ws = XLSX.utils.json_to_sheet(dataToExport);
+  const wb = XLSX.utils.book_new();
+  const safeSheetName = (selectedClass?.subjects?.code || 'Breakdown').replace(/[\\/?*[\]]/g, '').slice(0, 31);
+  XLSX.utils.book_append_sheet(wb, ws, safeSheetName || 'Data Breakdown');
+
+  const filePrefix = selectedClass?.subjects?.code ? selectedClass.subjects.code.replace(/\s+/g, '_') : 'Class';
+  const filename = `${filePrefix}_DataBreakdown_${new Date().toISOString().slice(0, 10)}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
 
@@ -382,21 +526,21 @@ export async function fetchTermCohortMetrics(classRecordId) {
     return { classSize: 0, passingRate: 0, atRiskRate: 0, averageGrade: 0, gradedCount: 0, students: [] };
   }
 
-  const { rows } = await fetchClassReportDataset(classRecordId);
-  const students = aggregateByStudent(rows);
+  const { rows, postedDetailsByStudent, attendanceByStudent, rosterByStudent } = await fetchClassReportDataset(classRecordId);
+  const students = aggregateByStudent(rows, postedDetailsByStudent, attendanceByStudent, rosterByStudent);
   const classSize = students.length;
 
   const gradedStudents = students.filter(s => s.overallPercentage !== null);
   const gradedCount = gradedStudents.length;
 
   const passingCount = gradedStudents.filter(s => s.overallPercentage >= PASSING_GRADE).length;
-  const passingRate = gradedCount > 0 ? Math.round((passingCount / gradedCount) * 100) : 0;
+  const passingRate = gradedCount > 0 ? Math.round((passingCount / gradedCount) * 100) : null;
 
   const atRiskCount = students.filter(s => s.isAtRisk).length;
   const atRiskRate = classSize > 0 ? Math.round((atRiskCount / classSize) * 100) : 0;
 
   const totalGradeSum = gradedStudents.reduce((acc, s) => acc + s.overallPercentage, 0);
-  const averageGrade = gradedCount > 0 ? Math.round(totalGradeSum / gradedCount) : 0;
+  const averageGrade = gradedCount > 0 ? Math.round(totalGradeSum / gradedCount) : null;
 
   return {
     classSize,
@@ -421,6 +565,19 @@ export function compareCohortMetrics(current, previous, margin = SAME_MARGIN) {
     return null;
   }
 
+  const hasCurrentData = current.gradedCount > 0;
+  const hasPrevData = previous.gradedCount > 0;
+
+  if (!hasCurrentData || !hasPrevData) {
+    return {
+      passingRate: { current: current.passingRate, previous: previous.passingRate, diff: null, trend: 'insufficient' },
+      atRiskRate:  { current: current.atRiskRate,  previous: previous.atRiskRate,  diff: null, trend: 'insufficient' },
+      averageGrade:{ current: current.averageGrade,previous: previous.averageGrade,diff: null, trend: 'insufficient' },
+      classSize:   { current: current.classSize,   previous: previous.classSize,   diff: current.classSize - previous.classSize },
+      summary: "Insufficient grading data to generate comparative trend analysis."
+    };
+  }
+
   // 1. Passing Rate (Higher is better)
   const passDiff = current.passingRate - previous.passingRate;
   const passTrend = passDiff > margin ? 'better' : passDiff < -margin ? 'worse' : 'about the same';
@@ -436,18 +593,18 @@ export function compareCohortMetrics(current, previous, margin = SAME_MARGIN) {
   // 4. Class size delta
   const sizeDiff = current.classSize - previous.classSize;
 
-  // 5. Generate plain-language summary
+  // 5. Generate plain-language summary with proactive AI suggestions
   let summary;
   if (passDiff > margin) {
     summary = `Passing rate improved by ${passDiff}% compared to the reference term.`;
   } else if (passDiff < -margin) {
-    summary = `Passing rate decreased by ${Math.abs(passDiff)}% compared to the reference term.`;
+    summary = `Passing rate decreased by ${Math.abs(passDiff)}%. Consider reviewing recent module difficulty, as this class is struggling more than the historical baseline.`;
   } else if (riskDiff < -margin) {
     summary = `At-risk rate decreased by ${Math.abs(riskDiff)}% indicating improved academic retention.`;
   } else if (riskDiff > margin) {
-    summary = `At-risk rate increased by ${riskDiff}%, suggesting higher student difficulty with current coursework.`;
+    summary = `At-risk rate increased by ${riskDiff}%, suggesting higher student difficulty. Consider proactive interventions for struggling students.`;
   } else {
-    summary = `Cohort performance is stable and about the same as the reference term (within ±${margin}% margin).`;
+    summary = `Class performance is stable and consistent with the historical reference term (within ±${margin}% margin).`;
   }
 
   return {
