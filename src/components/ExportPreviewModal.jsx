@@ -108,7 +108,7 @@ export default function ExportPreviewModal({
               <span>Grade Sheets Preview & Export Panel</span>
             </h3>
             <p className="text-xs text-slate-500 font-sans mt-0.5">
-              Review formatting and signing authorities before generating official Excel or PDF documents.
+              Review formatting and signing authorities before generating official Excel documents.
             </p>
           </div>
           <button
@@ -262,13 +262,7 @@ export default function ExportPreviewModal({
               >
                 <FileSpreadsheet className="h-4 w-4" /> Export Grades
               </button>
-              <button
-                type="button"
-                onClick={() => onExportPdf(selectedTab)}
-                className="w-full py-2.5 rounded-xl border border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs transition-colors flex items-center justify-center gap-1.5 font-sans"
-              >
-                <FileText className="h-4 w-4 text-rose-500" /> Export PDF
-              </button>
+
               <button
                 type="button"
                 onClick={() => onExportExcel('all')}
@@ -287,18 +281,9 @@ export default function ExportPreviewModal({
               {selectedTab === 'profile' && (
                 <div className="space-y-6">
                   {/* Header Block */}
-                  <div className="text-center space-y-1.5">
-                    <h1 className="text-lg font-bold uppercase tracking-wide">SAGE System</h1>
-                    <h2 className="text-sm font-semibold text-slate-500">College Department</h2>
-                    <p className="text-[10px] text-slate-400">McArthur Highway, Wakas, Bocaue, Bulacan 3018</p>
-                    <p className="text-[10px] text-slate-400">(044) 123-4567 - www.SAGE-System.com.ph</p>
-                  </div>
-
-                  <hr className="border-slate-200" />
-
-                  <div className="text-center py-2">
-                    <h3 className="text-base font-extrabold tracking-widest text-slate-850">SUBJECT PROFILE</h3>
-                    <p className="text-[10px] text-slate-500 italic mt-0.5">(Input data in UPPER CASE format)</p>
+                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-emerald-200">
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                    <h3 className="text-sm font-bold text-emerald-800 uppercase tracking-wide">Sheet: Subject Profile</h3>
                   </div>
 
                   {/* Metadata Grid */}
@@ -403,11 +388,10 @@ export default function ExportPreviewModal({
               {selectedTab === 'record' && (
                 <div className="space-y-4">
                   {/* Record Sheet Headers */}
-                  <div className="flex justify-between items-end">
-                    <h1 className="text-xs font-bold uppercase tracking-wider">RECORD SHEET FOR GENERAL EDUCATION SUBJECTS (SAGE-System)</h1>
-                    <span className="text-[10px] text-slate-400">Class: {subjectCode} · {sectionName}</span>
+                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-emerald-200">
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                    <h3 className="text-sm font-bold text-emerald-800 uppercase tracking-wide">Sheet: Record Sheet</h3>
                   </div>
-
                   <div className="grid grid-cols-3 gap-4 border border-slate-150 rounded-lg p-3 bg-slate-50/50 font-semibold text-[10px]">
                     <div>College: {metadata.college || 'College of Computer Studies'}</div>
                     <div>Course & Section: {metadata.course || 'BSIT'} - {sectionName}</div>
@@ -462,14 +446,10 @@ export default function ExportPreviewModal({
               {selectedTab === 'report' && (
                 <div className="space-y-4">
                   {/* Report of Grades headers */}
-                  <div className="text-center space-y-1">
-                    <h1 className="text-sm font-bold uppercase tracking-wider">OFFICE OF THE REGISTRAR</h1>
-                    <h2 className="text-xs font-semibold text-slate-500">REPORT OF GRADES</h2>
-                    <p className="text-[10px] text-slate-400 font-mono">
-                      {classInfo.semester === '1st' ? '1st Sem' : classInfo.semester === '2nd' ? '2nd Sem' : 'Summer'} - {classInfo.school_year || ''}
-                    </p>
+                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-emerald-200">
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                    <h3 className="text-sm font-bold text-emerald-800 uppercase tracking-wide">Sheet: Report of Grades</h3>
                   </div>
-
                   <div className="grid grid-cols-2 gap-4 border border-slate-150 rounded-lg p-3 bg-slate-50/50 text-[10px]">
                     <div className="space-y-1.5">
                       <div><strong>College:</strong> {metadata.college || 'College of Computer Studies'}</div>

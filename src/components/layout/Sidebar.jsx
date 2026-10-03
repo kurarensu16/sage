@@ -373,7 +373,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
       </div>
       
       {/* Navigation list */}
-      <nav className="flex-1 p-2.5 space-y-2 overflow-y-auto min-h-0 text-left">
+      <nav className="flex-1 p-2.5 space-y-2 overflow-y-auto min-h-0 text-left sleek-scrollbar-dark">
         {/* Standalone Dashboard */}
         {standaloneTop && (
           <NavLink 

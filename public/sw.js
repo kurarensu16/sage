@@ -50,7 +50,14 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => cachedResponse);
+        .catch(() => {
+          if (cachedResponse) return cachedResponse;
+          // SPA fallback for navigation requests
+          if (event.request.mode === 'navigate') {
+            return caches.match('/') || caches.match('/index.html') || new Response('Offline', { status: 503 });
+          }
+          return new Response('Network Error', { status: 503 });
+        });
 
       return cachedResponse || fetchPromise;
     })

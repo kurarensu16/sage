@@ -340,7 +340,7 @@ export default function Notifications() {
                     "p-2 sm:p-2.5 rounded-xl border w-8 h-8 sm:w-10 sm:h-10 flex-shrink-0 flex items-center justify-center mt-0.5",
                     noti.iconColor
                   )}>
-                    <noti.icon className="h-4 w-4 sm:h-5 sm:w-5" />
+                    {typeof noti.icon === 'function' || (noti.icon && noti.icon.$$typeof) ? <noti.icon className="h-4 w-4 sm:h-5 sm:w-5" /> : <Info className="h-4 w-4 sm:h-5 sm:w-5" />}
                   </div>
                   
                   {/* Details block */}
