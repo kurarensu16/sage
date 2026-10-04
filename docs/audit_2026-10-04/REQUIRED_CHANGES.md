@@ -13,10 +13,11 @@ Changes are ordered as they appear in the paper, top to bottom. Each change cite
 >
 > **Figures replaced (13):** 1.1, 2.2, 2.3, 2.4, 2.5, 2.7, 2.8, 2.9, 2.10, 2.11, 2.12, 2.16, 2.18 — all regenerated on one shared visual system, with editable `.mmd` sources saved beside this file. See **Figures and diagrams** below.
 >
-> **Still outstanding — 1 optional code tidy-up:**
-> 1. Correct the misleading GWA comments at `riskEngine.js:36–37, 87, 92` (comment-only; behaviour is intentionally kept). Not applied — awaiting go-ahead.
+> **Still outstanding — 2 items, neither affecting the document:**
+> 1. **Pagination / spacing pass** on the .docx — author handling. Seven figures occupy 92% of the page height (2.4, 2.8, 2.9, 2.10, 2.11, 2.12, 2.18) and are the likeliest to orphan their captions.
+> 2. **Drop the 8 dormant database tables** — housekeeping, no paper change. See **Code and database tasks → 3**.
 >
-> *Closed by author decision:* the AI model/provider question is **out of scope for this audit** and is no longer tracked here. **Figure 2.3** (~3.5 pt) is **accepted as-is**.
+> *Closed by author decision:* the AI model/provider question is **out of scope**. **Figure 2.3** (~3.5 pt) is **accepted as-is**. **Finding 13 (Vercel)** confirmed by the author. The **GWA comment fix is applied**.
 >
 > **DECISIONS MADE (2026-10-04):**
 > 1. **AI model → keep "Google Gemini 2.5 Flash" in the paper.** All model-name paper edits are therefore **CANCELLED**: Changes **#1, #7, #8 (model clause only), #18 (model clause only), #19**, and the **¶P427 reference** are not applied. Table 2.10 stays as written. The deployed model/provider is **out of scope for this audit**.
@@ -287,7 +288,11 @@ See **Change #4** for paste-ready text. Belongs in Chapter 1 > Scope > Faculty P
 
 See **Change #6** for paste-ready text. Add one sentence acknowledging guardian contact capture and guardian email notifications (read-only; no login role). Place in Chapter 1 > Scope & Delimitation (¶P163–P164). Evidence: guardian migrations `20261002080000`–`20261003110100`, `send-email` edge function.
 
-### C. (Optional) Footnote on inactive schema
+### C. Footnote on inactive schema — NOT APPLIED (author decision)
+
+> **Resolved differently:** rather than add a caveat to the paper, the author will **drop the dormant tables from the database** during the evaluation/testing phase. That makes the existing delimitation (¶P163 — no student-to-faculty evaluations, rating forms or evaluation schedulers) literally true of the schema as well as the application, which is the stronger outcome. Safe to drop: `evaluation_forms`, `evaluation_windows`, `evaluation_criteria`, `evaluation_responses`, `evaluation_ratings`, `evaluation_comments`, `ai_faculty_predictions`, `ai_student_recommendations` — all have **zero code references**. No paper change required.
+
+*(Original optional suggestion, retained for the record:)*
 
 If you expect a panelist to inspect the live database, add a single clarifying sentence (Chapter 2 > Database Design intro, ¶P304) that the deployed schema contains some inactive tables reserved for future modules (e.g., a faculty-evaluation subsystem) that are out of scope for this study and unused by the application. Evidence: `evaluation_*`, `ai_faculty_predictions`, `ai_student_recommendations` tables have zero code references. *(Only add this if you want to pre-empt the question; otherwise the delimitation already excludes them.)*
 
@@ -370,14 +375,38 @@ Every `.docx` figure is a flat embedded PNG (no editable Word shapes), so each h
 
 ---
 
-## Code tasks (from the decisions above)
+## Code and database tasks
 
-These are **not paper edits** — they are the code changes implied by keeping the paper as written. They are listed for whoever maintains the code; per the audit’s read-only rule I have not applied them.
+**Not paper edits.** These sit outside the document — recorded here so they are not lost.
 
-1. ~~AI model~~ — **removed from scope at the author's direction.** The paper's model wording stands; the deployed model is not tracked by this audit.
-2. **GWA Deficit comments → correct only (keep behavior).** You decided to KEEP the engine’s current GWA scoring, so **do not change the formulas** at `:88,:93`. However, the inline comments at `src/lib/riskEngine.js:87` (“Scales linearly: 2.01→1pt, 2.50→~12pts, 3.00→25pts”) and `:92` (“3.01→26pts, 4.00→43pts, 5.00→60pts”) describe a linear model the code does not implement and should be corrected to the real banded values (2.01→25, 3.00→35; 3.01→50, 4.00→55, 5.00→60) so future readers and panelists aren’t misled. This is a comment-only edit — no behavior change, and `scripts/verifyGradingMath.js` already passes.
+### 1. ~~AI model / provider~~ — out of scope
+Removed at the author's direction. The paper's model wording stands; the deployed model is not tracked by this audit.
 
-*(The comment correction is not applied — the audit is read-only on code. Say the word and I’ll do it.)*
+### 2. GWA Deficit comments — ✅ DONE
+The engine's GWA scoring is **intentionally kept** (threshold-anchored, not linear), but three comments described a linear model the code never implemented. Corrected in `src/lib/riskEngine.js`:
+
+| Location | Was | Now |
+|---|---|---|
+| `:34–37` docstring | “scales 1-25 pts” / “scales 26-60 pts” | real bands **25–35** / **50–60**, plus the rationale (anchored to the 2.00 scholarship floor and 3.00 passing cut-off) and a pointer to Table 2.5 |
+| `:87` watch zone | “2.01→1pt, 2.50→~12pts, 3.00→25pts” | **2.01→25, 2.25→28, 2.50→30, 3.00→35** |
+| `:92` failing zone | “3.01→26pts, 4.00→43pts, 5.00→60pts” | **3.01→50, 4.00→55, 5.00→60** |
+
+Comment-only — `git diff` confirms **no non-comment line changed**; every documented value was asserted against live engine output; `scripts/verifyGradingMath.js` passes; ESLint clean.
+
+### 3. Drop the dormant database tables — ☐ OPEN (author)
+
+**No paper change required** — these tables are not mentioned in the document, and the delimitation (¶P163) already excludes the functionality. Logged purely as a housekeeping task.
+
+Eight tables exist in the deployed schema but have **zero references anywhere in `src/`**, so dropping them is safe:
+
+| Table | Note |
+|---|---|
+| `evaluation_forms`, `evaluation_windows`, `evaluation_criteria`, `evaluation_responses`, `evaluation_ratings`, `evaluation_comments` | A student-to-faculty evaluation subsystem — exactly what ¶P163 delimits *out*. Dropping them makes the delimitation true of the schema as well as the app. |
+| `ai_faculty_predictions`, `ai_student_recommendations` | Superseded by `student_academic_insights` / `faculty_performance_insights`. |
+
+**Do not drop** `class_grading_columns` — it is referenced in 11 source files and is live. `component_scores` and `grade_components` are also unused but were not audited in depth; verify before removing.
+
+*Why it is worth doing:* a panelist inspecting the live database would see tables literally named `evaluation_forms` and `evaluation_windows` while the paper states the system has no evaluation forms or schedulers. The claim is defensible either way, but an empty schema removes the question entirely.
 
 ---
 

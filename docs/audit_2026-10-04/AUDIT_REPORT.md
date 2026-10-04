@@ -13,7 +13,7 @@ Overall the paper is **substantially aligned** with the built system: the four-r
 
 The high-severity issues are: (1) the **GWA Deficit risk-factor scaling** in the paper (Table 2.5 and its worked examples) does not match the engine, which also appears to contain an implementation bug; (2) the AI model is named throughout as **Google Gemini 2.5 Flash** but the deployed default is `poolside/laguna-s-2.1:free` with a Llama-3 fallback; (3) the paper claims **RLS on "all tables"** but RLS is enabled only on a sensitive subset and disabled on core tables (users, posted_grades, activity_logs); (4) the **ERD/DFD name five tables that do not exist** (intervention_tasks, intervention_escalations, advisor_insights, advisor_action_items, advisor_outcomes) — those features are stored as JSONB columns and a boolean flag inside a single `student_risk_evaluations` table.
 
-**Counts by issue type:** Incorrect = 4 · Partially implemented = 2 · Outdated = 3 · Inconsistent term = 2 · Undocumented feature = 3 · Unverified = 1 (Finding 13 only — Finding 6 was later verified in the UI).
+**Counts by issue type:** Incorrect = 4 · Partially implemented = 2 · Outdated = 3 · Inconsistent term = 2 · Undocumented feature = 3 · Unverified = 0 *(Finding 6 verified in the UI; Finding 13 confirmed by the author — Vercel is in use).*
 **Counts by severity:** High = 4 · Medium = 7 · Low = 4.
 
 ---
@@ -76,7 +76,7 @@ The high-severity issues are: (1) the **GWA Deficit risk-factor scaling** in the
 | 10 | 1 > Scope > Student > Consultations (P108) | Outdated | “Request a Consultation … (accessed **as a tab in the AI Study Advisor**)” | Consultations is a **standalone module/page** (`/student/consultations`); decoupled from the advisor (commit `6aee7b7`) | `App.jsx:170`; `student/Consultations.jsx:17` | **Low** |
 | 11 | 2 > Methodology > Phase 5 Implementation (P207) | Inconsistent term | “mandatory Activity Title and **Scope** metadata” | Mandatory fields are Activity **Title** and **Description** (no “Scope” field); every other section of the paper says “Description” | `class_activities` cols `20260914120000:64–66`; paper P40, P101, P115 | **Low** |
 | 12 | 2 > ERD L4 (P320) | Incorrect | “INTERVENTION_TASKS stores only **workflow events** (assignment, submission, verification, revision, cancellation)… status derived at read time” | Tasks are a JSONB array of task objects carrying a `completed` boolean + `completed_at`; not an append-only event log | `20260914120000:24–27` | **Low** |
-| 13 | 2 > Dev Stack / Tools (P331, P340) | Unverified | Versioned in Git on GitHub, **deployed on Vercel** | `vercel.json` present and Capacitor configured; actual live Vercel deployment cannot be confirmed from the repo | `vercel.json`; `capacitor.config.json` | **Low** |
+| 13 | 2 > Dev Stack / Tools (P331, P340) | ~~Unverified~~ **RESOLVED** | Versioned in Git on GitHub, **deployed on Vercel** | ✅ **Confirmed accurate by the author** — Vercel deployment is in use. `vercel.json` present and Capacitor configured | `vercel.json`; `capacitor.config.json`; author confirmation | **Closed** |
 | 14 | 1 > Scope > Admin > Import Users (P150) | Inconsistent term | “Import Users (**CSV**)” | Bulk import is implemented through the **xlsx** (spreadsheet) library; functionally equivalent but not strictly CSV | `admin/UserList.jsx:6` | **Low** |
 
 ---
