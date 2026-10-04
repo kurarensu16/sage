@@ -436,7 +436,7 @@ export default function Notifications() {
             ) : (
               <div className="space-y-2.5">
                 {filteredNotifications.map(noti => {
-                  const Icon = noti.icon;
+                  const Icon = typeof noti.icon === 'function' || (noti.icon && noti.icon.$$typeof) ? noti.icon : Info;
                   const isExpanded = expandedIds.has(noti.id);
                   const isSelected = selectedIds.has(noti.id);
 

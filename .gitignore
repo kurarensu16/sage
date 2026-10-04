@@ -43,3 +43,4 @@ comparison-report.md
 android/.gradle/
 android/build/
 android/app/build/
+email_preview.html

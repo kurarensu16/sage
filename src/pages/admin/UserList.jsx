@@ -4,7 +4,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Search, Plus, Edit2, Power, CheckCircle, AlertCircle, Upload, X, Check, FileSpreadsheet, MoreVertical, Archive, RotateCcw, FileText, Eye, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, SlidersHorizontal, Table, HelpCircle, FileCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import * as XLSX from 'xlsx';
-import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
+import { DYCI_ACADEMIC_PROGRAMS, getProgramFromSectionName, PROGRAM_ABBREVIATIONS } from '../../lib/constants';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
@@ -161,7 +161,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         email: u.email,
         role: u.role,
         department: u.departments?.name || '',
-        program: '', // Legacy mock data
+        program: getProgramFromSectionName(u.sections?.name),
         yearLevel: u.year_level || '',
         section: u.sections?.name || (u.role === 'student' ? 'Irregular' : ''),
         status: u.status || 'active',
@@ -599,7 +599,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
   const fetchProfileDetails = async (targetUser) => {
     setSelectedUserProfile(targetUser);
     setProfileLoading(true);
-    setProfileDetails({ enrollments: [], classes: [], grades: [] });
+    setProfileDetails({ enrollments: [], classes: [], grades: [], guardian: null });
 
     try {
       if (targetUser.role === 'student') {
@@ -612,11 +612,19 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           .from('posted_grades')
           .select('class_record_id, computed_grade, effective_grade, remarks, posted_at, class_records(subjects(code, name))')
           .eq('student_id', targetUser.id);
+          
+        const { data: guardianData } = await supabase
+          .from('guardians')
+          .select('full_name, relationship, email')
+          .eq('student_id', targetUser.id)
+          .eq('is_primary', true)
+          .maybeSingle();
 
         setProfileDetails({
           enrollments: enrollData || [],
           classes: [],
-          grades: gradeData || []
+          grades: gradeData || [],
+          guardian: guardianData || null
         });
       } else {
         const { data: classData } = await supabase
@@ -628,7 +636,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         setProfileDetails({
           enrollments: [],
           classes: classData || [],
-          grades: []
+          grades: [],
+          guardian: null
         });
       }
     } catch (err) {
@@ -1051,6 +1060,12 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
     .map(sec => sec.name);
   const uniqueSections = [...new Set(availableSections)].sort();
 
+  const availablePrograms = dbSections
+    .filter(sec => !deptFilter || sec.department === deptFilter)
+    .map(sec => getProgramFromSectionName(sec.name))
+    .filter(Boolean);
+  const uniquePrograms = [...new Set(availablePrograms)].sort();
+
   const itemsPerPage = 20;
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
   const currentPageUsers = filteredUsers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -1360,8 +1375,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
               className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer truncate w-full"
             >
               <option value="">All Colleges</option>
-              {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
-                <option key={college} value={college}>{college}</option>
+              {departments.map(dept => (
+                <option key={dept.department_id} value={dept.name}>{dept.name}</option>
               ))}
             </select>
           </div>
@@ -1378,9 +1393,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
               className="bg-white border border-slate-200 hover:border-sage-300 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-700 focus:ring-1 focus:ring-sage-400 focus:border-sage-400 outline-none transition-all cursor-pointer truncate w-full"
             >
               <option value="">All Programs</option>
-              {Array.from(new Set(
-                deptFilter ? (DYCI_ACADEMIC_PROGRAMS[deptFilter] || []) : Object.values(DYCI_ACADEMIC_PROGRAMS).flat()
-              )).map(prog => (
+              {uniquePrograms.map(prog => (
                 <option key={prog} value={prog}>{prog}</option>
               ))}
             </select>
@@ -2545,6 +2558,21 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 <>
                   {selectedUserProfile.role === 'student' ? (
                     <div className="space-y-6">
+                      {/* Guardian Information */}
+                      <div className="space-y-2.5">
+                        <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider font-display text-left">Guardian Information</h4>
+                        {!profileDetails.guardian ? (
+                          <p className="text-xs text-slate-400 italic bg-slate-50 p-4 rounded-lg border border-slate-100 text-left">No primary guardian contact on file.</p>
+                        ) : (
+                          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/70 space-y-1 text-left">
+                            <div className="text-sm font-bold text-slate-800">
+                              {profileDetails.guardian.full_name} <span className="font-medium text-slate-500 text-xs">({profileDetails.guardian.relationship})</span>
+                            </div>
+                            <div className="text-xs text-slate-500">{profileDetails.guardian.email}</div>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Enrolled Subjects */}
                       <div className="space-y-2.5">
                         <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider font-display text-left">Enrolled Subjects</h4>

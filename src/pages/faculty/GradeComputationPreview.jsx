@@ -72,6 +72,8 @@ export default function GradeComputationPreview() {
   const [lockedMilestones, setLockedMilestones] = useState([]);
   const [postingGrades, setPostingGrades] = useState(false);
   const [postSuccess, setPostSuccess] = useState(null);
+  const [changedStudentsPreview, setChangedStudentsPreview] = useState(null); // null = first post, [] or [...] = update diff
+  const [isComputingDiff, setIsComputingDiff] = useState(false);
 
   const [classInfo, setClassInfo] = useState(null);
   const [classesList, setClassesList] = useState([]);
@@ -630,6 +632,100 @@ export default function GradeComputationPreview() {
     });
   }, [computedStudents, studentSearch, statusFilter]);
 
+  const computeChangedStudents = async (targetMilestone) => {
+    setIsComputingDiff(true);
+    try {
+      const requiredTerms = targetMilestone === 'midterm' 
+        ? (isSummer ? ['Midterm'] : ['Prelim', 'Midterm'])
+        : targetMilestone === 'tfr' 
+          ? (isSummer ? ['Final'] : ['Semi-Final', 'Final'])
+          : (isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final']);
+
+      const incompleteStudent = computedStudents.find(student => requiredTerms.some(term => {
+        const result = student.termResults[term];
+        return !result.ok || !result.hasData || !result.isComplete;
+      }));
+
+      if (incompleteStudent) {
+        const incompleteTerm = requiredTerms.find(term => {
+          const result = incompleteStudent.termResults[term];
+          return !result.ok || !result.hasData || !result.isComplete;
+        });
+        const result = incompleteStudent.termResults[incompleteTerm];
+        const missing = result.missingComponents?.join(', ');
+        alert(`Grades cannot be posted for ${incompleteStudent.name}: ${result.error || (missing ? `Missing ${incompleteTerm} components: ${missing}.` : `No scores are encoded for ${incompleteTerm}.`)}`);
+        setIsComputingDiff(false);
+        return;
+      }
+
+      let periodParam = getMilestoneForPostingTarget(targetMilestone);
+      
+      const { data: existingPg, error: fetchErr } = await supabase
+        .from('posted_grades')
+        .select('posted_grade_id, student_id, computed_grade, effective_grade, remarks')
+        .eq('class_record_id', classRecordId)
+        .eq('grade_period', periodParam);
+
+      if (fetchErr) throw fetchErr;
+
+      const existingMap = {};
+      const isFirstPost = !existingPg || existingPg.length === 0;
+
+      if (existingPg) {
+        existingPg.forEach(row => {
+          existingMap[row.student_id] = {
+            id: row.posted_grade_id,
+            computed_grade: row.computed_grade,
+            effective_grade: row.effective_grade,
+            remarks: row.remarks
+          };
+        });
+      }
+
+      const mapRemarkToDb = (remarkStr) => {
+        if (!remarkStr) return 'passed';
+        const lower = remarkStr.toLowerCase();
+        if (lower === 'inc') return 'incomplete';
+        return lower;
+      };
+
+      if (isFirstPost) {
+        setChangedStudentsPreview(null);
+      } else {
+        const changedList = [];
+        computedStudents.forEach(stud => {
+          const remarksLabel = mapRemarkToDb(stud.remarks);
+          let computedGWA = stud.gwa;
+          if (remarksLabel === 'passed' && stud.gwa > 3.00) computedGWA = 3.00;
+
+          let computedTermGrade = stud.fRate;
+          if (targetMilestone === 'midterm') computedTermGrade = stud.mr;
+          else if (targetMilestone === 'tfr') computedTermGrade = stud.tfr;
+
+          const effectiveGrade = computedTermGrade; // Keep rating as rating for Midterm/TFR, semestral logic not applicable here
+          
+          const oldRecord = existingMap[stud.id];
+          if (
+            !oldRecord ||
+            Number(oldRecord.computed_grade) !== Number(computedTermGrade) ||
+            oldRecord.remarks !== remarksLabel
+          ) {
+            changedList.push({ name: stud.name, oldGwa: oldRecord?.computed_grade, newGwa: effectiveGrade });
+          }
+        });
+        setChangedStudentsPreview(changedList);
+      }
+      
+      setPendingPostMilestone(targetMilestone);
+      setShowConfirmModal(true);
+    } catch (err) {
+      console.error(err);
+      alert('Error computing differences.');
+    } finally {
+      setIsComputingDiff(false);
+    }
+  };
+
   const handlePostGrades = async (targetMilestone = 'semestral') => {
     if (!classRecordId || computedStudents.length === 0) return;
     if (!gradingFormula.ok) {
@@ -770,7 +866,7 @@ export default function GradeComputationPreview() {
           student_id: stud.id,
           grade_period: periodParam,
           computed_grade: computedTermGrade,
-          effective_grade: effectiveGrade,
+          effective_grade: null, // Midterm/TFR doesn't have an official GWA representation in this DB schema. Only Semestral grade stores effective_grade GWA.
           remarks: remarksLabel,
           remarks_note: stud.remarksNote || null,
           remarks_set_by: user.id,
@@ -1236,7 +1332,7 @@ export default function GradeComputationPreview() {
 
   return (
     <>
-      <PageHeader title="Grade Computation Preview" breadcrumb="Faculty Portal">
+      <PageHeader title="Post Grades Preview" breadcrumb="Faculty Portal">
         <div className="flex items-center gap-1.5 sm:gap-2">
           <Link
             to={`/faculty/scoreinput?id=${classRecordId}`}
@@ -1244,17 +1340,10 @@ export default function GradeComputationPreview() {
             title="Open raw score spreadsheet to edit assessment scores"
           >
             <Edit3 className="h-3.5 w-3.5 text-slate-500" />
-            <span className="hidden sm:inline">Edit Raw Scores</span>
+            <span className="hidden sm:inline">Input Scores</span>
             <span className="sm:hidden">Scores</span>
           </Link>
-          <button 
-            disabled={computedStudents.length === 0}
-            onClick={() => setShowExportModal(true)}
-            className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
-            <span className="hidden sm:inline">Export</span>
-          </button>
+
           <button 
             onClick={() => setShowConfirmModal(true)}
             disabled={postingGrades || computedStudents.length === 0}
@@ -2074,38 +2163,59 @@ export default function GradeComputationPreview() {
                       </div>
                       <div>
                         <h4 className="text-xs font-bold text-amber-950 font-sans uppercase tracking-wider">
-                          Confirm {pendingPostMilestone === 'midterm' ? (isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)') : pendingPostMilestone === 'tfr' ? (isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)') : 'Official Semestral Grade (SG)'} Release
+                          Confirm {pendingPostMilestone === 'midterm' ? (isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)') : pendingPostMilestone === 'tfr' ? (isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)') : 'Official Semestral Grade (SG)'} {changedStudentsPreview ? 'Update' : 'Release'}
                         </h4>
                         <p className="text-xs text-amber-900 mt-1 leading-relaxed font-sans">
-                          {pendingPostMilestone === 'midterm' && (
-                            `Are you sure you want to post ${isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)'}? This will notify enrolled students for consultation. Scores remain editable if adjustments are needed.`
-                          )}
-                          {pendingPostMilestone === 'tfr' && (
-                            `Are you sure you want to post ${isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)'}? This will notify enrolled students for consultation so they can review their recorded period scores.`
-                          )}
-                          {pendingPostMilestone === 'semestral' && (
-                            `Are you sure you want to finalize Official Semestral Grade (SG)? This will publish final semestral grades and GWA for student review and official submission.`
+                          {changedStudentsPreview ? (
+                            changedStudentsPreview.length > 0 ? 
+                              `You are about to update the grades for ${changedStudentsPreview.length} student(s). Only these students will receive the "Grade Updated" notification.` 
+                              : "No grade changes were detected. Your current scores match the officially posted scores."
+                          ) : (
+                            pendingPostMilestone === 'midterm' ? 
+                              `Are you sure you want to post ${isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)'}? This will notify enrolled students for consultation. Scores remain editable if adjustments are needed.`
+                            : pendingPostMilestone === 'tfr' ? 
+                              `Are you sure you want to post ${isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)'}? This will notify enrolled students for consultation so they can review their recorded period scores.`
+                            : `Are you sure you want to finalize Official Semestral Grade (SG)? This will publish final semestral grades and GWA for student review and official submission.`
                           )}
                         </p>
                       </div>
                     </div>
 
+                    {changedStudentsPreview && changedStudentsPreview.length > 0 && (
+                      <div className="mt-2 bg-white/60 rounded-xl border border-amber-200/50 p-3 max-h-40 overflow-y-auto">
+                        <p className="text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-2">Affected Students</p>
+                        <ul className="space-y-1">
+                          {changedStudentsPreview.map((s, idx) => (
+                            <li key={idx} className="text-xs text-amber-900 flex justify-between items-center bg-white p-1.5 rounded border border-amber-100">
+                              <span className="font-medium truncate mr-2">{s.name}</span>
+                              <span className="font-mono text-[10px] bg-amber-50 px-1.5 py-0.5 rounded text-amber-700 shrink-0">
+                                {s.oldGwa ? s.oldGwa.toFixed(2) : 'N/A'} → {s.newGwa.toFixed(2)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-amber-200/60">
                       <button
                         type="button"
-                        onClick={() => setPendingPostMilestone(null)}
+                        onClick={() => {
+                          setPendingPostMilestone(null);
+                          setChangedStudentsPreview(null);
+                        }}
                         className="px-3.5 py-2 text-xs font-semibold border border-amber-300 text-amber-900 hover:bg-amber-100 rounded-xl transition-colors font-sans cursor-pointer"
                       >
                         Back / Cancel
                       </button>
                       <button
                         type="button"
-                        disabled={postingGrades}
+                        disabled={postingGrades || (changedStudentsPreview && changedStudentsPreview.length === 0)}
                         onClick={() => handlePostGrades(pendingPostMilestone)}
                         className="px-4 py-2 text-xs font-bold bg-amber-700 hover:bg-amber-800 text-white rounded-xl transition-colors shadow-2xs font-sans disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
                       >
                         <Check className="w-3.5 h-3.5" />
-                        {postingGrades ? 'Posting...' : 'Yes, Confirm & Release'}
+                        {postingGrades ? 'Posting...' : changedStudentsPreview ? 'Confirm Update' : 'Yes, Confirm & Release'}
                       </button>
                     </div>
                   </div>
@@ -2114,7 +2224,7 @@ export default function GradeComputationPreview() {
                     {/* Milestone Option 1: Midterm Rating (MR) */}
                     <div className={`p-4 rounded-xl border transition-all ${
                       lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')
-                        ? 'bg-slate-50 border-slate-200 opacity-90'
+                        ? 'bg-indigo-50/50 border-indigo-300'
                         : 'bg-indigo-50/50 border-indigo-200 hover:border-indigo-400'
                     }`}>
                       <div className="flex items-start justify-between gap-3">
@@ -2139,11 +2249,11 @@ export default function GradeComputationPreview() {
                         </div>
                         <button
                           type="button"
-                          disabled={postingGrades || lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')}
-                          onClick={() => setPendingPostMilestone('midterm')}
+                          disabled={postingGrades || isComputingDiff}
+                          onClick={() => computeChangedStudents('midterm')}
                           className="px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                         >
-                          Post MR
+                          {isComputingDiff ? '...' : (lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')) ? 'Update MR' : 'Post MR'}
                         </button>
                       </div>
                     </div>
@@ -2151,7 +2261,7 @@ export default function GradeComputationPreview() {
                     {/* Milestone Option 2: Tentative Final Rating (TFR) */}
                     <div className={`p-4 rounded-xl border transition-all ${
                       lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')
-                        ? 'bg-slate-50 border-slate-200 opacity-90'
+                        ? 'bg-amber-50/50 border-amber-300'
                         : 'bg-amber-50/50 border-amber-200 hover:border-amber-400'
                     }`}>
                       <div className="flex items-start justify-between gap-3">
@@ -2176,11 +2286,11 @@ export default function GradeComputationPreview() {
                         </div>
                         <button
                           type="button"
-                          disabled={postingGrades || lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')}
-                          onClick={() => setPendingPostMilestone('tfr')}
+                          disabled={postingGrades || isComputingDiff}
+                          onClick={() => computeChangedStudents('tfr')}
                           className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                         >
-                          Post TFR
+                          {isComputingDiff ? '...' : (lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')) ? 'Update TFR' : 'Post TFR'}
                         </button>
                       </div>
                     </div>
@@ -2188,7 +2298,7 @@ export default function GradeComputationPreview() {
                     {/* Milestone Option 3: Official Semestral Grade (SG) */}
                     <div className={`p-4 rounded-xl border transition-all ${
                       lockedMilestones.includes('Semestral Grade')
-                        ? 'bg-slate-50 border-slate-200 opacity-90'
+                        ? 'bg-emerald-50/60 border-emerald-300'
                         : 'bg-emerald-50/60 border-emerald-200 hover:border-emerald-400'
                     }`}>
                       <div className="flex items-start justify-between gap-3">
@@ -2211,11 +2321,11 @@ export default function GradeComputationPreview() {
                         </div>
                         <button
                           type="button"
-                          disabled={postingGrades || lockedMilestones.includes('Semestral Grade')}
-                          onClick={() => setPendingPostMilestone('semestral')}
+                          disabled={postingGrades || isComputingDiff}
+                          onClick={() => computeChangedStudents('semestral')}
                           className="px-3 py-1.5 text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                         >
-                          Finalize SG
+                          {isComputingDiff ? '...' : lockedMilestones.includes('Semestral Grade') ? 'Update SG' : 'Finalize SG'}
                         </button>
                       </div>
                     </div>

@@ -941,31 +941,24 @@ export default function PostedGradesView() {
 
   return (
     <>
-      <PageHeader title="View Posted Grades" breadcrumb="Faculty Portal">
+      <PageHeader title="Preview Grades" breadcrumb="Faculty Portal">
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
           <button 
             onClick={() => navigate(`/faculty/scoreinput?id=${classRecordId}`)}
-            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all shadow-2xs flex items-center gap-1.5 font-sans cursor-pointer"
+            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 font-sans cursor-pointer"
           >
-            <Edit3 className="h-3.5 w-3.5" />
+            <Edit3 className="h-3.5 w-3.5 text-slate-500" />
             <span className="hidden sm:inline">Input Scores</span>
             <span className="sm:hidden">Scores</span>
           </button>
           <button 
+            disabled={students.length === 0}
             onClick={() => setShowExportModal(true)}
-            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all shadow-2xs flex items-center gap-1.5 font-sans cursor-pointer"
+            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
           >
-            <FileSpreadsheet className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Export Grades</span>
+            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+            <span className="hidden sm:inline">Export</span>
             <span className="sm:hidden">Export</span>
-          </button>
-          <button 
-            onClick={handleExportPdf}
-            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-slate-200 text-slate-700 hover:border-sage-300 rounded-xl transition-colors bg-white flex items-center gap-1.5 font-sans cursor-pointer shadow-2xs"
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Export PDF</span>
-            <span className="sm:hidden">PDF</span>
           </button>
         </div>
       </PageHeader>

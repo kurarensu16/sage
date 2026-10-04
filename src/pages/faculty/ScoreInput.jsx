@@ -1672,8 +1672,8 @@ export default function ScoreInput() {
             className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
           >
             <Lock className="h-3.5 w-3.5 text-slate-500" />
-            <span className="hidden sm:inline">View Posted</span>
-            <span className="sm:hidden">Posted</span>
+            <span className="hidden sm:inline">Preview Grades</span>
+            <span className="sm:hidden">Preview</span>
           </button>
           <button
             disabled={students.length === 0}
@@ -1681,8 +1681,8 @@ export default function ScoreInput() {
             className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-sage-200 bg-sage-50 hover:bg-sage-100 text-sage-700 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
           >
             <FileSpreadsheet className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Preview Grades</span>
-            <span className="sm:hidden">Preview</span>
+            <span className="hidden sm:inline">Post Grades</span>
+            <span className="sm:hidden">Post</span>
           </button>
           <button 
             disabled={savingDrafts || students.length === 0}
@@ -2789,7 +2789,7 @@ export default function ScoreInput() {
                   {/* Milestone Option 1: Midterm Rating (MR) */}
                   <div className={`p-4 rounded-xl border transition-all ${
                     lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')
-                      ? 'bg-slate-50 border-slate-200 opacity-90'
+                      ? 'bg-indigo-50/50 border-indigo-300'
                       : 'bg-indigo-50/50 border-indigo-200 hover:border-indigo-400'
                   }`}>
                     <div className="flex items-start justify-between gap-3">
@@ -2814,11 +2814,11 @@ export default function ScoreInput() {
                       </div>
                       <button
                         type="button"
-                        disabled={postingGrades || lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')}
+                        disabled={postingGrades}
                         onClick={() => setPendingPostMilestone('midterm')}
                         className="px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                       >
-                        Post MR
+                        {(lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')) ? 'Update MR' : 'Post MR'}
                       </button>
                     </div>
                   </div>
@@ -2826,7 +2826,7 @@ export default function ScoreInput() {
                   {/* Milestone Option 2: Tentative Final Rating (TFR) */}
                   <div className={`p-4 rounded-xl border transition-all ${
                     lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')
-                      ? 'bg-slate-50 border-slate-200 opacity-90'
+                      ? 'bg-amber-50/50 border-amber-300'
                       : 'bg-amber-50/50 border-amber-200 hover:border-amber-400'
                   }`}>
                     <div className="flex items-start justify-between gap-3">
@@ -2851,11 +2851,11 @@ export default function ScoreInput() {
                       </div>
                       <button
                         type="button"
-                        disabled={postingGrades || lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')}
+                        disabled={postingGrades}
                         onClick={() => setPendingPostMilestone('tfr')}
                         className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                       >
-                        Post TFR
+                        {(lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')) ? 'Update TFR' : 'Post TFR'}
                       </button>
                     </div>
                   </div>
@@ -2863,7 +2863,7 @@ export default function ScoreInput() {
                   {/* Milestone Option 3: Official Semestral Grade (SG) */}
                   <div className={`p-4 rounded-xl border transition-all ${
                     lockedMilestones.includes('Semestral Grade')
-                      ? 'bg-slate-50 border-slate-200 opacity-90'
+                      ? 'bg-emerald-50/60 border-emerald-300'
                       : 'bg-emerald-50/60 border-emerald-200 hover:border-emerald-400'
                   }`}>
                     <div className="flex items-start justify-between gap-3">
@@ -2886,11 +2886,11 @@ export default function ScoreInput() {
                       </div>
                       <button
                         type="button"
-                        disabled={postingGrades || lockedMilestones.includes('Semestral Grade')}
+                        disabled={postingGrades}
                         onClick={() => setPendingPostMilestone('semestral')}
                         className="px-3 py-1.5 text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                       >
-                        Finalize SG
+                        {lockedMilestones.includes('Semestral Grade') ? 'Update SG' : 'Finalize SG'}
                       </button>
                     </div>
                   </div>

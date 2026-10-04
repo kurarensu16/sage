@@ -22,7 +22,10 @@ import {
   Award,
   Shield,
   LogOut,
-  Download
+  Download,
+  Edit2,
+  X,
+  Loader2
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -32,7 +35,7 @@ export default function Settings() {
   const path = location.pathname;
   const role = path.split('/')[1] || 'faculty';
 
-  const { profile, signOut } = useAuth();
+  const { profile, user, signOut } = useAuth();
   const { 
     platform, 
     isInstalled, 
@@ -56,6 +59,69 @@ export default function Settings() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [submittingPassword, setSubmittingPassword] = useState(false);
+  const [guardianInfo, setGuardianInfo] = useState(null);
+  const [isEditingGuardian, setIsEditingGuardian] = useState(false);
+  const [editGuardianForm, setEditGuardianForm] = useState({ full_name: '', relationship: '', email: '' });
+  const [savingGuardian, setSavingGuardian] = useState(false);
+  const [guardianError, setGuardianError] = useState('');
+  
+  const RELATIONSHIP_OPTIONS = ['Mother', 'Father', 'Guardian', 'Grandparent', 'Other'];
+
+  // Fetch Guardian for Student Portal
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchGuardian() {
+      if (role !== 'student' || !user?.id) return;
+      const { data } = await supabase
+        .from('guardians')
+        .select('full_name, relationship, email')
+        .eq('student_id', user.id)
+        .eq('is_primary', true)
+        .maybeSingle();
+      if (!cancelled && data) {
+        setGuardianInfo(data);
+        setEditGuardianForm({
+          full_name: data.full_name || '',
+          relationship: data.relationship || '',
+          email: data.email || ''
+        });
+      }
+    }
+    fetchGuardian();
+    return () => { cancelled = true; };
+  }, [role, user?.id]);
+
+  const handleSaveGuardian = async (e) => {
+    e.preventDefault();
+    setGuardianError('');
+    const { full_name, relationship, email } = editGuardianForm;
+    
+    if (!full_name.trim() || !relationship || !email.trim()) {
+      setGuardianError('All fields are required.');
+      return;
+    }
+    
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) {
+      setGuardianError('Enter a valid email address.');
+      return;
+    }
+
+    setSavingGuardian(true);
+    const { error } = await supabase.rpc('upsert_primary_guardian', {
+      p_full_name: full_name.trim(),
+      p_relationship: relationship,
+      p_email: email.trim()
+    });
+    setSavingGuardian(false);
+
+    if (error) {
+      setGuardianError(error.message || 'Could not update guardian information.');
+      return;
+    }
+
+    setGuardianInfo({ full_name: full_name.trim(), relationship, email: email.trim() });
+    setIsEditingGuardian(false);
+  };
 
   // Sync activeTab with URL search param ?tab=...
   useEffect(() => {
@@ -381,6 +447,98 @@ export default function Settings() {
                   <span className="text-sm font-bold text-slate-800 block">{profileData.department}</span>
                   <span className="text-xs text-slate-500 block">{profileData.college}</span>
                 </div>
+
+                {role === 'student' && guardianInfo && (
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/70">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Guardian Information</span>
+                      {!isEditingGuardian && (
+                        <button 
+                          onClick={() => setIsEditingGuardian(true)}
+                          className="flex items-center gap-1.5 text-[11px] font-bold text-sage-600 hover:text-sage-700 hover:bg-sage-50 px-2 py-1 rounded-md transition-colors"
+                        >
+                          <Edit2 className="h-3 w-3" /> Edit
+                        </button>
+                      )}
+                    </div>
+                    
+                    {isEditingGuardian ? (
+                      <form onSubmit={handleSaveGuardian} className="space-y-3">
+                        {guardianError && (
+                          <div className="p-2.5 bg-rose-50 border border-rose-100 rounded-lg flex items-start gap-2 text-rose-600">
+                            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                            <span className="text-xs font-medium leading-relaxed">{guardianError}</span>
+                          </div>
+                        )}
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Full Name</label>
+                          <input 
+                            type="text" 
+                            value={editGuardianForm.full_name}
+                            onChange={(e) => setEditGuardianForm({...editGuardianForm, full_name: e.target.value})}
+                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none bg-white"
+                            disabled={savingGuardian}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Relationship</label>
+                          <select
+                            value={editGuardianForm.relationship}
+                            onChange={(e) => setEditGuardianForm({...editGuardianForm, relationship: e.target.value})}
+                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none bg-white"
+                            disabled={savingGuardian}
+                          >
+                            <option value="">Select Relationship</option>
+                            {RELATIONSHIP_OPTIONS.map(opt => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Email Address</label>
+                          <input 
+                            type="email" 
+                            value={editGuardianForm.email}
+                            onChange={(e) => setEditGuardianForm({...editGuardianForm, email: e.target.value})}
+                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none bg-white"
+                            disabled={savingGuardian}
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 pt-2">
+                          <button 
+                            type="button" 
+                            onClick={() => {
+                              setIsEditingGuardian(false);
+                              setGuardianError('');
+                              setEditGuardianForm({
+                                full_name: guardianInfo.full_name || '',
+                                relationship: guardianInfo.relationship || '',
+                                email: guardianInfo.email || ''
+                              });
+                            }}
+                            disabled={savingGuardian}
+                            className="flex-1 px-3 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-100 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button 
+                            type="submit" 
+                            disabled={savingGuardian}
+                            className="flex-1 px-3 py-2 bg-sage-600 text-white rounded-lg text-xs font-bold hover:bg-sage-700 transition-colors flex items-center justify-center gap-1.5"
+                          >
+                            {savingGuardian ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                            {savingGuardian ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="space-y-1">
+                        <span className="text-sm font-bold text-slate-800 block">{guardianInfo.full_name} <span className="font-medium text-slate-500 text-xs">({guardianInfo.relationship})</span></span>
+                        <span className="text-xs text-slate-500 block">{guardianInfo.email}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="pt-3 border-t border-slate-100 flex items-center gap-2 text-slate-400">
