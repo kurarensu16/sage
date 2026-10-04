@@ -702,7 +702,7 @@ export default function GradeComputationPreview() {
           if (targetMilestone === 'midterm') computedTermGrade = stud.mr;
           else if (targetMilestone === 'tfr') computedTermGrade = stud.tfr;
 
-          const effectiveGrade = computedTermGrade; // Keep rating as rating for Midterm/TFR, semestral logic not applicable here
+          const effectiveGWA = targetMilestone === 'semestral' ? computedGWA : toEffectiveGradeForPosting(computedTermGrade);
           
           const oldRecord = existingMap[stud.id];
           if (
@@ -710,7 +710,15 @@ export default function GradeComputationPreview() {
             Number(oldRecord.computed_grade) !== Number(computedTermGrade) ||
             oldRecord.remarks !== remarksLabel
           ) {
-            changedList.push({ name: stud.name, oldGwa: oldRecord?.computed_grade, newGwa: effectiveGrade });
+            changedList.push({
+              name: stud.name,
+              oldRating: oldRecord?.computed_grade,
+              newRating: computedTermGrade,
+              oldGwa: targetMilestone === 'semestral' ? oldRecord?.effective_grade : (oldRecord?.computed_grade ? toEffectiveGradeForPosting(oldRecord.computed_grade) : null),
+              newGwa: effectiveGWA,
+              oldStanding: oldRecord?.remarks,
+              newStanding: remarksLabel
+            });
           }
         });
         setChangedStudentsPreview(changedList);
@@ -826,6 +834,8 @@ export default function GradeComputationPreview() {
         if (snapshotErr) throw snapshotErr;
       }
 
+      const gradeByStudent = {};
+
       const postRows = computedStudents.map(stud => {
         const remarksLabel = mapRemarkToDb(stud.remarks);
         let computedGWA = stud.gwa;
@@ -843,12 +853,18 @@ export default function GradeComputationPreview() {
         const effectiveGrade = targetMilestone === 'semestral' ? computedGWA : toEffectiveGradeForPosting(computedTermGrade);
         if (effectiveGrade === null) throw new Error(`${stud.name}: no complete rating is available for this milestone.`);
 
+        const dbEffectiveGrade = targetMilestone === 'semestral' ? effectiveGrade : null;
+
+        // Populate notification data payload with the true computed GWA for the email,
+        // even though dbEffectiveGrade suppresses it for non-semestral db records.
+        gradeByStudent[stud.id] = { rating: computedTermGrade, gwa: effectiveGrade };
+
         const oldRecord = existingMap[stud.id];
         if (!isFirstPost) {
           if (
             !oldRecord ||
             Number(oldRecord.computed_grade) !== Number(computedTermGrade) ||
-            Number(oldRecord.effective_grade) !== Number(effectiveGrade) ||
+            Number(oldRecord.effective_grade) !== Number(dbEffectiveGrade) ||
             oldRecord.remarks !== remarksLabel
           ) {
             changedStudentIds.push(stud.id);
@@ -866,7 +882,7 @@ export default function GradeComputationPreview() {
           student_id: stud.id,
           grade_period: periodParam,
           computed_grade: computedTermGrade,
-          effective_grade: null, // Midterm/TFR doesn't have an official GWA representation in this DB schema. Only Semestral grade stores effective_grade GWA.
+          effective_grade: dbEffectiveGrade,
           remarks: remarksLabel,
           remarks_note: stud.remarksNote || null,
           remarks_set_by: user.id,
@@ -884,13 +900,6 @@ export default function GradeComputationPreview() {
         .upsert(postRows);
 
       if (postErr) throw postErr;
-
-      // Same real rating/GWA per student the rows above were just posted with — threaded into
-      // the notification payload below (needed for the guardian email's "grade for that
-      // specific term" line) rather than re-deriving it a second time.
-      const gradeByStudent = Object.fromEntries(
-        postRows.map(row => [row.student_id, { rating: row.computed_grade, gwa: row.effective_grade }])
-      );
 
       setLockedMilestones(updatedLockedMilestones);
 
@@ -2182,15 +2191,26 @@ export default function GradeComputationPreview() {
                     </div>
 
                     {changedStudentsPreview && changedStudentsPreview.length > 0 && (
-                      <div className="mt-2 bg-white/60 rounded-xl border border-amber-200/50 p-3 max-h-40 overflow-y-auto">
+                      <div className="mt-2 bg-white/60 rounded-xl border border-amber-200/50 p-3 max-h-60 overflow-y-auto">
                         <p className="text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-2">Affected Students</p>
-                        <ul className="space-y-1">
+                        <ul className="space-y-2">
                           {changedStudentsPreview.map((s, idx) => (
-                            <li key={idx} className="text-xs text-amber-900 flex justify-between items-center bg-white p-1.5 rounded border border-amber-100">
-                              <span className="font-medium truncate mr-2">{s.name}</span>
-                              <span className="font-mono text-[10px] bg-amber-50 px-1.5 py-0.5 rounded text-amber-700 shrink-0">
-                                {s.oldGwa ? s.oldGwa.toFixed(2) : 'N/A'} → {s.newGwa.toFixed(2)}
-                              </span>
+                            <li key={idx} className="text-xs text-amber-900 flex flex-col justify-center bg-white p-2 rounded border border-amber-100 gap-1.5">
+                              <span className="font-semibold">{s.name}</span>
+                              <div className="flex flex-wrap gap-2 text-[10px] font-mono">
+                                <span className="bg-amber-50 px-1.5 py-0.5 rounded text-amber-700">
+                                  <span className="opacity-60 uppercase font-sans mr-1 tracking-wider">Rating:</span>
+                                  {s.oldRating ? Number(s.oldRating).toFixed(2) : 'N/A'} → {s.newRating ? Number(s.newRating).toFixed(2) : 'N/A'}
+                                </span>
+                                <span className="bg-amber-50 px-1.5 py-0.5 rounded text-amber-700">
+                                  <span className="opacity-60 uppercase font-sans mr-1 tracking-wider">GWA:</span>
+                                  {s.oldGwa ? Number(s.oldGwa).toFixed(2) : 'N/A'} → {s.newGwa ? Number(s.newGwa).toFixed(2) : 'N/A'}
+                                </span>
+                                <span className="bg-amber-50 px-1.5 py-0.5 rounded text-amber-700">
+                                  <span className="opacity-60 uppercase font-sans mr-1 tracking-wider">Standing:</span>
+                                  {s.oldStanding ? String(s.oldStanding).toUpperCase() : 'N/A'} → {s.newStanding ? String(s.newStanding).toUpperCase() : 'N/A'}
+                                </span>
+                              </div>
                             </li>
                           ))}
                         </ul>

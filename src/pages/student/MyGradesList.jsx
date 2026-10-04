@@ -23,6 +23,8 @@ export default function MyGradesList() {
   const [grades, setGrades] = useState([]);
   const [officialGwa, setOfficialGwa] = useState(null);
   const [officialStanding, setOfficialStanding] = useState('No grades posted yet');
+  const [tentativeGwa, setTentativeGwa] = useState(null);
+  const [tentativeStanding, setTentativeStanding] = useState('No grades posted yet');
 
   // Classroom Join Code State
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
@@ -175,6 +177,8 @@ export default function MyGradesList() {
         setGrades(cached.grades || []);
         setOfficialGwa(cached.officialGwa ?? null);
         setOfficialStanding(cached.officialStanding || 'No grades posted yet');
+        setTentativeGwa(cached.tentativeGwa ?? null);
+        setTentativeStanding(cached.tentativeStanding || 'No grades posted yet');
         setLoading(false);
       } else {
         setLoading(true);
@@ -282,6 +286,7 @@ export default function MyGradesList() {
         // consumed. "Sum of all GWA per subject, divided by the number of subjects";
         // units are an 18-unit honors-eligibility gate elsewhere, never a weight here.
         const officialGwas = [];
+        const tentativeGwas = [];
 
         const mappedGrades = (classRecords || [])
           .filter(cr => subMap[cr.subject_id])
@@ -387,6 +392,14 @@ export default function MyGradesList() {
               }
             }
 
+            const bestGwaStr = sgGwa !== '—' ? sgGwa : tfrGwa !== '—' ? tfrGwa : mrGwa !== '—' ? mrGwa : officialGrade;
+            if (bestGwaStr !== '—') {
+              const numGrade = parseFloat(bestGwaStr);
+              if (!isNaN(numGrade)) {
+                tentativeGwas.push(numGrade);
+              }
+            }
+
             return {
               class_record_id: cr.class_record_id,
               code: subj.code,
@@ -408,8 +421,10 @@ export default function MyGradesList() {
         setGrades(mappedGrades);
 
         const offGwa = computeStudentGwa(officialGwas).gwa;
+        const tentGwa = computeStudentGwa(tentativeGwas).gwa;
 
         setOfficialGwa(offGwa);
+        setTentativeGwa(tentGwa);
 
         // Routed through the canonical GWA_BANDS ladder instead of a raw 1.45
         // literal. Sapientia/Excellentia both read as "Excellent" and
@@ -427,10 +442,15 @@ export default function MyGradesList() {
         const standing = getStanding(offGwa);
         setOfficialStanding(standing);
 
+        const tentStanding = getStanding(tentGwa);
+        setTentativeStanding(tentStanding);
+
         setCachedData(semCacheKey, {
           grades: mappedGrades,
           officialGwa: offGwa,
-          officialStanding: standing
+          officialStanding: standing,
+          tentativeGwa: tentGwa,
+          tentativeStanding: tentStanding
         });
 
       } catch (err) {
@@ -607,11 +627,15 @@ export default function MyGradesList() {
         {/* Single Official GWA Summary Metric Card */}
         <div className="bg-emerald-50/40 border border-emerald-100/90 rounded-2xl p-5 sm:p-6 shadow-sm flex items-center justify-between">
           <div className="space-y-1 text-left">
-            <span className="text-[10px] sm:text-xs font-bold text-emerald-800 uppercase tracking-wider block">Official Cumulative GWA</span>
+            <span className="text-[10px] sm:text-xs font-bold text-emerald-800 uppercase tracking-wider block">
+              {officialGwa !== null ? 'Official Cumulative GWA' : 'Tentative Cumulative GWA'}
+            </span>
             <div className="text-3xl sm:text-4xl font-extrabold font-mono text-emerald-950">
-              {officialGwa !== null ? officialGwa.toFixed(2) : '—'}
+              {officialGwa !== null ? officialGwa.toFixed(2) : (tentativeGwa !== null ? tentativeGwa.toFixed(2) : '—')}
             </div>
-            <p className="text-xs sm:text-sm text-emerald-700 font-medium">Official Academic Standing: <strong className="font-bold">{officialStanding}</strong></p>
+            <p className="text-xs sm:text-sm text-emerald-700 font-medium">
+              {officialGwa !== null ? 'Official Academic Standing:' : 'Tentative Academic Standing:'} <strong className="font-bold">{officialGwa !== null ? officialStanding : tentativeStanding}</strong>
+            </p>
           </div>
           <div className="p-3.5 sm:p-4 bg-emerald-100 text-emerald-700 rounded-2xl shadow-sm flex-shrink-0">
             <Award className="h-6 w-6 sm:h-8 sm:w-8" />

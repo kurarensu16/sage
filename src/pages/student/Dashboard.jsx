@@ -8,7 +8,8 @@ import {
   ChevronRight, 
   ArrowRight,
   ListTodo,
-  CheckCircle2
+  CheckCircle2,
+  Info
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -58,6 +59,7 @@ export default function Dashboard() {
   const [latestAdvisingPlan, setLatestAdvisingPlan] = useState(null);
   const [insightVerdict, setInsightVerdict] = useState('Normal');
   const [insightSummary, setInsightSummary] = useState('No academic risk flags detected. Keep up the good work!');
+  const [infoModalType, setInfoModalType] = useState(null); // 'gwa', 'subjects', 'tasks', 'ai'
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -194,7 +196,7 @@ export default function Dashboard() {
         let resolvedSummary = 'No academic risk flags detected. Keep up the good work!';
         if (insightData && insightData.length > 0) {
           const latest = insightData[0];
-          resolvedVerdict = latest.verdict === 'continue' ? 'Safe' : latest.verdict === 'at_risk' ? 'At Risk' : 'Shift';
+          resolvedVerdict = latest.verdict === 'continue' ? 'Safe' : latest.verdict === 'at_risk' ? 'Struggling' : 'At Risk';
           resolvedSummary = latest.summary;
           setInsightVerdict(resolvedVerdict);
           setInsightSummary(resolvedSummary);
@@ -302,7 +304,12 @@ export default function Dashboard() {
           {/* Stat 1: Current GWA */}
           <div className="bg-white p-3 sm:p-5 md:p-6 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all shadow-xs flex items-start justify-between gap-2 sm:gap-3">
             <div className="min-w-0 flex-1">
-              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block truncate">Current GWA</span>
+              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
+                Current GWA
+                <button onClick={() => setInfoModalType('gwa')} className="text-slate-400 hover:text-sage-600 transition-colors" aria-label="What does this mean?">
+                  <Info className="h-3 w-3" />
+                </button>
+              </span>
               <h3 className="text-lg sm:text-2xl md:text-3xl font-extrabold text-slate-900 font-mono mt-0.5 sm:mt-1 truncate">{currentGwa}</h3>
               <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate" title={gwaStanding}>{gwaStanding}</p>
             </div>
@@ -314,7 +321,12 @@ export default function Dashboard() {
           {/* Stat 2: Enrolled Subjects */}
           <div className="bg-white p-3 sm:p-5 md:p-6 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all shadow-xs flex items-start justify-between gap-2 sm:gap-3">
             <div className="min-w-0 flex-1">
-              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block truncate">Subjects</span>
+              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
+                Subjects
+                <button onClick={() => setInfoModalType('subjects')} className="text-slate-400 hover:text-sage-600 transition-colors" aria-label="What does this mean?">
+                  <Info className="h-3 w-3" />
+                </button>
+              </span>
               <h3 className="text-lg sm:text-2xl md:text-3xl font-extrabold text-slate-900 font-mono mt-0.5 sm:mt-1 truncate">
                 {enrolledSubjects.length < 10 ? `0${enrolledSubjects.length}` : enrolledSubjects.length}
               </h3>
@@ -328,7 +340,12 @@ export default function Dashboard() {
           {/* Stat 3: Advising Tasks (Replacing obsolete Eval Clearance) */}
           <div className="bg-white p-3 sm:p-5 md:p-6 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all shadow-xs flex items-start justify-between gap-2 sm:gap-3">
             <div className="min-w-0 flex-1">
-              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block truncate">Action Tasks</span>
+              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
+                Action Tasks
+                <button onClick={() => setInfoModalType('tasks')} className="text-slate-400 hover:text-sage-600 transition-colors" aria-label="What does this mean?">
+                  <Info className="h-3 w-3" />
+                </button>
+              </span>
               <h3 className={`text-lg sm:text-2xl md:text-3xl font-extrabold font-mono mt-0.5 sm:mt-1 truncate ${
                 pendingAdvisingCount > 0 ? 'text-amber-700' : 'text-emerald-700'
               }`}>
@@ -348,12 +365,17 @@ export default function Dashboard() {
           {/* Stat 4: Academic Insight */}
           <div className="bg-white p-3 sm:p-5 md:p-6 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all shadow-xs flex items-start justify-between gap-2 sm:gap-3">
             <div className="min-w-0 flex-1">
-              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block truncate">AI Standing</span>
+              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
+                AI Standing
+                <button onClick={() => setInfoModalType('ai')} className="text-slate-400 hover:text-sage-600 transition-colors" aria-label="What does this mean?">
+                  <Info className="h-3 w-3" />
+                </button>
+              </span>
               <h3 className={`text-lg sm:text-2xl md:text-3xl font-extrabold font-mono mt-0.5 sm:mt-1 truncate ${insightVerdict === 'Safe' ? 'text-emerald-600' : insightVerdict === 'At Risk' ? 'text-rose-600' : 'text-amber-600'}`}>
                 {insightVerdict}
               </h3>
               <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate">
-                {insightVerdict === 'Safe' ? 'Low risk' : insightVerdict === 'At Risk' ? 'High risk' : 'Standing alert'}
+                {insightVerdict === 'Safe' ? 'Low risk' : insightVerdict === 'Struggling' ? 'Moderate risk' : 'High risk'}
               </p>
             </div>
             <div className={`p-2 sm:p-2.5 md:p-3 rounded-xl flex-shrink-0 mt-0.5 ${insightVerdict === 'Safe' ? 'bg-emerald-50 text-emerald-600' : insightVerdict === 'At Risk' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
@@ -457,6 +479,70 @@ export default function Dashboard() {
         </div>
 
       </div>
+
+      {/* Unified Info Modal */}
+      {infoModalType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                {infoModalType === 'ai' ? <BrainCircuit className="h-5 w-5 text-sage-600" /> : <Info className="h-5 w-5 text-sage-600" />}
+                {infoModalType === 'gwa' && 'Current GWA'}
+                {infoModalType === 'subjects' && 'Enrolled Subjects'}
+                {infoModalType === 'tasks' && 'Action Tasks'}
+                {infoModalType === 'ai' && 'AI Standing Predictions'}
+              </h3>
+              <button 
+                onClick={() => setInfoModalType(null)}
+                className="text-slate-400 hover:text-slate-600 transition-colors text-xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="p-5 space-y-4 text-sm text-slate-600">
+              {infoModalType === 'gwa' && (
+                <p>This is your overall <strong>General Weighted Average</strong> based on currently posted grades. Because some professors post grades earlier than others, this represents a provisional snapshot of your standing and may fluctuate as more grades are finalized.</p>
+              )}
+              {infoModalType === 'subjects' && (
+                <p>The total number of active subjects and enrolled units you are taking this semester. Only subjects marked as 'Active' or 'Grades Posted' contribute to your GWA.</p>
+              )}
+              {infoModalType === 'tasks' && (
+                <p>These are pending <strong>faculty advising interventions</strong> that require your attention. If you are marked as "CLEARED," you have no immediate required actions. If "PENDING," please check your Faculty Advising Inbox below for details.</p>
+              )}
+              {infoModalType === 'ai' && (
+                <>
+                  <p>The <strong>AI Study Advisor</strong> analyzes your real-time grades, absences, and academic history to predict your trajectory.</p>
+                  
+                  <div className="space-y-3 mt-4">
+                    <div className="bg-emerald-50/50 border border-emerald-100 p-3 rounded-xl flex gap-3">
+                      <div className="text-emerald-600 font-bold w-20 shrink-0">Safe</div>
+                      <div>Low risk. You are on track to safely pass your currently enrolled subjects.</div>
+                    </div>
+                    
+                    <div className="bg-amber-50/50 border border-amber-100 p-3 rounded-xl flex gap-3">
+                      <div className="text-amber-600 font-bold w-20 shrink-0">Struggling</div>
+                      <div>Moderate risk. Warning signs detected (e.g., failing exam or frequent absences). Proactive intervention is recommended.</div>
+                    </div>
+                    
+                    <div className="bg-rose-50/50 border border-rose-100 p-3 rounded-xl flex gap-3">
+                      <div className="text-rose-600 font-bold w-20 shrink-0">At Risk</div>
+                      <div>Urgent alert. The AI predicts significant difficulty in your current path. We strongly recommend scheduling a consultation with your academic adviser to discuss support options.</div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+              <button 
+                onClick={() => setInfoModalType(null)}
+                className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                Understood
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

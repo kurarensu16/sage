@@ -47,7 +47,8 @@ export function evaluateAcademicAdvising({
   courses = [],
   attendance = {},
   officialGwa = null,
-  hasOfficialMilestone = false
+  hasOfficialMilestone = false,
+  latestMilestone = null
 } = {}) {
   const highestAttendanceCourse = (Array.isArray(attendance.byCourse) ? attendance.byCourse : [])
     .map(course => ({ ...course, absenceCount: Number(course?.absenceCount) || 0 }))
@@ -208,6 +209,33 @@ export function evaluateAcademicAdvising({
       focusTopics: [getActivityTopic(latest)],
       actions: [action('early-review', 'Review this activity early', 'Check the missed items now while waiting for the next related released result.')],
       reviewTrigger: 'next_related_activity_release',
+      consultationRecommended: false,
+      boundaryStatement
+    };
+  }
+
+  if (hasOfficialMilestone && officialGwa !== null && Number(officialGwa) <= 3) {
+    const milestoneText = latestMilestone ? latestMilestone : 'Official milestone';
+    let summaryText = `Your latest official cumulative GWA is ${Number(officialGwa).toFixed(2)}, which is a passing standing. ASPIRE will continue to monitor your progress.`;
+    
+    if (latestMilestone === 'Tentative Final Rating') {
+      summaryText = `Your latest official cumulative GWA is ${Number(officialGwa).toFixed(2)} (Tentative Final Rating). Note: This grade is tentative and may vary since grading is not yet completed. ASPIRE will continue to monitor your progress.`;
+    } else if (latestMilestone === 'Midterm Rating') {
+      summaryText = `Your latest official cumulative GWA is ${Number(officialGwa).toFixed(2)} (Midterm Rating), which is a passing standing. ASPIRE will continue to monitor your progress.`;
+    } else if (latestMilestone === 'Semestral Grade') {
+      summaryText = `Your final Semestral Grade is ${Number(officialGwa).toFixed(2)}, which is a passing standing.`;
+    }
+
+    return {
+      state: 'monitoring',
+      severity: 'low',
+      signalType: 'official_grade_passing',
+      headline: `${milestoneText} grade is on track`,
+      summary: summaryText,
+      evidence: [{ label: `${milestoneText} GWA`, value: Number(officialGwa).toFixed(2) }],
+      focusTopics: [],
+      actions: [action('maintain-routine', 'Maintain your study routine', 'Continue your current study habits and review upcoming requirements.')],
+      reviewTrigger: 'next_activity_release',
       consultationRecommended: false,
       boundaryStatement
     };

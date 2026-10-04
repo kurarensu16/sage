@@ -5,6 +5,7 @@ import {
 } from '../../lib/gradingMath';
 import { computeStudentGwa, countAttendance, getAttendanceFlags, getGwaBand, getHonorTier, HONORS, toGwaOrNull } from '../../lib/academicPolicy';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { useAuth } from '../../lib/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -30,7 +31,9 @@ import {
   X,
   Plus,
   Lock,
-  TrendingUp
+  TrendingUp,
+  ChevronDown,
+  Info
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getAiAcademicInsight } from '../../lib/openrouter';
@@ -134,10 +137,14 @@ export default function AcademicInsights() {
   const [hasEnrolledSubjects, setHasEnrolledSubjects] = useState(false);
 
   // Selector states
-  const [scope, setScope] = useState('overall'); // Today, My Courses, or My Progress
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const initialScope = searchParams.get('tab') || 'overall';
+  const [scope, setScope] = useState(initialScope); // Today, My Courses, My Progress
   const [selectedSubjectCode, setSelectedSubjectCode] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState('semestralGrade');
   const [completedActionIds, setCompletedActionIds] = useState([]);
+  const [infoModalType, setInfoModalType] = useState(null);
 
   // Retained only for the future Grade Planning destination; not rendered in Advisor.
   const [simSubjectCode, setSimSubjectCode] = useState('');
@@ -156,18 +163,6 @@ export default function AcademicInsights() {
   const [aiLoading, setAiLoading] = useState(false);
   const [askAspireOpen, setAskAspireOpen] = useState(false);
   const [askAspireSubjectCode, setAskAspireSubjectCode] = useState(null);
-
-  // Direct Consultations states
-  const [consultationRequests, setConsultationRequests] = useState([]);
-  const [isConsultModalOpen, setIsConsultModalOpen] = useState(false);
-  const [consultForm, setConsultForm] = useState({
-    subjectCode: '',
-    category: 'Grade Clarification',
-    schedule: '',
-    message: ''
-  });
-  const [submittingConsult, setSubmittingConsult] = useState(false);
-  const [consultFeedback, setConsultFeedback] = useState(null);
 
   useEffect(() => {
     try {
@@ -256,7 +251,7 @@ export default function AcademicInsights() {
         // 3. Fetch attendance history
         const { data: attendanceData } = await supabase
           .from('attendance_records')
-          .select('class_record_id, status, is_fda')
+          .select('class_record_id, status')
           .eq('student_id', user.id);
 
         const attendanceSummary = countAttendance(attendanceData || []);
@@ -287,8 +282,7 @@ export default function AcademicInsights() {
             const { data: classActs } = await supabase
               .from('class_activities')
               .select('*')
-              .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000'])
-              .eq('is_released', true);
+              .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000']);
 
             // Fetch professor evaluations for student
             const { data: riskEvals } = await supabase
@@ -859,6 +853,7 @@ export default function AcademicInsights() {
     student: {
       firstName: profile?.first_name || 'Student'
     },
+    tabScope: scope,
     scope: askAspireSubject ? 'course' : 'overall',
     periodLabel: askAspireSubject
       ? PERIODS_MAPPING[selectedPeriod]
@@ -879,7 +874,9 @@ export default function AcademicInsights() {
           name: askAspireSubject.name,
           instructor: askAspireSubject.instructor,
           runningGwa: askAspireSubject.runningGwa,
-          selectedPeriod: askAspireSubject.periods?.[selectedPeriod] || null,
+          selectedPeriodName: selectedPeriod,
+          periods: askAspireSubject.periods || null,
+          gradingFormula: askAspireSubject.gradingFormula || null,
           diagnostics: askAspireSubject.diagnostics,
           sharedAcademicFeedback: askRiskEvaluation?.shared_academic_feedback || null,
           activities: (askAspireSubject.activities || []).map(activity => ({
@@ -927,18 +924,8 @@ export default function AcademicInsights() {
   };
 
   const openConsultationFromAskAspire = () => {
-    const subjectCode = askAspireSubject?.code || selectedSubjectCode || subjectsList[0]?.code || '';
     setAskAspireOpen(false);
-    setConsultForm({
-      subjectCode,
-      category: 'General Academic Counseling',
-      schedule: '',
-      message: askAspireSubject
-        ? `I would like to discuss the academic insight and recommended next steps for ${askAspireSubject.code}.`
-        : 'I would like to discuss my current academic standing and recommended next steps.'
-    });
-    setConsultFeedback(null);
-    setIsConsultModalOpen(true);
+    navigate('/student/consultations');
   };
 
   // Calculation stays available for its planned relocation to Score Breakdown / Grade Planning.
@@ -1107,132 +1094,6 @@ export default function AcademicInsights() {
     }
   };
 
-  // Fetch Consultation Requests
-  const fetchConsultationRequests = useCallback(async () => {
-    if (!user) return;
-    try {
-      const { data, error } = await supabase
-        .from('student_consultation_requests')
-        .select(`
-          consultation_id,
-          student_id,
-          faculty_id,
-          class_record_id,
-          concern_category,
-          preferred_schedule,
-          message,
-          status,
-          faculty_notes,
-          created_at,
-          updated_at,
-          class_records (
-            subjects ( code, name ),
-            sections ( name )
-          ),
-          faculty:users!faculty_id (
-            first_name,
-            last_name,
-            email
-          )
-        `)
-        .eq('student_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        const local = localStorage.getItem(`sage_consultations_${user.id}`);
-        setConsultationRequests(local ? JSON.parse(local) : []);
-      } else {
-        setConsultationRequests(data || []);
-      }
-    } catch {
-      const local = localStorage.getItem(`sage_consultations_${user.id}`);
-      setConsultationRequests(local ? JSON.parse(local) : []);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    fetchConsultationRequests();
-  }, [fetchConsultationRequests]);
-
-  const handleSubmitConsultation = async (e) => {
-    e.preventDefault();
-    if (!user || !consultForm.subjectCode || !consultForm.message.trim() || !consultForm.schedule.trim()) return;
-    setSubmittingConsult(true);
-    setConsultFeedback(null);
-
-    const selectedSub = subjectsList.find(s => s.code === consultForm.subjectCode);
-    const classRecId = selectedSub?.class_record_id;
-    const facultyId = selectedSub?.faculty_id;
-
-    const newReq = {
-      student_id: user.id,
-      faculty_id: facultyId || user.id,
-      class_record_id: classRecId || null,
-      concern_category: consultForm.category,
-      preferred_schedule: consultForm.schedule,
-      message: consultForm.message,
-      status: 'pending'
-    };
-
-    try {
-      const { data, error } = await supabase
-        .from('student_consultation_requests')
-        .insert(newReq)
-        .select(`
-          *,
-          class_records ( subjects ( code, name ), sections ( name ) ),
-          faculty:users!faculty_id ( first_name, last_name, email )
-        `)
-        .single();
-
-      if (error) {
-        const fallbackReq = {
-          consultation_id: `local-${Date.now()}`,
-          ...newReq,
-          created_at: new Date().toISOString(),
-          class_records: { subjects: { code: selectedSub?.code, name: selectedSub?.name } },
-          faculty: { first_name: selectedSub?.instructor?.replace('Prof. ', '').split(' ')[0] || 'Faculty', last_name: '' }
-        };
-        const existing = JSON.parse(localStorage.getItem(`sage_consultations_${user.id}`) || '[]');
-        const updated = [fallbackReq, ...existing];
-        localStorage.setItem(`sage_consultations_${user.id}`, JSON.stringify(updated));
-        setConsultationRequests(updated);
-      } else if (data) {
-        setConsultationRequests(prev => [data, ...prev]);
-      }
-
-      if (facultyId) {
-        await dispatchNotifications([{
-          recipient_id: facultyId,
-          type: 'consultation_request',
-          message: `${profile?.first_name || 'Student'} requested a consultation regarding ${consultForm.category} in ${selectedSub?.code || 'Course'}.`
-        }]);
-      }
-
-      setConsultFeedback({
-        type: 'success',
-        message: 'Your consultation request has been submitted successfully to your professor.'
-      });
-      setTimeout(() => {
-        setIsConsultModalOpen(false);
-        setConsultFeedback(null);
-        setConsultForm({
-          subjectCode: subjectsList[0]?.code || '',
-          category: 'Grade Clarification',
-          schedule: '',
-          message: ''
-        });
-      }, 1500);
-    } catch (err) {
-      console.error('Error submitting consultation:', err);
-      setConsultFeedback({
-        type: 'error',
-        message: err.message || 'Failed to submit consultation request.'
-      });
-    } finally {
-      setSubmittingConsult(false);
-    }
-  };
 
   if (loading) {
     return <DetailSkeleton />;
@@ -1246,14 +1107,7 @@ export default function AcademicInsights() {
       >
         <button
           onClick={() => {
-            setConsultForm({
-              subjectCode: selectedSubjectCode || (subjectsList[0]?.code || ''),
-              category: 'Grade Clarification',
-              schedule: '',
-              message: ''
-            });
-            setConsultFeedback(null);
-            setIsConsultModalOpen(true);
+            navigate('/student/consultations');
           }}
           className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap"
         >
@@ -1265,7 +1119,8 @@ export default function AcademicInsights() {
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-5 sm:space-y-6">
         
         {/* Navigation Scope Tabs */}
-        <div className="bg-slate-200/70 p-1 rounded-2xl shadow-inner grid grid-cols-3 gap-1 max-w-2xl mx-auto">
+        {scope !== 'consultations' && (
+          <div className="bg-slate-200/70 p-1 rounded-2xl shadow-inner grid grid-cols-3 gap-1 max-w-2xl mx-auto">
           <button
             onClick={() => setScope('overall')}
             className={cn(
@@ -1304,7 +1159,9 @@ export default function AcademicInsights() {
             <TrendingUp className="h-4 w-4 text-sage-600" />
             <span>My Progress</span>
           </button>
+
         </div>
+        )}
 
         {/* Dynamic Panels */}
         {scope === 'overall' ? (
@@ -1349,7 +1206,10 @@ export default function AcademicInsights() {
 
               <div className="flex items-center gap-6 border-t md:border-t-0 md:border-l border-sage-800/80 pt-3 md:pt-0 md:pl-6 justify-between md:justify-end">
                 <div>
-                  <span className="text-[10px] font-bold text-sage-300 uppercase tracking-wider block">Cumulative GWA</span>
+                  <span className="text-[10px] font-bold text-sage-300 uppercase tracking-wider flex items-center gap-1">
+                    Tentative Cumulative GWA
+                    <Info className="h-3 w-3 cursor-pointer hover:text-white transition-colors" onClick={() => setInfoModalType('gwa')} />
+                  </span>
                   <span className="text-3xl sm:text-4xl font-extrabold font-mono text-sage-200">
                     {studentStats.gwa !== null && studentStats.gwa !== undefined && !isNaN(studentStats.gwa) 
                       ? Number(studentStats.gwa).toFixed(2) 
@@ -1357,12 +1217,15 @@ export default function AcademicInsights() {
                   </span>
                 </div>
                 <div className="text-right">
-                  <span className="text-[10px] font-bold text-sage-300 uppercase tracking-wider block">President's List Standing</span>
+                  <span className="text-[10px] font-bold text-sage-300 uppercase tracking-wider flex items-center gap-1 justify-end">
+                    President's List Standing
+                    <Info className="h-3 w-3 cursor-pointer hover:text-white transition-colors" onClick={() => setInfoModalType('pl')} />
+                  </span>
                   <span className="text-2xl sm:text-3xl font-extrabold font-mono text-emerald-400">
                     {studentStats.gwa !== null ? studentStats.dlEligibility?.awardCategory || 'Not Eligible' : '—'}
                   </span>
                   {studentStats.gwa !== null && !studentStats.completeness?.isFullyFinalized && (
-                    <span className="block text-[10px] text-sage-300/80 italic mt-0.5">Provisional</span>
+                    <span className="block text-[10px] text-sage-300/80 italic mt-0.5">Tentative</span>
                   )}
                 </div>
               </div>
@@ -1992,8 +1855,8 @@ export default function AcademicInsights() {
                     {/* Milestone Progression Selector */}
                     <div className="space-y-2">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Official grading milestones</span>
-                      <div className="grid grid-cols-2 gap-1.5 sm:max-w-md">
-                        {['midtermRating', 'semestralGrade'].map((key) => {
+                      <div className="grid grid-cols-3 gap-1.5 sm:max-w-md">
+                        {['midtermRating', 'tentativeFinalRating', 'semestralGrade'].map((key) => {
                           const periodData = currentSubject.periods?.[key];
                           const isAvailable = periodData && periodData.gwa !== '—';
                           return (
@@ -2171,7 +2034,7 @@ export default function AcademicInsights() {
             )}
 
           </div>
-        ) : (
+        ) : scope === 'progress' ? (
           <>
             {/* ================= MY PROGRESS ================= */}
             <div className="space-y-5 sm:space-y-6 animate-fade-in text-left">
@@ -2257,172 +2120,10 @@ export default function AcademicInsights() {
                 </div>
               </div>
             </div>
-
-            {/* Consultation history is retained as a separate workflow, not an Advisor workspace. */}
-            <div className="hidden" aria-hidden="true">
-          <div className="space-y-5 sm:space-y-6 text-left">
-            
-            {/* Consultations Header Hero */}
-            <div className="bg-gradient-to-r from-slate-900 via-sage-950 to-slate-900 rounded-2xl p-5 sm:p-6 text-white shadow-md border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-300 bg-amber-950/80 px-2.5 py-0.5 rounded-md border border-amber-800/50">
-                  Direct Faculty Consultations
-                </span>
-                <h3 className="text-xl sm:text-2xl font-extrabold font-display tracking-tight text-white mt-1.5">
-                  1-on-1 Academic Advising &amp; Mentorship
-                </h3>
-                <p className="text-xs text-slate-300 max-w-xl mt-1 leading-relaxed">
-                  Request direct consultation with your subject professors regarding grades, catch-up action items, exam feedback, or attendance advisories.
-                </p>
-              </div>
-
-              <button
-                onClick={() => {
-                  setConsultForm({
-                    subjectCode: selectedSubjectCode || (subjectsList[0]?.code || ''),
-                    category: 'Grade Clarification',
-                    schedule: '',
-                    message: ''
-                  });
-                  setConsultFeedback(null);
-                  setIsConsultModalOpen(true);
-                }}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors cursor-pointer whitespace-nowrap"
-              >
-                <Plus className="w-4 h-4" />
-                <span>New Consultation Request</span>
-              </button>
-            </div>
-
-            {/* Consultation Stats Row */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Requests</span>
-                <span className="text-2xl font-extrabold font-mono text-slate-900 mt-1 block">
-                  {consultationRequests.length}
-                </span>
-              </div>
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pending Review</span>
-                <span className="text-2xl font-extrabold font-mono text-amber-700 mt-1 block">
-                  {consultationRequests.filter(r => r.status === 'pending').length}
-                </span>
-              </div>
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Scheduled</span>
-                <span className="text-2xl font-extrabold font-mono text-indigo-700 mt-1 block">
-                  {consultationRequests.filter(r => r.status === 'scheduled').length}
-                </span>
-              </div>
-              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Completed</span>
-                <span className="text-2xl font-extrabold font-mono text-emerald-700 mt-1 block">
-                  {consultationRequests.filter(r => r.status === 'completed').length}
-                </span>
-              </div>
-            </div>
-
-            {/* Requests List */}
-            {consultationRequests.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center max-w-lg mx-auto shadow-xs space-y-3">
-                <div className="w-12 h-12 rounded-full bg-sage-50 text-sage-600 flex items-center justify-center mx-auto">
-                  <MessageSquare className="w-6 h-6" />
-                </div>
-                <h4 className="text-base font-bold text-slate-900 font-display">No Consultation Requests Yet</h4>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Have questions regarding your grades, catch-up tasks, or exam performance? Reach out to your instructor directly for a 1-on-1 consultation session.
-                </p>
-                <button
-                  onClick={() => {
-                    setConsultForm({
-                      subjectCode: selectedSubjectCode || (subjectsList[0]?.code || ''),
-                      category: 'Grade Clarification',
-                      schedule: '',
-                      message: ''
-                    });
-                    setConsultFeedback(null);
-                    setIsConsultModalOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Request Consultation Now</span>
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {consultationRequests.map((req) => (
-                  <div 
-                    key={req.consultation_id} 
-                    className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-3"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-bold text-slate-900">
-                            {req.class_records?.subjects?.code || 'COURSE'}
-                          </span>
-                          <span className="text-xs text-slate-400">•</span>
-                          <span className="text-xs font-semibold text-slate-700">
-                            {req.class_records?.subjects?.name || 'Class Record'}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">
-                          Instructor: <strong>Prof. {req.faculty?.first_name} {req.faculty?.last_name}</strong>
-                          {req.faculty?.email && ` (${req.faculty.email})`}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                          {req.concern_category}
-                        </span>
-                        <span className={cn(
-                          "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border",
-                          req.status === 'pending' && "bg-amber-50 text-amber-800 border-amber-200",
-                          req.status === 'scheduled' && "bg-indigo-50 text-indigo-800 border-indigo-200",
-                          req.status === 'completed' && "bg-emerald-50 text-emerald-800 border-emerald-200",
-                          req.status === 'declined' && "bg-rose-50 text-rose-800 border-rose-200"
-                        )}>
-                          {req.status === 'pending' ? 'Pending Confirmation' : req.status}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 text-xs">
-                      <div className="flex items-center gap-1.5 text-slate-600 text-[11px] font-medium">
-                        <Calendar className="w-3.5 h-3.5 text-sage-600 shrink-0" />
-                        <span>Preferred Schedule: <strong>{req.preferred_schedule}</strong></span>
-                      </div>
-
-                      <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-lg text-slate-700 leading-relaxed">
-                        <span className="font-bold text-slate-800 block text-[10px] uppercase tracking-wider mb-0.5">Student Notes / Question:</span>
-                        {req.message}
-                      </div>
-
-                      {req.faculty_notes && (
-                        <div className="p-3 bg-emerald-50/50 border border-emerald-200/80 rounded-lg text-emerald-900 leading-relaxed">
-                          <span className="font-bold text-emerald-950 block text-[10px] uppercase tracking-wider mb-0.5">Professor Feedback &amp; Meeting Details:</span>
-                          {req.faculty_notes}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="text-[10px] text-slate-400 font-mono text-right pt-1">
-                      Submitted on {new Date(req.created_at).toLocaleString()}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-          </div>
-            </div>
           </>
-        )}
+        ) : null}
 
       </div>
-
       <AskAspirePanel
         open={askAspireOpen}
         context={askAspireContext}
@@ -2430,124 +2131,31 @@ export default function AcademicInsights() {
         onRequestConsultation={openConsultationFromAskAspire}
       />
 
-      {/* ========================================================================= */}
-      {/* DIRECT CONSULTATION REQUEST MODAL                                         */}
-      {/* ========================================================================= */}
-      {isConsultModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs text-left animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-150">
-            <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-bold font-display text-slate-900 flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-sage-600" />
-                <span>Request Direct Faculty Consultation</span>
+      {/* Unified Info Modal */}
+      {infoModalType && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <Info className="h-5 w-5 text-sage-600" />
+                {infoModalType === 'gwa' && 'Tentative Cumulative GWA'}
+                {infoModalType === 'pl' && 'President\'s List Standing'}
               </h3>
-              <button
-                onClick={() => setIsConsultModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-md transition-colors cursor-pointer"
+              <button 
+                onClick={() => setInfoModalType(null)}
+                className="text-slate-400 hover:text-slate-600 transition-colors text-xl leading-none cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                &times;
               </button>
             </div>
-
-            <form onSubmit={handleSubmitConsultation} className="p-5 space-y-4 text-xs font-sans">
-              {consultFeedback && (
-                <div className={cn(
-                  "p-3 rounded-xl text-xs flex items-center gap-2",
-                  consultFeedback.type === 'success' 
-                    ? "bg-emerald-50 border border-emerald-200 text-emerald-800"
-                    : "bg-rose-50 border border-rose-200 text-rose-700"
-                )}>
-                  {consultFeedback.type === 'success' ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
-                  )}
-                  <span>{consultFeedback.message}</span>
-                </div>
+            <div className="p-5 space-y-4 text-sm text-slate-600 text-left">
+              {infoModalType === 'gwa' && (
+                <p>This is your overall <strong>Tentative Cumulative GWA</strong> based on currently posted grades. Because some professors post grades earlier than others, this represents a provisional snapshot of your standing and may fluctuate as more grades are finalized.</p>
               )}
-
-              <div className="space-y-1">
-                <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
-                  Select Course &amp; Instructor <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  required
-                  value={consultForm.subjectCode}
-                  onChange={(e) => setConsultForm(prev => ({ ...prev, subjectCode: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-medium text-slate-900 focus:outline-none focus:border-sage-600"
-                >
-                  {subjectsList.map((s) => (
-                    <option key={s.code} value={s.code}>
-                      {s.code} - {s.name} ({s.instructor})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
-                  Concern Category <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  required
-                  value={consultForm.category}
-                  onChange={(e) => setConsultForm(prev => ({ ...prev, category: e.target.value }))}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-medium text-slate-900 focus:outline-none focus:border-sage-600"
-                >
-                  <option value="Grade Clarification">Grade Clarification &amp; Computation</option>
-                  <option value="Catch-Up Plan Guidance">Catch-Up Plan &amp; Milestone Guidance</option>
-                  <option value="Exam & Assessment Review">Exam &amp; Assessment Review</option>
-                  <option value="Attendance & FDA Advisory">Attendance / FDA Advisory Inquiry</option>
-                  <option value="General Academic Counseling">General Academic Counseling</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
-                  Preferred Consultation Schedule <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={consultForm.schedule}
-                  onChange={(e) => setConsultForm(prev => ({ ...prev, schedule: e.target.value }))}
-                  placeholder="e.g. Wednesday 2:00 PM - 3:00 PM, or during faculty office hours"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs text-slate-900 focus:outline-none focus:border-sage-600"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
-                  Details of Academic Concern <span className="text-rose-500">*</span>
-                </label>
-                <textarea
-                  required
-                  rows={4}
-                  value={consultForm.message}
-                  onChange={(e) => setConsultForm(prev => ({ ...prev, message: e.target.value }))}
-                  placeholder="Explain your specific concern or topic you would like to discuss with your professor..."
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs text-slate-900 focus:outline-none focus:border-sage-600 resize-none leading-relaxed"
-                />
-              </div>
-
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsConsultModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingConsult || !consultForm.message.trim() || !consultForm.schedule.trim()}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-sage-600 hover:bg-sage-700 active:bg-sage-800 disabled:opacity-50 rounded-xl shadow-xs transition-colors cursor-pointer"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>{submittingConsult ? 'Submitting...' : 'Send Request'}</span>
-                </button>
-              </div>
-            </form>
+              {infoModalType === 'pl' && (
+                <p>Your current projected eligibility for honors. Note that this is a <strong>tentative</strong> status based only on grades submitted so far and does not become official until all professors have completely finalized grades for the term.</p>
+              )}
+            </div>
           </div>
         </div>
       )}

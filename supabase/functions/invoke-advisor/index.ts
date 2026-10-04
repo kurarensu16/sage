@@ -92,27 +92,36 @@ function sanitizeContext(input: any) {
       name: text(input.subject.name, 160),
       instructor: text(input.subject.instructor, 160),
       runningGwa: text(input.subject.runningGwa, 20),
-      selectedPeriod: input.subject.selectedPeriod || null,
+      selectedPeriodName: text(input.subject.selectedPeriodName, 40),
+      milestoneStage: text(input.subject.milestoneStage, 80),
+      isFinalized: Boolean(input.subject.isFinalized),
+      gradingFormula: input.subject.gradingFormula || null,
+      periods: input.subject.periods || null,
+      diagnostics: input.subject.diagnostics || null,
       sharedAcademicFeedback: text(input.subject.sharedAcademicFeedback, 1000),
       activities: Array.isArray(input.subject.activities)
         ? input.subject.activities.slice(0, 20).map((activity: any) => ({
-            title: text(activity?.title, 160),
-            topicTag: text(activity?.topicTag, 100),
-            term: text(activity?.term, 40),
-            score: Number.isFinite(activity?.score) ? activity.score : null,
-            maxScore: Number.isFinite(activity?.maxScore) ? activity.maxScore : null,
-            percentage: Number.isFinite(activity?.percentage) ? activity.percentage : null
-          }))
+          title: text(activity?.title, 160),
+          description: text(activity?.description, 320),
+          topicTag: text(activity?.topicTag, 100),
+          term: text(activity?.term, 40),
+          score: Number.isFinite(activity?.score) ? activity.score : null,
+          maxScore: Number.isFinite(activity?.maxScore) ? activity.maxScore : null,
+          percentage: Number.isFinite(activity?.percentage) ? activity.percentage : null
+        }))
         : []
     } : null,
     courses: Array.isArray(input?.courses)
       ? input.courses.slice(0, 20).map((course: any) => ({
-          code: text(course?.code, 40),
-          name: text(course?.name, 160),
-          runningGwa: text(course?.runningGwa, 20),
-          classStandingAverage: Number.isFinite(course?.classStandingAverage) ? course.classStandingAverage : null,
-          examAverage: Number.isFinite(course?.examAverage) ? course.examAverage : null
-        }))
+        code: text(course?.code, 40),
+        name: text(course?.name, 160),
+        runningGwa: text(course?.runningGwa, 20),
+        milestoneStage: text(course?.milestoneStage, 80),
+        gradingFormula: course?.gradingFormula || null,
+        periods: course?.periods || null,
+        diagnostics: course?.diagnostics || null,
+        activities: Array.isArray(course?.activities) ? course.activities : []
+      }))
       : [],
     evidence: sanitizeEvidence(input?.evidence),
     deterministicAdvisor: {
@@ -159,12 +168,17 @@ function sanitizeInsightContext(input: any) {
     rating: Number.isFinite(input?.rating) ? input.rating : null,
     status: text(input?.status, 40),
     diagnostics: input?.diagnostics || null,
+    // Per-subject grading formula from the database — each subject may have different weights.
+    // This allows Ask ASPIRE to reason about which component (CS, Exam, Character) had the
+    // biggest mathematical impact on the student's term rating.
+    gradingFormula: input?.gradingFormula || null,
     evidenceBoundary: 'Only faculty-posted official milestone values in this payload may be described as grades.'
   }
 }
 
 function parseStructuredResponse(content: string): AdvisorResponse {
-  const normalized = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+  const match = content.match(/\{[\s\S]*\}/)
+  const normalized = match ? match[0] : content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
   const parsed = JSON.parse(normalized)
   const message = text(parsed?.message, 1200)
   const actions = Array.isArray(parsed?.actions)
@@ -172,7 +186,9 @@ function parseStructuredResponse(content: string): AdvisorResponse {
     : []
 
   if (!message) throw new Error('Provider returned an empty message')
-  if (parsed?.boundary_statement !== BOUNDARY_STATEMENT) throw new Error('Provider boundary validation failed')
+  // boundary_statement is always force-injected from the constant below,
+  // so we do NOT validate the model's copy — minor paraphrasing caused
+  // unnecessary 502s on otherwise valid responses.
 
   return {
     message,
@@ -182,26 +198,35 @@ function parseStructuredResponse(content: string): AdvisorResponse {
   }
 }
 
-function systemPrompt(mode: string) {
+function systemPrompt(mode: string, weightsStr?: string) {
   return `You are Ask ASPIRE, an academic advising explanation assistant at Dr. Yanga's Colleges, Inc. (DYCI).
 
 The supplied deterministic advisor and official records are authoritative data. You do not calculate grades, risk scores, risk tiers, FDA decisions, or scholarship eligibility.
 
 Rules:
-1. Explain only evidence present in the supplied context. Never invent grades, causes, deadlines, policies, diagnoses, or faculty decisions.
+1. Explain evidence present in the supplied context. For questions about DYCI policies (grading scale, attendance, President's List, INC), you MAY answer directly using the DYCI ACADEMIC POLICIES listed below — even if hypothetical. HOWEVER, your answer MUST still be placed inside the "message" field of the JSON object.
 2. Never contradict the deterministic advising state, visible evidence, or actions.
 3. Faculty shared academic feedback is approved student-visible context. You may explain it, but must not reinterpret it as a new grade, risk decision, or diagnosis.
-4. Unencoded future terms are missing, not zero. Do not treat them as failures.
-5. Absences do not deduct grade points. Four or more absences may support an FDA recommendation, but faculty makes the official decision.
-6. If records are insufficient, say: "The available course records do not provide enough information to confirm that."
-7. When context.completeness.isFullyFinalized is false, treat the GWA, standing, and President's
-   List eligibility as a current, in-progress reading, not a final result — use language like
-   "based on your current performance" or "possible candidate," matching context.dlEligibility's
-   own wording, and mention how many subjects are graded so far if context.completeness.note is
-   present. Never say a partial-term reading "confirms" or "finalizes" anything.
-8. Use no more than 120 words and at most three practical actions.
-9. Return JSON only with exactly this shape:
+4. Unencoded future terms are missing, not zero. Do not treat them as failures. ALWAYS use the student's ongoing performance (current Class Standing, Exam averages) and grading weights to provide proactive projections and strategic advice on what scores they need on upcoming activities or exams to maintain or achieve a better target grade.
+5. Absences do not deduct grade points. Four or more absences per subject may support an FDA recommendation, but the faculty instructor makes the official decision.
+6. If the student asks about missing activities or low scores and there are none recorded, explicitly state that there are no recorded missed activities or low scores. Do NOT say "I don't have enough information" for this case.
+7. When context.completeness.isFullyFinalized is false, treat GWA, standing, and President's List eligibility as in-progress — use language like "based on your current performance" or "possible candidate." Never say a partial-term reading "confirms" or "finalizes" anything.
+8. Grade components from later terms (e.g., Final or Semi-Final) do NOT retroactively affect earlier milestones (Midterm Rating or Prelim).
+9. For questions you genuinely cannot answer from context or policy (e.g., specific exam dates, professor deadlines, syllabus content), set the "message" field of your JSON to a polite refusal (e.g., "That information is not available in ASPIRE. Please consult your instructor directly.") — do NOT hallucinate, and DO NOT output raw text outside the JSON format.
+10. For simple greetings (e.g. "Hi", "Hello") or thanks, respond politely and briefly (under 20 words). You do not need to explain grades for these inputs.
+11. You are an academic advisor, not a tutor or a student. Do NOT write code, solve assignments, or compose emails.
+12. Return JSON only with exactly this shape:
 {"message":"student-facing explanation","actions":["action"],"consultation_recommended":false,"boundary_statement":"${BOUNDARY_STATEMENT}"}
+
+${weightsStr ? `SUBJECT GRADING WEIGHTS: ${weightsStr}\nApply these specific weights mathematically when explaining grade impact (e.g. a 20/100 on Character at 10% weight is mathematically less impactful than a 30/50 Class Standing at 50% weight).` : ''}
+
+DYCI ACADEMIC POLICIES TO ENFORCE:
+- Grading Scale: 98-100=1.0, 95-97=1.25, 92-94=1.5, 89-91=1.75, 86-88=2.0, 83-85=2.25, 80-82=2.5, 77-79=2.75, 75-76=3.0 (Passing), Below 75=5.0 (Failed).
+- President's List (Honors): ALL four conditions must be met simultaneously: (1) minimum 18 enrolled units for the semester, (2) no individual subject grade below 2.0, (3) no INC grade in any subject, and (4) overall GWA <= 1.75. A student with only 15 units enrolled is NOT eligible regardless of GWA. Tiers: Sapientia (1.0-1.25), Excellentia (1.26-1.5), Virtus (1.51-1.75). When assessing eligibility, explicitly check all four conditions and state which ones pass or fail.
+- Attendance: 4 absences per subject = Failure Due to Absences (FDA). The FDA threshold is per-subject, not combined across all subjects. Faculty makes the official FDA decision — Ask ASPIRE does not.
+- INC (Incomplete): Issued when a student fails to complete required coursework. An INC disqualifies the student from President's List until it is resolved and replaced with a final grade.
+
+CRITICAL FORMATTING INSTRUCTION: MAXIMUM 100 WORDS. OUTPUT ONLY THE RAW JSON OBJECT FROM RULE 12. NO MARKDOWN, NO REASONING BLOCKS, NO TEXT BEFORE OR AFTER THE { }.
 
 Request mode: ${mode}.`
 }
@@ -245,39 +270,79 @@ Deno.serve(async req => {
     const context = mode === 'chat' ? sanitizeContext(body.context) : sanitizeInsightContext(body.context)
     const history: ChatMessage[] = mode === 'chat' && Array.isArray(body.history)
       ? body.history.slice(-6).map((message: any) => ({
-          role: message?.role === 'assistant' ? 'assistant' : 'user',
-          content: text(message?.content, 1200)
-        })).filter((message: ChatMessage) => message.content)
+        role: message?.role === 'assistant' ? 'assistant' : 'user',
+        content: text(message?.content, 400)  // cap at 400 chars — chat turns are short
+      })).filter((message: ChatMessage) => message.content)
       : []
     const question = mode === 'chat' ? text(body.question, 600) : 'Explain this official academic milestone and suggest practical next steps.'
     if (mode === 'chat' && !question) return json({ error: 'Question is required' }, 400)
 
-    const providerResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openRouterKey}`,
-        'HTTP-Referer': supabaseUrl,
-        'X-Title': 'ASPIRE Academic Advisor'
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        models: [MODEL, 'cohere/north-mini-code:free'],
-        messages: [
-          { role: 'system', content: systemPrompt(mode) },
-          { role: 'user', content: `AUTHORITATIVE STUDENT-VISIBLE CONTEXT:\n${JSON.stringify(context)}` },
-          ...history,
-          { role: 'user', content: question }
-        ],
-        temperature: 0.1,
-        max_tokens: 300
-      })
-    })
+    console.log("INVOKE-ADVISOR CONTEXT PAYLOAD:", JSON.stringify(context, null, 2));
 
-    if (!providerResponse.ok) return json({ error: 'Advisor provider is temporarily unavailable' }, 502)
-    const providerData = await providerResponse.json()
-    const content = text(providerData?.choices?.[0]?.message?.content, 4000)
-    const response = parseStructuredResponse(content)
+    let weightsStr = ''
+    // chat mode: formula is nested under context.subject.gradingFormula
+    const subjectContext = (context as any)?.subject
+    if (subjectContext?.gradingFormula?.components) {
+      weightsStr = subjectContext.gradingFormula.components
+        .map((c: any) => `${c.name}: ${c.weight}%`)
+        .join(', ')
+      // insight mode: formula is at the top level of context (subject type)
+    } else if ((context as any)?.gradingFormula?.components) {
+      weightsStr = (context as any).gradingFormula.components
+        .map((c: any) => `${c.name}: ${c.weight}%`)
+        .join(', ')
+    }
+
+    const messages = [
+      { role: 'system', content: systemPrompt(mode, weightsStr) },
+      { role: 'user', content: `AUTHORITATIVE STUDENT-VISIBLE CONTEXT:\n${JSON.stringify(context)}` },
+      ...history,
+      { role: 'user', content: question }
+    ]
+
+    // Attempt with 1 automatic retry on parse failure
+    let response: AdvisorResponse | null = null
+    let lastError: Error | null = null
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const providerResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openRouterKey}`,
+            'HTTP-Referer': supabaseUrl,
+            'X-Title': 'ASPIRE Academic Advisor'
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            models: [MODEL, 'meta-llama/llama-3-8b-instruct:free'],
+            messages,
+            temperature: attempt === 0 ? 0.1 : 0.0, // lower temp on retry
+            max_tokens: 600,
+            response_format: { type: 'json_object' }
+          })
+        })
+
+        if (!providerResponse.ok) {
+          lastError = new Error(`Provider HTTP ${providerResponse.status}`)
+          continue
+        }
+        const providerData = await providerResponse.json()
+        const content = text(providerData?.choices?.[0]?.message?.content, 4000)
+        try {
+          response = parseStructuredResponse(content)
+          break // success — stop retrying
+        } catch (parseErr) {
+          console.warn(`invoke-advisor parse error on attempt ${attempt + 1}. Raw content:`, content)
+          throw parseErr
+        }
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err))
+        console.warn(`invoke-advisor attempt ${attempt + 1} failed:`, lastError.message)
+      }
+    }
+
+    if (!response) throw lastError ?? new Error('All attempts failed')
     return json({ response })
   } catch (error) {
     console.error('invoke-advisor failed', error instanceof Error ? error.message : error)
