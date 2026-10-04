@@ -11,12 +11,29 @@ import {
 } from 'lucide-react';
 import { getAskAspireResponse } from '../../lib/openrouter';
 
-const SUGGESTED_QUESTIONS = [
-  'Why was this identified?',
-  'What affected my performance most?',
-  'What should I work on first?',
-  'What can I realistically do this week?'
-];
+const SUGGESTED_QUESTIONS = {
+  overall: [
+    'How does my current GWA affect my standing?',
+    'Am I eligible for the President\'s List?',
+    'Are there any attendance risks across my courses?'
+  ],
+  subject: [
+    'What affected my performance most?',
+    'What should I work on first?',
+    'How is my grade mathematically computed?'
+  ],
+  progress: [
+    'Why was this milestone flagged?',
+    'Does this early rating predict my final grade?',
+    'What can I realistically do this week?'
+  ],
+  default: [
+    'Why was this identified?',
+    'What affected my performance most?',
+    'What should I work on first?',
+    'What can I realistically do this week?'
+  ]
+};
 
 export default function AskAspirePanel({ open, context, onClose, onRequestConsultation }) {
   const [messages, setMessages] = useState([]);
@@ -29,6 +46,8 @@ export default function AskAspirePanel({ open, context, onClose, onRequestConsul
   const subjectCode = context?.subject?.code;
   const subjectName = context?.subject?.name;
   const advisorHeadline = context?.deterministicAdvisor?.headline;
+  const tabScope = context?.tabScope || 'default';
+  const suggestedQuestions = SUGGESTED_QUESTIONS[tabScope] || SUGGESTED_QUESTIONS.default;
 
   useEffect(() => {
     if (!open || !contextKey) return;
@@ -171,7 +190,7 @@ export default function AskAspirePanel({ open, context, onClose, onRequestConsul
             <div className="mt-6">
               <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Suggested questions</p>
               <div className="flex flex-wrap gap-2">
-                {SUGGESTED_QUESTIONS.map(suggestion => (
+                {suggestedQuestions.map(suggestion => (
                   <button
                     key={suggestion}
                     type="button"

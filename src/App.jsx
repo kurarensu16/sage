@@ -57,6 +57,7 @@ import StudentMyGradesList from './pages/student/MyGradesList';
 import StudentMyGradesDetail from './pages/student/MyGradesDetail';
 import StudentAdvisingInbox from './pages/student/FacultyAdvisingInbox';
 import StudentAcademicInsights from './pages/student/AcademicInsights';
+import StudentConsultations from './pages/student/Consultations';
 import StudentNotifications from './pages/student/Notifications';
 import StudentAttendance from './pages/student/Attendance';
 
@@ -166,6 +167,7 @@ function App() {
               <Route path="/student/mygradesdetail" element={<StudentMyGradesDetail />} />
               <Route path="/student/advising-inbox" element={<StudentAdvisingInbox />} />
               <Route path="/student/academic-insights" element={<StudentAcademicInsights />} />
+              <Route path="/student/consultations" element={<StudentConsultations />} />
               <Route path="/student/airecommendation" element={<Navigate to="/student/academic-insights" replace />} />
               <Route path="/student/notifications" element={<StudentNotifications />} />
               <Route path="/student/attendance" element={<StudentAttendance />} />

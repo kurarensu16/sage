@@ -60,71 +60,190 @@ function renderStudentTemplate(notificationType: string, payload: Record<string,
   const subjectCode = String(payload?.subject_code ?? '').trim()
   const subjectName = String(payload?.subject_name ?? 'your class').trim()
   const term = String(payload?.term ?? '').trim()
-  const portalUrl = Deno.env.get('PORTAL_URL') || 'https://aspire.dyci.edu.ph'
+  const rawStudentName = String(payload?.student_name ?? 'Student').trim()
+  
+  let firstName = rawStudentName
+  if (rawStudentName.includes(',')) {
+    const parts = rawStudentName.split(',')
+    firstName = parts[1].trim().split(' ')[0]
+  }
+
   const label = subjectCode ? `${subjectName} (${subjectCode})` : subjectName
-  const termLabel = term ? `, ${term} term` : ''
+  
+  const cleanTerm = term.replace(/\b(Grade|term|Rating)\b/ig, '').trim()
+  const termLabel = cleanTerm ? `, ${cleanTerm} Rating` : ''
 
   const isChange = notificationType === 'grade_changed'
+  const action = isChange ? 'updated' : 'posted'
   const headline = isChange ? 'A grade has been updated' : 'A new grade has been posted';
   const subjectLine = isChange
     ? `[ASPIRE] Grade updated — ${subjectCode || subjectName}`
     : `[ASPIRE] New grade posted — ${subjectCode || subjectName}`
 
+  const portalUrl = 'https://aspire-dyci.vercel.app/'
+
+  const content = `<p style="margin-top: 0; font-weight: 500; color: #09132b;">Dear ${escapeHtml(firstName)},</p>` +
+    `<p style="margin: 0 0 24px 0; font-size: 15px; line-height: 1.6; color: #334155;">This is to formally inform you that a grade has been <strong>${action}</strong> in <span style="color: #1e3a8a; font-weight: 600;">${escapeHtml(label)}</span>${escapeHtml(termLabel)}.</p>` +
+    `<table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 30px 0;">
+      <tr>
+        <td align="center">
+          <a href="${portalUrl}" target="_blank" style="display: inline-block; padding: 12px 24px; background-color: #1e3a8a; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 14px; border-radius: 8px;">View Official Grade in Portal</a>
+        </td>
+      </tr>
+    </table>`
+
   return {
     subject: subjectLine,
-    text: `${headline} for ${label}${termLabel}.\n\nSign in to ASPIRE to view it: ${portalUrl}\n\nThis is an automated message — please do not reply to this email.`,
-    html: `<p>${headline} for <strong>${escapeHtml(label)}</strong>${escapeHtml(termLabel)}.</p>` +
-          `<p><a href="${portalUrl}">Sign in to ASPIRE to view it</a></p>` +
-          `<p style="color:#888;font-size:12px;">This is an automated message — please do not reply to this email.</p>`
+    text: `Dear ${firstName},\n\n${headline} for ${label}${termLabel}.\n\nView your official grade securely by logging into the portal: ${portalUrl}\n\nThis is an automated message from the ASPIRE Academic Support System. Please do not reply to this email.`,
+    html: getBaseHtmlTemplate(content)
   }
 }
 
-// Formal guardian-facing template. See the file header for why this carries real grade detail
-// that renderStudentTemplate() deliberately never does.
 function renderGuardianTemplate(notificationType: string, payload: Record<string, unknown>, job: EmailJob) {
   const subjectCode = String(payload?.subject_code ?? '').trim()
   const subjectName = String(payload?.subject_name ?? 'their class').trim()
   const term = String(payload?.term ?? 'this').trim()
-  const studentName = String(payload?.student_name ?? 'the student').trim()
+  const rawStudentName = String(payload?.student_name ?? 'the student').trim()
+  
+  let firstName = rawStudentName
+  let formattedName = rawStudentName
+  if (rawStudentName.includes(',')) {
+    const parts = rawStudentName.split(',')
+    const firstNames = parts[1].trim()
+    firstName = firstNames.split(' ')[0]
+    formattedName = `${firstNames} ${parts[0].trim()}`
+  }
+
   const remark = String(payload?.remark ?? '').trim()
-  const rating = payload?.rating
-  const gwa = payload?.gwa
+  const rawRating = payload?.rating
+  const rawGwa = payload?.gwa
+  const rating = (rawRating !== null && rawRating !== undefined && rawRating !== '') ? Number(rawRating) : NaN
+  const gwa = (rawGwa !== null && rawGwa !== undefined && rawGwa !== '') ? Number(rawGwa) : NaN
   const label = subjectCode ? `${subjectName} (${subjectCode})` : subjectName
   const isChange = notificationType === 'grade_changed'
   const action = isChange ? 'updated' : 'posted'
-  const portalUrl = Deno.env.get('PORTAL_URL') || 'https://aspire.dyci.edu.ph'
+
+  const cleanTerm = term.replace(/\b(Grade|term|Rating)\b/ig, '').trim()
+  const termDisplay = cleanTerm ? `${cleanTerm} Rating` : 'this Rating'
 
   const salutation = job.guardian_relationship
-    ? `Dear ${job.guardian_relationship} of ${studentName}`
-    : `Dear Parent/Guardian of ${studentName}`
+    ? `Dear ${job.guardian_relationship} of ${formattedName},`
+    : `Dear Parent/Guardian of ${formattedName},`
 
-  const gradeLine = (typeof rating === 'number' && typeof gwa === 'number')
-    ? `Term Rating: ${rating}% (General Weighted Average: ${gwa.toFixed(2)})`
-    : null
-  const standingLine = remark ? `Current Standing: ${remark}` : null
+  const remarkColor = (remark || '').toLowerCase().includes('fail') ? '#ef4444' : '#10b981'
+
+  const hasRatingAndGwa = !isNaN(rating) && !isNaN(gwa)
+
+  let gradeCard = ''
+  if (remark || hasRatingAndGwa) {
+    gradeCard = `<table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin: 30px 0; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;">
+        <tr>
+          <td style="padding: 24px; text-align: center;">`
+    
+    if (remark) {
+      gradeCard += `<p style="margin: 0 0 8px 0; font-size: 14px; color: #64748b; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">Current Standing</p>
+            <p style="margin: 0 0 24px 0; font-size: 28px; color: ${remarkColor}; font-family: 'Sora', sans-serif; font-weight: 700;">${remark}</p>`
+    }
+            
+    if (hasRatingAndGwa) {
+      gradeCard += `<table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-top: 1px solid #e2e8f0; padding-top: 20px;">
+              <tr>
+                <td width="50%" align="center">
+                  <p style="margin: 0; font-size: 13px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Term Rating</p>
+                  <p style="margin: 6px 0 0 0; font-size: 20px; color: #09132b; font-weight: 600;">${rating}%</p>
+                </td>
+                <td width="50%" align="center" style="border-left: 1px solid #e2e8f0;">
+                  <p style="margin: 0; font-size: 13px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">GWA</p>
+                  <p style="margin: 6px 0 0 0; font-size: 20px; color: #09132b; font-weight: 600;">${gwa.toFixed(2)}</p>
+                </td>
+              </tr>
+            </table>`
+    }
+    
+    gradeCard += `</td>
+        </tr>
+      </table>`
+  }
 
   const honorsLine = job.honors_pace
-    ? `Based on ${studentName}'s performance across their other enrolled subjects this term, ` +
-      `they are currently on pace to meet the General Weighted Average standard for the ` +
-      `President's List (1.75 or better), provided this standing is maintained across all ` +
-      `enrolled subjects for the remainder of the term.`
-    : null
+    ? `<table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 30px; background: linear-gradient(to right, #ecfdf5, #f0fdf4); border-left: 4px solid #10b981; border-radius: 0 8px 8px 0;">
+        <tr>
+          <td style="padding: 20px;">
+            <p style="margin: 0 0 6px 0; color: #065f46; font-family: 'Sora', sans-serif; font-weight: 600; font-size: 16px;">On Pace for Honors</p>
+            <p style="margin: 0; color: #064e3b; font-size: 14px; line-height: 1.5;">Based on ${escapeHtml(firstName)}'s performance across their other enrolled subjects this term, they are currently on pace to meet the General Weighted Average standard for the <strong>President's List (1.75 or better)</strong>.</p>
+          </td>
+        </tr>
+      </table>`
+    : ''
 
-  const bodyLines = [
-    `This is to formally inform you that a grade has been ${action} for ${studentName} in ${label}, ${term} term.`,
-    standingLine,
-    gradeLine,
-    honorsLine,
-    `Should you have any questions regarding ${studentName}'s academic standing, we encourage you to coordinate with the College through official channels.`
+  const content = `<p style="margin-top: 0; font-weight: 500; color: #09132b;">${escapeHtml(salutation)}</p>` +
+    `<p>This is to formally inform you that a grade has been <strong>${action}</strong> for ${escapeHtml(firstName)} in <span style="color: #1e3a8a; font-weight: 600;">${escapeHtml(label)}</span>, ${escapeHtml(termDisplay)}.</p>` +
+    gradeCard +
+    honorsLine +
+    `<p style="margin-bottom: 0;">Should you have any questions regarding ${escapeHtml(firstName)}'s academic standing, we encourage you to coordinate with the College through official channels.</p>`
+
+  const plainTextLines = [
+    `This is to formally inform you that a grade has been ${action} for ${firstName} in ${label}, ${termDisplay}.`,
+    remark ? `Current Standing: ${remark}` : null,
+    hasRatingAndGwa ? `Term Rating: ${rating}% (General Weighted Average: ${gwa.toFixed(2)})` : null,
+    job.honors_pace ? `Based on ${firstName}'s performance across their other enrolled subjects this term, they are currently on pace to meet the General Weighted Average standard for the President's List (1.75 or better)...` : null,
+    `Should you have any questions regarding ${firstName}'s academic standing, we encourage you to coordinate with the College through official channels.`
   ].filter(Boolean) as string[]
 
   return {
-    subject: `[ASPIRE] Academic Update for ${studentName} — ${subjectCode || subjectName}`,
-    text: `${salutation},\n\n${bodyLines.join('\n\n')}\n\nThis is an automated message from the ASPIRE Academic Information System (${portalUrl}). Please do not reply to this email.`,
-    html: `<p>${escapeHtml(salutation)},</p>` +
-          bodyLines.map(line => `<p>${escapeHtml(line)}</p>`).join('') +
-          `<p style="color:#888;font-size:12px;">This is an automated message from the ASPIRE Academic Information System. Please do not reply to this email.</p>`
+    subject: `[ASPIRE] Academic Update for ${formattedName} — ${subjectCode || subjectName}`,
+    text: `${salutation}\n\n${plainTextLines.join('\n\n')}\n\nThis is an automated message from the ASPIRE Academic Support System. Please do not reply to this email.`,
+    html: getBaseHtmlTemplate(content)
   }
+}
+
+function getBaseHtmlTemplate(content: string) {
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;500;600&family=Sora:wght@400;600;700&display=swap');
+</style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <!-- Main Container -->
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);">
+          <!-- Header with Gradient -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #09132b 0%, #1e3a8a 100%); padding: 40px 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-family: 'Sora', sans-serif; font-size: 32px; font-weight: 700; letter-spacing: -0.03em;">ASPIRE</h1>
+              <p style="margin: 12px 0 0 0; color: #8ca9d0; font-size: 11px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.5;">Academic Support System</p>
+            </td>
+          </tr>
+          <!-- Content Body -->
+          <tr>
+            <td style="padding: 40px 30px; color: #334155; font-size: 16px; line-height: 1.6;">
+              ${content}
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+              <p style="margin: 0; color: #64748b; font-size: 13px; line-height: 1.5;">
+                This is an automated message from the <strong>ASPIRE Academic Support System</strong>.<br>
+                Please do not reply to this email.
+              </p>
+              <p style="margin: 15px 0 0 0; font-size: 12px; color: #94a3b8;">
+                &copy; 2026 ASPIRE. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
+
+  return html.replace(/\n\s*\n/g, '\n').replace(/ +\n/g, '\n')
 }
 
 Deno.serve(async (req) => {
@@ -149,7 +268,7 @@ Deno.serve(async (req) => {
 
   // Fixed for Gmail — never need to change per-deployment, so these are not secrets.
   const SMTP_HOST = 'smtp.gmail.com'
-  const SMTP_PORT = 587
+  const SMTP_PORT = 465
 
   const smtpUser = Deno.env.get('SMTP_USER')
   const smtpPass = Deno.env.get('SMTP_PASS')
@@ -158,19 +277,20 @@ Deno.serve(async (req) => {
     return json({ error: 'Edge Function is missing SMTP_USER / SMTP_PASS secrets' }, 500)
   }
 
-  const smtp = new SMTPClient({
-    connection: {
-      hostname: SMTP_HOST,
-      port: SMTP_PORT,
-      tls: false, // STARTTLS negotiated on 587; set true only for implicit TLS on 465
-      auth: { username: smtpUser, password: smtpPass }
-    }
-  })
-
   let sent = 0
   let failed = 0
 
   for (const job of jobs as EmailJob[]) {
+    // Instantiate fresh connection per email to avoid denomailer state corruption.
+    const smtp = new SMTPClient({
+      connection: {
+        hostname: SMTP_HOST,
+        port: SMTP_PORT,
+        tls: true, // Use implicit TLS on 465 to bypass denomailer 1.6.0 STARTTLS bug
+        auth: { username: smtpUser, password: smtpPass }
+      }
+    })
+
     try {
       if (!job.target_address) throw new Error('Delivery has no target_address.')
 
@@ -183,7 +303,7 @@ Deno.serve(async (req) => {
         to: job.target_address,
         subject,
         content: text,
-        html
+        html: html
       })
 
       await db.rpc('complete_email_delivery', {
@@ -198,10 +318,10 @@ Deno.serve(async (req) => {
         p_error_message: String(e instanceof Error ? e.message : e).slice(0, 500)
       })
       failed++
+    } finally {
+      try { await smtp.close() } catch { /* ignore close errors */ }
     }
   }
-
-  try { await smtp.close() } catch { /* already closed or never opened */ }
 
   return json({ claimed: jobs.length, sent, failed })
 })

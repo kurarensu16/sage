@@ -78,7 +78,7 @@ const PORTAL_NAVIGATION = {
       label: 'Consultations',
       icon: MessageSquare,
       items: [
-        { to: '/student/academic-insights?tab=consultations', label: 'Request a Consultation', icon: MessageSquare }
+        { to: '/student/consultations', label: 'Request a Consultation', icon: MessageSquare }
       ]
     }
   ],

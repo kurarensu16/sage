@@ -637,29 +637,29 @@ export async function notifyGradePosted({ classRecordId, term, students, subject
   // AuthContext.jsx's triggerInboundLocalNotification), 'grade_posted' is in that
   // file's SENSITIVE_PUSH_TYPES denylist so the lock screen still only shows a
   // generic event notice, never this remark.
-  const rows = students.map((s) => ({
-    recipient_id: s.student_id,
-    type:         'grade_posted',
-    severity:     'info',
-    title:        'New Grade Posted',
-    link:         '/student/grades',
-    message:      `Your ${term} grade for ${subject.name} (${subject.code}) has been posted. Remark: ${s.remark || 'Posted'}. If you have questions about your academic standing, please consult your adviser.`,
-    payload: {
-      subject_code:    subject.code,
-      subject_name:    subject.name,
-      term,
-      remark:          s.remark || 'Posted',
-      // Never read by the student's own message/push text above — only by the guardian
-      // email template (send-email Edge Function), which is a separate, non-privacy-safe
-      // channel by explicit product decision. rating/gwa default to null when the caller
-      // couldn't resolve them, same null-is-missing-not-zero rule used everywhere else.
-      rating:          Number.isFinite(s.rating) ? s.rating : null,
-      gwa:             Number.isFinite(s.gwa) ? s.gwa : null,
-      student_name:    s.student_name || null,
-      class_record_id: classRecordId,
-    },
-    dedupe_key: `grade_posted:${classRecordId}:${term}:${s.student_id}`,
-  }));
+  const rows = students.map((s) => {
+    const numRating = (s.rating !== null && s.rating !== undefined && s.rating !== '') ? Number(s.rating) : null
+    const numGwa = (s.gwa !== null && s.gwa !== undefined && s.gwa !== '') ? Number(s.gwa) : null
+    return {
+      recipient_id: s.student_id,
+      type:         'grade_posted',
+      severity:     'info',
+      title:        'New Grade Posted',
+      link:         '/student/grades',
+      message:      `Your ${term} grade for ${subject.name} (${subject.code}) has been posted. Remark: ${s.remark || 'Posted'}. If you have questions about your academic standing, please consult your adviser.`,
+      payload: {
+        subject_code:    subject.code,
+        subject_name:    subject.name,
+        term,
+        remark:          s.remark || 'Posted',
+        rating:          Number.isFinite(numRating) ? numRating : null,
+        gwa:             Number.isFinite(numGwa) ? numGwa : null,
+        student_name:    s.student_name || null,
+        class_record_id: classRecordId,
+      },
+      dedupe_key: `grade_posted:${classRecordId}:${term}:${s.student_id}`,
+    }
+  });
 
   await dispatchNotifications(rows);
 }
@@ -671,6 +671,9 @@ export async function notifyGradePosted({ classRecordId, term, students, subject
  * @param {{ classRecordId: string, term: string, studentId: string, subject: { code: string, name: string }, remark: string, revision: number }} params
  */
 export async function notifyGradeChanged({ classRecordId, term, studentId, studentName, subject, remark, rating, gwa, revision }) {
+  const numRating = (rating !== null && rating !== undefined && rating !== '') ? Number(rating) : null
+  const numGwa = (gwa !== null && gwa !== undefined && gwa !== '') ? Number(gwa) : null
+
   // Same full-detail-in-message / generic-push-banner split as notifyGradePosted
   // above — 'grade_changed' is also in AuthContext.jsx's SENSITIVE_PUSH_TYPES.
   await dispatchNotifications([{
@@ -685,8 +688,8 @@ export async function notifyGradeChanged({ classRecordId, term, studentId, stude
         subject_name:    subject.name,
         term,
         remark,
-        rating:          Number.isFinite(rating) ? rating : null,
-        gwa:             Number.isFinite(gwa) ? gwa : null,
+        rating:          Number.isFinite(numRating) ? numRating : null,
+        gwa:             Number.isFinite(numGwa) ? numGwa : null,
         student_name:    studentName || null,
         class_record_id: classRecordId,
         revision,
