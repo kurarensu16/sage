@@ -1,0 +1,26 @@
+flowchart LR
+%% ===== Figure 2.18 — ASPIRE UI Composite Wireframe: Four-Portal Navigation (CORRECTED) =====
+%% "AI Study Advisor" -> "AI Academic Advisor"; "CSV Provisioning" -> "Spreadsheet Provisioning".
+
+  subgraph A["<b>Panel A: Student Portal</b>"]
+    direction TB
+    A1["Dashboard<br/>(Risk Badge)"] --> A2["My Grades<br/>(Milestone Ledger)"] --> A3["AI Academic Advisor<br/>and Catch-up Plans"]
+  end
+
+  subgraph B["<b>Panel B: Faculty Portal</b>"]
+    direction TB
+    B1["Log Class<br/>Scores Grid"] --> B2["HITL Evaluate<br/>Student Modal"] --> B3["Risk-Sorted<br/>Triage Roster"]
+  end
+
+  subgraph C["<b>Panel C: Dean Portal</b>"]
+    direction TB
+    C1["Grade Submission<br/>Matrix"] --> C2["Risk and Honors<br/>Analytics"] --> C3["Grade Correction<br/>Approval Queue"]
+  end
+
+  subgraph D["<b>Panel D: Admin Portal</b>"]
+    direction TB
+    D1["Account and Spreadsheet<br/>Provisioning"] --> D2["Grading Formula<br/>Configurator"] --> D3["Immutable Audit<br/>Ledger Feed"]
+  end
+
+  A ~~~ B
+  C ~~~ D

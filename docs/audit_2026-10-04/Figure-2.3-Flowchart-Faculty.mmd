@@ -1,0 +1,90 @@
+flowchart TB
+%% ===== Figure 2.3 — Proposed System Flowchart: Faculty Portal (CORRECTED) =====
+%% Adds the shipped Reports Module (Class Performance, Performance Comparison).
+
+  SEL{"Select module"}
+  OUT(["<b>Log out / End</b>"]):::accent
+
+  subgraph LOGIN["<b>Authentication</b>"]
+    direction LR
+    START(["<b>Start</b>"]):::accent --> CRED[/"Enter credentials"/] --> VALID{"Valid credentials?"}
+    VALID -- "No" --> ERR["Show login error"]
+    ERR -.-> CRED
+    VALID -- "Yes" --> FIRST{"First login?"}
+    FIRST -- "Yes" --> CHG["Change temporary password"] --> DASH["<b>Dashboard</b>"]:::accent
+    FIRST -- "No" --> DASH
+  end
+
+  LOGIN --> SEL
+  SEL -- "Log out" --> OUT
+
+  SEL -- "Grades" --> GM
+  SEL -- "Classes" --> KM
+  SEL -- "Student Risk" --> RM
+  SEL -- "Attendance" --> TM
+  SEL -- "Reports" --> PM
+  SEL -- "Consult" --> CM
+  SEL -- "Account" --> NM
+
+  subgraph GM["<b>Grades Module</b>"]
+    direction TB
+    G1["Log Class Scores"] --> GQ{"Title, description,<br/>max score set?"}
+    GQ -- "No" --> GL["Column locked"]
+    GQ -- "Yes" --> GE["Enter raw scores"]
+    GE --> GP["Grade Preview:<br/>COG template applied"]
+    GP --> GM2["Post milestone grades"]
+    GM2 --> GC{"Correction needed?"}
+    GC -- "Yes" --> GS["Submit correction<br/>request to Dean"]
+  end
+
+  subgraph KM["<b>Classes Module</b>"]
+    direction TB
+    K1["My Classes:<br/>rosters and join codes"]
+    K2["Create Classrooms<br/>from teaching load"]
+    K3["Enrollment Requests"] --> KQ{"Approve?"}
+    KQ -- "No" --> KN["Request rejected"]
+    KQ -- "Yes" --> KY["Added to roster<br/>and gradebook"]
+    K1 ~~~ K2 ~~~ K3
+  end
+
+  subgraph RM["<b>Student Risk Module</b>"]
+    direction TB
+    R1["At-Risk Students:<br/>risk-sorted roster"] --> R2["Evaluate Student:<br/>review factor breakdown,<br/>log observation notes"]
+    R2 --> R3["Assign 2-3 catch-up tasks<br/>with deadlines;<br/>capture baseline snapshot"]
+    R3 --> RQ{"Escalate to Dean?"}
+    RQ -- "Yes" --> RE["Record escalation<br/>with written rationale"]
+    RQ -- "No" --> RS["Student submits task;<br/>faculty reviews it"]
+    RE --> RS
+    RS --> RA{"Accepted?"}
+    RA -- "Yes" --> RV["Mark verified; capture<br/>follow-up snapshot"]
+    RA -- "No" --> RR["Return with reason<br/>and revised deadline"]
+  end
+
+  subgraph TM["<b>Attendance Module</b>"]
+    direction TB
+    T1["Attendance Monitoring"] --> TQ{"4 or more<br/>absences?"}
+    TQ -- "No" --> TN["No warning"]
+    TQ -- "Yes" --> TY["FDA warning badge<br/>(advisory only)"] --> TD["Instructor decides<br/>FDA remark"]
+  end
+
+  subgraph PM["<b>Reports Module</b>"]
+    direction TB
+    P1["Class Performance:<br/>score distribution,<br/>component averages"]
+    P2["Performance Comparison:<br/>across sections and<br/>grading periods"]
+    P1 --> PX["Export or print"]
+    P2 --> PX
+  end
+
+  subgraph CM["<b>Consultations Module</b>"]
+    direction TB
+    C1["Consultation Requests"] --> C2["Respond and log<br/>resolution notes"]
+  end
+
+  subgraph NM["<b>Account Module</b>"]
+    direction TB
+    N1["My Profile, Change Password,<br/>Notification Settings"]
+  end
+
+
+  classDef accent fill:#14532D,stroke:#14532D,color:#FFFFFF;
+

@@ -1,0 +1,57 @@
+flowchart TB
+%% ===== Figure 2.5 — Proposed System Flowchart: Admin Portal (CORRECTED) =====
+%% "Import Users (CSV)" relabelled to the spreadsheet import actually implemented.
+
+  SEL{"Select module"}
+  OUT(["<b>Log out / End</b>"]):::accent
+
+  subgraph LOGIN["<b>Authentication</b>"]
+    direction LR
+    START(["<b>Start</b>"]):::accent --> CRED[/"Enter credentials"/] --> VALID{"Valid credentials?"}
+    VALID -- "No" --> ERR["Show login error"]
+    ERR -.-> CRED
+    VALID -- "Yes" --> FIRST{"First login?"}
+    FIRST -- "Yes" --> CHG["Change temporary password"] --> DASH["<b>Dashboard</b>"]:::accent
+    FIRST -- "No" --> DASH
+  end
+
+  LOGIN --> SEL
+  SEL -- "Log out" --> OUT
+
+  SEL -- "User Accounts" --> UM
+  SEL -- "Academic Setup" --> AM
+  SEL -- "System" --> YM
+  SEL -- "Account" --> NM
+
+  subgraph UM["<b>User Accounts Module</b>"]
+    direction TB
+    U1["Manage Users<br/>(all four roles)"] --> UQ{"Individual or batch?"}
+    UQ -- "Batch" --> UB["Import Users (Spreadsheet):<br/>roles and departments<br/>assigned from file"]
+    UQ -- "Individual" --> US["Create single account"]
+  end
+
+  subgraph AM["<b>Academic Setup Module</b>"]
+    direction TB
+    A1["Subjects catalog<br/>(bound to COG templates)"]
+    A2["Grading Formulas manager"]
+    A3["Sections"]
+    A4["Departments and Programs"]
+    A5["Classrooms provisioning"]
+    A1 ~~~ A2 ~~~ A3 ~~~ A4 ~~~ A5
+  end
+
+  subgraph YM["<b>System Module</b>"]
+    direction TB
+    Y1["Term Settings"]
+    Y2["Activity Logs<br/>(immutable ledger)"]
+    Y3["Grade Override"] --> Y4["Recorded in<br/>Activity Logs"]
+    Y1 ~~~ Y2 ~~~ Y3
+  end
+
+  subgraph NM["<b>Account Module</b>"]
+    direction TB
+    N1["My Profile, Change Password,<br/>Notification Settings"]
+  end
+
+
+  classDef accent fill:#C2410C,stroke:#C2410C,color:#FFFFFF;
