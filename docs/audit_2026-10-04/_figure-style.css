@@ -1,0 +1,8 @@
+.edgePath .path, .flowchart-link { stroke:#555555 !important; stroke-width:1.1px !important; fill:none !important; }
+.marker, marker path { fill:#555555 !important; stroke:#555555 !important; }
+.edgeLabel rect, .edgeLabel .label rect { fill:#FFFFFF !important; }
+.cluster rect { fill:#FAFAFA !important; stroke:#BBBBBB !important; stroke-width:1px !important; }
+.nodeLabel, .nodeLabel p, .label, .label text, text { fill:#000000 !important; color:#000000 !important; }
+.edgeLabel, .edgeLabel p, .edgeLabel .label text { fill:#000000 !important; color:#000000 !important; }
+/* accent terminals (Start / Dashboard / Log out, ASPIRE system) are dark fills -> white text */
+.accent .nodeLabel, .accent .nodeLabel p, .accent .label, .accent .label text, .accent text, g.accent text, g.accent p { fill:#FFFFFF !important; color:#FFFFFF !important; }

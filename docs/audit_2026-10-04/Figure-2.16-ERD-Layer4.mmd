@@ -1,0 +1,12 @@
+erDiagram
+    ACADEMIC_TERMS ||--o{ ATTENDANCE_RECORDS : "term of"
+    CLASS_RECORDS ||--o{ ATTENDANCE_RECORDS : "recorded in"
+    USERS ||--o{ ATTENDANCE_RECORDS : "attendance of"
+    USERS ||--o{ STUDENT_ACADEMIC_INSIGHTS : "receives"
+    CLASS_RECORDS ||--o{ STUDENT_CONSULTATION_REQUESTS : "regarding"
+    USERS ||--o{ STUDENT_CONSULTATION_REQUESTS : "requests / receives"
+    CLASS_RECORDS ||--o{ STUDENT_RISK_EVALUATIONS : "evaluated within"
+    USERS ||--o{ STUDENT_RISK_EVALUATIONS : "student / faculty evaluator"
+    STUDENT_RISK_EVALUATIONS ||--o{ STUDENT_RISK_PRIVATE_NOTES : "has restricted notes"
+    USERS ||--o{ STUDENT_RISK_PRIVATE_NOTES : "authors"
+    USERS ||--o{ FACULTY_PERFORMANCE_INSIGHTS : "evaluated faculty"

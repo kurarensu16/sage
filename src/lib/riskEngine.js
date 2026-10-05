@@ -31,10 +31,19 @@ export { RISK_TIERS };
  * Computes an explainable 0-100 risk score and categorical classification.
  * V4: Simplified 4-factor model anchored to the DYCI Institutional Transmutation Scale.
  *
- * GWA Factor (0-60):
- *   GWA 1.00-2.00 → 0 pts  (Safe / DL eligible)
- *   GWA 2.01-3.00 → scales 1-25 pts  (Moderate — DL track at risk)
- *   GWA 3.01-5.00 → scales 26-60 pts (High — failing course)
+ * GWA Factor (0-60) — threshold-anchored, NOT a single linear ramp:
+ *   GWA 1.00-2.00 → 0 pts            (Safe / DL eligible)
+ *   GWA 2.01-3.00 → 25-35 pts        (Watch — below the 2.00 scholarship grade floor)
+ *   GWA 3.01-5.00 → 50-60 pts        (Failing — below the 75% passing cut-off)
+ *
+ *   The two step-ups are deliberate, not rounding artefacts. Each is pinned to an
+ *   institutional threshold: losing the 2.00 scholarship grade floor puts a student
+ *   on the Moderate watch list at once (25 pts = the Moderate tier floor), and
+ *   crossing the 3.00 passing cut-off puts them straight into High (50 pts = the
+ *   High tier floor), which is what triggers mandatory faculty evaluation. A smooth
+ *   0-60 ramp would leave an already-failing student in Moderate until roughly
+ *   GWA 4.41 and delay intervention — the opposite of what an early-warning system
+ *   should do. Documented in the capstone paper, Table 2.5.
  *
  * Attendance / FDA Trigger (0-50):
  *   0-1 absences → 0 pts
@@ -83,13 +92,16 @@ export function calculateAcademicRisk({
       gwaPoints = 0;
       gwaDetail = `GWA ${gwa.toFixed(2)} — On track (Honors eligible)`;
     } else if (gwa <= 3.00) {
-      // Moderate zone: GWA 2.01–3.00 (Fair to Passing Cut-off)
-      // Scales linearly: 2.01→1pt, 2.50→~12pts, 3.00→25pts
+      // Watch zone: GWA 2.01–3.00 (below the 2.00 scholarship grade floor, still passing).
+      // Starts at the Moderate tier floor (25) and climbs to 35:
+      //   2.01→25pts, 2.25→28pts, 2.50→30pts, 3.00→35pts
       gwaPoints = 25 + Math.round(((gwa - 2.00) / 1.00) * 10);
       gwaDetail = `GWA ${gwa.toFixed(2)} — Watch zone (DL track at risk)`;
     } else {
-      // High/Critical zone: GWA 3.01–5.00 (Below passing cut-off / Failed)
-      // Scales linearly: 3.01→26pts, 4.00→43pts, 5.00→60pts
+      // Failing zone: GWA 3.01–5.00 (below the 75% passing cut-off).
+      // Starts at the High tier floor (50) and climbs to the 60-pt ceiling:
+      //   3.01→50pts, 4.00→55pts, 5.00→60pts
+      // Any failing GWA therefore reaches High on its own and prompts faculty evaluation.
       gwaPoints = 50 + Math.round(((gwa - 3.01) / 1.99) * 10);
       gwaDetail = `GWA ${gwa.toFixed(2)} — Failing (below 75% cut-off)`;
     }
