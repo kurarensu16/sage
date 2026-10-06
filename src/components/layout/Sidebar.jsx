@@ -114,8 +114,8 @@ const PORTAL_NAVIGATION = {
       label: 'Student Risk',
       icon: AlertCircle,
       items: [
-        { to: '/faculty/atriskstudents', label: 'At-Risk Students', icon: AlertCircle },
-        { to: '/faculty/evaluatestudent', label: 'Evaluate Student', icon: ClipboardCheck }
+        { to: '/faculty/evaluatestudent', label: 'Evaluate Students', icon: ClipboardCheck },
+        { to: '/faculty/evaluatedstudents', label: 'Evaluated Students', icon: CheckCircle2 }
       ]
     },
     {

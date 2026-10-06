@@ -1,233 +1,112 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { AlertCircle, ClipboardCheck, ChevronDown, Loader2, Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { ArrowRight, BookOpen, CheckCircle2, ClipboardCheck, Info, RefreshCw, Search, Users } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
-import { TableSkeleton } from '../../components/common/Skeleton';
-import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { getClassPriorityRoster } from '../../lib/classRoomService';
+import { getEvaluationClasses, getTermEvaluations } from '../../lib/evaluationService';
+import { EVALUATION_TERMS, needsEvaluation } from '../../lib/evaluationTracking';
 import { RISK_TIERS } from '../../lib/academicPolicy';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
 import EnrollmentTypeBadge from '../../components/common/EnrollmentTypeBadge';
 
-export default function StudentRisk({ mode = 'risk' }) {
-  const navigate = useNavigate();
+const field = 'w-full rounded-lg border border-sage-200 bg-white px-4 py-2.5 text-sm text-sage-900 outline-none focus:border-sage-500 focus:ring-2 focus:ring-sage-200';
+const secondaryButton = 'inline-flex items-center justify-center gap-2 rounded-lg border border-sage-200 bg-white px-4 py-2 text-xs font-semibold text-sage-700 hover:bg-sage-50 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-sage-600 disabled:opacity-50 disabled:cursor-not-allowed';
+
+export default function StudentRisk({ mode = 'evaluate' }) {
   const { user } = useAuth();
+  return user?.id ? <EvaluationRoster key={user.id} facultyId={user.id} needsByDefault={mode === 'risk'} /> : null;
+}
+
+function EvaluationRoster({ facultyId, needsByDefault }) {
+  const [params, setParams] = useSearchParams();
   const [classes, setClasses] = useState([]);
-  const [selectedClassId, setSelectedClassId] = useState('');
   const [students, setStudents] = useState([]);
+  const [evaluations, setEvaluations] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [loadingRoster, setLoadingRoster] = useState(false);
   const [error, setError] = useState('');
+  const [refresh, setRefresh] = useState(0);
+  const [search, setSearch] = useState('');
+  const classId = params.get('class') || classes.find(item => item.status === 'active')?.class_record_id || classes[0]?.class_record_id || '';
+  const term = EVALUATION_TERMS.includes(params.get('term')) ? params.get('term') : '';
+  const needsOnly = params.get('view') === 'needs-evaluation' || (needsByDefault && !params.get('view'));
+  const selectedClass = classes.find(item => item.class_record_id === classId);
 
-  const isEvaluateMode = mode === 'evaluate';
-  const title = isEvaluateMode ? 'Evaluate Students' : 'At-Risk Students';
-
-  useEffect(() => {
-    async function loadClasses() {
-      if (!user?.id) return;
-      setLoading(true);
-      const { data, error: queryError } = await supabase
-        .from('class_records')
-        .select(`
-          class_record_id,
-          subject_id,
-          section_id,
-          subjects ( code, name ),
-          sections ( name, semester )
-        `)
-        .eq('faculty_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (queryError) {
-        setError('Unable to load your assigned classes.');
-      } else {
-        setClasses(data || []);
-        if (data?.[0]) setSelectedClassId(data[0].class_record_id);
-      }
-      setLoading(false);
-    }
-
-    loadClasses();
-  }, [user]);
+  function changeFilter(key, value) {
+    const next = new URLSearchParams(params);
+    value ? next.set(key, value) : next.delete(key);
+    setParams(next, { replace: true });
+    setSelectedStudent(null);
+    if (key === 'class') setSearch('');
+  }
 
   useEffect(() => {
-    async function loadRoster() {
-      if (!selectedClassId) {
-        setStudents([]);
-        return;
-      }
-      setLoadingRoster(true);
-      const roster = await getClassPriorityRoster(selectedClassId);
-      setStudents(roster);
-      setLoadingRoster(false);
-    }
+    let cancelled = false;
+    getEvaluationClasses(facultyId).then(data => {
+      if (!cancelled) { setClasses(data.classes); if (!data.classes.length) setLoading(false); }
+    }).catch(err => { if (!cancelled) { setError(err.message); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [facultyId]);
 
-    loadRoster();
-  }, [selectedClassId]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!classId || !selectedClass) { setStudents([]); setEvaluations([]); setLoading(false); return; }
+    setLoading(true);
+    setError('');
+    Promise.all([getClassPriorityRoster(classId, { throwOnError: true }), getTermEvaluations(classId, term)])
+      .then(([roster, cases]) => { if (!cancelled) { setStudents(roster); setEvaluations(cases); setLoading(false); } })
+      .catch(err => { if (!cancelled) { setError(err.message); setStudents([]); setEvaluations([]); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [classId, selectedClass, term, refresh]);
 
-  const selectedClass = useMemo(
-    () => classes.find(item => item.class_record_id === selectedClassId),
-    [classes, selectedClassId]
-  );
-
-  const uniqueStudentsMap = new Map();
-  (students || []).forEach(s => {
-    if (s.user_id && !uniqueStudentsMap.has(s.user_id)) {
-      uniqueStudentsMap.set(s.user_id, s);
-    }
-  });
-  const uniqueStudents = Array.from(uniqueStudentsMap.values());
-
-  // Threshold is RISK_TIERS.MODERATE.min (25), not the prior hardcoded 20 — this page
-  // deliberately shows Moderate-and-worse (a broader "needs attention" list for faculty),
-  // not just the stricter High/Critical-only isStudentAtRisk() used for dean/Reports KPI
-  // counting. RISK_TIERS is contiguous and exhaustive (0-100, no gaps), so `score >= 25`
-  // is already equivalent to "level is moderate, high, or critical" — the previous
-  // risk_level OR-clauses were redundant with it AND the `>= 20` constant wrongly pulled
-  // in students actually in the LOW tier (score 20-24) onto an "At-Risk Students" page.
-  const visibleStudents = isEvaluateMode
-    ? uniqueStudents
-    : uniqueStudents.filter(student => (student.risk_score || 0) >= RISK_TIERS.MODERATE.min);
-
-  const handleEvaluationSaved = (saved) => {
-    setStudents(prev => prev.map(student => (
-      student.user_id === selectedStudent.user_id
-        ? { ...student, evaluation: saved }
-        : student
-    )));
-  };
-
-  if (loading) return <TableSkeleton rows={7} />;
-
-  return (
-    <>
-      <PageHeader title={title} breadcrumb="Faculty Portal" />
-      <div className="p-4 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-5 text-left">
-        <div className="max-w-6xl mx-auto space-y-5">
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 shadow-2xs">
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Student Risk Monitoring</p>
-                <h2 className="text-lg font-bold text-slate-900 font-display mt-1">{title}</h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  {isEvaluateMode
-                    ? 'Review students and record faculty-led academic interventions.'
-                    : 'Students requiring attention are ranked by explainable academic risk score.'}
-                </p>
-              </div>
-              <div className="relative w-full sm:w-80">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Class Record</label>
-                <select
-                  value={selectedClassId}
-                  onChange={(event) => setSelectedClassId(event.target.value)}
-                  className="appearance-none w-full bg-white border border-slate-200 hover:border-sage-300 px-3 py-2.5 pr-8 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:ring-1 focus:ring-sage-500 cursor-pointer"
-                >
-                  {classes.length === 0 && <option value="">No classes assigned</option>}
-                  {classes.map(item => (
-                    <option key={item.class_record_id} value={item.class_record_id}>
-                      {item.subjects?.code} - {item.sections?.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2.5 bottom-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
-          </div>
-
-          {error && <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div>}
-
-          <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-2xs">
-            <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {isEvaluateMode ? <ClipboardCheck className="h-4 w-4 text-sage-600" /> : <AlertCircle className="h-4 w-4 text-rose-600" />}
-                <h3 className="text-sm font-bold text-slate-900">{selectedClass?.subjects?.code || 'Class'} Student Roster</h3>
-              </div>
-              <span className="text-xs font-mono font-bold text-slate-500">{visibleStudents.length} students</span>
-            </div>
-
-            {loadingRoster ? (
-              <div className="p-10 flex items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin text-sage-600" /> Calculating risk roster...</div>
-            ) : visibleStudents.length === 0 ? (
-              <div className="p-12 text-center">
-                <Users className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm font-semibold text-slate-700">
-                  {isEvaluateMode ? 'No enrolled students found.' : 'All students on track!'}
-                </p>
-                <p className="text-xs text-slate-500 mt-1">
-                  {isEvaluateMode
-                    ? 'No enrolled students found in this class section.'
-                    : 'No students in this class currently require urgent risk intervention. Select another class record to review.'}
-                </p>
-                <button onClick={() => navigate('/faculty/classrecordslist')} className="mt-4 px-4 py-2 rounded-xl bg-sage-600 text-white text-xs font-semibold hover:bg-sage-700 cursor-pointer">My Class Records</button>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-50 border-b border-slate-100">
-                    <tr>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">Student</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">Risk</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">GWA</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">Absences</th>
-                      <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-400">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {visibleStudents.map(student => {
-                      const isLow = student.risk_level === 'low';
-                      const isMod = student.risk_level === 'moderate';
-                      const badgeClass = isLow
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : isMod
-                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                          : 'bg-rose-50 text-rose-700 border-rose-200';
-
-                      return (
-                        <tr key={student.user_id} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-xs font-bold text-slate-800">{student.last_name}, {student.first_name}</p>
-                              <EnrollmentTypeBadge enrollmentType={student.enrollment_type} />
-                            </div>
-                            <p className="text-[10px] text-slate-400 font-mono">{student.student_id_number}</p>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${badgeClass}`}>
-                              {student.risk_level} · {student.risk_score}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-xs font-mono font-bold text-slate-700">
-                            {student.current_gwa !== null && student.current_gwa !== undefined && Number(student.current_gwa) > 0 ? Number(student.current_gwa).toFixed(2) : '—'}
-                          </td>
-                          <td className="px-4 py-3 text-xs font-mono text-slate-700">{student.absences || 0}</td>
-                          <td className="px-4 py-3 text-right">
-                            <button onClick={() => setSelectedStudent(student)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sage-600 hover:bg-sage-700 text-white text-[10px] font-semibold cursor-pointer shadow-2xs transition-colors"><ClipboardCheck className="h-3.5 w-3.5" /> Evaluate</button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
+  const needsCount = students.filter(student => needsEvaluation(student, evaluations, term, RISK_TIERS.MODERATE.min)).length;
+  const coveredCount = students.filter(student => evaluations.some(item => item.student_id === student.user_id)).length;
+  const roster = needsOnly ? students.filter(student => needsEvaluation(student, evaluations, term, RISK_TIERS.MODERATE.min)) : students;
+  const visible = roster.filter(student => `${student.first_name} ${student.last_name} ${student.last_name}, ${student.first_name} ${student.student_id_number || ''}`.toLowerCase().includes(search.trim().toLowerCase()));
+  return <>
+    <PageHeader title="Evaluate Students" breadcrumb="Faculty Portal" />
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 text-sage-900">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div><h2 className="text-base font-bold font-display">Student evaluation roster</h2><p className="text-xs text-sage-500 mt-1">Review academic concerns and record advising for a specific grading term.</p></div>
+        <Link className={secondaryButton} to={`/faculty/evaluatedstudents?${new URLSearchParams({ class: classId, term, period: selectedClass?.term_id || 'all' })}`}><ClipboardCheck className="h-4 w-4" />Evaluated Students<ArrowRight className="h-4 w-4" /></Link>
       </div>
 
-      {selectedStudent && (
-        <StudentRiskEvaluationModal
-          isOpen={Boolean(selectedStudent)}
-          onClose={() => setSelectedStudent(null)}
-          student={selectedStudent}
-          classRecordId={selectedClassId}
-          currentTerm='Midterm'
-          subjectCode={selectedClass?.subjects?.code || ''}
-          subjectName={selectedClass?.subjects?.name || ''}
-          onSaveSuccess={handleEvaluationSaved}
-        />
-      )}
-    </>
-  );
+      <section className="rounded-2xl border border-sage-200 bg-white shadow-2xs overflow-hidden" aria-label="Evaluation context">
+        <div className="flex items-center gap-2 border-b border-sage-100 px-4 py-4 sm:px-6"><BookOpen className="h-4 w-4 text-sage-600" /><h3 className="text-sm font-bold">Class & grading term</h3></div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 sm:p-6">
+          <label className="md:col-span-2 text-xs font-semibold text-sage-700">Class<select className={`${field} block mt-2`} value={classId} onChange={e => changeFilter('class', e.target.value)}>{!classes.length && <option value="">No classes assigned</option>}{classes.map(item => <option key={item.class_record_id} value={item.class_record_id}>{item.subjects?.code} · {item.sections?.name} · {item.school_year} · {item.semester}</option>)}</select></label>
+          <label className="text-xs font-semibold text-sage-700">Grading term<select className={`${field} block mt-2`} value={term} onChange={e => changeFilter('term', e.target.value)}><option value="">Select a grading term</option>{EVALUATION_TERMS.map(item => <option key={item}>{item}</option>)}</select></label>
+        </div>
+        <div className="border-t border-sage-100 bg-sage-50/50 px-4 py-4 sm:px-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-sage-600">
+          <span className="font-semibold text-sage-800">{selectedClass?.subjects?.name || 'Select an assigned class'}</span><span>{selectedClass?.sections?.name || 'No section'} · {selectedClass?.school_year || '—'} · {selectedClass?.semester || '—'}</span>{selectedClass && selectedClass.status !== 'active' && <span className="font-semibold">Read-only class</span>}
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[[Users, 'Enrolled students', loading ? '—' : students.length, 'Full class roster'], [ClipboardCheck, 'Needs evaluation', loading || !term ? '—' : needsCount, term ? `Moderate or higher risk · ${term}` : 'Select a grading term'], [CheckCircle2, 'Evaluations recorded', loading || !term ? '—' : coveredCount, term ? `Includes drafts · ${term}` : 'Select a grading term']].map(([Icon, label, count, detail]) => <div key={label} className="flex items-start justify-between gap-4 rounded-xl border border-sage-200 bg-white p-4 shadow-2xs"><div><p className="text-xs font-semibold text-sage-600">{label}</p><p className="mt-2 text-2xl font-mono font-bold">{count}</p><p className="mt-2 text-xs text-sage-500">{detail}</p></div><div className="rounded-lg bg-sage-50 p-2 text-sage-600"><Icon className="h-5 w-5" /></div></div>)}
+      </div>
+
+      {!term && <div className="flex items-start gap-2 rounded-xl border border-sage-200 bg-sage-50 p-4 text-xs text-sage-700"><Info className="h-4 w-4 shrink-0 mt-0.5" /><div><p className="font-bold">Choose a grading term to start evaluating</p><p className="mt-1">You can browse the roster now. Evaluation actions become available after selecting a term above.</p></div></div>}
+      {error && <p role="alert" className="border border-sage-400 bg-white p-4 rounded-xl text-sm">{error}</p>}
+
+      <section className="rounded-2xl border border-sage-200 bg-white shadow-2xs overflow-hidden" aria-label="Student roster">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4 sm:px-6 border-b border-sage-100">
+          <div className="flex flex-wrap gap-2" aria-label="Roster view">
+            {[[false, 'Full roster', students.length], [true, 'Needs evaluation', term ? needsCount : '—']].map(([isNeeds, label, count]) => <button key={label} type="button" aria-pressed={needsOnly === isNeeds} onClick={() => changeFilter('view', isNeeds ? 'needs-evaluation' : 'all')} className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-sage-600 ${needsOnly === isNeeds ? 'bg-sage-800 text-white' : 'bg-sage-50 text-sage-600 hover:bg-sage-100'}`}>{label}<span className={`rounded px-2 py-0.5 font-mono ${needsOnly === isNeeds ? 'bg-sage-700' : 'bg-sage-100'}`}>{loading ? '—' : count}</span></button>)}
+          </div>
+          <div className="flex items-center gap-2"><div className="relative flex-1"><Search className="absolute left-3 top-3 h-4 w-4 text-sage-400" /><input aria-label="Search students" value={search} onChange={e => setSearch(e.target.value)} placeholder="Name or student number" className={`${field} pl-10 lg:w-64`} /></div><button type="button" className={secondaryButton} disabled={loading} onClick={() => setRefresh(value => value + 1)} aria-label="Refresh roster"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /><span className="hidden sm:inline">Refresh</span></button></div>
+        </div>
+        {loading ? <div role="status" className="flex items-center justify-center gap-2 p-12 text-sm text-sage-500"><RefreshCw className="h-4 w-4 animate-spin" />Calculating risk roster…</div> : !visible.length ? <div className="p-12 text-center"><Users className="h-8 w-8 mx-auto text-sage-300" /><p className="mt-4 text-sm font-semibold">{needsOnly && !term ? 'Select a grading term' : search ? 'No matching students' : 'No students in this view'}</p><p className="mt-2 text-xs text-sage-500">{needsOnly && !term ? 'Choose a term above to identify unevaluated concerns.' : search ? 'Try another name or student number.' : needsOnly ? 'No moderate-or-higher-risk students need an evaluation for this term.' : 'Enrolled students will appear here.'}</p></div> : <div className="overflow-x-auto table-container">
+          <table className="w-full text-left text-xs"><thead className="bg-sage-50/70 text-sage-500"><tr>{['Student', 'Current risk', 'Subject standing', 'Absences', 'Evaluation'].map(title => <th key={title} className="px-4 py-4 sm:px-6 font-semibold whitespace-nowrap">{title}</th>)}</tr></thead><tbody className="divide-y divide-sage-100">{visible.map(student => {
+            const existing = evaluations.find(item => item.student_id === student.user_id);
+            const disabled = !term || selectedClass?.status !== 'active';
+            return <tr key={student.user_id} className="hover:bg-sage-50/40 transition-colors"><td className="px-4 py-4 sm:px-6"><div className="flex items-center gap-3"><div className="hidden sm:flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-sage-100 bg-sage-50 text-xs font-bold text-sage-600" aria-hidden="true">{student.first_name?.[0]}{student.last_name?.[0]}</div><div><p className="font-bold text-sm whitespace-nowrap">{student.last_name}, {student.first_name}</p><p className="font-mono text-sage-500 mt-1">{student.student_id_number}</p><EnrollmentTypeBadge enrollmentType={student.enrollment_type} /></div></div></td><td className="px-4 py-4 sm:px-6"><span className="inline-flex rounded-md border border-sage-200 bg-sage-50 px-2 py-1 text-xs font-semibold capitalize">{student.risk_level}</span><p className="font-mono text-sage-500 mt-2">{student.risk_score} pts</p></td><td className="px-4 py-4 sm:px-6"><p className="font-mono text-sm font-semibold">{student.current_gwa == null ? 'Pending' : Number(student.current_gwa).toFixed(2)}</p><p className="text-sage-500 mt-1 whitespace-nowrap">{student.standing_source} · {student.standing_milestone || 'No milestone'}</p></td><td className="px-4 py-4 sm:px-6 font-mono text-sm">{student.absences}</td><td className="px-4 py-4 sm:px-6"><button type="button" disabled={disabled} title={!term ? 'Select a grading term first' : disabled ? 'Inactive class is read-only' : undefined} onClick={() => setSelectedStudent({ ...student, evaluation: existing || null })} className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-sage-600 ${disabled ? 'bg-sage-50 text-sage-300 border border-sage-100 cursor-not-allowed' : existing ? `${secondaryButton}` : 'bg-sage-800 text-white hover:bg-sage-700 cursor-pointer'}`}><ClipboardCheck className="h-4 w-4" />{existing ? 'Review / edit' : 'Evaluate'}</button><p className="mt-2 text-xs text-sage-500">{!term ? 'Choose a term above' : selectedClass?.status !== 'active' ? 'Read-only class' : existing ? existing.status : 'Not evaluated'}</p></td></tr>;
+          })}</tbody></table>
+        </div>}
+        {!loading && !!visible.length && <div className="border-t border-sage-100 px-4 py-4 sm:px-6 text-xs text-sage-500">Showing <span className="font-mono font-semibold text-sage-700">{visible.length}</span> of <span className="font-mono">{roster.length}</span> students{term ? ` · ${term}` : ''}</div>}
+      </section>
+    </div>
+    {selectedStudent && <StudentRiskEvaluationModal key={`${selectedStudent.user_id}:${term}`} isOpen onClose={() => setSelectedStudent(null)} student={selectedStudent} classRecordId={classId} currentTerm={term} subjectCode={selectedClass?.subjects?.code || ''} subjectName={selectedClass?.subjects?.name || ''} onEvaluationSaved={() => setRefresh(value => value + 1)} />}
+  </>;
 }

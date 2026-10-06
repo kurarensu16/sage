@@ -5,7 +5,8 @@ import { supabase } from './supabase';
 import { calculateAcademicRisk, computeTentativeGradeDetails } from './riskEngine';
 import { resolveGradingFormula } from './gradingMath';
 import { resolveOfficialGwa } from './academicPolicy';
-import { findMostAdvancedPostedGrade } from './gradeMilestones';
+import { findMostAdvancedPostedGrade, getCanonicalGradePeriod } from './gradeMilestones';
+import { countMissingActivities, scoreOrNull } from './evaluationTracking';
 // Note: riskEngine.js is now the single source of truth for all risk calculations (V4).
 
 /**
@@ -400,24 +401,29 @@ export async function resolveJoinRequest(requestId, classRecordId, studentId, ne
  * Fetches class students and calculates their academic risk score,
  * auto-sorting in descending order of priority (students needing help at the top).
  */
-export async function getClassPriorityRoster(classRecordId) {
+export async function getClassPriorityRoster(classRecordId, { throwOnError = false } = {}) {
+  const read = async query => {
+    const result = await query;
+    if (result.error) throw result.error;
+    return result;
+  };
   try {
     // 1. Get class details
-    const { data: cr } = await supabase
+    const { data: cr } = await read(supabase
       .from('class_records')
       .select('class_record_id, section_id, subject_id, semester, grading_formula_snapshot, subjects ( computation_id )')
       .eq('class_record_id', classRecordId)
-      .single();
+      .single());
 
     if (!cr) return [];
 
     let formulaComponents = cr.grading_formula_snapshot?.components || null;
     if (!formulaComponents && cr.subjects?.computation_id) {
-      const { data: computation } = await supabase
+      const { data: computation } = await read(supabase
         .from('grade_computations')
         .select('grade_computation_components ( * )')
         .eq('computation_id', cr.subjects.computation_id)
-        .maybeSingle();
+        .maybeSingle());
       formulaComponents = computation?.grade_computation_components || null;
     }
     const gradingFormula = resolveGradingFormula(formulaComponents, {
@@ -425,7 +431,7 @@ export async function getClassPriorityRoster(classRecordId) {
     });
 
     // 2. Fetch enrolled students
-    const { data: enrolls } = await supabase
+    const { data: enrolls } = await read(supabase
       .from('enrollments')
       .select(`
         student_id,
@@ -439,7 +445,7 @@ export async function getClassPriorityRoster(classRecordId) {
         )
       `)
       .eq('section_id', cr.section_id)
-      .eq('subject_id', cr.subject_id);
+      .eq('subject_id', cr.subject_id));
 
     // Deduplicate enrolled users by user_id
     const uniqueMap = new Map();
@@ -454,10 +460,10 @@ export async function getClassPriorityRoster(classRecordId) {
     const studentIds = students.map(s => s.user_id);
 
     // 3. Fetch column setup configurations
-    const { data: cols } = await supabase
+    const { data: cols } = await read(supabase
       .from('class_grading_columns')
       .select('*')
-      .eq('class_record_id', classRecordId);
+      .eq('class_record_id', classRecordId));
 
     const colsMap = {};
     (cols || []).forEach(c => {
@@ -474,24 +480,24 @@ export async function getClassPriorityRoster(classRecordId) {
     });
 
     // 3. Fetch scores from student_term_scores
-    const { data: scores } = await supabase
+    const { data: scores } = await read(supabase
       .from('student_term_scores')
       .select('*')
       .eq('class_record_id', classRecordId)
-      .in('student_id', studentIds);
+      .in('student_id', studentIds));
 
-    const { data: classActivities } = await supabase
+    const { data: classActivities } = await read(supabase
       .from('class_activities')
       .select('activity_id, term, name, max_score, component_id')
-      .eq('class_record_id', classRecordId);
+      .eq('class_record_id', classRecordId));
 
     const activityIds = (classActivities || []).map(activity => activity.activity_id);
     const { data: granularScores } = activityIds.length > 0
-      ? await supabase
+      ? await read(supabase
           .from('student_activity_scores')
           .select('student_id, activity_id, score')
           .in('student_id', studentIds)
-          .in('activity_id', activityIds)
+          .in('activity_id', activityIds))
       : { data: [] };
 
     const activitiesByTerm = {};
@@ -501,30 +507,30 @@ export async function getClassPriorityRoster(classRecordId) {
         id: activity.activity_id,
         dbId: activity.activity_id,
         name: activity.name,
-        max: Number(activity.max_score) || 20,
+        max: scoreOrNull(activity.max_score) ?? 0,
         componentId: activity.component_id || null
       });
     });
 
     // 3b. Fetch posted grades
-    const { data: postedGrades } = await supabase
+    const { data: postedGrades } = await read(supabase
       .from('posted_grades')
       .select('*')
       .eq('class_record_id', classRecordId)
-      .in('student_id', studentIds);
+      .in('student_id', studentIds));
 
     // 4. Fetch attendance records
-    const { data: attendances } = await supabase
+    const { data: attendances } = await read(supabase
       .from('attendance_records')
       .select('student_id, status')
       .eq('class_record_id', classRecordId)
-      .in('student_id', studentIds);
+      .in('student_id', studentIds));
 
     // 5. Fetch existing evaluations
-    const { data: evals } = await supabase
+    const { data: evals } = await read(supabase
       .from('student_risk_evaluations')
       .select('student_id, evaluation_id, risk_level, risk_score, status, refer_to_dean')
-      .eq('class_record_id', classRecordId);
+      .eq('class_record_id', classRecordId));
 
     const evalMap = {};
     (evals || []).forEach(ev => {
@@ -551,7 +557,7 @@ export async function getClassPriorityRoster(classRecordId) {
           const activity = (classActivities || []).find(item => item.activity_id === score.activity_id);
           if (!activity?.term) return;
           classRecordScores[activity.term] ||= {};
-          classRecordScores[activity.term][score.activity_id] = Number(score.score) || 0;
+          classRecordScores[activity.term][score.activity_id] = scoreOrNull(score.score);
         });
 
       const tentativeDetails = computeTentativeGradeDetails(classRecordScores, colsMap, {
@@ -570,9 +576,9 @@ export async function getClassPriorityRoster(classRecordId) {
         if (sc.term) {
           const colSetup = colsMap[sc.term] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, exam: 40 };
           const examRaw = sc.exam;
-          const hasEnteredExam = examRaw != null && examRaw > 0;
+          const examMax = scoreOrNull(colSetup.exam);
+          const hasEnteredExam = scoreOrNull(examRaw) !== null && examMax > 0;
           if (hasEnteredExam) {
-            const examMax = colSetup.exam || 40;
             examSumPct += Math.min(100, (examRaw / examMax) * 100);
             examCount++;
           }
@@ -591,27 +597,8 @@ export async function getClassPriorityRoster(classRecordId) {
 
 
       // Count zero submissions ONLY for activities that are actually configured (max > 0)
-      let zeroSubmissionsCount = 0;
-      studScores.forEach(sc => {
-        if (sc.term) {
-          const termColSetup = colsMap[sc.term] || {};
-          const hasEnteredActivity = (
-            (sc.act1 != null && sc.act1 > 0) ||
-            (sc.act2 != null && sc.act2 > 0) ||
-            (sc.act3 != null && sc.act3 > 0) ||
-            (sc.act4 != null && sc.act4 > 0) ||
-            (sc.act5 != null && sc.act5 > 0) ||
-            (sc.act6 != null && sc.act6 > 0)
-          );
-          if (hasEnteredActivity) {
-            ['act1', 'act2', 'act3', 'act4', 'act5', 'act6'].forEach(key => {
-              // Only count zeros for activities that actually exist (configured max > 0)
-              const actMax = termColSetup[key] ?? 0;
-              if (actMax > 0 && sc[key] === 0) zeroSubmissionsCount++;
-            });
-          }
-        }
-      });
+      const zeroSubmissionsCount = countMissingActivities(studScores, colsMap,
+        classActivities || [], (granularScores || []).filter(score => score.student_id === stud.user_id));
 
       const riskData = calculateAcademicRisk({
         currentGwa: approxGwa,
@@ -634,6 +621,9 @@ export async function getClassPriorityRoster(classRecordId) {
         enrollment_type: enrollmentType,
         is_irregular: enrollmentType === 'Irregular',
         current_gwa: approxGwa,
+        standing_source: hasValidScores && tentativeDetails.gwa !== null ? 'Tentative' : finalPosted ? 'Posted' : 'Pending',
+        standing_milestone: hasValidScores && tentativeDetails.gwa !== null
+          ? Object.keys(termRatings).join(', ') : finalPosted ? getCanonicalGradePeriod(finalPosted) : null,
         failing_count: approxGwa !== null && approxGwa > 3 ? 1 : 0,
         absences: studAbsences,
         exam_average: examCount > 0 ? Math.round(examSumPct / examCount) : 100,
@@ -657,6 +647,7 @@ export async function getClassPriorityRoster(classRecordId) {
     return priorityList;
   } catch (err) {
     console.error('Error computing student priority roster:', err);
+    if (throwOnError) throw err;
     return [];
   }
 }

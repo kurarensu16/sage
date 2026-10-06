@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   Search, AlertCircle, Sparkles, Building2, Loader2, AlertTriangle, 
   Bell, Check, Award, MessageSquare, TrendingUp, CheckCircle2, 
-  Clock, AlertOctagon, X, FileText, ShieldAlert
+  Clock, AlertOctagon, X, FileText, ShieldAlert, RefreshCw
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -47,8 +48,18 @@ function SeverityBadge({ severity, score }) {
   );
 }
 
-export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalone = false }) {
+export default function AtRiskStudents(props) {
   const { user, profile } = useAuth();
+  return <DeanRiskView key={`${user?.id}:${profile?.department_id}`} {...props} />;
+}
+
+function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
+  const { user, profile } = useAuth();
+  const [queryParams] = useSearchParams();
+  const linkedEvaluationId = queryParams.get('evaluation_id');
+  const handledLink = useRef(null);
+  const [refresh, setRefresh] = useState(0);
+  const [reviewNotice, setReviewNotice] = useState('');
 
   const [students, setStudents] = useState([]);
   const [sections, setSections] = useState([]);
@@ -59,7 +70,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
 
   // ASPIRE v3.1 Navigation Tabs:
   // 'tier1_at_risk' | 'tier2_pl_risk' | 'discussion_queue' | 'outcomes_tracker'
-  const [activeTab, setActiveTab] = useState(initialTab);
+  const [activeTab, setActiveTab] = useState(queryParams.get('tab') === 'discussion_queue' ? 'discussion_queue' : initialTab);
   const [severityFilter, setSeverityFilter] = useState('');
   const [sectionFilter, setSectionFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -110,7 +121,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
   };
 
   const handleSaveDeanReview = async () => {
-    if (!selectedQueueItem) return;
+    if (!selectedQueueItem || isSubmittingAction) return;
     setIsSubmittingAction(true);
     try {
       const isResolving = deanActionType === 'resolved';
@@ -121,7 +132,8 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
           p_evaluation_id: selectedQueueItem.evaluation_id,
           p_refer_to_dean: !isResolving,
           p_requires_tutoring: requiresTutoring,
-          p_status: isResolving ? 'acknowledged_by_student' : selectedQueueItem.status
+          p_status: selectedQueueItem.status,
+          p_resolution_note: deanNotes.trim() || null
         });
 
       if (updateErr) throw updateErr;
@@ -136,12 +148,12 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
         {
           recipient_id: selectedQueueItem.faculty_id,
           type: 'academic_notice',
-          message: `${actionLabel} for ${selectedQueueItem.studentName} (${selectedQueueItem.subjectCode || 'Class'}). Directives: ${deanNotes || 'Case reviewed by Dean.'}`
+          message: `${actionLabel}. Review the authorized evaluation queue for case details.`
         },
         {
           recipient_id: selectedQueueItem.student_id,
           type: 'ews_alert',
-          message: `Office of the Dean notice: ${actionLabel}. Directives: ${deanNotes || 'Please consult your Department Chair.'}`
+          message: `Office of the Dean notice: ${actionLabel}. Please consult your Department Chair for guidance.`
         },
         {
           recipient_id: user?.id,
@@ -150,10 +162,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
         }
       ].filter(n => Boolean(n.recipient_id)));
 
-      await showLocalNotification({
-        title: 'Dean Directives Recorded',
-        body: `Directives recorded for ${selectedQueueItem.studentName}.`
-      });
+      setReviewNotice(isResolving ? 'Referral resolved. Student acknowledgment is unchanged.' : 'Dean review recorded. The referral remains pending.');
 
       // Update local state
       setRawEvaluations(prev => prev.map(ev => {
@@ -169,6 +178,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
 
       setIsModalOpen(false);
       setSelectedQueueItem(null);
+      setRefresh(value => value + 1);
     } catch (err) {
       console.error('Failed to submit Dean review:', err);
       alert('Failed to save Dean review: ' + err.message);
@@ -180,6 +190,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
   useEffect(() => {
     if (!profile?.department_id) return;
     let cancelled = false;
+    setLoading(true);
 
     async function load() {
       try {
@@ -196,7 +207,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
         if (!cancelled) setSections(deptSections || []);
 
         if (sectionIds.length === 0) {
-          if (!cancelled) { setStudents([]); setLoading(false); }
+          if (!cancelled) { setStudents([]); setRawEvaluations([]); setLoading(false); }
           return;
         }
 
@@ -356,6 +367,10 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
         });
 
         // Step 4.5: ASPIRE v3.1 Student Risk Evaluations with faculty and class info
+        const { data: departmentClasses, error: classError } = await supabase.from('class_records')
+          .select('class_record_id').in('section_id', sectionIds);
+        if (classError) throw classError;
+        const departmentClassIds = (departmentClasses || []).map(record => record.class_record_id);
         const { data: evalRecords, error: evalErr } = await supabase
           .from('student_risk_evaluations')
           .select(`
@@ -367,16 +382,18 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
               updated_at
             ),
             faculty:users!faculty_id ( first_name, last_name, email ),
+            student:users!student_id ( first_name, last_name, email ),
+            referrals:student_evaluation_referrals ( referral_id, state, reason, legacy, referred_at ),
             class_record:class_records (
               class_record_id,
               subjects ( code, name ),
               sections ( name )
             )
           `)
-          .in('student_id', studentIds.length > 0 ? studentIds : ['00000000-0000-0000-0000-000000000000'])
+          .in('class_record_id', departmentClassIds.length > 0 ? departmentClassIds : ['00000000-0000-0000-0000-000000000000'])
           .order('created_at', { ascending: false });
 
-        if (evalErr) console.warn('Could not fetch student_risk_evaluations:', evalErr);
+        if (evalErr) throw evalErr;
         if (!cancelled) setRawEvaluations(evalRecords || []);
 
         const evalByStudent = {};
@@ -536,7 +553,16 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
 
     load();
     return () => { cancelled = true; };
-  }, [profile?.department_id]);
+  }, [profile?.department_id, user?.id, refresh]);
+
+  useEffect(() => {
+    const onFocus = () => setRefresh(value => value + 1);
+    window.addEventListener('focus', onFocus);
+    const channel = user?.id ? supabase.channel(`dean-referrals:${user.id}`).on('postgres_changes', {
+      event: 'INSERT', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${user.id}`
+    }, () => setRefresh(value => value + 1)).subscribe() : null;
+    return () => { window.removeEventListener('focus', onFocus); if (channel) supabase.removeChannel(channel); };
+  }, [user?.id]);
 
   // Derived lists for ASPIRE v3.1 Matrix
   const tier1Students = students.filter(s => 
@@ -557,8 +583,8 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
         evaluation_id: ev.evaluation_id,
         student_id: ev.student_id,
         faculty_id: ev.faculty_id,
-        studentName: studentMatch ? `${studentMatch.firstName} ${studentMatch.lastName}` : 'Student',
-        studentEmail: studentMatch?.email || '—',
+        studentName: ev.student ? `${ev.student.first_name} ${ev.student.last_name}` : studentMatch ? `${studentMatch.firstName} ${studentMatch.lastName}` : 'Student',
+        studentEmail: ev.student?.email || studentMatch?.email || '—',
         section: ev.class_record?.sections?.name || studentMatch?.section || '—',
         programCode: studentMatch?.programCode || '—',
         runningGwa: studentMatch?.runningGwa || null,
@@ -573,9 +599,22 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
         advising_plan: Array.isArray(ev.advising_plan) ? ev.advising_plan : [],
         requires_tutoring: ev.requires_tutoring || false,
         status: ev.status,
+        referral: ev.referrals?.find(referral => referral.state === 'pending'),
         created_at: ev.created_at
       };
     });
+
+  useEffect(() => {
+    if (loading || !linkedEvaluationId || handledLink.current === linkedEvaluationId) return;
+    handledLink.current = linkedEvaluationId;
+    setActiveTab('discussion_queue');
+    const item = discussionQueueItems.find(candidate => candidate.evaluation_id === linkedEvaluationId);
+    if (item) {
+      setSelectedQueueItem(item); setDeanNotes(''); setDeanActionType('conference'); setIsModalOpen(true);
+    } else setError('The linked case is unavailable, outside your department, or no longer pending.');
+    // Queue items derive from the RLS-protected evaluation query.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, rawEvaluations, linkedEvaluationId]);
 
   // Outcomes Tracker Items (evaluations with baseline snapshot)
   const outcomesList = rawEvaluations
@@ -643,6 +682,8 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
       />
 
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
+        <button type="button" disabled={loading} onClick={() => setRefresh(value => value + 1)} className="rounded-lg border border-sage-200 px-3 py-2 text-sm text-sage-700 disabled:opacity-50"><RefreshCw className="inline h-4 w-4 mr-1" />Refresh cases</button>
+        {reviewNotice && <p role="status" className="rounded-lg border border-sage-200 bg-sage-50 p-3 text-sm text-sage-900">{reviewNotice}</p>}
 
         {/* Error banner */}
         {error && (
@@ -1336,6 +1377,10 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
               </div>
 
               {/* Restricted faculty note */}
+              <div className="rounded-lg border border-sage-200 bg-sage-50 p-3 text-sage-900">
+                <p className="font-semibold">Referral reason</p>
+                <p>{selectedQueueItem.referral?.reason || 'Legacy referral: reason, actor, and time unknown.'}</p>
+              </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Restricted Faculty Observation</label>
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 italic leading-relaxed">
@@ -1343,26 +1388,36 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
                 </div>
               </div>
 
-              {/* Dean Action Select */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">Dean Administrative Action</label>
-                <select
-                  value={deanActionType}
-                  onChange={e => setDeanActionType(e.target.value)}
-                  className="w-full border border-slate-200 px-3 py-2 rounded-lg text-xs bg-white outline-none cursor-pointer focus:border-sage-600 font-semibold"
-                >
-                  <option value="conference">Schedule Dean Academic Conference (Faculty + Student)</option>
-                  <option value="tutoring">Approve Remedial Peer Tutoring Mandate</option>
-                  <option value="advisory">Issue Official Dean Academic Standing Advisory</option>
-                  <option value="resolved">Acknowledge Directives &amp; Mark Queue Item Resolved</option>
-                </select>
-              </div>
+              <fieldset className="space-y-2" disabled={isSubmittingAction}>
+                <legend className="text-xs font-bold text-sage-800">Dean action</legend>
+                {[
+                  ['conference', 'Schedule academic conference', 'Record a conference directive for faculty and student. Referral stays pending.'],
+                  ['tutoring', 'Approve peer tutoring', 'Record tutoring approval. Referral stays pending.'],
+                  ['advisory', 'Issue academic standing advisory', 'Record an academic advisory. Referral stays pending.'],
+                  ['resolved', 'Resolve referral', 'Close this referral and remove it from the pending queue. A resolution note is required.'],
+                ].map(([value, title, description]) => (
+                  <label key={value} className={cn(
+                    'flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors',
+                    deanActionType === value ? 'border-sage-600 bg-sage-100' : 'border-sage-200 bg-sage-50 hover:border-sage-400'
+                  )}>
+                    <input type="radio" name="dean-action" value={value} checked={deanActionType === value}
+                      onChange={() => setDeanActionType(value)}
+                      className="mt-0.5 accent-sage-700 focus-visible:outline-sage-600" />
+                    <span className="space-y-1">
+                      <span className="block text-xs font-bold text-sage-900">{title}</span>
+                      <span className="block text-xs text-sage-700">{description}</span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
 
               {/* Dean Notes / Directives Input */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">Dean Consultation Notes / Directives</label>
+                <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">{deanActionType === 'resolved' ? 'Resolution note (required)' : 'Dean Consultation Notes / Directives'}</label>
                 <textarea
+                  aria-label="Restricted Dean review note"
                   rows={4}
+                  maxLength={2000}
                   value={deanNotes}
                   onChange={e => setDeanNotes(e.target.value)}
                   placeholder="Enter academic directives, instructions for faculty, or counseling recommendations..."
@@ -1384,7 +1439,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
               <button
                 type="button"
                 onClick={handleSaveDeanReview}
-                disabled={isSubmittingAction}
+                disabled={isSubmittingAction || (deanActionType === 'resolved' && !deanNotes.trim())}
                 className="px-4 py-2 bg-sage-800 hover:bg-sage-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
               >
                 {isSubmittingAction ? (
@@ -1395,7 +1450,7 @@ export default function AtRiskStudents({ initialTab = 'tier1_at_risk', standalon
                 ) : (
                   <>
                     <Check className="h-3.5 w-3.5" />
-                    <span>Submit Dean Directives</span>
+                    <span>{deanActionType === 'resolved' ? 'Resolve referral' : 'Save Dean directive'}</span>
                   </>
                 )}
               </button>

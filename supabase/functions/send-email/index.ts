@@ -2,7 +2,7 @@
 // sends via SMTP. Invoked every minute by the 'drain-email-queue' pg_cron job
 // (see supabase/migrations/20261002090000_email_notification_delivery.sql).
 //
-// Scope (2026-10-02): grade_posted and grade_changed only.
+// Scope: grade_posted, grade_changed, and authorized Dean referral events.
 //
 // Privacy rule for the STUDENT's own copy (docs/update_plan/NOTIFICATION_DELIVERY_ARCHITECTURE.md
 // §6): the email body NEVER contains the grade value, remark, or pass/fail status — only an
@@ -54,6 +54,18 @@ type EmailJob = {
   guardian_name: string | null
   guardian_relationship: string | null
   honors_pace: boolean | null
+}
+
+function renderDeanReferralTemplate(payload: Record<string, unknown>) {
+  const evaluationId = String(payload.evaluation_id ?? '')
+  if (!/^[0-9a-f-]{36}$/i.test(evaluationId)) throw new Error('Referral delivery has no valid evaluation identity.')
+  const portalUrl = `https://aspire-dyci.vercel.app/dean/atriskstudents?tab=discussion_queue&evaluation_id=${encodeURIComponent(evaluationId)}`
+  const message = 'A faculty evaluation requires your review. Sign in to the authorized Dean discussion queue for details.'
+  return {
+    subject: '[ASPIRE] Faculty evaluation requires Dean review',
+    text: `${message}\n\n${portalUrl}`,
+    html: getBaseHtmlTemplate(`<p>${message}</p><p><a href="${escapeHtml(portalUrl)}">Open Dean discussion queue</a></p>`)
+  }
 }
 
 function renderStudentTemplate(notificationType: string, payload: Record<string, unknown>) {
@@ -294,7 +306,9 @@ Deno.serve(async (req) => {
     try {
       if (!job.target_address) throw new Error('Delivery has no target_address.')
 
-      const { subject, text, html } = job.guardian_id
+      const { subject, text, html } = job.notification_type === 'dean_referral'
+        ? renderDeanReferralTemplate(job.payload || {})
+        : job.guardian_id
         ? renderGuardianTemplate(job.notification_type, job.payload || {}, job)
         : renderStudentTemplate(job.notification_type, job.payload || {})
 
