@@ -59,11 +59,9 @@ export default function GradePostingStatus() {
           class_record_id,
           status,
           semester,
-          academic_year,
-          schedule,
-          room,
+          school_year,
           faculty:users!faculty_id(user_id, first_name, last_name, email),
-          subject:subjects(subject_id, code, title, units, department_id, departments(name)),
+          subject:subjects(subject_id, code, name, units, department_id, departments(name)),
           section:sections(section_id, name)
         `)
         .eq('status', 'active');
@@ -112,13 +110,13 @@ export default function GradePostingStatus() {
           id: c.class_record_id,
           classRecordId: c.class_record_id,
           subjectCode: c.subject?.code || 'N/A',
-          subjectName: c.subject?.title || 'Untitled Subject',
+          subjectName: c.subject?.name || 'Untitled Subject',
           departmentName: c.subject?.departments?.name || '',
           section: c.section?.name || 'N/A',
           facultyId: c.faculty?.user_id,
           facultyName,
           semester: c.semester || '2nd',
-          schoolYear: c.academic_year || '2025-2026',
+          schoolYear: c.school_year || '2025-2026',
           status: c.status
         };
       });
@@ -172,12 +170,12 @@ export default function GradePostingStatus() {
     }
   };
 
-  const getStatusBadge = (classId) => {
+  const getStatusBadge = (classId, milestone) => {
     const postedList = postedGradesMap[classId] || [];
     const unlockList = unlockRequestsMap[classId] || [];
     
     const isPosted = postedList.some(row =>
-      getCanonicalGradePeriod(row) === GRADE_MILESTONES.SEMESTRAL_GRADE
+      getCanonicalGradePeriod(row) === milestone
     );
     const isRequested = unlockList.length > 0;
     
@@ -339,8 +337,10 @@ export default function GradePostingStatus() {
                     </div>
                     <h4 className="text-xs text-slate-600 truncate">{c.subjectName}</h4>
                   </div>
-                  <div>
-                    {getStatusBadge(c.id)}
+                  <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-center"><span className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Midterm</span>{getStatusBadge(c.id, GRADE_MILESTONES.MIDTERM_RATING)}</div>
+                    <div className="flex flex-col items-center"><span className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Final</span>{getStatusBadge(c.id, GRADE_MILESTONES.TENTATIVE_FINAL_RATING)}</div>
+                    <div className="flex flex-col items-center"><span className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Semestral</span>{getStatusBadge(c.id, GRADE_MILESTONES.SEMESTRAL_GRADE)}</div>
                   </div>
                 </div>
 
@@ -371,7 +371,9 @@ export default function GradePostingStatus() {
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Assigned Faculty</th>
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Subject & Title</th>
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Section</th>
-                  <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Semestral Grades</th>
+                  <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Midterm Rating</th>
+                  <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Final Rating</th>
+                  <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Semestral Grade</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-100">
@@ -405,13 +407,19 @@ export default function GradePostingStatus() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {getStatusBadge(c.id)}
+                        {getStatusBadge(c.id, GRADE_MILESTONES.MIDTERM_RATING)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        {getStatusBadge(c.id, GRADE_MILESTONES.TENTATIVE_FINAL_RATING)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        {getStatusBadge(c.id, GRADE_MILESTONES.SEMESTRAL_GRADE)}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="4" className="px-6 py-10 text-center text-slate-400 text-sm">
+                    <td colSpan="6" className="px-6 py-10 text-center text-slate-400 text-sm">
                       No matching class posting status reports found in the database.
                     </td>
                   </tr>

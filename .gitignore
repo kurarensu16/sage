@@ -44,3 +44,11 @@ android/.gradle/
 android/build/
 android/app/build/
 email_preview.html
+
+# Audit Files and Figures
+_figure-render-viewport.json
+_figure-style-config.json
+_figure-style.css
+AUDIT_REPORT.md
+REQUIRED_CHANGES.md
+*.mmd
