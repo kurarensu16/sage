@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   Bell, 
@@ -21,6 +22,7 @@ import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { CardListSkeleton } from '../../components/common/Skeleton';
 
 export default function Notifications() {
+  const navigate = useNavigate();
   const { user, refreshUnreadCount } = useAuth();
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
@@ -32,7 +34,7 @@ export default function Notifications() {
   useEffect(() => {
     async function loadNotifications() {
       if (!user) return;
-      const cacheKey = `dean_notifs_${user.id}`;
+      const cacheKey = `dean_notifs_v2_${user.id}`;
       const cached = getCachedData(cacheKey, 120000); // 2 min TTL
 
       if (cached) {
@@ -61,6 +63,11 @@ export default function Notifications() {
             title = 'New Grade Sheet Pending Approval';
             icon = FileCheck;
             iconColor = 'text-amber-600 bg-amber-50 border-amber-200';
+          } else if (n.type === 'dean_referral') {
+            type = 'eval';
+            title = n.title || 'Faculty evaluation referral';
+            icon = FileCheck;
+            iconColor = 'text-sage-700 bg-sage-50 border-sage-200';
           } else if (n.type === 'eval_compiled') {
             type = 'eval';
             title = 'Faculty Evaluation Feedback Compiled';
@@ -95,6 +102,11 @@ export default function Notifications() {
             message: n.message,
             time: formatRelativeTime(n.created_at),
             read: n.is_read,
+            link: typeof n.link === 'string' && n.link.startsWith('/dean/')
+              ? n.link
+              : n.type === 'dean_referral' && n.payload?.evaluation_id
+                ? `/dean/atriskstudents?tab=discussion_queue&evaluation_id=${encodeURIComponent(n.payload.evaluation_id)}`
+                : null,
             icon,
             iconColor
           };
@@ -119,7 +131,7 @@ export default function Notifications() {
       await markNotificationsRead();
       const updated = notifications.map(n => ({ ...n, read: true }));
       setNotifications(updated);
-      setCachedData(`dean_notifs_${user.id}`, updated);
+      setCachedData(`dean_notifs_v2_${user.id}`, updated);
       refreshUnreadCount?.();
     } catch (err) {
       console.error('Error marking all notifications as read:', err);
@@ -131,7 +143,7 @@ export default function Notifications() {
       await markNotificationsRead([id]);
       const updated = notifications.map(n => n.id === id ? { ...n, read: true } : n);
       setNotifications(updated);
-      if (user) setCachedData(`dean_notifs_${user.id}`, updated);
+      if (user) setCachedData(`dean_notifs_v2_${user.id}`, updated);
       refreshUnreadCount?.();
     } catch (err) {
       console.error('Error marking notification as read:', err);
@@ -139,6 +151,11 @@ export default function Notifications() {
   };
 
   const handleCardClick = (noti) => {
+    if (noti.link) {
+      if (!noti.read) markAsRead(noti.id);
+      navigate(noti.link);
+      return;
+    }
     setExpandedIds(prev => {
       const next = new Set(prev);
       if (next.has(noti.id)) {
@@ -196,7 +213,7 @@ export default function Notifications() {
       const remaining = notifications.filter(n => !selectedIds.has(n.id));
       setNotifications(remaining);
       setSelectedIds(new Set());
-      if (user) setCachedData(`dean_notifs_${user.id}`, remaining);
+      if (user) setCachedData(`dean_notifs_v2_${user.id}`, remaining);
       refreshUnreadCount?.();
     } catch (err) {
       console.error('Error deleting selected notifications:', err);
@@ -364,6 +381,19 @@ export default function Notifications() {
                     )}>
                       {noti.message}
                     </p>
+
+                    {noti.link && (
+                      <button
+                        type="button"
+                        onClick={event => {
+                          event.stopPropagation();
+                          handleCardClick(noti);
+                        }}
+                        className="text-xs font-bold text-sage-700 hover:text-sage-900 underline rounded focus-visible:outline-2 focus-visible:outline-sage-600"
+                      >
+                        {noti.type === 'eval' ? 'Open evaluation' : 'Open notification'}
+                      </button>
+                    )}
 
                     {noti.message && noti.message.length > 80 && (
                       <span className="text-[10px] font-bold text-sage-600 hover:text-sage-700 block pt-0.5">

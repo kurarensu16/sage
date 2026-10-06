@@ -19,7 +19,9 @@ import {
   MoreHorizontal, 
   X, 
   ChevronRight,
-  GraduationCap
+  GraduationCap,
+  ClipboardCheck,
+  CheckCircle2
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -59,7 +61,10 @@ export default function BottomNav() {
         { to: '/faculty/scoreinput', label: 'Scores', icon: FileText, match: (p) => p.startsWith('/faculty/scoreinput') || p.startsWith('/faculty/gradecomputation') },
         { to: '/faculty/classattendance', label: 'Attendance', icon: Calendar, match: (p) => p.startsWith('/faculty/classattendance') },
       ],
-      more: []
+      more: [
+        { to: '/faculty/evaluatestudent', label: 'Evaluate Students', description: 'Review concerns and term evaluations', icon: ClipboardCheck },
+        { to: '/faculty/evaluatedstudents', label: 'Evaluated Students', description: 'Track tasks and Dean referrals', icon: CheckCircle2 },
+      ]
     },
     dean: {
       primary: [

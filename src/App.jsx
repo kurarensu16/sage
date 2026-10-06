@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import MainLayout from './components/layout/MainLayout';
 import { AuthProvider } from './lib/AuthContext';
 
@@ -45,6 +45,7 @@ import FacultyPostedGradesView from './pages/faculty/PostedGradesView';
 import FacultyClassAttendance from './pages/faculty/ClassAttendance';
 import FacultyNotifications from './pages/faculty/Notifications';
 import FacultyStudentRisk from './pages/faculty/StudentRisk';
+import FacultyEvaluatedStudents from './pages/faculty/EvaluatedStudents';
 import FacultyConsultationRequests from './pages/faculty/ConsultationRequests';
 import FacultyEnrollmentRequests from './pages/faculty/EnrollmentRequests';
 import FacultyClassPerformance from './pages/faculty/ClassPerformance';
@@ -67,6 +68,13 @@ import NetworkBanner from './components/layout/NetworkBanner';
 import React, { useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
+
+function LegacyStudentRiskRedirect() {
+  const { search } = useLocation();
+  const params = new URLSearchParams(search);
+  params.set('view', 'needs-evaluation');
+  return <Navigate to={`/faculty/evaluatestudent?${params}`} replace />;
+}
 
 function App() {
   useEffect(() => {
@@ -148,8 +156,9 @@ function App() {
               <Route path="/faculty/scoreinput" element={<FacultyScoreInput />} />
               <Route path="/faculty/gradecomputationpreview" element={<FacultyGradeComputationPreview />} />
               <Route path="/faculty/postedgradesview" element={<FacultyPostedGradesView />} />
-              <Route path="/faculty/atriskstudents" element={<FacultyStudentRisk mode="risk" />} />
+              <Route path="/faculty/atriskstudents" element={<LegacyStudentRiskRedirect />} />
               <Route path="/faculty/evaluatestudent" element={<FacultyStudentRisk mode="evaluate" />} />
+              <Route path="/faculty/evaluatedstudents" element={<FacultyEvaluatedStudents />} />
               <Route path="/faculty/consultations" element={<FacultyConsultationRequests />} />
               <Route path="/faculty/enrollmentrequests" element={<FacultyEnrollmentRequests />} />
               <Route path="/faculty/classattendance" element={<FacultyClassAttendance />} />

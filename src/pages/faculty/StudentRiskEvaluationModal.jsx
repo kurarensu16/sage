@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   AlertCircle, 
@@ -11,7 +11,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
-import { calculateAcademicRisk } from '../../lib/riskEngine';
+import { getEvaluationDetails } from '../../lib/evaluationService';
+import { EVALUATION_TERMS } from '../../lib/evaluationTracking';
 import { dispatchNotifications } from '../../lib/notificationDispatcher';
 import { cn } from '../../lib/utils';
 
@@ -20,7 +21,7 @@ export default function StudentRiskEvaluationModal({
   onClose,
   student,
   classRecordId,
-  currentTerm = 'Prelim',
+  currentTerm,
   subjectCode = '',
   subjectName = '',
   onSaveSuccess,
@@ -50,24 +51,27 @@ export default function StudentRiskEvaluationModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [loadingExisting, setLoadingExisting] = useState(Boolean(student?.evaluation));
+  const referralRequest = useRef(crypto.randomUUID());
+  const [referralReason, setReferralReason] = useState('');
+  const [existingPending, setExistingPending] = useState(Boolean(student?.evaluation?.refer_to_dean));
 
   // Compute live explainable risk metrics
-  const riskAnalysis = useMemo(() => {
-    if (!student) return null;
-    // failingSubjectsCount/majorExamAverage used to be passed here, but
-    // calculateAcademicRisk's signature no longer accepts them (C12) — they were
-    // silently discarded (the exam-average fallback divergence this caused across
-    // call sites was dead input, never a correctness bug once C12 landed).
-    // isSummer isn't threaded in: `student` (from getClassPriorityRoster) doesn't
-    // expose the class's semester, so it isn't available here without widening
-    // that roster's return shape — left at its default rather than guessed.
-    return calculateAcademicRisk({
-      currentGwa: student.current_gwa || null,
-      absenceCount: student.absences || 0,
-      previousTermRating: student.term_ratings?.Prelim || null,
-      currentTermRating: student.term_ratings?.Midterm || null
-    });
-  }, [student]);
+  const riskAnalysis = student?.risk_analysis;
+  useEffect(() => {
+    let cancelled = false;
+    if (!student?.evaluation?.evaluation_id) return;
+    getEvaluationDetails(student.evaluation.evaluation_id).then(existing => {
+      if (cancelled) return;
+      setContext(existing.evaluation_context);
+      setSharedAcademicFeedback(existing.shared_academic_feedback || '');
+      setTasks(Array.isArray(existing.advising_plan) ? existing.advising_plan : []);
+      setPrivateNote(existing.private_notes?.find(note => note.author_id === user?.id)?.note_text || '');
+      setExistingPending(Boolean(existing.refer_to_dean));
+      setLoadingExisting(false);
+    }).catch(err => { if (!cancelled) setError(`Unable to load the existing evaluation: ${err.message}. Close and retry.`); });
+    return () => { cancelled = true; };
+  }, [student?.evaluation?.evaluation_id, user?.id]);
 
   if (!isOpen || !student) return null;
 
@@ -97,6 +101,14 @@ export default function StudentRiskEvaluationModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!EVALUATION_TERMS.includes(currentTerm) || loadingExisting) {
+      setError('Select a grading term and wait for the existing evaluation to load.');
+      return;
+    }
+    if (referToDean && !referralReason.trim()) {
+      setError('Enter a reason for Dean review.');
+      return;
+    }
     if (!privateNote.trim()) {
       setError('Please document the restricted faculty observation for this evaluation.');
       return;
@@ -116,6 +128,7 @@ export default function StudentRiskEvaluationModal({
   };
 
   const processSubmit = async () => {
+    if (saving) return;
     setSaving(true);
     setError(null);
 
@@ -148,7 +161,9 @@ export default function StudentRiskEvaluationModal({
           p_advising_plan: validTasks,
           p_baseline_snapshot: baselineSnapshot,
           p_refer_to_dean: referToDean,
-          p_status: 'submitted'
+          p_status: 'submitted',
+          p_referral_reason: referToDean ? referralReason.trim() : null,
+          p_referral_request_id: referToDean ? referralRequest.current : null
         })
         .single();
 
@@ -160,14 +175,10 @@ export default function StudentRiskEvaluationModal({
           {
             recipient_id: student.user_id || student.id,
             type: 'academic_advising',
-            message: `Official Academic Advising Notice: An academic intervention plan for ${subjectCode || 'your enrolled subject'} was submitted by your professor. Review your Advising Inbox.`
-          },
-          referToDean ? {
-            recipient_id: user?.id,
-            type: 'dean_referral',
-            message: `Faculty Referral Logged: Flagged case for student ${student.first_name} ${student.last_name} submitted for Dean review.`
-          } : null
-        ].filter(Boolean));
+            message: `Official Academic Advising Notice: An academic intervention plan for ${subjectCode || 'your enrolled subject'} was submitted by your professor. Review your Advising Inbox.`,
+            dedupe_key: `academic_advising:${data.evaluation_id}:${data.updated_at}`
+          }
+        ]);
       } catch (notifErr) {
         console.warn('Could not dispatch notification:', notifErr);
       }
@@ -335,7 +346,7 @@ export default function StudentRiskEvaluationModal({
               className="w-full px-3 py-2 text-xs font-sans text-slate-900 bg-white border border-slate-300 rounded-md shadow-xs placeholder:text-slate-400 focus:outline-none focus:border-sage-600 focus:ring-1 focus:ring-sage-600 transition-colors resize-none"
             />
             <p className="text-[10px] text-slate-500">
-              Restricted to authorized faculty and the student's department dean. This note is never shown to the student or sent to Ask ASPIRE.
+                  Restricted to authorized faculty and the class department Dean. This note is never shown to the student or sent to Ask ASPIRE.
             </p>
           </div>
 
@@ -412,16 +423,19 @@ export default function StudentRiskEvaluationModal({
               <input
                 type="checkbox"
                 checked={referToDean}
+                disabled={existingPending}
                 onChange={(e) => setReferToDean(e.target.checked)}
                 className="mt-0.5 rounded border-slate-300 text-sage-600 focus:ring-sage-500 cursor-pointer"
               />
               <div>
-                <span className="font-semibold text-slate-800 text-xs">Flag for Dean Discussion (refer_to_dean)</span>
+                <span className="font-semibold text-sage-800 text-xs">{existingPending ? 'Already referred — pending Dean review' : 'Request Dean review'}</span>
                 <p className="text-[11px] text-slate-500 leading-tight">
                   Escalate this case to the Dean's Collaboration Queue for department-level advising or parental coordination.
                 </p>
               </div>
             </label>
+            {referToDean && <label className="block text-sm text-sage-900 mt-3">Reason for Dean review<textarea required maxLength={2000} value={referralReason} onChange={e => setReferralReason(e.target.value)} className="block w-full rounded-lg border border-sage-200 bg-sage-50 p-3 mt-1 text-sage-900" /></label>}
+            {loadingExisting && <p role="status" className="text-xs text-sage-700 mt-2">Loading the existing plan before editing…</p>}
           </div>
 
           {/* Footer Bar */}
@@ -435,7 +449,7 @@ export default function StudentRiskEvaluationModal({
             </button>
             <button
               type="submit"
-              disabled={saving || !privateNote.trim() || !sharedAcademicFeedback.trim()}
+              disabled={saving || loadingExisting || !EVALUATION_TERMS.includes(currentTerm) || !privateNote.trim() || !sharedAcademicFeedback.trim() || (referToDean && !referralReason.trim())}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-sage-600 hover:bg-sage-700 active:bg-sage-800 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-md shadow-xs transition-colors cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />
