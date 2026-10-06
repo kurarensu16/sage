@@ -4,7 +4,7 @@ import { CheckCircle2, ChevronDown, ChevronUp, RefreshCw, Send, X } from 'lucide
 import PageHeader from '../../components/layout/PageHeader';
 import { useAuth } from '../../lib/AuthContext';
 import { CASE_PAGE_SIZE, getEvaluatedCases, getEvaluationClasses, getReferralHistory, referEvaluation } from '../../lib/evaluationService';
-import { EVALUATION_TERMS, referralEligibility, taskState } from '../../lib/evaluationTracking';
+import { getTermsForPeriod, referralEligibility, taskState } from '../../lib/evaluationTracking';
 
 const field = 'rounded-lg border border-sage-200 bg-sage-50 px-3 py-2 text-sm text-sage-900 focus:ring-2 focus:ring-sage-400';
 const action = 'rounded-lg border border-sage-200 px-3 py-2 text-sm font-semibold text-sage-700 hover:bg-sage-100 disabled:opacity-50';
@@ -41,6 +41,9 @@ function Tracker({ facultyId }) {
     referral: params.get('referral') || '', search: params.get('search') || '',
     page: Math.max(0, Number.parseInt(params.get('page') || '0', 10) || 0)
   };
+  
+  const selectedPeriod = metadata?.periods.find(item => item.term_id === (filters.periodId || metadata?.periods.find(p => p.is_active)?.term_id));
+  const termOptions = getTermsForPeriod(selectedPeriod?.semester);
 
   function changeFilter(key, value) {
     const next = new URLSearchParams(params);
@@ -135,9 +138,9 @@ function Tracker({ facultyId }) {
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 rounded-xl border border-sage-200 bg-sage-50 p-4">
         <label className="text-xs font-semibold">Ownership<select className={`${field} block w-full mt-1`} value={filters.history ? 'history' : 'current'} onChange={e => changeFilter('scope', e.target.value)}><option value="current">Currently assigned classes</option><option value="history">Authored history (read-only)</option></select></label>
-        <label className="text-xs font-semibold">Academic period<select className={`${field} block w-full mt-1`} value={filters.periodId || metadata?.periods.find(item => item.is_active)?.term_id || 'all'} onChange={e => changeFilter('period', e.target.value)}><option value="all">All academic periods</option>{metadata?.periods.map(item => <option key={item.term_id} value={item.term_id}>{item.school_year} · {item.semester}{item.is_active ? ' (active)' : ''}</option>)}</select></label>
+        <label className="text-xs font-semibold">Academic period<select className={`${field} block w-full mt-1`} value={filters.periodId || metadata?.periods.find(item => item.is_active)?.term_id || 'all'} onChange={e => changeFilter('period', e.target.value)}><option value="all">All academic periods</option>{metadata?.periods.map(item => <option key={item.term_id} value={item.term_id}>{item.school_year} · {item.semester}{item.is_active ? ' (active)' : ' (Archive)'}</option>)}</select></label>
         <label className="text-xs font-semibold">Class<select className={`${field} block w-full mt-1`} value={filters.classId} onChange={e => changeFilter('class', e.target.value)}><option value="">All allowed classes</option>{metadata?.classes.map(item => <option key={item.class_record_id} value={item.class_record_id}>{item.subjects?.code} · {item.sections?.name} · {item.school_year}</option>)}</select></label>
-        <label className="text-xs font-semibold">Grading term<select className={`${field} block w-full mt-1`} value={filters.term} onChange={e => changeFilter('term', e.target.value)}><option value="">All Terms</option>{EVALUATION_TERMS.map(term => <option key={term}>{term}</option>)}</select></label>
+        <label className="text-xs font-semibold">Grading term<select className={`${field} block w-full mt-1`} value={filters.term} onChange={e => changeFilter('term', e.target.value)}><option value="">All Terms</option>{termOptions.map(term => <option key={term}>{term}</option>)}</select></label>
         <label className="text-xs font-semibold">Referral<select className={`${field} block w-full mt-1`} value={filters.referral} onChange={e => changeFilter('referral', e.target.value)}><option value="">All cases</option><option value="pending">Pending Dean referral</option><option value="none">No active referral</option></select></label>
         <form className="flex items-end gap-2" onSubmit={e => { e.preventDefault(); changeFilter('search', searchText); }}><label className="text-xs font-semibold flex-1">Student search<input className={`${field} block w-full mt-1`} value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Name or student number" maxLength={100} /></label><button className={action}>Search</button></form>
       </div>
@@ -154,7 +157,7 @@ function Tracker({ facultyId }) {
         return <article key={item.evaluation_id} className="rounded-xl border border-sage-200 bg-sage-50 overflow-hidden">
           <div className="p-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div><h2 className="font-display font-semibold">{item.student?.last_name}, {item.student?.first_name}</h2><p className="text-xs font-mono">{item.student?.user_number}</p><p className="text-sm mt-2">{item.class_record?.subjects?.code} · {item.class_record?.sections?.name}</p><p className="text-xs">{item.class_record?.school_year} · {item.class_record?.semester} · {item.term}</p><p className="text-xs mt-1">Evaluation: {dateText(item.baseline_snapshot?.captured_at || item.created_at)} · {item.status}</p></div>
-            <div><h3 className="text-xs font-semibold uppercase">At evaluation</h3><p className="text-sm">{item.risk_level} · {item.risk_score}</p><p className="font-mono text-sm">Baseline subject GWA: {gradeText(item.baseline_snapshot?.gwa)}</p><p className="text-xs">{item.baseline_snapshot?.term || item.term} · {dateText(item.baseline_snapshot?.captured_at)}</p></div>
+            <div><h3 className="text-xs font-semibold uppercase">At evaluation</h3><p className="text-sm font-semibold capitalize"><span className={item.risk_level === 'critical' || item.risk_level === 'high' ? 'text-rose-600' : item.risk_level === 'moderate' ? 'text-amber-600' : item.risk_level === 'low' ? 'text-emerald-600' : ''}>{item.risk_level}</span><span className="font-normal text-sage-900"> · {item.risk_score} pts</span></p><p className="font-mono text-sm mt-1">Baseline GWA: {gradeText(item.baseline_snapshot?.gwa)}</p><p className="text-xs">{item.baseline_snapshot?.term || item.term} · {dateText(item.baseline_snapshot?.captured_at)}</p></div>
             <div><h3 className="text-xs font-semibold uppercase">Current subject standing</h3><p className="font-mono">{gradeText(standing?.current_gwa)}</p><p className="text-xs">{standing?.standing_source || 'Pending'} · {standing?.standing_milestone || 'No available milestone'}</p><p className="text-xs mt-2">Reported tasks: {complete}/{tasks.length}</p><p className="text-xs">{item.refer_to_dean ? 'Pending Dean referral' : item.referrals?.some(r => r.state === 'resolved') ? 'Previous referral resolved' : 'No active referral'}</p></div>
             <div className="flex flex-col gap-2 justify-start"><button className={action} aria-expanded={open} aria-controls={`case-${item.evaluation_id}`} onClick={() => setExpanded(open ? null : item.evaluation_id)}>{open ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />} Tasks and referrals</button><button className={action} disabled={Boolean(unavailable)} onClick={event => { referralTrigger.current = event.currentTarget; setReferralCase(item); setReason(''); setReferralError(''); requestId.current = crypto.randomUUID(); }}><Send className="inline h-4 w-4 mr-1" />{unavailable || 'Escalate to Dean'}</button></div>
           </div>

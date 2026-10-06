@@ -1,6 +1,13 @@
 // Pure helpers shared by roster, tracker, and focused regression checks.
 export const EVALUATION_TERMS = Object.freeze(['Prelim', 'Midterm', 'Semi-Final', 'Final']);
 
+export function getTermsForPeriod(semester) {
+  if (typeof semester === 'string' && semester.toLowerCase().includes('summer')) {
+    return ['Midterm', 'Final'];
+  }
+  return [...EVALUATION_TERMS];
+}
+
 export function scoreOrNull(value) {
   if (!['number', 'string'].includes(typeof value) || (typeof value === 'string' && !value.trim())) return null;
   const number = Number(value);

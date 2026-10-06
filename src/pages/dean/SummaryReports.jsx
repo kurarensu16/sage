@@ -1,13 +1,46 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
-import { Printer, Filter, Download } from 'lucide-react';
+import {
+  Printer, Filter, Download, Activity, TrendingUp, Users, AlertTriangle,
+  CheckCircle, ChevronDown, ChevronRight, FileSpreadsheet, Award, GraduationCap,
+  BarChart3, BookOpen
+} from 'lucide-react';
+import {
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip as RechartsTooltip,
+  CartesianGrid, ResponsiveContainer, Cell, PieChart, Pie, Legend
+} from 'recharts';
 import { supabase } from '../../lib/supabase';
 import html2pdf from 'html2pdf.js';
+import * as XLSX from 'xlsx-js-style';
 import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
 import { useAuth } from '../../lib/AuthContext';
 import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
 import { resolveOfficialGwa, computeStudentGwa } from '../../lib/academicPolicy';
 import { calculateAcademicRisk } from '../../lib/riskEngine';
+
+// ── Heat map color helpers ──────────────────────────────────────────────────
+function passRateColor(rate) {
+  if (typeof rate !== 'number' || isNaN(rate)) return 'bg-slate-50 text-slate-700';
+  if (rate >= 90) return 'bg-emerald-50 text-emerald-800';
+  if (rate >= 75) return 'bg-emerald-50/60 text-emerald-700';
+  if (rate >= 60) return 'bg-amber-50 text-amber-800';
+  if (rate >= 40) return 'bg-orange-50 text-orange-800';
+  return 'bg-rose-50 text-rose-800';
+}
+function gwaColor(gwa) {
+  if (typeof gwa !== 'number' || isNaN(gwa)) return '';
+  if (gwa <= 1.50) return 'bg-emerald-50 text-emerald-800';
+  if (gwa <= 2.00) return 'bg-emerald-50/60 text-emerald-700';
+  if (gwa <= 2.75) return 'bg-amber-50 text-amber-800';
+  if (gwa <= 3.00) return 'bg-orange-50 text-orange-800';
+  return 'bg-rose-50 text-rose-800';
+}
+function riskBadge(risk) {
+  if (risk === 'Critical Risk') return 'bg-rose-100 text-rose-700 border border-rose-200';
+  if (risk === 'High Risk') return 'bg-orange-100 text-orange-700 border border-orange-200';
+  if (risk === 'Medium Risk') return 'bg-amber-100 text-amber-700 border border-amber-200';
+  return 'bg-slate-100 text-slate-600 border border-slate-200';
+}
 
 export default function SummaryReports() {
   const { profile } = useAuth();
@@ -19,7 +52,18 @@ export default function SummaryReports() {
   const [reportData, setReportData] = useState([]);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
+  // Semester-over-semester historical data
+  const [historicalData, setHistoricalData] = useState([]);
+
+  // Drill-down state
+  const [expandedRow, setExpandedRow] = useState(null);
+  const [drillDownData, setDrillDownData] = useState([]);
+
   const [termList, setTermList] = useState([]);
+
+  // Raw data refs for drill-down
+  const [rawPostedGrades, setRawPostedGrades] = useState([]);
+  const [rawUsers, setRawUsers] = useState([]);
 
   // Pre-select department filter and active term on load
   useEffect(() => {
@@ -47,6 +91,9 @@ export default function SummaryReports() {
 
   useEffect(() => {
     let cancelled = false;
+    setReportData([]); // Clear previous state to prevent cross-rendering during async load
+    setExpandedRow(null);
+    setDrillDownData([]);
     async function loadReportData() {
       try {
         // Fetch all required data in parallel
@@ -58,7 +105,7 @@ export default function SummaryReports() {
         ] = await Promise.all([
           supabase
             .from('class_records')
-            .select('*, subjects(*, departments(name)), sections(*, departments(name)), faculty:users!faculty_id(first_name, last_name)')
+            .select('*, subjects(*, departments(name)), sections(*, departments(name)), faculty:users!faculty_id(user_id, first_name, last_name)')
             .eq('status', 'active'),
           supabase.from('users').select('*, departments(name), sections(*, departments(name))'),
           supabase.from('posted_grades').select('*'),
@@ -71,6 +118,10 @@ export default function SummaryReports() {
         if (enrollmentsError) throw enrollmentsError;
 
         if (cancelled) return;
+
+        // Store raw data for drill-down
+        setRawPostedGrades(postedGradesData || []);
+        setRawUsers(usersData || []);
 
         // Group enrollments count by class section/subject
         const enrollCountMap = {};
@@ -97,6 +148,31 @@ export default function SummaryReports() {
           .map(findMostAdvancedPostedGrade)
           .filter(Boolean);
 
+        // ── Build semester-over-semester historical data ──
+        const allSemesters = [...new Set((classroomsData || []).map(c => {
+          const sy = c.sections?.school_year || c.school_year;
+          const sem = c.sections?.semester || c.semester;
+          return `${sy} ${sem}`;
+        }))].sort();
+
+        const histPoints = allSemesters.map(label => {
+          const [sy, sem] = [label.split(' ').slice(0, -1).join(' '), label.split(' ').pop()];
+          const semClasses = (classroomsData || []).filter(c => {
+            const csy = c.sections?.school_year || c.school_year;
+            const csem = c.sections?.semester || c.semester;
+            const deptName = c.sections?.departments?.name || c.subjects?.departments?.name;
+            return csy === sy && csem === sem && deptName === deptFilter;
+          });
+          const semClassIds = new Set(semClasses.map(c => c.class_record_id));
+          const semGrades = advancedPostedGrades.filter(g => semClassIds.has(g.class_record_id));
+          const gwas = semGrades.map(g => resolveOfficialGwa(g).gwa).filter(g => typeof g === 'number' && !isNaN(g));
+          const passed = gwas.filter(g => g <= 3.00).length;
+          const rate = gwas.length > 0 ? Math.round((passed / gwas.length) * 100) : 0;
+          return { label: `${sem} ${sy}`, passRate: isNaN(rate) ? 0 : rate, totalGraded: gwas.length };
+        }).filter(p => p.totalGraded > 0);
+
+        setHistoricalData(histPoints);
+
         if (reportType === 'grade-distribution') {
           // Map class sections to passing/average metrics filtered by selected college
           const list = termClassRecords
@@ -105,23 +181,15 @@ export default function SummaryReports() {
               return deptName === deptFilter;
             })
             .map(c => {
-              // resolveOfficialGwa, not a raw effective_grade/computed_grade ternary — the
-              // ternary fell back to computed_grade (a 0-100% raw score) whenever
-              // effective_grade was null, then compared that raw percentage directly
-              // against the 1.00-5.00 GWA cutoff below. A computed_grade of e.g. 84 would
-              // never be <= 3.00, so it was always counted as failed.
               const grades = advancedPostedGrades.filter(g => g.class_record_id === c.class_record_id);
-              const gwas = grades.map(g => resolveOfficialGwa(g).gwa).filter(g => g !== null);
+              const gwas = grades.map(g => resolveOfficialGwa(g).gwa).filter(g => typeof g === 'number' && !isNaN(g));
               const sum = gwas.reduce((acc, g) => acc + g, 0);
-              // null (not a fabricated 1.75), and real passedCount (not a fabricated
-              // enrolled-1) when nothing is posted yet — "no grades yet" is not
-              // representable as a plausible-looking number without lying about it.
-              const avg = gwas.length > 0 ? sum / gwas.length : null;
+              const avg = gwas.length > 0 && !isNaN(sum) ? sum / gwas.length : null;
               const passedCount = gwas.filter(g => g <= 3.00).length;
-
               const enrolled = enrollCountMap[`${c.section_id}|${c.subject_id}`] || c.enrolledCount || 0;
 
               return {
+                classRecordId: c.class_record_id,
                 code: c.subjects?.code || '—',
                 name: c.subjects?.name || '—',
                 section: c.sections?.name || '—',
@@ -131,6 +199,82 @@ export default function SummaryReports() {
                 passed: passedCount
               };
             });
+          setReportData(list);
+        } else if (reportType === 'faculty-ranking') {
+          // ── FACULTY PERFORMANCE RANKING ──
+          const facultyMap = {};
+          termClassRecords
+            .filter(c => {
+              const deptName = c.sections?.departments?.name || c.subjects?.departments?.name;
+              return deptName === deptFilter;
+            })
+            .forEach(c => {
+              const fid = c.faculty?.user_id;
+              if (!fid) return;
+              if (!facultyMap[fid]) {
+                facultyMap[fid] = {
+                  name: `${c.faculty.first_name} ${c.faculty.last_name}`,
+                  classes: 0,
+                  totalEnrolled: 0,
+                  totalPassed: 0,
+                  gwaSum: 0,
+                  gwaCount: 0,
+                  subjects: new Set()
+                };
+              }
+              const f = facultyMap[fid];
+              f.classes++;
+              f.subjects.add(c.subjects?.code || '—');
+              const enrolled = enrollCountMap[`${c.section_id}|${c.subject_id}`] || 0;
+              f.totalEnrolled += enrolled;
+              const grades = advancedPostedGrades.filter(g => g.class_record_id === c.class_record_id);
+              const gwas = grades.map(g => resolveOfficialGwa(g).gwa).filter(g => typeof g === 'number' && !isNaN(g));
+              f.totalPassed += gwas.filter(g => g <= 3.00).length;
+              const sum = gwas.reduce((acc, g) => acc + g, 0);
+              f.gwaSum += isNaN(sum) ? 0 : sum;
+              f.gwaCount += gwas.length;
+            });
+
+          const list = Object.entries(facultyMap)
+            .map(([fid, f]) => ({
+              facultyId: fid,
+              name: f.name,
+              classes: f.classes,
+              subjects: [...f.subjects].join(', '),
+              enrolled: f.totalEnrolled,
+              passed: f.totalPassed,
+              passRate: f.totalEnrolled > 0 ? Math.round((f.totalPassed / f.totalEnrolled) * 100) : 0,
+              avgGwa: f.gwaCount > 0 && !isNaN(f.gwaSum) ? f.gwaSum / f.gwaCount : null
+            }))
+            .sort((a, b) => b.passRate - a.passRate);
+
+          setReportData(list);
+        } else if (reportType === 'enrollment-analytics') {
+          // ── ENROLLMENT ANALYTICS ──
+          const sectionMap = {};
+          termClassRecords
+            .filter(c => {
+              const deptName = c.sections?.departments?.name || c.subjects?.departments?.name;
+              return deptName === deptFilter;
+            })
+            .forEach(c => {
+              const sName = c.sections?.name || '—';
+              if (!sectionMap[sName]) {
+                sectionMap[sName] = { section: sName, subjects: 0, totalEnrolled: 0, subjectList: [], facultySet: new Set() };
+              }
+              const enrolled = enrollCountMap[`${c.section_id}|${c.subject_id}`] || 0;
+              sectionMap[sName].subjects++;
+              sectionMap[sName].totalEnrolled += enrolled;
+              sectionMap[sName].subjectList.push({ code: c.subjects?.code || '—', enrolled });
+              if (c.faculty) sectionMap[sName].facultySet.add(`${c.faculty.first_name} ${c.faculty.last_name}`);
+            });
+
+          const list = Object.values(sectionMap).map(s => ({
+            ...s,
+            avgPerSubject: s.subjects > 0 ? Math.round(s.totalEnrolled / s.subjects) : 0,
+            facultyCount: s.facultySet.size
+          })).sort((a, b) => b.totalEnrolled - a.totalEnrolled);
+
           setReportData(list);
         } else if (reportType === 'intervention-outcomes') {
           // ASPIRE v3.1: Intervention Outcomes & Honor Roll Summary
@@ -176,16 +320,6 @@ export default function SummaryReports() {
               };
             });
 
-          // Previously, when no formal evaluations existed yet for this college, this
-          // branch synthesized an entire fake "intervention outcomes" dataset from raw
-          // grades: a fabricated baselineGwa (current GWA +0.25/-0.10, invented, not a
-          // real historical snapshot), a fabricated status label, and a hardcoded
-          // "College Academic Board" faculty name — none of it backed by a real
-          // evaluation record, with nothing in the UI disclosing that. Removed. An
-          // honest empty table (no special-cased message needed — this report has no
-          // existing "no data" treatment to match, unlike the grade-distribution one
-          // above) is correct here: no formal evaluations means there is nothing to
-          // report, not an invented one.
           setReportData(list);
         } else {
           // At-risk student audit filtered by selected college (official posted grades only)
@@ -201,27 +335,14 @@ export default function SummaryReports() {
               if (!studentGradesMap[g.student_id]) {
                 studentGradesMap[g.student_id] = [];
               }
-              // resolveOfficialGwa, not a raw effective_grade/computed_grade ternary —
-              // see the fix above for why that fell back to a raw 0-100% score.
               const resolvedGwa = resolveOfficialGwa(g).gwa;
-              if (resolvedGwa !== null) studentGradesMap[g.student_id].push(resolvedGwa);
+              if (typeof resolvedGwa === 'number' && !isNaN(resolvedGwa)) studentGradesMap[g.student_id].push(resolvedGwa);
             }
           });
 
           const list = studentUsers.map(s => {
             const grades = studentGradesMap[s.user_id] || [];
-            // Previously hardcoded `if (s.email === 'j.smith@student.sage.edu') gwa = 3.25`
-            // — a fabricated grade for one specific demo account, live in production
-            // logic. Removed; a student with no posted grades has gwa === null, same as
-            // everyone else with no data, handled honestly below.
             const gwa = computeStudentGwa(grades).gwa;
-
-            // Unified onto the canonical calculateAcademicRisk()/RISK_TIERS (item (c)) — this
-            // file used to run its own standalone 3-tier GWA-only model (High >3.00, Medium
-            // 2.75-3.00) that could disagree with StudentRisk.jsx/dean Dashboard.jsx for the
-            // same student. No attendance/trajectory data is queried in this report, so the
-            // composite score here is GWA-only too, but it's now the SAME GWA-only evaluation
-            // the shared engine would produce, not a second hand-rolled copy of it.
             const riskLevel = gwa !== null ? calculateAcademicRisk({ currentGwa: gwa }).risk_level : 'low';
             const risk = { low: 'Low Risk', moderate: 'Medium Risk', high: 'High Risk', critical: 'Critical Risk' }[riskLevel] || 'Low Risk';
 
@@ -232,8 +353,7 @@ export default function SummaryReports() {
               gwa: gwa,
               risk: risk
             };
-          }).filter(s => s.risk !== 'Low Risk'); // The canonical model already flags any GWA > 2.00
-          // as at least Medium Risk, so the old "gwa > 2.50" supplementary catch is redundant now.
+          }).filter(s => s.risk !== 'Low Risk');
           setReportData(list);
         }
       } catch (err) {
@@ -247,6 +367,154 @@ export default function SummaryReports() {
     };
   }, [reportType, deptFilter, semFilter, syFilter]);
 
+  // ── Drill-down handler ──────────────────────────────────────────────────
+  const handleDrillDown = (classRecordId, idx) => {
+    if (expandedRow === idx) {
+      setExpandedRow(null);
+      setDrillDownData([]);
+      return;
+    }
+    // Find per-student grades for this class record
+    const classGrades = rawPostedGrades.filter(g => g.class_record_id === classRecordId);
+    const studentMap = {};
+    classGrades.forEach(g => {
+      if (!studentMap[g.student_id]) studentMap[g.student_id] = [];
+      studentMap[g.student_id].push(g);
+    });
+
+    const rows = Object.entries(studentMap).map(([sid, grades]) => {
+      const best = findMostAdvancedPostedGrade(grades);
+      const resolved = best ? resolveOfficialGwa(best) : { gwa: null };
+      const gwaVal = (resolved && typeof resolved.gwa === 'number' && !isNaN(resolved.gwa)) ? resolved.gwa : null;
+      const student = rawUsers.find(u => u.user_id === sid);
+      return {
+        name: student ? `${student.first_name} ${student.last_name}` : sid,
+        gwa: gwaVal,
+        passed: gwaVal !== null && gwaVal <= 3.00
+      };
+    }).sort((a, b) => (a.gwa ?? 99) - (b.gwa ?? 99));
+
+    setDrillDownData(rows);
+    setExpandedRow(idx);
+  };
+
+  // ── Auto-generated Executive Summary ──────────────────────────────────
+  const executiveSummary = useMemo(() => {
+    if (reportData.length === 0) return null;
+
+    if (reportType === 'grade-distribution') {
+      const totalEnrolled = reportData.reduce((a, r) => a + (r.enrolled || 0), 0);
+      const totalPassed = reportData.reduce((a, r) => a + (r.passed || 0), 0);
+      const passRate = totalEnrolled > 0 ? Math.round((totalPassed / totalEnrolled) * 100) : 0;
+      const worst = [...reportData]
+        .filter(r => r.enrolled > 0)
+        .sort((a, b) => {
+          const ra = a.enrolled > 0 ? (a.passed / a.enrolled) : 1;
+          const rb = b.enrolled > 0 ? (b.passed / b.enrolled) : 1;
+          return ra - rb;
+        })[0];
+      const worstRate = worst && worst.enrolled > 0 ? Math.round((worst.passed / worst.enrolled) * 100) : null;
+      return `For ${semFilter} Semester A.Y. ${syFilter}, a total of ${totalEnrolled} student-subject enrollments were analyzed across ${reportData.length} class sections in ${deptFilter}. The overall college pass rate stands at ${passRate}%.${worst && worstRate !== null ? ` ${worst.code} (${worst.section}) has the lowest pass rate at ${worstRate}%, requiring immediate academic intervention review.` : ''}`;
+    }
+    if (reportType === 'faculty-ranking') {
+      const top = reportData[0];
+      return `Faculty performance ranking for ${semFilter} Semester A.Y. ${syFilter} covers ${reportData.length} instructors in ${deptFilter}.${top ? ` Prof. ${top.name} leads with a ${top.passRate}% pass rate across ${top.classes} class section(s).` : ''}`;
+    }
+    if (reportType === 'enrollment-analytics') {
+      const total = reportData.reduce((a, r) => a + r.totalEnrolled, 0);
+      return `Enrollment analytics for ${semFilter} Semester A.Y. ${syFilter} show a total of ${total} student-subject enrollments distributed across ${reportData.length} active sections in ${deptFilter}.`;
+    }
+    if (reportType === 'intervention-outcomes') {
+      const recovered = reportData.filter(d => d.outcome === 'Recovered / GWA Improved').length;
+      const escalated = reportData.filter(d => d.outcome === 'Escalated to Dean' || d.outcome === 'Needs Continued Escalation').length;
+      return `A total of ${reportData.length} student interventions are tracked for ${deptFilter}. ${recovered} student(s) have shown measurable GWA improvement, while ${escalated} case(s) require continued escalation or Dean-level directives.`;
+    }
+    if (reportType === 'at-risk-audit') {
+      const critical = reportData.filter(d => d.risk === 'Critical Risk').length;
+      const high = reportData.filter(d => d.risk === 'High Risk').length;
+      return `The at-risk audit for ${semFilter} Semester A.Y. ${syFilter} identified ${reportData.length} students below the academic standing threshold in ${deptFilter}. ${critical} student(s) are classified as Critical Risk and ${high} as High Risk, requiring immediate Dean-level intervention.`;
+    }
+    return null;
+  }, [reportData, reportType, semFilter, syFilter, deptFilter]);
+
+  // ── Excel Export ──────────────────────────────────────────────────────
+  const handleExportExcel = () => {
+    if (reportData.length === 0) return;
+
+    const wb = XLSX.utils.book_new();
+    let wsData = [];
+
+    // Institution header rows
+    wsData.push(['Dr. Yanga\'s Colleges, Inc.']);
+    wsData.push(['Wakas, Bocaue, Bulacan, Philippines']);
+    wsData.push([`Office of the Dean, ${deanCollegeName}`]);
+    wsData.push([]);
+    wsData.push([getReportTitle()]);
+    wsData.push([`Department: ${deptFilter}  |  A.Y. ${syFilter}  |  ${semFilter} Semester`]);
+    wsData.push([`Generated: ${new Date().toLocaleDateString()}  |  Author: Dean ${deanFullName}`]);
+    wsData.push([]);
+
+    if (reportType === 'grade-distribution') {
+      wsData.push(['Subject', 'Section', 'Instructor', 'Enrolled', 'Passed', 'Pass Rate %', 'Average GWA']);
+      reportData.forEach(r => {
+        const rate = r.enrolled > 0 ? Math.round((r.passed / r.enrolled) * 100) : 0;
+        wsData.push([r.code, r.section, `Prof. ${r.faculty}`, r.enrolled, r.passed || 0, rate, typeof r.averageGwa === 'number' ? Number(r.averageGwa.toFixed(2)) : 'N/A']);
+      });
+    } else if (reportType === 'faculty-ranking') {
+      wsData.push(['Rank', 'Faculty Name', 'Classes', 'Subjects', 'Enrolled', 'Passed', 'Pass Rate %', 'Avg GWA']);
+      reportData.forEach((r, i) => {
+        wsData.push([i + 1, `Prof. ${r.name}`, r.classes, r.subjects, r.enrolled, r.passed, r.passRate, typeof r.avgGwa === 'number' ? Number(r.avgGwa.toFixed(2)) : 'N/A']);
+      });
+    } else if (reportType === 'enrollment-analytics') {
+      wsData.push(['Section', 'Total Subjects', 'Total Enrollments', 'Avg per Subject', 'Faculty Count']);
+      reportData.forEach(r => {
+        wsData.push([r.section, r.subjects, r.totalEnrolled, r.avgPerSubject, r.facultyCount]);
+      });
+    } else if (reportType === 'intervention-outcomes') {
+      wsData.push(['Student', 'Section', 'Scope', 'Baseline GWA', 'Follow-up GWA', 'Status', 'Faculty']);
+      reportData.forEach(r => {
+        wsData.push([r.studentName, r.section, r.context, r.baselineGwa, r.followupGwa, r.outcome, r.faculty]);
+      });
+    } else {
+      wsData.push(['Student Name', 'Email', 'Department', 'Running GWA', 'Risk Classification']);
+      reportData.forEach(r => {
+        wsData.push([r.name, r.email, r.dept, typeof r.gwa === 'number' ? Number(r.gwa.toFixed(2)) : 'N/A', r.risk]);
+      });
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Style header rows
+    const headerStyle = { font: { bold: true, sz: 14 }, alignment: { horizontal: 'center' } };
+    const subHeaderStyle = { font: { bold: true, sz: 10, color: { rgb: '666666' } }, alignment: { horizontal: 'center' } };
+    for (let c = 0; c < 7; c++) {
+      const col = XLSX.utils.encode_col(c);
+      if (ws[`${col}1`]) ws[`${col}1`].s = headerStyle;
+      if (ws[`${col}2`]) ws[`${col}2`].s = subHeaderStyle;
+      if (ws[`${col}3`]) ws[`${col}3`].s = subHeaderStyle;
+      if (ws[`${col}5`]) ws[`${col}5`].s = { font: { bold: true, sz: 12 } };
+    }
+
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }
+    ];
+
+    // Merge institution name row
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 6 } },
+      { s: { r: 4, c: 0 }, e: { r: 4, c: 6 } },
+      { s: { r: 5, c: 0 }, e: { r: 5, c: 6 } },
+      { s: { r: 6, c: 0 }, e: { r: 6, c: 6 } }
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, getReportTitle().substring(0, 31));
+    XLSX.writeFile(wb, `${getReportTitle()}_${deptFilter}_${syFilter}.xlsx`);
+  };
+
+  // ── PDF Export (preserved from original) ──────────────────────────────
    const handlePrint = () => {
     window.print();
   };
@@ -400,6 +668,10 @@ export default function SummaryReports() {
     switch (reportType) {
       case 'grade-distribution':
         return 'Academic Grade Distribution Summary Report';
+      case 'faculty-ranking':
+        return 'Faculty Performance Ranking Report';
+      case 'enrollment-analytics':
+        return 'Section Enrollment Analytics Report';
       case 'intervention-outcomes':
         return 'Student Intervention Outcomes & Academic Honor Standing Report';
       default:
@@ -409,6 +681,61 @@ export default function SummaryReports() {
 
   const deanFullName = profile?.first_name ? `${profile.first_name} ${profile.last_name}` : 'Carlos Valdes';
   const deanCollegeName = profile?.departments?.name || deptFilter;
+
+  // ── KPI Cards data ────────────────────────────────────────────────────
+  const kpiCards = useMemo(() => {
+    if (reportData.length === 0) return [];
+
+    if (reportType === 'grade-distribution') {
+      const totalEnrolled = reportData.reduce((a, r) => a + (r.enrolled || 0), 0);
+      const totalPassed = reportData.reduce((a, r) => a + (r.passed || 0), 0);
+      const passRateRaw = totalEnrolled > 0 ? Math.round((totalPassed / totalEnrolled) * 100) : 0;
+      const passRate = isNaN(passRateRaw) ? 0 : passRateRaw;
+      return [
+        { label: 'Total Enrolled', value: isNaN(totalEnrolled) ? 0 : totalEnrolled, icon: Users, bg: 'bg-slate-50', border: 'border-slate-100', text: 'text-slate-500', valueColor: 'text-slate-800' },
+        { label: 'College Pass Rate', value: `${passRate}%`, icon: CheckCircle, bg: 'bg-emerald-50', border: 'border-emerald-100', text: 'text-emerald-600', valueColor: 'text-emerald-700' },
+        { label: 'Classes Analyzed', value: reportData.length, icon: BookOpen, bg: 'bg-amber-50', border: 'border-amber-100', text: 'text-amber-600', valueColor: 'text-amber-700' },
+      ];
+    }
+    if (reportType === 'faculty-ranking') {
+      const top = reportData[0];
+      const avgRateRaw = reportData.length > 0 ? Math.round(reportData.reduce((a, r) => a + (r.passRate || 0), 0) / reportData.length) : 0;
+      const avgRate = isNaN(avgRateRaw) ? 0 : avgRateRaw;
+      return [
+        { label: 'Total Faculty', value: reportData.length, icon: Users, bg: 'bg-slate-50', border: 'border-slate-100', text: 'text-slate-500', valueColor: 'text-slate-800' },
+        { label: 'Top Performer', value: top ? `Prof. ${top.name}` : '—', icon: Award, bg: 'bg-emerald-50', border: 'border-emerald-100', text: 'text-emerald-600', valueColor: 'text-emerald-700', small: true },
+        { label: 'Avg Pass Rate', value: `${avgRate}%`, icon: TrendingUp, bg: 'bg-blue-50', border: 'border-blue-100', text: 'text-blue-600', valueColor: 'text-blue-700' },
+      ];
+    }
+    if (reportType === 'enrollment-analytics') {
+      const totalRaw = reportData.reduce((a, r) => a + (r.totalEnrolled || 0), 0);
+      const total = isNaN(totalRaw) ? 0 : totalRaw;
+      const avgSecRaw = reportData.length > 0 ? Math.round(total / reportData.length) : 0;
+      const avgSec = isNaN(avgSecRaw) ? 0 : avgSecRaw;
+      return [
+        { label: 'Total Enrollments', value: total, icon: GraduationCap, bg: 'bg-slate-50', border: 'border-slate-100', text: 'text-slate-500', valueColor: 'text-slate-800' },
+        { label: 'Active Sections', value: reportData.length, icon: BookOpen, bg: 'bg-blue-50', border: 'border-blue-100', text: 'text-blue-600', valueColor: 'text-blue-700' },
+        { label: 'Avg per Section', value: avgSec, icon: BarChart3, bg: 'bg-violet-50', border: 'border-violet-100', text: 'text-violet-600', valueColor: 'text-violet-700' },
+      ];
+    }
+    if (reportType === 'intervention-outcomes') {
+      const recovered = reportData.filter(d => d.outcome === 'Recovered / GWA Improved').length;
+      const escalated = reportData.filter(d => d.outcome === 'Escalated to Dean' || d.outcome === 'Needs Continued Escalation').length;
+      return [
+        { label: 'Total Interventions', value: reportData.length, icon: Activity, bg: 'bg-slate-50', border: 'border-slate-100', text: 'text-slate-500', valueColor: 'text-slate-800' },
+        { label: 'Recovered / Improved', value: isNaN(recovered) ? 0 : recovered, icon: TrendingUp, bg: 'bg-emerald-50', border: 'border-emerald-100', text: 'text-emerald-600', valueColor: 'text-emerald-700' },
+        { label: 'Needs Escalation', value: isNaN(escalated) ? 0 : escalated, icon: AlertTriangle, bg: 'bg-rose-50', border: 'border-rose-100', text: 'text-rose-600', valueColor: 'text-rose-700' },
+      ];
+    }
+    // at-risk-audit
+    const highRisk = reportData.filter(d => d.risk === 'High Risk').length;
+    const criticalRisk = reportData.filter(d => d.risk === 'Critical Risk').length;
+    return [
+      { label: 'Total At-Risk', value: reportData.length, icon: Users, bg: 'bg-slate-50', border: 'border-slate-100', text: 'text-slate-500', valueColor: 'text-slate-800' },
+      { label: 'High Risk', value: isNaN(highRisk) ? 0 : highRisk, icon: AlertTriangle, bg: 'bg-orange-50', border: 'border-orange-100', text: 'text-orange-600', valueColor: 'text-orange-700' },
+      { label: 'Critical Risk', value: isNaN(criticalRisk) ? 0 : criticalRisk, icon: AlertTriangle, bg: 'bg-red-50', border: 'border-red-100', text: 'text-red-600', valueColor: 'text-red-700' },
+    ];
+  }, [reportData, reportType]);
 
   return (
     <>
@@ -424,7 +751,7 @@ export default function SummaryReports() {
               <p className="text-xs text-slate-500">Compiling report layout and graphics. Your download will start automatically in a moment...</p>
             </div>
             <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-              <div className="bg-sage-650 h-full w-2/3 rounded-full animate-pulse bg-sage-600" />
+              <div className="bg-sage-600 h-full w-2/3 rounded-full animate-pulse" />
             </div>
           </div>
         </div>
@@ -454,7 +781,7 @@ export default function SummaryReports() {
         }
       `}</style>
 
-      <PageHeader title="Summary Reports Exporter" breadcrumb="Dean Portal" />
+      <PageHeader title="Generate Reports" breadcrumb="Dean Portal" />
       
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
         
@@ -474,7 +801,9 @@ export default function SummaryReports() {
                 onChange={(e) => setReportType(e.target.value)}
                 className="block w-full border border-slate-200 px-3 py-2.5 rounded-lg text-xs bg-white outline-none cursor-pointer font-bold text-slate-800"
               >
-                <option value="grade-distribution">Grade Distribution summary</option>
+                <option value="grade-distribution">Grade Distribution Summary</option>
+                <option value="faculty-ranking">Faculty Performance Ranking</option>
+                <option value="enrollment-analytics">Enrollment Analytics</option>
                 <option value="intervention-outcomes">Intervention Outcomes & Honor Status</option>
                 <option value="at-risk-audit">At-Risk Student Audit</option>
               </select>
@@ -538,6 +867,13 @@ export default function SummaryReports() {
               <Printer className="h-3.5 w-3.5 text-slate-500" /> Print
             </button>
             <button 
+              onClick={handleExportExcel}
+              disabled={reportData.length === 0}
+              className="px-4 py-2 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" /> Export Excel
+            </button>
+            <button 
               onClick={handleDownloadPDF}
               className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
             >
@@ -545,6 +881,189 @@ export default function SummaryReports() {
             </button>
           </div>
         </div>
+
+        {/* --- KPI DASHBOARD --- */}
+        {reportData.length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-6 no-print">
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Activity className="h-4 w-4 text-sage-600" /> Executive Analytics Dashboard
+            </h3>
+            
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {kpiCards.map((card, i) => (
+                <div key={i} className={`${card.bg} border ${card.border} rounded-xl p-4 flex flex-col gap-2`}>
+                  <div className={`text-xs font-bold ${card.text} uppercase tracking-wide flex items-center gap-2`}>
+                    <card.icon className="h-4 w-4" /> {card.label}
+                  </div>
+                  <div className={`${card.small ? 'text-lg' : 'text-2xl'} font-bold ${card.valueColor} truncate`}>{card.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Auto-generated Executive Summary */}
+            {executiveSummary && (
+              <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <BookOpen className="h-3.5 w-3.5" /> Executive Summary
+                </p>
+                <p className="text-sm text-slate-700 leading-relaxed">{executiveSummary}</p>
+              </div>
+            )}
+
+            {/* Recharts Visualizations */}
+            {reportType === 'grade-distribution' && (
+              <div className="h-64 mt-4 w-full bg-slate-50 rounded-xl p-4 border border-slate-100">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Pass Rate by Subject</p>
+                <ResponsiveContainer width="100%" height="90%">
+                  <BarChart 
+                    data={reportData.map(d => {
+                      const rate = (d.enrolled > 0 && typeof d.passed === 'number' && !isNaN(d.passed))
+                        ? Math.round((d.passed / d.enrolled) * 100)
+                        : 0;
+                      return { name: d.code || '—', passRate: isNaN(rate) ? 0 : rate };
+                    })} 
+                    margin={{ top: 5, right: 10, left: -20, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} domain={[0, 100]} />
+                    <RechartsTooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }} />
+                    <Bar dataKey="passRate" radius={[4, 4, 0, 0]} name="Pass Rate %">
+                      {reportData.map((d, i) => {
+                        const rate = (d.enrolled > 0 && typeof d.passed === 'number' && !isNaN(d.passed))
+                          ? Math.round((d.passed / d.enrolled) * 100)
+                          : 0;
+                        return <Cell key={i} fill={rate >= 75 ? '#059669' : rate >= 50 ? '#d97706' : '#e11d48'} />;
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {reportType === 'faculty-ranking' && (
+              <div className="h-64 mt-4 w-full bg-slate-50 rounded-xl p-4 border border-slate-100">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Faculty Pass Rate Comparison</p>
+                <ResponsiveContainer width="100%" height="90%">
+                  <BarChart 
+                    data={reportData.slice(0, 10).map(d => {
+                      const pRate = (typeof d.passRate === 'number' && !isNaN(d.passRate)) ? d.passRate : 0;
+                      const gwa = (typeof d.avgGwa === 'number' && !isNaN(d.avgGwa)) ? Number(d.avgGwa.toFixed(2)) : 0;
+                      return {
+                        name: d.name ? String(d.name).split(' ').pop() : 'Faculty',
+                        passRate: isNaN(pRate) ? 0 : pRate,
+                        avgGwa: isNaN(gwa) ? 0 : gwa
+                      };
+                    })} 
+                    margin={{ top: 5, right: 10, left: -20, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} domain={[0, 100]} />
+                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }} />
+                    <Bar dataKey="passRate" radius={[4, 4, 0, 0]} name="Pass Rate %">
+                      {reportData.slice(0, 10).map((d, i) => (
+                        <Cell key={i} fill={i === 0 ? '#059669' : i === 1 ? '#0284c7' : i === 2 ? '#6366f1' : '#64748b'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {reportType === 'enrollment-analytics' && (
+              <div className="h-64 mt-4 w-full bg-slate-50 rounded-xl p-4 border border-slate-100">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Enrollment Distribution by Section</p>
+                <ResponsiveContainer width="100%" height="90%">
+                  <BarChart 
+                    data={reportData.map(d => ({
+                      name: d.section || '—',
+                      enrolled: (typeof d.totalEnrolled === 'number' && !isNaN(d.totalEnrolled)) ? d.totalEnrolled : 0
+                    }))} 
+                    margin={{ top: 5, right: 10, left: -20, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }} />
+                    <Bar dataKey="enrolled" fill="#6366f1" radius={[4, 4, 0, 0]} name="Enrollments" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            
+            {reportType === 'intervention-outcomes' && (
+              <div className="h-64 mt-4 w-full bg-slate-50 rounded-xl p-4 border border-slate-100">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Intervention Status Distribution</p>
+                <ResponsiveContainer width="100%" height="90%">
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Recovered / Stabilized', value: reportData.filter(d => ['Recovered / GWA Improved', 'Stabilized'].includes(d.outcome)).length },
+                        { name: 'Needs Escalation', value: reportData.filter(d => ['Escalated to Dean', 'Needs Continued Escalation'].includes(d.outcome)).length },
+                        { name: 'In Intervention', value: reportData.filter(d => d.outcome === 'In Intervention').length }
+                      ].filter(d => d.value > 0)}
+                      cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={5} dataKey="value"
+                    >
+                      <Cell fill="#059669" />
+                      <Cell fill="#e11d48" />
+                      <Cell fill="#fbbf24" />
+                    </Pie>
+                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }} />
+                    <Legend wrapperStyle={{ fontSize: '11px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            
+            {reportType === 'at-risk-audit' && (
+              <div className="h-64 mt-4 w-full bg-slate-50 rounded-xl p-4 border border-slate-100 flex flex-col">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">At-Risk Severity Level Distribution</p>
+                <ResponsiveContainer width="100%" height="90%">
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Critical Risk', value: reportData.filter(d => d.risk === 'Critical Risk').length },
+                        { name: 'High Risk', value: reportData.filter(d => d.risk === 'High Risk').length },
+                        { name: 'Medium Risk', value: reportData.filter(d => d.risk === 'Medium Risk').length }
+                      ].filter(d => d.value > 0)}
+                      cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={5} dataKey="value"
+                    >
+                      <Cell fill="#e11d48" />
+                      <Cell fill="#f97316" />
+                      <Cell fill="#f59e0b" />
+                    </Pie>
+                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }} />
+                    <Legend wrapperStyle={{ fontSize: '11px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Semester-over-Semester Trend Line */}
+            {historicalData.length > 1 && (
+              <div className="h-56 mt-4 w-full bg-slate-50 rounded-xl p-4 border border-slate-100">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Semester-over-Semester Pass Rate Trend</p>
+                <ResponsiveContainer width="100%" height="85%">
+                  <LineChart 
+                    data={(historicalData || []).map(d => ({
+                      label: d.label || '—',
+                      passRate: (typeof d.passRate === 'number' && !isNaN(d.passRate)) ? d.passRate : 0
+                    }))} 
+                    margin={{ top: 5, right: 20, left: -20, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="label" tick={{ fontSize: 9 }} tickLine={false} axisLine={false} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <RechartsTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }} />
+                    <Line type="monotone" dataKey="passRate" stroke="#059669" strokeWidth={2.5} dot={{ r: 4, fill: '#059669' }} activeDot={{ r: 6 }} name="Pass Rate %" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Live A4 Print Preview Sheet */}
         <div className="flex justify-center bg-slate-100 p-6 rounded-xl border border-slate-200 no-print">
@@ -573,6 +1092,13 @@ export default function SummaryReports() {
               </div>
             </div>
 
+            {/* Executive Summary in Print */}
+            {executiveSummary && (
+              <div className="text-xs text-slate-600 leading-relaxed border-l-4 border-sage-600 pl-3 py-1 bg-slate-50 rounded-r">
+                <span className="font-bold text-slate-800">Executive Summary: </span>{executiveSummary}
+              </div>
+            )}
+
             {/* Report Data Table Preview */}
             <div className="overflow-x-auto">
               {reportType === 'grade-distribution' && (
@@ -588,18 +1114,106 @@ export default function SummaryReports() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
+                    {reportData.map((row, idx) => {
+                      const rate = row.enrolled > 0 ? Math.round(((row.passed || 0) / row.enrolled) * 100) : 0;
+                      return (
+                        <React.Fragment key={idx}>
+                          <tr
+                            className="text-slate-700 hover:bg-slate-50 cursor-pointer transition-colors"
+                            onClick={() => handleDrillDown(row.classRecordId, idx)}
+                          >
+                            <td className="py-2.5 font-bold flex items-center gap-1.5">
+                              {expandedRow === idx ? <ChevronDown className="h-3 w-3 text-sage-600" /> : <ChevronRight className="h-3 w-3 text-slate-400" />}
+                              {row.code}
+                            </td>
+                            <td className="py-2.5">{row.section}</td>
+                            <td className="py-2.5">Prof. {row.faculty}</td>
+                            <td className="py-2.5 text-center font-mono">{row.enrolled}</td>
+                            <td className={`py-2.5 text-center font-mono rounded ${passRateColor(rate)}`}>
+                              {row.passed || 0} ({rate}%)
+                            </td>
+                            <td className={`py-2.5 text-center font-mono font-bold rounded ${typeof row.averageGwa === 'number' ? gwaColor(row.averageGwa) : ''}`}>
+                              {typeof row.averageGwa === 'number' ? row.averageGwa.toFixed(2) : 'No grades yet'}
+                            </td>
+                          </tr>
+                          {expandedRow === idx && drillDownData.length > 0 && (
+                            <tr>
+                              <td colSpan="6" className="py-0 px-0">
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg mx-4 my-2 p-3">
+                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Per-Student Breakdown ({drillDownData.length} students)</p>
+                                  <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5">
+                                    {drillDownData.map((s, si) => (
+                                      <div key={si} className={`flex items-center justify-between px-2 py-1 rounded text-[10px] ${s.passed ? 'bg-emerald-50 text-emerald-700' : s.gwa !== null ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-500'}`}>
+                                        <span className="truncate font-medium">{s.name}</span>
+                                        <span className="font-mono font-bold ml-2">{s.gwa !== null ? s.gwa.toFixed(2) : '—'}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+
+              {reportType === 'faculty-ranking' && (
+                <table className="min-w-full divide-y divide-slate-300 text-xs">
+                  <thead>
+                    <tr className="font-bold text-slate-700 text-left">
+                      <th className="py-2.5 w-8 text-center">#</th>
+                      <th className="py-2.5">Faculty Name</th>
+                      <th className="py-2.5 text-center">Classes</th>
+                      <th className="py-2.5">Subjects</th>
+                      <th className="py-2.5 text-center">Enrolled</th>
+                      <th className="py-2.5 text-center">Pass Rate</th>
+                      <th className="py-2.5 text-center">Avg GWA</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {reportData.map((row, idx) => (
+                      <tr key={idx} className={`text-slate-700 ${idx === 0 ? 'bg-emerald-50/40' : idx === 1 ? 'bg-emerald-50/20' : ''}`}>
+                        <td className="py-2.5 text-center font-mono font-bold text-slate-400">
+                          {idx === 0 ? <Award className="h-4 w-4 text-amber-500 mx-auto" /> : idx + 1}
+                        </td>
+                        <td className="py-2.5 font-bold">Prof. {row.name}</td>
+                        <td className="py-2.5 text-center font-mono">{row.classes}</td>
+                        <td className="py-2.5 text-[10px] text-slate-500 max-w-[150px] truncate">{row.subjects}</td>
+                        <td className="py-2.5 text-center font-mono">{row.enrolled}</td>
+                        <td className={`py-2.5 text-center font-mono font-bold rounded ${passRateColor(row.passRate)}`}>
+                          {row.passRate}%
+                        </td>
+                        <td className={`py-2.5 text-center font-mono font-bold rounded ${typeof row.avgGwa === 'number' ? gwaColor(row.avgGwa) : ''}`}>
+                          {typeof row.avgGwa === 'number' ? row.avgGwa.toFixed(2) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {reportType === 'enrollment-analytics' && (
+                <table className="min-w-full divide-y divide-slate-300 text-xs">
+                  <thead>
+                    <tr className="font-bold text-slate-700 text-left">
+                      <th className="py-2.5">Section</th>
+                      <th className="py-2.5 text-center">Subjects</th>
+                      <th className="py-2.5 text-center">Total Enrollments</th>
+                      <th className="py-2.5 text-center">Avg / Subject</th>
+                      <th className="py-2.5 text-center">Faculty Count</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
                     {reportData.map((row, idx) => (
                       <tr key={idx} className="text-slate-700">
-                        <td className="py-2.5 font-bold">{row.code}</td>
-                        <td className="py-2.5">{row.section}</td>
-                        <td className="py-2.5">Prof. {row.faculty}</td>
-                        <td className="py-2.5 text-center font-mono">{row.enrolled}</td>
-                        <td className="py-2.5 text-center font-mono">
-                          {row.passed || 0} ({row.enrolled > 0 ? Math.round(((row.passed || 0) / row.enrolled) * 100) : 0}%)
-                        </td>
-                        <td className="py-2.5 text-center font-mono font-bold">
-                          {typeof row.averageGwa === 'number' ? row.averageGwa.toFixed(2) : 'No grades yet'}
-                        </td>
+                        <td className="py-2.5 font-bold">{row.section}</td>
+                        <td className="py-2.5 text-center font-mono">{row.subjects}</td>
+                        <td className="py-2.5 text-center font-mono font-bold">{row.totalEnrolled}</td>
+                        <td className="py-2.5 text-center font-mono">{row.avgPerSubject}</td>
+                        <td className="py-2.5 text-center font-mono">{row.facultyCount}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -629,9 +1243,9 @@ export default function SummaryReports() {
                         <td className="py-2.5 text-center font-mono font-bold">{row.followupGwa}</td>
                         <td className="py-2.5 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            row.outcome.includes('Recovered') || row.outcome.includes('Maintained')
+                            row.outcome?.includes('Recovered') || row.outcome?.includes('Maintained')
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : row.outcome.includes('Escalation') || row.outcome.includes('Dean')
+                              : row.outcome?.includes('Escalation') || row.outcome?.includes('Dean')
                               ? 'bg-rose-50 text-rose-700 border border-rose-200'
                               : 'bg-amber-50 text-amber-700 border border-amber-200'
                           }`}>
@@ -660,15 +1274,11 @@ export default function SummaryReports() {
                       <tr key={idx} className="text-slate-700">
                         <td className="py-2.5 font-bold">{row.name}</td>
                         <td className="py-2.5">{row.dept}</td>
-                        <td className="py-2.5 text-center font-mono font-bold">
+                        <td className={`py-2.5 text-center font-mono font-bold rounded ${typeof row.gwa === 'number' ? gwaColor(row.gwa) : ''}`}>
                           {typeof row.gwa === 'number' ? row.gwa.toFixed(2) : 'No grades yet'}
                         </td>
                         <td className="py-2.5 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            row.risk === 'Critical Risk' || row.risk === 'High Risk'
-                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                              : 'bg-amber-50 text-amber-700 border border-amber-200'
-                          }`}>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${riskBadge(row.risk)}`}>
                             {row.risk}
                           </span>
                         </td>
@@ -679,12 +1289,31 @@ export default function SummaryReports() {
               )}
             </div>
 
-            {/* Signature Block */}
-            <div className="pt-12 flex justify-end">
-              <div className="text-center w-56 border-t border-slate-900 pt-2 text-xs">
-                <p className="font-bold text-slate-950">Dean {deanFullName}</p>
-                <p className="text-slate-500 mt-0.5">Dean, {deanCollegeName}</p>
+            {/* Formal Signature Block */}
+            <div className="pt-10 border-t border-slate-200 mt-8">
+              <div className="grid grid-cols-3 gap-8 text-center text-xs">
+                <div className="space-y-1">
+                  <div className="border-b border-slate-800 pb-1 mb-1 h-10" />
+                  <p className="font-bold text-slate-900">Prepared by</p>
+                  <p className="text-slate-500">Data Analytics System</p>
+                </div>
+                <div className="space-y-1">
+                  <div className="border-b border-slate-800 pb-1 mb-1 h-10 flex items-end justify-center">
+                    <span className="font-bold text-slate-800">Dean {deanFullName}</span>
+                  </div>
+                  <p className="font-bold text-slate-900">Noted by</p>
+                  <p className="text-slate-500">Dean, {deanCollegeName}</p>
+                </div>
+                <div className="space-y-1">
+                  <div className="border-b border-slate-800 pb-1 mb-1 h-10" />
+                  <p className="font-bold text-slate-900">Approved by</p>
+                  <p className="text-slate-500">VP for Academic Affairs</p>
+                </div>
               </div>
+              <p className="text-center text-[9px] text-slate-400 font-mono mt-6">
+                This document is system-generated by ASPIRE v3.1 — Academic Support and Performance Advising with Intervention, Risk, and Evaluation.
+                Confidential. Do not distribute without authorization from the Office of the Dean.
+              </p>
             </div>
           </div>
         </div>

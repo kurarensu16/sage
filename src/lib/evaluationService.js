@@ -42,7 +42,7 @@ export async function getEvaluatedCases({ facultyId, classIds, history, periodId
     referrals:student_evaluation_referrals(referral_id,state,legacy,referred_at,resolved_at)
   `, { count: 'exact' });
   query = history ? query.eq('faculty_id', facultyId) : query.in('class_record_id', classIds);
-  if (periodId) query = query.eq('class_record.term_id', periodId);
+  if (periodId) query = query.eq('class_records.term_id', periodId);
   if (classId) query = query.eq('class_record_id', classId);
   if (term) query = query.eq('term', term);
   if (referral) query = query.eq('refer_to_dean', referral === 'pending');

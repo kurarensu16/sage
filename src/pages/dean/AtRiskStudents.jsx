@@ -75,6 +75,9 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
   const [sectionFilter, setSectionFilter] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
+  useEffect(() => {
+    setActiveTab(queryParams.get('tab') === 'discussion_queue' ? 'discussion_queue' : initialTab);
+  }, [initialTab, queryParams]);
   // Dean Review & Action Modal state
   const [selectedQueueItem, setSelectedQueueItem] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1391,9 +1394,11 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
               <fieldset className="space-y-2" disabled={isSubmittingAction}>
                 <legend className="text-xs font-bold text-sage-800">Dean action</legend>
                 {[
-                  ['conference', 'Schedule academic conference', 'Record a conference directive for faculty and student. Referral stays pending.'],
-                  ['tutoring', 'Approve peer tutoring', 'Record tutoring approval. Referral stays pending.'],
-                  ['advisory', 'Issue academic standing advisory', 'Record an academic advisory. Referral stays pending.'],
+                  ['conference', 'Schedule Parent-Teacher-Dean Conference', 'Require a formal conference with the student and parents/guardians. Referral stays pending.'],
+                  ['counseling', 'Mandatory Guidance Counseling Referral', 'Refer student to the Guidance Office for non-academic evaluation. Referral stays pending.'],
+                  ['contract', 'Initiate Academic Probation Contract', 'Issue a strict probationary agreement with required grade targets. Referral stays pending.'],
+                  ['remedial', 'Authorize Remedial Classes', 'Enroll student in formal remedial classes or structured learning support. Referral stays pending.'],
+                  ['advisory', 'Recommend Course Load Reduction', 'Issue formal advisory to drop courses to reduce academic load. Referral stays pending.'],
                   ['resolved', 'Resolve referral', 'Close this referral and remove it from the pending queue. A resolution note is required.'],
                 ].map(([value, title, description]) => (
                   <label key={value} className={cn(
