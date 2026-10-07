@@ -3,6 +3,8 @@ import { useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, Clock, Shield, RefreshCw, DownloadCloud } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
+import { logActivity, resolveActorName } from '../../lib/auditLog';
 
 const ACTION_BADGE_MAP = {
   'Grade Override':            'bg-rose-50 text-rose-700 border-rose-200',
@@ -29,12 +31,14 @@ const ACTION_BADGE_MAP = {
   'Dean Remark Approval':      'bg-emerald-50 text-emerald-700 border-emerald-200',
   'APK Download':              'bg-emerald-50 text-emerald-700 border-emerald-200',
   'Mobile App Distribution':   'bg-teal-50 text-teal-700 border-teal-200',
+  'File Export':               'bg-sage-50 text-sage-700 border-sage-200',
 };
 
 const getActionBadgeColor = (action) =>
   ACTION_BADGE_MAP[action] || 'bg-slate-100 text-slate-600 border-slate-200';
 
 export default function AuditLog() {
+  const { user, profile } = useAuth();
   const location = useLocation();
   const [logs, setLogs] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -104,7 +108,7 @@ export default function AuditLog() {
   const uniqueDates = Array.from(new Set(logs.map(log => formatDateKey(log.timestamp)))).sort().reverse();
 
   const filteredLogs = logs.filter(log => {
-    const haystack = `${log.message} ${log.actor}`.toLowerCase();
+    const haystack = `${log.message} ${log.actor} ${log.actor_role || ''} ${log.entity_type || ''} ${log.entity_id || ''}`.toLowerCase();
     const matchesSearch = searchTerm ? haystack.includes(searchTerm.toLowerCase()) : true;
     const matchesAction = actionFilter ? log.action === actionFilter : true;
     const matchesDate = dateFilter ? formatDateKey(log.timestamp) === dateFilter : true;
@@ -120,11 +124,17 @@ export default function AuditLog() {
 
   const handleExportCSV = () => {
     if (filteredLogs.length === 0) return;
-    const header = ['Log ID', 'Action', 'Actor', 'Message', 'Timestamp'];
+    const header = ['Log ID', 'Action', 'Operation', 'Actor', 'Actor ID', 'Role', 'Entity', 'Entity ID', 'Source', 'Message', 'Timestamp'];
     const rows = filteredLogs.map(l => [
       l.log_id,
       `"${l.action}"`,
+      `"${l.operation || ''}"`,
       `"${l.actor}"`,
+      `"${l.actor_id || ''}"`,
+      `"${l.actor_role || ''}"`,
+      `"${l.entity_type || ''}"`,
+      `"${l.entity_id || ''}"`,
+      `"${l.source || 'application'}"`,
       `"${l.message?.replace(/"/g, "'")}"`,
       formatTimestamp(l.timestamp)
     ]);
@@ -136,6 +146,7 @@ export default function AuditLog() {
     link.download = `sage_audit_logs_${new Date().toISOString().slice(0,10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+    void logActivity('File Export', `Exported ${filteredLogs.length} filtered audit-log records to CSV.`, resolveActorName(profile, user));
   };
 
   return (
@@ -267,12 +278,16 @@ export default function AuditLog() {
                       </span>
                     </div>
                     <p className="text-xs sm:text-sm text-slate-700 leading-snug sm:leading-relaxed font-sans break-words">{log.message}</p>
+                    {(log.entity_type || log.operation) && <p className="text-[10px] font-mono text-slate-500">
+                      {[log.operation, log.entity_type, log.entity_id].filter(Boolean).join(' · ')}
+                    </p>}
                     <p className="text-[10px] font-mono text-slate-400">ID: {log.log_id}</p>
                   </div>
 
                   <div className="md:text-right flex-shrink-0 self-start md:self-center pt-1 md:pt-0 border-t md:border-t-0 border-slate-100 w-full md:w-auto flex items-center justify-between md:block">
                     <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Performed by</span>
                     <h5 className="text-xs sm:text-sm font-bold text-slate-900 mt-0.5">{log.actor}</h5>
+                    {log.actor_role && <p className="text-[10px] capitalize text-slate-500">{log.actor_role}</p>}
                   </div>
                 </div>
               ))

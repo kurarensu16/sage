@@ -32,6 +32,7 @@ import { RISK_TIERS } from '../../lib/academicPolicy';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
 import FacultyCreateClassroomModal from './FacultyCreateClassroomModal';
 import { cn } from '../../lib/utils';
+import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 
 export default function ClassRecordsList() {
   const { user } = useAuth();
@@ -282,6 +283,7 @@ export default function ClassRecordsList() {
       <PageHeader title="My Class Records" breadcrumb="Faculty Portal" />
       
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6">
+        <RiskEducationNote variant="roster" />
         
         {/* Success Creation Banner */}
         {creationBanner && (

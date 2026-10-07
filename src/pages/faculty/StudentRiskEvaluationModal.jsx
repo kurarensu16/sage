@@ -2,10 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   AlertCircle, 
-  Trophy, 
   Plus, 
   Trash2, 
   Send, 
+  Loader2,
   TrendingDown,
   TrendingUp
 } from 'lucide-react';
@@ -15,11 +15,29 @@ import { getEvaluationDetails } from '../../lib/evaluationService';
 import { EVALUATION_TERMS } from '../../lib/evaluationTracking';
 import { dispatchNotifications } from '../../lib/notificationDispatcher';
 import { cn } from '../../lib/utils';
+import { generateAdditionalInterventionTask } from '../../lib/interventionDraftService';
+
+const latestTaskDeadline = tasks => (tasks || []).map(task => task?.due_date).filter(Boolean).sort().at(-1) || '';
+
+const toLocalDateValue = date => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const earliestFutureDate = () => {
+  const tomorrow = new Date();
+  tomorrow.setHours(0, 0, 0, 0);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return toLocalDateValue(tomorrow);
+};
 
 export default function StudentRiskEvaluationModal({
   isOpen,
   onClose,
   student,
+  initialDraft = null,
   classRecordId,
   currentTerm,
   subjectCode = '',
@@ -29,24 +47,22 @@ export default function StudentRiskEvaluationModal({
 }) {
   const { user } = useAuth();
 
-  const [context, setContext] = useState(
-    (student?.current_gwa && student.current_gwa > 2.50) || (student?.failing_count && student.failing_count > 0)
-      ? 'passing_recovery'
-      : 'pl_retention'
-  );
+  const [context, setContext] = useState('academic_intervention');
 
   const [privateNote, setPrivateNote] = useState('');
   const [sharedAcademicFeedback, setSharedAcademicFeedback] = useState('');
-  const [tasks, setTasks] = useState(() => [
-    {
+  const [tasks, setTasks] = useState(() => Array.isArray(initialDraft?.tasks) && initialDraft.tasks.length === 3
+    ? initialDraft.tasks
+    : [{
       task_id: 'task-init-1',
       description: '',
       target_term: currentTerm,
       due_date: '',
       completed: false,
-      completed_at: null
-    }
-  ]);
+      completed_at: null,
+      source: 'manual'
+    }]);
+  const [planDeadline, setPlanDeadline] = useState(() => latestTaskDeadline(initialDraft?.tasks));
   const [referToDean, setReferToDean] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -55,6 +71,8 @@ export default function StudentRiskEvaluationModal({
   const referralRequest = useRef(crypto.randomUUID());
   const [referralReason, setReferralReason] = useState('');
   const [existingPending, setExistingPending] = useState(Boolean(student?.evaluation?.refer_to_dean));
+  const [addingAiTask, setAddingAiTask] = useState(false);
+  const minimumPlanDeadline = earliestFutureDate();
 
   // Compute live explainable risk metrics
   const riskAnalysis = student?.risk_analysis;
@@ -65,7 +83,9 @@ export default function StudentRiskEvaluationModal({
       if (cancelled) return;
       setContext(existing.evaluation_context);
       setSharedAcademicFeedback(existing.shared_academic_feedback || '');
-      setTasks(Array.isArray(existing.advising_plan) ? existing.advising_plan : []);
+      const existingTasks = Array.isArray(existing.advising_plan) ? existing.advising_plan : [];
+      setTasks(existingTasks);
+      setPlanDeadline(latestTaskDeadline(existingTasks));
       setPrivateNote(existing.private_notes?.find(note => note.author_id === user?.id)?.note_text || '');
       setExistingPending(Boolean(existing.refer_to_dean));
       setLoadingExisting(false);
@@ -75,7 +95,7 @@ export default function StudentRiskEvaluationModal({
 
   if (!isOpen || !student) return null;
 
-  const handleAddTask = () => {
+  const handleAddManualTask = () => {
     if (tasks.length >= 5) return;
     setTasks(prev => [
       ...prev,
@@ -83,11 +103,41 @@ export default function StudentRiskEvaluationModal({
         task_id: `task-${Date.now()}-${prev.length + 1}`,
         description: '',
         target_term: currentTerm,
-        due_date: '',
+        due_date: planDeadline || '',
         completed: false,
-        completed_at: null
+        completed_at: null,
+        source: 'manual'
       }
     ]);
+  };
+
+  const handleAddAiTask = async () => {
+    if (tasks.length >= 5 || addingAiTask || loadingExisting) return;
+    setAddingAiTask(true);
+    setError(null);
+    try {
+      const draft = await generateAdditionalInterventionTask({
+        classRecordId,
+        studentId: student.user_id || student.id,
+        term: currentTerm,
+        requestId: crypto.randomUUID(),
+        existingTasks: tasks.map(task => ({
+          description: task.description,
+          deliverable: task.deliverable,
+          action_type: task.action_type,
+          priority: task.priority,
+          basis_codes: task.basis_codes,
+          source: task.source,
+          faculty_edited: task.faculty_edited
+        }))
+      });
+      setTasks(previous => previous.length >= 5 ? previous : [...previous, draft.tasks[0]]);
+    } catch (err) {
+      console.error('Unable to generate an additional intervention task:', err);
+      setError(err.message || 'The additional AI task could not be generated. You can retry or add one manually.');
+    } finally {
+      setAddingAiTask(false);
+    }
   };
 
   const handleRemoveTask = (taskId) => {
@@ -96,7 +146,9 @@ export default function StudentRiskEvaluationModal({
   };
 
   const handleTaskChange = (taskId, field, value) => {
-    setTasks(prev => prev.map(t => (t.task_id === taskId ? { ...t, [field]: value } : t)));
+    setTasks(prev => prev.map(t => (t.task_id === taskId
+      ? { ...t, [field]: value, ...(t.source === 'ai_assisted' ? { faculty_edited: true } : {}) }
+      : t)));
   };
 
   const handleSubmit = async (e) => {
@@ -117,10 +169,22 @@ export default function StudentRiskEvaluationModal({
       setError('Please provide student-visible academic guidance.');
       return;
     }
+    if (!planDeadline) {
+      setError('Choose one completion date for the intervention plan.');
+      return;
+    }
+    if (planDeadline < minimumPlanDeadline) {
+      setError('Choose a future completion date. Today and earlier dates are not allowed.');
+      return;
+    }
 
-    const validTasks = tasks.filter(t => t.description.trim().length > 0);
+    const validTasks = tasks.filter(t => typeof t.description === 'string' && t.description.trim().length > 0);
     if (validTasks.length === 0) {
-      setError('Please provide at least 1 actionable catch-up task.');
+      setError('Add at least one actionable intervention task before submitting this evaluation.');
+      return;
+    }
+    if (validTasks.length > 5 || validTasks.some(task => task.description.trim().length > 500)) {
+      setError('Use between 1 and 5 tasks, with each description limited to 500 characters.');
       return;
     }
 
@@ -132,7 +196,8 @@ export default function StudentRiskEvaluationModal({
     setSaving(true);
     setError(null);
 
-    const validTasks = tasks.filter(t => t.description.trim().length > 0);
+    const validTasks = tasks.filter(t => typeof t.description === 'string' && t.description.trim().length > 0)
+      .map(task => ({ ...task, description: task.description.trim(), due_date: planDeadline }));
 
     try {
       const baselineSnapshot = {
@@ -230,39 +295,9 @@ export default function StudentRiskEvaluationModal({
             </div>
           )}
 
-          {/* Context Switcher */}
-          <div className="space-y-1.5">
-            <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
-              Evaluation Context <span className="text-rose-500">*</span>
-            </label>
-            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 border border-slate-200 rounded-lg">
-              <button
-                type="button"
-                onClick={() => setContext('passing_recovery')}
-                className={cn(
-                  "py-2 px-3 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                  context === 'passing_recovery'
-                    ? "bg-white text-rose-700 shadow-xs border border-rose-200 font-semibold"
-                    : "text-slate-600 hover:text-slate-900"
-                )}
-              >
-                <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                Passing Recovery
-              </button>
-              <button
-                type="button"
-                onClick={() => setContext('pl_retention')}
-                className={cn(
-                  "py-2 px-3 text-xs font-medium rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer",
-                  context === 'pl_retention'
-                    ? "bg-white text-amber-700 shadow-xs border border-amber-200 font-semibold"
-                    : "text-slate-600 hover:text-slate-900"
-                )}
-              >
-                <Trophy className="w-3.5 h-3.5 text-amber-500" />
-                Honors (PL) Retention
-              </button>
-            </div>
+          <div className="rounded-lg border border-sage-200 bg-sage-50 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-sage-700">Academic Intervention</p>
+            <p className="mt-1 text-xs text-sage-700">Create one faculty-reviewed support plan based on the student’s grades, attendance, unfinished work, and performance changes.</p>
           </div>
 
           {/* Pre-Computed System Diagnostic Summary */}
@@ -283,7 +318,7 @@ export default function StudentRiskEvaluationModal({
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
                 <div className="p-2 bg-white border border-slate-200 rounded-md">
                   <div className="text-[10px] text-slate-400 font-medium uppercase">Current GWA</div>
                   <div className="font-mono text-sm font-semibold text-slate-800">
@@ -293,9 +328,17 @@ export default function StudentRiskEvaluationModal({
                 </div>
 
                 <div className="p-2 bg-white border border-slate-200 rounded-md">
-                  <div className="text-[10px] text-slate-400 font-medium uppercase">Missing Work</div>
+                  <div className="text-[10px] text-slate-400 font-medium uppercase">Pending</div>
                   <div className="font-mono text-sm font-semibold text-slate-800">
-                    {riskAnalysis.factors.missing_work?.zero_submissions_count || 0} Missed
+                    {student.pending_activity_counts?.[currentTerm] ?? student.pending_activity_count ?? 0} Ungraded
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-500">+0 pts</div>
+                </div>
+
+                <div className="p-2 bg-white border border-slate-200 rounded-md">
+                  <div className="text-[10px] text-slate-400 font-medium uppercase">Recorded Zeros</div>
+                  <div className="font-mono text-sm font-semibold text-slate-800">
+                    {riskAnalysis.factors.missing_work?.zero_submissions_count || 0} Scored 0
                   </div>
                   <div className="text-[10px] font-mono text-slate-500">+{riskAnalysis.factors.missing_work?.points_contributed || 0} pts</div>
                 </div>
@@ -370,20 +413,50 @@ export default function StudentRiskEvaluationModal({
 
           {/* Actionable Tasks Checklist Builder */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            {initialDraft && !student?.evaluation && <div className="rounded-lg border border-sage-200 bg-sage-50 p-3">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-sage-700">AI draft — faculty review required</p>
+              <p className="mt-1 text-xs text-sage-700">{initialDraft.summary}</p>
+              <p className="mt-2 text-[10px] text-sage-500">Edit, delete, or add tasks as needed. Nothing is published to the student until you confirm submission.</p>
+            </div>}
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
                 Intervention Catch-Up Tasks <span className="text-rose-500">*</span>
               </label>
-              <button
-                type="button"
-                onClick={handleAddTask}
-                disabled={tasks.length >= 5}
-                className="text-[11px] text-sage-600 hover:text-sage-700 font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-40"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add Task
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAddManualTask}
+                  disabled={tasks.length >= 5 || addingAiTask}
+                  className="flex items-center gap-1 rounded-md border border-sage-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-sage-700 hover:bg-sage-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Manually
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddAiTask}
+                  disabled={tasks.length >= 5 || addingAiTask || loadingExisting}
+                  className="flex items-center gap-1 rounded-md bg-sage-700 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-sage-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {addingAiTask && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  {addingAiTask ? 'Suggesting…' : 'Suggest with AI'}
+                </button>
+              </div>
             </div>
+            <p className="text-[10px] text-sage-500">{tasks.length}/5 tasks. AI suggestions consider every current manual, AI-generated, and faculty-edited task.</p>
+
+            <label className="block rounded-lg border border-sage-200 bg-sage-50 p-3 text-xs font-semibold text-sage-800">
+              Plan Completion Date <span className="text-rose-500">*</span>
+              <span className="ml-2 font-normal text-sage-600">Complete all steps in order by this date.</span>
+              <input
+                type="date"
+                required
+                min={minimumPlanDeadline}
+                value={planDeadline}
+                onChange={(event) => setPlanDeadline(event.target.value)}
+                className="mt-2 block w-full rounded-md border border-sage-200 bg-white px-3 py-2 font-mono text-xs text-sage-900 focus:outline-none focus:border-sage-600"
+              />
+            </label>
 
             <div className="space-y-2">
               {tasks.map((task, idx) => (
@@ -392,17 +465,13 @@ export default function StudentRiskEvaluationModal({
                   <input
                     type="text"
                     required
-                    value={task.description}
+                    maxLength={500}
+                    value={task.description ?? ''}
                     onChange={(e) => handleTaskChange(task.task_id, 'description', e.target.value)}
                     placeholder="e.g. Redo pointer reversal supplementary lab exercises"
                     className="flex-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs focus:outline-none focus:border-sage-600"
                   />
-                  <input
-                    type="date"
-                    value={task.due_date}
-                    onChange={(e) => handleTaskChange(task.task_id, 'due_date', e.target.value)}
-                    className="px-2 py-1 bg-white border border-slate-200 rounded text-xs font-mono text-slate-700 focus:outline-none focus:border-sage-600"
-                  />
+                  {task.source === 'ai_assisted' && <span className="rounded bg-sage-100 px-1.5 py-1 text-[9px] font-bold uppercase text-sage-700">AI</span>}
                   {tasks.length > 1 && (
                     <button
                       type="button"
@@ -415,6 +484,11 @@ export default function StudentRiskEvaluationModal({
                 </div>
               ))}
             </div>
+            {tasks.some(task => task.source === 'ai_assisted') && <div className="space-y-2">
+              {tasks.filter(task => task.source === 'ai_assisted').map(task => <label key={`${task.task_id}-deliverable`} className="block rounded-md border border-sage-100 bg-white p-2 text-[10px] font-semibold uppercase tracking-wider text-sage-600">Expected deliverable
+                <input type="text" maxLength={300} required value={task.deliverable || ''} onChange={event => handleTaskChange(task.task_id, 'deliverable', event.target.value)} className="mt-1 block w-full rounded border border-sage-200 bg-white px-2.5 py-1.5 text-xs font-normal normal-case tracking-normal text-sage-900 focus:outline-none focus:border-sage-600" />
+              </label>)}
+            </div>}
           </div>
 
           {/* Administrative Collaboration Checkbox */}
@@ -449,7 +523,7 @@ export default function StudentRiskEvaluationModal({
             </button>
             <button
               type="submit"
-              disabled={saving || loadingExisting || !EVALUATION_TERMS.includes(currentTerm) || !privateNote.trim() || !sharedAcademicFeedback.trim() || (referToDean && !referralReason.trim())}
+              disabled={saving || loadingExisting || !EVALUATION_TERMS.includes(currentTerm) || !privateNote.trim() || !sharedAcademicFeedback.trim() || !planDeadline || planDeadline < minimumPlanDeadline || (referToDean && !referralReason.trim())}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-sage-600 hover:bg-sage-700 active:bg-sage-800 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-md shadow-xs transition-colors cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />

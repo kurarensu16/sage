@@ -29,9 +29,11 @@ import { TableSkeleton } from '../../components/common/Skeleton';
 import ReportsPivotPanel from '../../components/faculty/ReportsPivotPanel';
 import ClassAnalyticsPanel from '../../components/faculty/ClassAnalyticsPanel';
 import InfoModal from '../../components/InfoModal';
+import RiskEducationNote from '../../components/faculty/RiskEducationNote';
+import { logActivity, resolveActorName } from '../../lib/auditLog';
 
 export default function ClassPerformance() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialClassId = searchParams.get('id') || '';
 
@@ -233,6 +235,8 @@ export default function ClassPerformance() {
         )}
       </div>
 
+      <RiskEducationNote variant="performance" />
+
       {errorMsg && (
         <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-xs sm:text-sm flex items-center gap-2">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -275,7 +279,7 @@ export default function ClassPerformance() {
           <div className="mt-2 font-mono text-2xl font-bold text-rose-600">
             {summary.atRisk} <span className="text-xs text-rose-400 font-normal">({summary.atRiskPct}%)</span>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">High & critical risk tiers</p>
+          <p className="text-[11px] text-slate-400 mt-1">Separate risk group · High & Critical</p>
         </div>
 
         {/* Performed Well */}
@@ -332,6 +336,12 @@ export default function ClassPerformance() {
           <p className="text-[11px] text-slate-400 mt-1">Below 75% passing cut-off</p>
         </div>
       </div>
+
+      {summary.pendingCount > 0 && (
+        <p className="text-xs text-sage-600">
+          {summary.pendingCount} {summary.pendingCount === 1 ? 'student is' : 'students are'} awaiting enough grade data for a performance classification. Blank scores are not counted as zero.
+        </p>
+      )}
 
       {/* Main Score Sheet Grid */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
@@ -403,11 +413,14 @@ export default function ClassPerformance() {
               {viewMode !== 'breakdown' && (
                 <button
                   type="button"
-                  onClick={() => exportClassPerformanceToExcel({
-                    selectedClass,
-                    students: filteredStudents,
-                    activities: dataset.activities
-                  })}
+                  onClick={() => {
+                    exportClassPerformanceToExcel({
+                      selectedClass,
+                      students: filteredStudents,
+                      activities: dataset.activities
+                    });
+                    void logActivity('File Export', `Initiated class-performance Excel export for ${selectedClass?.subjects?.code} - ${selectedClass?.sections?.name}.`, resolveActorName(profile, user));
+                  }}
                   disabled={filteredStudents.length === 0}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sage-50 hover:bg-sage-100 text-sage-700 border border-sage-200 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
                   title="Export current view to Excel (.xlsx)"
@@ -530,22 +543,22 @@ export default function ClassPerformance() {
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-slate-50/75 border-b border-slate-100 text-slate-600 font-semibold uppercase tracking-wider text-[10px]">
-                  <th className="py-3 px-4 sticky left-0 bg-slate-50/95 z-10 shadow-2xs">Student</th>
-                  <th className="py-3 px-4">Student ID</th>
+                  <th className="py-3 px-4 sticky left-0 bg-slate-50/95 z-10 shadow-2xs cursor-help" title="Student name from the approved class enrollment.">Student</th>
+                  <th className="py-3 px-4 cursor-help" title="The student’s official school identification number.">Student ID</th>
                   {viewMode === 'summary' && (
-                    <th className="py-3 px-4 text-center">Activities Graded</th>
+                    <th className="py-3 px-4 text-center cursor-help" title="Scored activities compared with all configured activities. Blank activities are not counted as graded.">Activities Graded</th>
                   )}
                   {viewMode === 'summary' && (
                     <>
-                      <th className="py-3 px-4 text-right">Midterm Rating (MR)</th>
-                      <th className="py-3 px-4 text-right">Tentative Final (TFR)</th>
+                      <th className="py-3 px-4 text-right cursor-help" title="Combined Prelim and Midterm rating.">Midterm Rating (MR)</th>
+                      <th className="py-3 px-4 text-right cursor-help" title="Combined Semi-Final and Final rating before the official semestral grade is posted.">Tentative Final (TFR)</th>
                     </>
                   )}
-                  <th className="py-3 px-4 text-right">Overall Grade (SG)</th>
-                  <th className="py-3 px-4 text-right" title="Official posted grade, or live tentative draft if unposted.">Grade (GWA)</th>
-                  <th className="py-3 px-4 text-center" title="Absences recorded for this class via attendance_records.">Absences</th>
-                  <th className="py-3 px-4 text-center">Performance Status</th>
-                  <th className="py-3 px-4 text-center">Remarks</th>
+                  <th className="py-3 px-4 text-right cursor-help" title="The student’s overall semestral percentage.">Overall Grade (SG)</th>
+                  <th className="py-3 px-4 text-right cursor-help" title="The transmuted grade equivalent. Tentative means the official semestral grade has not yet been posted.">Grade (GWA)</th>
+                  <th className="py-3 px-4 text-center cursor-help" title="Recorded absences for this selected class.">Absences</th>
+                  <th className="py-3 px-4 text-center cursor-help" title="Grade-based classification: Performed Well, Average, Struggling, or pending when there is not enough grade data.">Performance Status</th>
+                  <th className="py-3 px-4 text-center cursor-help" title="Academic result such as Passed, Failed, Incomplete, FDA, or Dropped.">Remarks</th>
 
                   {/* Dynamic Activity Columns in Grid View Mode */}
                   {viewMode === 'grid' && dataset.activities.map(act => (
@@ -555,7 +568,7 @@ export default function ClassPerformance() {
                     </th>
                   ))}
 
-                  <th className="py-3 px-4 text-center">At-Risk Standing</th>
+                  <th className="py-3 px-4 text-center cursor-help" title="Broader risk standing based on academic performance, attendance, unfinished work, and changes in performance.">At-Risk Standing</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-700">

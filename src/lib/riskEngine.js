@@ -51,7 +51,7 @@ export { RISK_TIERS };
  *   3 absences   → 25 pts
  *   4+ absences  → 50 pts (FDA recommendation trigger)
  *
- * Missing Work / Ghost Detection (0-15):
+ * Recorded Zero-Score Signal (0-15):
  *   2 zero submissions → 10 pts
  *   3+ zero submissions → 15 pts
  *
@@ -66,7 +66,7 @@ export { RISK_TIERS };
  * @param {number|null} [params.previousTermRating=null] - Previous term rating (e.g., Prelim: 82)
  * @param {number|null} [params.currentTermRating=null] - Current term rating (e.g., Midterm: 74)
  * @param {number} [params.consecutiveAbsences=0] - Consecutive absences count
- * @param {number} [params.zeroSubmissionsCount=0] - Number of zero-score submissions on configured activities
+ * @param {number} [params.zeroSubmissionsCount=0] - Number of recorded zero scores on configured activities
  * @param {boolean} [params.isSummer=false] - Summer term flag
  * @returns {Object} Full explainable evaluation object
  */
@@ -131,16 +131,19 @@ export function calculateAcademicRisk({
   }
 
   // ── 3. MISSING WORK / GHOST DETECTION (0 to 15 points) ─────────────────────
-  // Only counts zeros on activities that are actually configured (max > 0).
+  // A numeric zero is confirmed low-performance evidence, not proof that work
+  // was missed. Null scores remain ungraded and do not contribute points.
   let missingPoints = 0;
-  let missingDetail = "No missing work";
+  let missingDetail = "No recorded zero scores";
 
   if (zeroSubmissionsCount >= 3) {
     missingPoints = 15;
-    missingDetail = `${zeroSubmissionsCount} missing submissions — Ghost student alert`;
+    missingDetail = `${zeroSubmissionsCount} recorded zero scores — urgent academic review`;
   } else if (zeroSubmissionsCount === 2) {
     missingPoints = 10;
-    missingDetail = `${zeroSubmissionsCount} missing submissions — Warning`;
+    missingDetail = `${zeroSubmissionsCount} recorded zero scores — early warning`;
+  } else if (zeroSubmissionsCount === 1) {
+    missingDetail = '1 recorded zero score';
   }
 
   // ── 4. GRADE VELOCITY DECLINE (0 to 10 points) ─────────────────────────────

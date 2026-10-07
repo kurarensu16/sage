@@ -90,10 +90,12 @@ export default function GradeComputationsList() {
   };
 
   const handleAddComponentRow = () => {
+    if (editingTemplate) return;
     setComponents([...components, { name: '', weight: 0, max_score: 10, is_multiple: true }]);
   };
 
   const handleRemoveComponentRow = (index) => {
+    if (editingTemplate) return;
     setComponents(components.filter((_, i) => i !== index));
   };
 
@@ -104,6 +106,7 @@ export default function GradeComputationsList() {
   };
 
   const handleApplyPreset = (preset) => {
+    if (editingTemplate) return;
     setName(preset.name);
     setDescription(preset.description);
     const existingByName = new Map(
@@ -171,72 +174,20 @@ export default function GradeComputationsList() {
 
       if (editingTemplate) {
         computationId = editingTemplate.computation_id;
-        
-        // Update template header
-        const { error: headerErr } = await supabase
-          .from('grade_computations')
-          .update({ name: name.trim(), description: description.trim() })
-          .eq('computation_id', computationId);
-
-        if (headerErr) throw headerErr;
-
-        // Preserve existing component UUIDs so class activities can maintain a
-        // durable relationship to their grading component across weight edits.
-        const existingComponentIds = new Set(
-          (editingTemplate.grade_computation_components || [])
-            .map(component => component.component_id)
-            .filter(Boolean)
+        // Existing templates are structurally immutable. Admin edits update
+        // percentages only, preserving component identity and every linked
+        // class activity. Structural variants must be created as new templates.
+        const weightUpdates = await Promise.all(
+          components
+            .filter(component => component.component_id)
+            .map(component => supabase
+              .from('grade_computation_components')
+              .update({ weight: component.weight })
+              .eq('component_id', component.component_id)
+              .eq('computation_id', computationId))
         );
-        const retainedComponentIds = new Set(
-          components.map(component => component.component_id).filter(Boolean)
-        );
-        const removedComponentIds = Array.from(existingComponentIds)
-          .filter(componentId => !retainedComponentIds.has(componentId));
-
-        const existingComponentPayloads = components
-          .filter(component => component.component_id)
-          .map(c => ({
-            component_id: c.component_id,
-            computation_id: computationId,
-            name: c.name.trim(),
-            weight: c.weight,
-            max_score: c.max_score,
-            is_multiple: !!c.is_multiple
-          }));
-        const newComponentPayloads = components
-          .filter(component => !component.component_id)
-          .map(c => ({
-            computation_id: computationId,
-            name: c.name.trim(),
-            weight: c.weight,
-            max_score: c.max_score,
-            is_multiple: !!c.is_multiple
-          }));
-
-        if (existingComponentPayloads.length > 0) {
-          const { error: updateComponentsErr } = await supabase
-            .from('grade_computation_components')
-            .upsert(existingComponentPayloads, { onConflict: 'component_id' });
-
-          if (updateComponentsErr) throw updateComponentsErr;
-        }
-
-        if (newComponentPayloads.length > 0) {
-          const { error: insertComponentsErr } = await supabase
-            .from('grade_computation_components')
-            .insert(newComponentPayloads);
-
-          if (insertComponentsErr) throw insertComponentsErr;
-        }
-
-        if (removedComponentIds.length > 0) {
-          const { error: deleteComponentsErr } = await supabase
-            .from('grade_computation_components')
-            .delete()
-            .in('component_id', removedComponentIds);
-
-          if (deleteComponentsErr) throw deleteComponentsErr;
-        }
+        const failedWeightUpdate = weightUpdates.find(result => result.error);
+        if (failedWeightUpdate?.error) throw failedWeightUpdate.error;
 
         await logActivity(
           'Grading Template Edit',
@@ -488,6 +439,7 @@ export default function GradeComputationsList() {
                       required
                       value={name}
                       onChange={(e) => setName(e.target.value)}
+                      disabled={!!editingTemplate}
                       placeholder="e.g. General Education Core"
                       className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500"
                     />
@@ -497,6 +449,7 @@ export default function GradeComputationsList() {
                     <textarea 
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
+                      disabled={!!editingTemplate}
                       placeholder="Specify departments or guidelines applying this formula scale..."
                       className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm h-16 sm:h-20 resize-none outline-none transition-all focus:ring-1 focus:ring-sage-500"
                     />
@@ -505,11 +458,17 @@ export default function GradeComputationsList() {
 
                 {/* Components section */}
                 <div className="space-y-3">
+                  {editingTemplate && (
+                    <div className="p-3 bg-sage-50 border border-sage-200 text-sage-800 text-xs rounded-xl">
+                      Existing templates allow percentage changes only. Create a new template to change names, maximum scores, or component behavior.
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Grading Components Structure</label>
                     <button 
                       type="button"
                       onClick={handleAddComponentRow}
+                      disabled={!!editingTemplate}
                       className="text-xs text-sage-600 hover:text-sage-700 font-bold flex items-center gap-1.5 cursor-pointer"
                     >
                       <Plus className="h-3.5 w-3.5" /> Add Row
@@ -534,6 +493,7 @@ export default function GradeComputationsList() {
                             required
                             value={comp.name}
                             onChange={(e) => handleComponentChange(idx, 'name', e.target.value)}
+                            disabled={!!editingTemplate}
                             placeholder="Component Name (e.g. Written Quiz)"
                             className="block w-full px-3 py-1.5 border border-slate-250 hover:border-slate-300 focus:border-sage-500 rounded-lg text-xs outline-none transition-all bg-white"
                           />
@@ -558,6 +518,7 @@ export default function GradeComputationsList() {
                             max="500"
                             value={comp.max_score}
                             onChange={(e) => handleComponentChange(idx, 'max_score', parseInt(e.target.value, 10))}
+                            disabled={!!editingTemplate}
                             placeholder="Max Score"
                             className="block w-full px-2.5 py-1.5 border border-slate-250 hover:border-slate-300 focus:border-sage-500 rounded-lg text-xs font-mono outline-none text-right bg-white"
                           />
@@ -567,13 +528,14 @@ export default function GradeComputationsList() {
                             type="checkbox"
                             checked={!!comp.is_multiple}
                             onChange={(e) => handleComponentChange(idx, 'is_multiple', e.target.checked)}
+                            disabled={!!editingTemplate}
                             className="rounded text-sage-600 focus:ring-sage-500 border-slate-300 w-3.5 h-3.5"
                           />
                           <span className="text-[10px] text-slate-500 font-bold whitespace-nowrap">Multi?</span>
                         </label>
                         <button 
                           type="button"
-                          disabled={components.length <= 1}
+                          disabled={components.length <= 1 || !!editingTemplate}
                           onClick={() => handleRemoveComponentRow(idx)}
                           className="p-1.5 text-slate-450 hover:text-rose-500 disabled:opacity-30 rounded-lg cursor-pointer flex-shrink-0"
                         >

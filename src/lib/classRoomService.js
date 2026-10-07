@@ -6,7 +6,7 @@ import { calculateAcademicRisk, computeTentativeGradeDetails } from './riskEngin
 import { resolveGradingFormula } from './gradingMath';
 import { resolveOfficialGwa } from './academicPolicy';
 import { findMostAdvancedPostedGrade, getCanonicalGradePeriod } from './gradeMilestones';
-import { countMissingActivities, scoreOrNull } from './evaluationTracking';
+import { countPendingReleasedActivities, countRecordedZeroScores, scoreOrNull } from './evaluationTracking';
 // Note: riskEngine.js is now the single source of truth for all risk calculations (V4).
 
 /**
@@ -488,7 +488,7 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
 
     const { data: classActivities } = await read(supabase
       .from('class_activities')
-      .select('activity_id, term, name, max_score, component_id')
+      .select('activity_id, term, name, max_score, component_id, is_released')
       .eq('class_record_id', classRecordId));
 
     const activityIds = (classActivities || []).map(activity => activity.activity_id);
@@ -508,7 +508,8 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
         dbId: activity.activity_id,
         name: activity.name,
         max: scoreOrNull(activity.max_score) ?? 0,
-        componentId: activity.component_id || null
+        componentId: activity.component_id || null,
+        isReleased: activity.is_released === true
       });
     });
 
@@ -597,8 +598,21 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
 
 
       // Count zero submissions ONLY for activities that are actually configured (max > 0)
-      const zeroSubmissionsCount = countMissingActivities(studScores, colsMap,
+      const zeroSubmissionsCount = countRecordedZeroScores(studScores, colsMap,
         classActivities || [], (granularScores || []).filter(score => score.student_id === stud.user_id));
+      const pendingActivityCount = countPendingReleasedActivities(
+        classActivities || [],
+        (granularScores || []).filter(score => score.student_id === stud.user_id)
+      );
+      const pendingActivityCounts = Object.fromEntries(
+        [...new Set((classActivities || []).map(activity => activity.term).filter(Boolean))].map(term => [
+          term,
+          countPendingReleasedActivities(
+            (classActivities || []).filter(activity => activity.term === term),
+            (granularScores || []).filter(score => score.student_id === stud.user_id)
+          )
+        ])
+      );
 
       const riskData = calculateAcademicRisk({
         currentGwa: approxGwa,
@@ -627,6 +641,8 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
         failing_count: approxGwa !== null && approxGwa > 3 ? 1 : 0,
         absences: studAbsences,
         exam_average: examCount > 0 ? Math.round(examSumPct / examCount) : 100,
+        pending_activity_count: pendingActivityCount,
+        pending_activity_counts: pendingActivityCounts,
         term_ratings: termRatings,
         risk_score: riskData.composite_score,
         risk_level: riskData.risk_level,

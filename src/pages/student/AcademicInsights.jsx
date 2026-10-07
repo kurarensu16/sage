@@ -282,7 +282,8 @@ export default function AcademicInsights() {
             const { data: classActs } = await supabase
               .from('class_activities')
               .select('*')
-              .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000']);
+              .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000'])
+              .eq('is_released', true);
 
             // Fetch professor evaluations for student
             const { data: riskEvals } = await supabase
@@ -508,6 +509,8 @@ export default function AcademicInsights() {
                     return {
                       ...activity,
                       score,
+                      gradingStatus: score === null ? 'ungraded' : score === 0 ? 'graded_zero' : 'graded',
+                      submissionStatus: 'unknown',
                       percentage: score !== null && maxScore > 0
                         ? Math.round((score / maxScore) * 100)
                         : null
@@ -886,7 +889,10 @@ export default function AcademicInsights() {
             term: activity.term,
             score: activity.score,
             maxScore: Number(activity.max_score) || null,
-            percentage: activity.percentage
+            percentage: activity.percentage,
+            gradingStatus: activity.gradingStatus,
+            submissionStatus: activity.submissionStatus,
+            isReleased: activity.is_released === true
           }))
         }
       : null,

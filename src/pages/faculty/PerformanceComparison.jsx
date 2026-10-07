@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
+import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 import { useAuth } from '../../lib/AuthContext';
 import {
   fetchFacultyCourseHistory,
@@ -228,6 +229,7 @@ export default function PerformanceComparison() {
         title="Performance Comparison"
         subtitle="Multi-term class comparison and trend analysis for identical course codes"
       />
+      <RiskEducationNote variant="performance" />
 
       {/* Top Bar: Subject and Term Selector */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 sm:p-5 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">

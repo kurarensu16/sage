@@ -14,7 +14,7 @@ export function scoreOrNull(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-export function countMissingActivities(termScores, columns, activities = [], granularScores = []) {
+export function countRecordedZeroScores(termScores, columns, activities = [], granularScores = []) {
   // Dynamic activities replace the legacy slots for their term; never count both.
   const dynamicTerms = new Set(activities.map(activity => activity.term));
   const activityMap = new Map(activities.map(activity => [activity.activity_id, activity]));
@@ -29,6 +29,19 @@ export function countMissingActivities(termScores, columns, activities = [], gra
     if (Number(activityMap.get(row.activity_id)?.max_score) > 0 && scoreOrNull(row.score) === 0) count++;
   }
   return count;
+}
+
+// Compatibility alias: this counts recorded numeric zeros, not null/ungraded
+// activities and not a confirmed submission status.
+export const countMissingActivities = countRecordedZeroScores;
+
+export function countPendingReleasedActivities(activities = [], granularScores = []) {
+  const scoreMap = new Map(granularScores.map(row => [row.activity_id, scoreOrNull(row.score)]));
+  return activities.filter(activity =>
+    activity.is_released === true
+    && Number(activity.max_score) > 0
+    && (!scoreMap.has(activity.activity_id) || scoreMap.get(activity.activity_id) === null)
+  ).length;
 }
 
 export function manilaDate(value = new Date()) {

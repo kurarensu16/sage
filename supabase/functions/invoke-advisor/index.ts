@@ -107,7 +107,12 @@ function sanitizeContext(input: any) {
           term: text(activity?.term, 40),
           score: Number.isFinite(activity?.score) ? activity.score : null,
           maxScore: Number.isFinite(activity?.maxScore) ? activity.maxScore : null,
-          percentage: Number.isFinite(activity?.percentage) ? activity.percentage : null
+          percentage: Number.isFinite(activity?.percentage) ? activity.percentage : null,
+          gradingStatus: ['ungraded', 'graded_zero', 'graded'].includes(activity?.gradingStatus)
+            ? activity.gradingStatus
+            : Number.isFinite(activity?.score) ? (activity.score === 0 ? 'graded_zero' : 'graded') : 'ungraded',
+          submissionStatus: text(activity?.submissionStatus, 40) || 'unknown',
+          isReleased: activity?.isReleased === true
         }))
         : []
     } : null,
@@ -120,7 +125,19 @@ function sanitizeContext(input: any) {
         gradingFormula: course?.gradingFormula || null,
         periods: course?.periods || null,
         diagnostics: course?.diagnostics || null,
-        activities: Array.isArray(course?.activities) ? course.activities : []
+        activities: Array.isArray(course?.activities)
+          ? course.activities.slice(0, 20).map((activity: any) => ({
+            title: text(activity?.title, 160),
+            term: text(activity?.term, 40),
+            score: Number.isFinite(activity?.score) ? activity.score : null,
+            maxScore: Number.isFinite(activity?.maxScore) ? activity.maxScore : null,
+            gradingStatus: ['ungraded', 'graded_zero', 'graded'].includes(activity?.gradingStatus)
+              ? activity.gradingStatus
+              : Number.isFinite(activity?.score) ? (activity.score === 0 ? 'graded_zero' : 'graded') : 'ungraded',
+            submissionStatus: text(activity?.submissionStatus, 40) || 'unknown',
+            isReleased: activity?.isReleased === true
+          }))
+          : []
       }))
       : [],
     evidence: sanitizeEvidence(input?.evidence),
@@ -208,6 +225,7 @@ Rules:
 2. Never contradict the deterministic advising state, visible evidence, or actions.
 3. Faculty shared academic feedback is approved student-visible context. You may explain it, but must not reinterpret it as a new grade, risk decision, or diagnosis.
 4. Unencoded future terms are missing, not zero. Do not treat them as failures. ALWAYS use the student's ongoing performance (current Class Standing, Exam averages) and grading weights to provide proactive projections and strategic advice on what scores they need on upcoming activities or exams to maintain or achieve a better target grade.
+4a. Released activities marked "ungraded" are known activities with no recorded grade. Include them when summarizing pending academic evidence and suggest confirming their status or preparing/completing them if still required. Do not call them missing submissions, failures, or zero scores unless an explicit submissionStatus confirms that. "graded_zero" is a real recorded zero and must be discussed as a low score, not as an empty field.
 5. Absences do not deduct grade points. Four or more absences per subject may support an FDA recommendation, but the faculty instructor makes the official decision.
 6. If the student asks about missing activities or low scores and there are none recorded, explicitly state that there are no recorded missed activities or low scores. Do NOT say "I don't have enough information" for this case.
 7. When context.completeness.isFullyFinalized is false, treat GWA, standing, and President's List eligibility as in-progress — use language like "based on your current performance" or "possible candidate." Never say a partial-term reading "confirms" or "finalizes" anything.
@@ -240,7 +258,7 @@ Deno.serve(async req => {
     if (contentLength > MAX_BODY_BYTES) return json({ error: 'Request is too large' }, 413)
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const serviceRoleKey = Deno.env.get('SERVICE_ROLE_KEY')
+    const serviceRoleKey = Deno.env.get('SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     const openRouterKey = Deno.env.get('OPENROUTER_API_KEY')
     const authHeader = req.headers.get('Authorization') || ''
     if (!supabaseUrl || !serviceRoleKey || !openRouterKey) return json({ error: 'Advisor service is not configured' }, 503)
@@ -276,8 +294,6 @@ Deno.serve(async req => {
       : []
     const question = mode === 'chat' ? text(body.question, 600) : 'Explain this official academic milestone and suggest practical next steps.'
     if (mode === 'chat' && !question) return json({ error: 'Question is required' }, 400)
-
-    console.log("INVOKE-ADVISOR CONTEXT PAYLOAD:", JSON.stringify(context, null, 2));
 
     let weightsStr = ''
     // chat mode: formula is nested under context.subject.gradingFormula
@@ -333,7 +349,7 @@ Deno.serve(async req => {
           response = parseStructuredResponse(content)
           break // success — stop retrying
         } catch (parseErr) {
-          console.warn(`invoke-advisor parse error on attempt ${attempt + 1}. Raw content:`, content)
+          console.warn(`invoke-advisor parse error on attempt ${attempt + 1}`)
           throw parseErr
         }
       } catch (err) {

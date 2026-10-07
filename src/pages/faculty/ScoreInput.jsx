@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import StudentRow from '../../components/StudentRow';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus, X, AlertTriangle, AlertCircle, Settings, Sliders, CloudUpload, Eye, EyeOff } from 'lucide-react';
+import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus, X, AlertTriangle, AlertCircle, Info, Settings, Sliders, CloudUpload, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
@@ -24,7 +24,7 @@ import html2pdf from 'html2pdf.js';
 import { cn } from '../../lib/utils';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import { getClassPriorityRoster, getEnrollmentType } from '../../lib/classRoomService';
-import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
+import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 import {
   GRADE_MILESTONES,
   getCanonicalGradePeriod,
@@ -49,7 +49,6 @@ export default function ScoreInput() {
   const [autoSaveStatus, setAutoSaveStatus] = useState('saved'); // 'saving' | 'saved'
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [classesList, setClassesList] = useState([]);
-  const [evaluatingStudent, setEvaluatingStudent] = useState(null);
 
   // Success and posting modals
   const [showPopup, setShowPopup] = useState(false);
@@ -58,6 +57,7 @@ export default function ScoreInput() {
   const [showPostModal, setShowPostModal] = useState(false);
   const [pendingPostMilestone, setPendingPostMilestone] = useState(null);
   const [postingGrades, setPostingGrades] = useState(false);
+  const [nullScoreReview, setNullScoreReview] = useState(null);
 
   // Maximum items configuration for activities and exams per period
   const [maxItems, setMaxItems] = useState({
@@ -223,9 +223,12 @@ export default function ScoreInput() {
       maxItems,
       isSummer
     });
+    void logActivity('File Export', `Initiated Excel grade-sheet export (${selectedTab}) for ${classInfo.subjects?.code} - ${classInfo.sections?.name}.`, resolveActorName(profile, user));
   };
 
   const handleExportPdf = (selectedTab) => {
+    if (!classInfo || students.length === 0) return;
+    void logActivity('File Export', `Initiated PDF grade-sheet export (${selectedTab}) for ${classInfo.subjects?.code} - ${classInfo.sections?.name}.`, resolveActorName(profile, user));
     // 1. Create a single canvas context reused for all color conversions
     const canvas = document.createElement('canvas');
     canvas.width = 1;
@@ -1168,6 +1171,8 @@ export default function ScoreInput() {
     try {
       const upsertScoresRows = [];
       const granularScoreUpserts = [];
+      const emptyTermRows = [];
+      const granularScoreDeletes = [];
 
       students.forEach(stud => {
         const STORAGE_KEY = `sage_scores_${classRecordId}_${stud.id}`;
@@ -1179,27 +1184,30 @@ export default function ScoreInput() {
             const termScores = draft[term] || {};
             const termActs = activities[term] || [];
 
-            const legacyScores = { act1: 0, act2: 0, act3: 0, act4: 0, act5: 0, act6: 0 };
+            const legacyScores = { act1: null, act2: null, act3: null, act4: null, act5: null, act6: null };
             termActs.forEach((act, idx) => {
               const rawValue = termScores[act.id]
                 ?? termScores[act.dbId]
                 ?? termScores[act.slotKey]
-                ?? termScores[`act${idx + 1}`]
-                ?? 0;
-              const val = Number(rawValue) || 0;
+                ?? termScores[`act${idx + 1}`];
+              const val = rawValue === '' || rawValue === null || rawValue === undefined ? null : Number(rawValue);
               if (idx < 6) {
                 legacyScores[`act${idx+1}`] = val;
               }
               const actUuid = act.dbId || act.id;
               if (actUuid && typeof actUuid === 'string' && actUuid.length > 20) {
-                granularScoreUpserts.push({
-                  student_id: stud.id,
-                  activity_id: actUuid,
-                  score: val
-                });
+                if (val === null) granularScoreDeletes.push({ studentId: stud.id, activityId: actUuid });
+                else granularScoreUpserts.push({ student_id: stud.id, activity_id: actUuid, score: val });
               }
             });
 
+            const charRating = termScores.char === '' || termScores.char === null || termScores.char === undefined ? null : Number(termScores.char);
+            const exam = termScores.exam === '' || termScores.exam === null || termScores.exam === undefined ? null : Number(termScores.exam);
+            const hasAnyScore = Object.values(legacyScores).some(value => value !== null) || charRating !== null || exam !== null;
+            if (!hasAnyScore) {
+              emptyTermRows.push({ studentId: stud.id, term });
+              return;
+            }
             upsertScoresRows.push({
               class_record_id: classRecordId,
               student_id: stud.id,
@@ -1210,8 +1218,8 @@ export default function ScoreInput() {
               act4: legacyScores.act4,
               act5: legacyScores.act5,
               act6: legacyScores.act6,
-              char_rating: termScores.char || 0,
-              exam: termScores.exam || 0,
+              char_rating: charRating,
+              exam,
               saved_by: user.id
             });
           });
@@ -1219,17 +1227,28 @@ export default function ScoreInput() {
       });
 
       // Save to db
-      const { error: scoresErr } = await supabase
-        .from('student_term_scores')
-        .upsert(upsertScoresRows, { onConflict: 'class_record_id,student_id,term' });
-
-      if (scoresErr) throw scoresErr;
+      if (upsertScoresRows.length > 0) {
+        const { error: scoresErr } = await supabase.from('student_term_scores')
+          .upsert(upsertScoresRows, { onConflict: 'class_record_id,student_id,term' });
+        if (scoresErr) throw scoresErr;
+      }
 
       if (granularScoreUpserts.length > 0) {
-        await supabase
+        const { error } = await supabase
           .from('student_activity_scores')
           .upsert(granularScoreUpserts, { onConflict: 'student_id,activity_id' });
+        if (error) throw error;
       }
+      await Promise.all(emptyTermRows.map(async row => {
+        const { error } = await supabase.from('student_term_scores').delete()
+          .eq('class_record_id', classRecordId).eq('student_id', row.studentId).eq('term', row.term);
+        if (error) throw error;
+      }));
+      await Promise.all(granularScoreDeletes.map(async row => {
+        const { error } = await supabase.from('student_activity_scores').delete()
+          .eq('student_id', row.studentId).eq('activity_id', row.activityId);
+        if (error) throw error;
+      }));
 
       setAutoSaveStatus('saved');
       setLastSavedAt(new Date());
@@ -1253,7 +1272,85 @@ export default function ScoreInput() {
     }
   };
 
-  const handlePostGrades = async (targetMilestone = 'semestral') => {
+  const requiredTermsForMilestone = (targetMilestone) => targetMilestone === 'midterm'
+    ? (isSummer ? ['Midterm'] : ['Prelim', 'Midterm'])
+    : targetMilestone === 'tfr'
+      ? (isSummer ? ['Final'] : ['Semi-Final', 'Final'])
+      : periodsList;
+
+  const collectNullScores = (targetMilestone) => {
+    const requiredTerms = requiredTermsForMilestone(targetMilestone);
+    const affected = [];
+    students.forEach(stud => {
+      const draft = JSON.parse(localStorage.getItem(`sage_scores_${classRecordId}_${stud.id}`) || '{}');
+      const fields = [];
+      requiredTerms.forEach(term => {
+        (activities[term] || []).forEach((activity, index) => {
+          const termScores = draft[term] || {};
+          const value = termScores[activity.id]
+            ?? termScores[activity.dbId]
+            ?? termScores[activity.slotKey]
+            ?? termScores[`act${index + 1}`];
+          if (value === '' || value === null || value === undefined) {
+            fields.push({ term, key: activity.id || activity.dbId || `act${index + 1}`, label: activity.name || activity.title || `Activity ${index + 1}` });
+          }
+        });
+        const termScores = draft[term] || {};
+        if (gradingPresentation.hasCharacter && (termScores.char === '' || termScores.char === null || termScores.char === undefined)) {
+          fields.push({ term, key: 'char', label: gradingPresentation.characterLabel });
+        }
+        if (termScores.exam === '' || termScores.exam === null || termScores.exam === undefined) {
+          fields.push({ term, key: 'exam', label: gradingPresentation.examLabel });
+        }
+      });
+      if (fields.length) affected.push({ studentId: stud.id, studentName: stud.name, studentNumber: stud.student_id_number, fields });
+    });
+    return { targetMilestone, requiredTerms, affected, fieldCount: affected.reduce((sum, item) => sum + item.fields.length, 0) };
+  };
+
+  const persistReviewedNullsAsZero = async (review) => {
+    const termRows = [];
+    const activityRows = [];
+    review.affected.forEach(item => {
+      const storageKey = `sage_scores_${classRecordId}_${item.studentId}`;
+      const draft = JSON.parse(localStorage.getItem(storageKey) || '{}');
+      item.fields.forEach(field => {
+        draft[field.term] = { ...(draft[field.term] || {}), [field.key]: 0 };
+      });
+      localStorage.setItem(storageKey, JSON.stringify(draft));
+
+      review.requiredTerms.forEach(term => {
+        const termScores = draft[term] || {};
+        const row = {
+          class_record_id: classRecordId,
+          student_id: item.studentId,
+          term,
+          char_rating: termScores.char ?? null,
+          exam: termScores.exam ?? null,
+          saved_by: user.id
+        };
+        (activities[term] || []).forEach((activity, index) => {
+          const value = termScores[activity.id] ?? termScores[activity.dbId] ?? termScores[activity.slotKey] ?? termScores[`act${index + 1}`] ?? null;
+          if (index < 6) row[`act${index + 1}`] = value;
+          const activityId = activity.dbId || activity.id;
+          if (activityId && typeof activityId === 'string' && activityId.length > 20 && value !== null) {
+            activityRows.push({ student_id: item.studentId, activity_id: activityId, score: Number(value) });
+          }
+        });
+        termRows.push(row);
+      });
+    });
+    if (termRows.length) {
+      const { error } = await supabase.from('student_term_scores').upsert(termRows, { onConflict: 'class_record_id,student_id,term' });
+      if (error) throw error;
+    }
+    if (activityRows.length) {
+      const { error } = await supabase.from('student_activity_scores').upsert(activityRows, { onConflict: 'student_id,activity_id' });
+      if (error) throw error;
+    }
+  };
+
+  const handlePostGrades = async (targetMilestone = 'semestral', acceptNullsAsZero = false) => {
     if (!classRecordId || students.length === 0) return;
     if (!gradingFormula.ok) {
       alert(`Grades cannot be posted: ${gradingFormula.error}`);
@@ -1262,6 +1359,15 @@ export default function ScoreInput() {
 
     setPostingGrades(true);
     try {
+      const nullReview = collectNullScores(targetMilestone);
+      if (nullReview.fieldCount > 0 && !acceptNullsAsZero) {
+        setNullScoreReview(nullReview);
+        return;
+      }
+      if (nullReview.fieldCount > 0) {
+        await persistReviewedNullsAsZero(nullReview);
+        setNullScoreReview(null);
+      }
       let periodParam = getMilestoneForPostingTarget(targetMilestone);
       let termNotificationName = 'Official Semestral Grade (SG)';
       let newMilestoneLock = 'Semestral Grade';
@@ -1348,11 +1454,7 @@ export default function ScoreInput() {
             activities: activities[termName] || []
           })
         ]));
-        const requiredTerms = targetMilestone === 'midterm'
-          ? (isSummer ? ['Midterm'] : ['Prelim', 'Midterm'])
-          : targetMilestone === 'tfr'
-            ? (isSummer ? ['Final'] : ['Semi-Final', 'Final'])
-            : periodsList;
+        const requiredTerms = requiredTermsForMilestone(targetMilestone);
         const invalidTerm = requiredTerms.find(term =>
           !termResults[term].ok || !termResults[term].hasData || !termResults[term].isComplete
         );
@@ -1549,6 +1651,18 @@ export default function ScoreInput() {
             <h2 className="text-base sm:text-lg font-bold text-slate-900 font-display">Select a Class to Input Scores</h2>
             <p className="text-xs sm:text-sm text-slate-500">Please select one of your active classes to load its grading spreadsheet.</p>
           </div>
+
+          <div className="flex items-start gap-3 rounded-2xl border border-sage-200 bg-sage-50 p-4 text-sm text-sage-800" role="note" aria-label="Score calculation guidance">
+            <Info className="mt-0.5 h-5 w-5 shrink-0 text-sage-600" />
+            <div>
+              <h3 className="font-bold">Before entering scores</h3>
+              <p className="mt-1 text-xs leading-relaxed text-sage-700">
+                Leave a cell blank when an activity is not yet graded. The system computes only cells containing a numeric value, including <span className="font-mono font-bold">0</span>. Blank cells are excluded from the earned and possible totals, while other numeric cells continue calculating dynamically. If every activity is blank, the term remains pending.
+              </p>
+            </div>
+          </div>
+
+          <RiskEducationNote variant="gradeLog" />
 
           {classesList.length === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-200/90 p-8 sm:p-12 text-center shadow-2xs max-w-xl mx-auto">
@@ -1871,6 +1985,7 @@ export default function ScoreInput() {
                 </div>
               </div>
             </div>
+            <RiskEducationNote variant="gradeLog" />
             <div className={isFullScreen ? "table-container overflow-auto flex-1" : "table-container overflow-x-auto"}>
                 <table className={`w-full min-w-max text-left border-collapse ${isFullScreen ? 'fullscreen-table' : ''}`}>
                     <thead>
@@ -2303,7 +2418,6 @@ export default function ScoreInput() {
                               lockedMilestones={lockedMilestones}
                               studentLocked={studentLocks[student.id]}
                               periodsList={periodsList}
-                              onSelectRiskStudent={(st) => setEvaluatingStudent(st)}
                               onSaveStatusChange={(st) => {
                                 setAutoSaveStatus(st);
                                 if (st === 'saved') setLastSavedAt(new Date());
@@ -2732,7 +2846,8 @@ export default function ScoreInput() {
                 </p>
               </div>
               <button 
-                onClick={() => setShowPostModal(false)}
+                onClick={() => { setShowPostModal(false); setPendingPostMilestone(null); setNullScoreReview(null); }}
+                aria-label="Close grade posting"
                 className="text-slate-400 hover:text-slate-650 transition-colors p-1 cursor-pointer"
               >
                 <X className="h-5 w-5" />
@@ -2765,10 +2880,29 @@ export default function ScoreInput() {
                     </div>
                   </div>
 
+                  {nullScoreReview?.targetMilestone === pendingPostMilestone && (
+                    <div className="rounded-xl border border-rose-200 bg-white p-3 text-xs text-sage-900">
+                      <p className="font-bold text-rose-700">
+                        {nullScoreReview.fieldCount} blank {nullScoreReview.fieldCount === 1 ? 'field' : 'fields'} across {nullScoreReview.affected.length} {nullScoreReview.affected.length === 1 ? 'student' : 'students'} will become official zero scores.
+                      </p>
+                      <p className="mt-1 text-sage-600">Grades, pass/fail standing, EWS evidence, and notifications will be recomputed from these zeros before release.</p>
+                      <div className="mt-3 max-h-52 space-y-2 overflow-y-auto" aria-label="Blank score conversion review">
+                        {nullScoreReview.affected.map(item => (
+                          <div key={item.studentId} className="rounded-lg border border-sage-200 bg-sage-50 p-2.5">
+                            <p className="font-bold">{item.studentName}{item.studentNumber ? ` (${item.studentNumber})` : ''}</p>
+                            <ul className="mt-1 space-y-1 text-sage-700">
+                              {item.fields.map((field, index) => <li key={`${field.term}:${field.key}:${index}`}>{field.term} · {field.label}: blank → 0</li>)}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-amber-200/60">
                     <button
                       type="button"
-                      onClick={() => setPendingPostMilestone(null)}
+                      onClick={() => { setPendingPostMilestone(null); setNullScoreReview(null); }}
                       className="px-3.5 py-2 text-xs font-semibold border border-amber-300 text-amber-900 hover:bg-amber-100 rounded-xl transition-colors font-sans cursor-pointer"
                     >
                       Back / Cancel
@@ -2776,11 +2910,11 @@ export default function ScoreInput() {
                     <button
                       type="button"
                       disabled={postingGrades}
-                      onClick={() => handlePostGrades(pendingPostMilestone)}
+                      onClick={() => handlePostGrades(pendingPostMilestone, nullScoreReview?.targetMilestone === pendingPostMilestone)}
                       className="px-4 py-2 text-xs font-bold bg-amber-700 hover:bg-amber-800 text-white rounded-xl transition-colors shadow-2xs font-sans disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
                     >
                       <Check className="w-3.5 h-3.5" />
-                      {postingGrades ? 'Posting...' : 'Yes, Confirm & Release'}
+                      {postingGrades ? 'Posting...' : nullScoreReview?.targetMilestone === pendingPostMilestone ? 'Convert to Zero & Release' : 'Review & Continue'}
                     </button>
                   </div>
                 </div>
@@ -2937,27 +3071,6 @@ export default function ScoreInput() {
         </div>
       )}
 
-      {/* HITL Student Risk Evaluation Modal */}
-      {evaluatingStudent && (
-        <StudentRiskEvaluationModal
-          isOpen={Boolean(evaluatingStudent)}
-          onClose={() => setEvaluatingStudent(null)}
-          student={evaluatingStudent}
-          classRecordId={classRecordId}
-          currentTerm={viewMode !== 'All' && viewMode !== 'Summary' && periodsList.includes(viewMode) ? viewMode : 'Midterm'}
-          subjectCode={classInfo?.subjects?.code}
-          subjectName={classInfo?.subjects?.name}
-          onSaveSuccess={(saved) => {
-            setStudents(prev => prev.map(s => s.id === evaluatingStudent.id ? { 
-              ...s, 
-              evaluation: saved, 
-              risk_score: saved.risk_score !== undefined ? saved.risk_score : s.risk_score, 
-              risk_level: saved.risk_level || s.risk_level,
-              refer_to_dean: saved.refer_to_dean !== undefined ? saved.refer_to_dean : s.refer_to_dean
-            } : s));
-          }}
-        />
-      )}
     </>
   );
 }

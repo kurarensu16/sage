@@ -427,3 +427,8 @@ entrypoint = "./functions/create-admin-user/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/invoke-advisor/index.ts"
+
+[functions.generate-intervention-draft]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/generate-intervention-draft/index.ts"

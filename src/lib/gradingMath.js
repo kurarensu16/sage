@@ -110,7 +110,10 @@ export function resolveGradingFormula(components, { formulaAssigned = Array.isAr
       name,
       weight,
       maxScore,
-      isMultiple: Boolean(component.is_multiple ?? component.isMultiple)
+      isMultiple: Boolean(component.is_multiple ?? component.isMultiple),
+      semanticType: component.semantic_type || component.semanticType || null,
+      displayOrder: Number(component.display_order ?? component.displayOrder ?? index),
+      isRequired: component.is_required ?? component.isRequired ?? true
     });
   }
 
@@ -235,7 +238,9 @@ export function calculateStoredTermRating({
     }
   }
 
-  const characterComponents = singleComponents.filter(component => /character/i.test(component.name));
+  const characterComponents = singleComponents.filter(component =>
+    component.semanticType === 'character' || (!component.semanticType && /character/i.test(component.name))
+  );
   const remainingSingleComponents = singleComponents.filter(component => !characterComponents.includes(component));
 
   if (characterComponents.length > 1 || remainingSingleComponents.length > 1) {
@@ -284,7 +289,10 @@ export function createGradingFormulaSnapshot(formula, { computationId = null } =
 export function getGradingStoragePresentation(formula) {
   const components = formula?.ok ? formula.components : [];
   const repeatableComponents = components.filter(component => component.isMultiple);
-  const characterComponent = components.find(component => !component.isMultiple && /character/i.test(component.name));
+  const characterComponent = components.find(component =>
+    !component.isMultiple
+    && (component.semanticType === 'character' || (!component.semanticType && /character/i.test(component.name)))
+  );
   const primarySingleComponent = components.find(component => !component.isMultiple && component !== characterComponent);
 
   return {
@@ -340,17 +348,22 @@ export function calculateWeightedTermRating({ formula, componentScores = {} }) {
     const items = normalizeScoreItems(componentScores[component.key], component);
     let earned = 0;
     let possible = 0;
-    let hasData = false;
+    let enteredItemCount = 0;
 
     items.forEach(item => {
       const score = toFiniteNumber(item?.score ?? item?.earned ?? item?.value);
       const maxScore = toFiniteNumber(item?.maxScore ?? item?.max_score ?? component.maxScore);
       if (score === null || maxScore === null || maxScore <= 0) return;
 
-      hasData = true;
+      enteredItemCount += 1;
       earned += Math.max(0, score);
       possible += maxScore;
     });
+
+    const hasData = enteredItemCount > 0;
+    const expectedItemCount = items.length;
+    const isComponentComplete = hasData
+      && (!component.isMultiple || (expectedItemCount > 0 && enteredItemCount === expectedItemCount));
 
     const percentage = hasData && possible > 0
       ? Math.min(100, Math.max(0, (earned / possible) * 100))
@@ -363,13 +376,16 @@ export function calculateWeightedTermRating({ formula, componentScores = {} }) {
       possible,
       percentage,
       contribution,
-      hasData
+      hasData,
+      enteredItemCount,
+      expectedItemCount,
+      isComplete: isComponentComplete
     };
   });
 
   const hasData = contributions.some(component => component.hasData);
   const missingComponents = contributions
-    .filter(component => !component.hasData)
+    .filter(component => component.isRequired && !component.isComplete)
     .map(component => component.name);
   const rawRating = hasData
     ? contributions.reduce((sum, component) => sum + component.contribution, 0)
