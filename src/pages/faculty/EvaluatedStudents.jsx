@@ -5,6 +5,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { useAuth } from '../../lib/AuthContext';
 import { CASE_PAGE_SIZE, getEvaluatedCases, getEvaluationClasses, getReferralHistory, referEvaluation } from '../../lib/evaluationService';
 import { getTermsForPeriod, referralEligibility, taskState } from '../../lib/evaluationTracking';
+import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 
 const field = 'rounded-lg border border-sage-200 bg-sage-50 px-3 py-2 text-sm text-sage-900 focus:ring-2 focus:ring-sage-400';
 const action = 'rounded-lg border border-sage-200 px-3 py-2 text-sm font-semibold text-sage-700 hover:bg-sage-100 disabled:opacity-50';
@@ -42,7 +43,8 @@ function Tracker({ facultyId }) {
     page: Math.max(0, Number.parseInt(params.get('page') || '0', 10) || 0)
   };
   
-  const selectedPeriod = metadata?.periods.find(item => item.term_id === (filters.periodId || metadata?.periods.find(p => p.is_active)?.term_id));
+  const allowedClasses = metadata?.classes.filter(item => filters.history || item.status === 'active') || [];
+  const selectedPeriod = metadata?.periods.find(item => item.term_id === filters.periodId);
   const termOptions = getTermsForPeriod(selectedPeriod?.semester);
 
   function changeFilter(key, value) {
@@ -82,9 +84,9 @@ function Tracker({ facultyId }) {
     let cancelled = false;
     setLoading(true);
     setError('');
-    const period = filters.periodId === 'all' ? '' : filters.periodId || metadata.periods.find(item => item.is_active)?.term_id || '';
+    const period = filters.periodId === 'all' ? '' : filters.periodId;
     getEvaluatedCases({ ...filters, periodId: period, facultyId,
-      classIds: metadata.classes.map(item => item.class_record_id) }).then(data => {
+      classIds: allowedClasses.map(item => item.class_record_id) }).then(data => {
       if (!cancelled) { setResult(data); setLoading(false); }
     }).catch(err => { if (!cancelled) { setError(err.message); setResult({ cases: [], count: 0, standings: {} }); setLoading(false); } });
     return () => { cancelled = true; };
@@ -136,10 +138,11 @@ function Tracker({ facultyId }) {
         <p className="text-sm">Track each evaluation by subject and term. Task completion is reported by the student.</p>
         <Link className={action} to={`/faculty/evaluatestudent?${new URLSearchParams({ class: filters.classId, term: filters.term })}`}>Evaluate Students</Link>
       </div>
+      <RiskEducationNote variant="evaluationHistory" />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 rounded-xl border border-sage-200 bg-sage-50 p-4">
         <label className="text-xs font-semibold">Ownership<select className={`${field} block w-full mt-1`} value={filters.history ? 'history' : 'current'} onChange={e => changeFilter('scope', e.target.value)}><option value="current">Currently assigned classes</option><option value="history">Authored history (read-only)</option></select></label>
-        <label className="text-xs font-semibold">Academic period<select className={`${field} block w-full mt-1`} value={filters.periodId || metadata?.periods.find(item => item.is_active)?.term_id || 'all'} onChange={e => changeFilter('period', e.target.value)}><option value="all">All academic periods</option>{metadata?.periods.map(item => <option key={item.term_id} value={item.term_id}>{item.school_year} · {item.semester}{item.is_active ? ' (active)' : ' (Archive)'}</option>)}</select></label>
-        <label className="text-xs font-semibold">Class<select className={`${field} block w-full mt-1`} value={filters.classId} onChange={e => changeFilter('class', e.target.value)}><option value="">All allowed classes</option>{metadata?.classes.map(item => <option key={item.class_record_id} value={item.class_record_id}>{item.subjects?.code} · {item.sections?.name} · {item.school_year}</option>)}</select></label>
+        <label className="text-xs font-semibold">Academic period<select className={`${field} block w-full mt-1`} value={filters.periodId || 'all'} onChange={e => changeFilter('period', e.target.value)}><option value="all">All academic periods</option>{metadata?.periods.map(item => <option key={item.term_id} value={item.term_id}>{item.school_year} · {item.semester}{item.is_active ? ' (active)' : ' (Archive)'}</option>)}</select></label>
+        <label className="text-xs font-semibold">Class<select className={`${field} block w-full mt-1`} value={filters.classId} onChange={e => changeFilter('class', e.target.value)}><option value="">All allowed classes</option>{allowedClasses.map(item => <option key={item.class_record_id} value={item.class_record_id}>{item.subjects?.code} · {item.sections?.name} · {item.school_year}</option>)}</select></label>
         <label className="text-xs font-semibold">Grading term<select className={`${field} block w-full mt-1`} value={filters.term} onChange={e => changeFilter('term', e.target.value)}><option value="">All Terms</option>{termOptions.map(term => <option key={term}>{term}</option>)}</select></label>
         <label className="text-xs font-semibold">Referral<select className={`${field} block w-full mt-1`} value={filters.referral} onChange={e => changeFilter('referral', e.target.value)}><option value="">All cases</option><option value="pending">Pending Dean referral</option><option value="none">No active referral</option></select></label>
         <form className="flex items-end gap-2" onSubmit={e => { e.preventDefault(); changeFilter('search', searchText); }}><label className="text-xs font-semibold flex-1">Student search<input className={`${field} block w-full mt-1`} value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Name or student number" maxLength={100} /></label><button className={action}>Search</button></form>
@@ -149,6 +152,7 @@ function Tracker({ facultyId }) {
       {error && <p role="alert" className="rounded-lg border border-sage-400 p-3 text-sm">{error}</p>}
       {loading ? <p role="status">Loading evaluations and current subject standings…</p> : !result.cases.length ? <p className="p-6 rounded-xl border border-sage-200">No evaluations match these filters.</p> : result.cases.map(item => {
         const tasks = Array.isArray(item.advising_plan) ? item.advising_plan : [];
+        const planDeadline = tasks.map(task => task.due_date).filter(Boolean).sort().at(-1) || null;
         const complete = tasks.filter(task => task.completed === true).length;
         const standing = result.standings[item.class_record_id]?.[item.student_id];
         const unavailable = referralEligibility(item, item.class_record, facultyId, filters.history);
@@ -164,7 +168,8 @@ function Tracker({ facultyId }) {
           {open && <div id={`case-${item.evaluation_id}`} className="border-t border-sage-200 p-4 space-y-3">
             <h3 className="font-semibold text-sm">Student-reported tasks</h3>
             {!tasks.length && <p className="text-sm">No tasks assigned</p>}
-            {tasks.map((task, index) => <div key={task.task_id || index} className="rounded-lg bg-sage-100 p-3 text-sm"><p>{task.description}</p><p className="text-xs mt-1">Target: {task.target_term || 'Not specified'} · Due: {task.due_date || 'No deadline'} · {taskState(task)}</p>{task.completed === true && <p className="text-xs"><CheckCircle2 className="inline h-3 w-3" /> Reported at: {dateText(task.completed_at)}</p>}</div>)}
+            {planDeadline && <p className="rounded-lg border border-sage-200 bg-sage-50 p-3 text-xs"><strong>Plan completion date:</strong> {planDeadline} · Complete all steps in order by this date.</p>}
+            {tasks.map((task, index) => <div key={task.task_id || index} className="rounded-lg bg-sage-100 p-3 text-sm"><p>{task.description}</p><p className="text-xs mt-1">Target: {task.target_term || 'Not specified'} · {taskState(task)}</p>{task.completed === true && <p className="text-xs"><CheckCircle2 className="inline h-3 w-3" /> Reported at: {dateText(task.completed_at)}</p>}</div>)}
             <h3 className="font-semibold text-sm">Referral history</h3>
             {history?.loading && <p role="status" className="text-sm">Loading authorized referral details…</p>}
             {history?.error && <p role="alert" className="text-sm">{history.error}</p>}
@@ -179,7 +184,7 @@ function Tracker({ facultyId }) {
       <form onSubmit={submitReferral} onKeyDown={dialogKeys} role="dialog" aria-modal="true" aria-labelledby="referral-title" className="rounded-xl bg-sage-50 border border-sage-200 p-5 w-full max-w-lg max-h-full overflow-y-auto space-y-4 text-sage-900">
         <div className="flex justify-between"><h2 id="referral-title" className="font-display font-semibold">Escalate to Dean</h2><button type="button" className={action} aria-label="Close referral" disabled={sending} onClick={closeReferral}><X className="h-4 w-4" /></button></div>
         <p className="text-sm">{referralCase.student?.first_name} {referralCase.student?.last_name} · {referralCase.class_record?.subjects?.code} · {referralCase.class_record?.sections?.name} · {referralCase.term}</p>
-        <ul className="text-xs space-y-1">{(Array.isArray(referralCase.advising_plan) ? referralCase.advising_plan : []).map(task => <li key={task.task_id}>{task.description} · {taskState(task)} · {task.due_date || 'No deadline'}</li>)}</ul>
+        <ul className="text-xs space-y-1">{(Array.isArray(referralCase.advising_plan) ? referralCase.advising_plan : []).map(task => <li key={task.task_id}>{task.description} · {taskState(task)}</li>)}</ul>
         {!referralCase.advising_plan?.length && <p className="text-xs">No tasks assigned</p>}
         <label className="block text-sm">Reason for Dean review<textarea autoFocus required maxLength={2000} value={reason} onChange={e => setReason(e.target.value)} className={`${field} block w-full mt-1 min-h-28`} /></label>
         <p className="text-xs">The reason is restricted to authorized faculty, department Deans, and admins. Reported completion does not establish instructor verification.</p>

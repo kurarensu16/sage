@@ -235,9 +235,12 @@ export default function PostedGradesView() {
       maxItems,
       isSummer
     });
+    void logActivity('File Export', `Initiated Excel posted-grade export (${selectedTab}) for ${classInfo.subjects?.code} - ${classInfo.sections?.name}.`, resolveActorName(profile, user));
   };
 
   const handleExportPdf = (selectedTab) => {
+    if (!classInfo || students.length === 0) return;
+    void logActivity('File Export', `Initiated PDF posted-grade export (${selectedTab}) for ${classInfo.subjects?.code} - ${classInfo.sections?.name}.`, resolveActorName(profile, user));
     // 1. Create a single canvas context reused for all color conversions
     const canvas = document.createElement('canvas');
     canvas.width = 1;

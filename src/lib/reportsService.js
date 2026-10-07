@@ -327,6 +327,11 @@ export function buildSummaryCards(students = []) {
   const wellCount = students.filter(s => s.overallStatus === 'Performed well').length;
   const avgCount = students.filter(s => s.overallStatus === 'Average').length;
   const strCount = students.filter(s => s.overallStatus === 'Struggling').length;
+  const pendingCount = students.filter(s => !s.overallStatus || s.overallStatus === 'Ungraded').length;
+  const safeCount = students.filter(s => s.riskLevel === 'low').length;
+  const watchCount = students.filter(s => s.riskLevel === 'moderate').length;
+  const highCount = students.filter(s => s.riskLevel === 'high').length;
+  const criticalCount = students.filter(s => s.riskLevel === 'critical').length;
 
   return {
     total,
@@ -334,7 +339,12 @@ export function buildSummaryCards(students = []) {
     atRiskPct,
     wellCount,
     avgCount,
-    strCount
+    strCount,
+    pendingCount,
+    safeCount,
+    watchCount,
+    highCount,
+    criticalCount
   };
 }
 

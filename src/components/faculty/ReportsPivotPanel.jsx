@@ -3,6 +3,8 @@ import { Sparkles, Info, LayoutGrid, BarChart2, Download, ArrowRightLeft, Settin
 import { BarChart, Bar, LineChart, Line, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { cn } from '../../lib/utils';
 import { exportDataBreakdownToExcel } from '../../lib/reportsService';
+import { useAuth } from '../../lib/AuthContext';
+import { logActivity, resolveActorName } from '../../lib/auditLog';
 
 // Native 2D aggregate table — replaces the earlier react-pivottable integration (item 3.9)
 // per product decision 2026-10-03: the actual requirement here is 3 fixed presets plus
@@ -77,6 +79,7 @@ function uniqueInOrder(rows, field) {
 }
 
 export default function ReportsPivotPanel({ rows = [], selectedClass, onShowInfo }) {
+  const { user, profile } = useAuth();
   const [rowField, setRowField] = useState(PRESETS[0].config.rowField);
   const [colField, setColField] = useState(PRESETS[0].config.colField);
   const [aggregator, setAggregator] = useState(PRESETS[0].config.aggregator);
@@ -306,13 +309,10 @@ export default function ReportsPivotPanel({ rows = [], selectedClass, onShowInfo
           {/* Export Button */}
           <button
             type="button"
-            onClick={() => exportDataBreakdownToExcel({
-              selectedClass,
-              pivot,
-              aggregator,
-              valField,
-              rowField
-            })}
+            onClick={() => {
+              exportDataBreakdownToExcel({ selectedClass, pivot, aggregator, valField, rowField });
+              void logActivity('File Export', `Initiated class data-breakdown Excel export for ${selectedClass?.subjects?.code} - ${selectedClass?.sections?.name}.`, resolveActorName(profile, user));
+            }}
             disabled={filteredRows.length === 0}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sage-50 hover:bg-sage-100 text-sage-700 border border-sage-200 text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
             title="Export Data Breakdown Matrix to Excel"

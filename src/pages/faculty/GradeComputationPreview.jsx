@@ -1006,9 +1006,12 @@ export default function GradeComputationPreview() {
       maxItems,
       isSummer
     });
+    void logActivity('File Export', `Initiated Excel grade-preview export (${selectedTab}) for ${classInfo.subjects?.code} - ${classInfo.sections?.name}.`, resolveActorName(profile, user));
   };
 
   const handleExportPdf = (selectedTab) => {
+    if (!classInfo || computedStudents.length === 0) return;
+    void logActivity('File Export', `Initiated PDF grade-preview export (${selectedTab}) for ${classInfo.subjects?.code} - ${classInfo.sections?.name}.`, resolveActorName(profile, user));
     const canvas = document.createElement('canvas');
     canvas.width = 1;
     canvas.height = 1;

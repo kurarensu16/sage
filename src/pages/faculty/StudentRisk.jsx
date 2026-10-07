@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowRight, BookOpen, CheckCircle2, ClipboardCheck, Info, RefreshCw, Search, Users } from 'lucide-react';
+import { ArrowRight, BookOpen, CheckCircle2, ClipboardCheck, Info, Loader2, RefreshCw, Search, Users, X } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import { useAuth } from '../../lib/AuthContext';
 import { getClassPriorityRoster } from '../../lib/classRoomService';
 import { getEvaluationClasses, getTermEvaluations } from '../../lib/evaluationService';
-import { EVALUATION_TERMS, getTermsForPeriod, needsEvaluation } from '../../lib/evaluationTracking';
+import { getTermsForPeriod, needsEvaluation } from '../../lib/evaluationTracking';
 import { RISK_TIERS } from '../../lib/academicPolicy';
+import { generateInterventionDraft, getLatestGeneratedInterventionPlan } from '../../lib/interventionDraftService';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
 import EnrollmentTypeBadge from '../../components/common/EnrollmentTypeBadge';
+import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 
 const field = 'w-full rounded-lg border border-sage-200 bg-white px-4 py-2.5 text-sm text-sage-900 outline-none focus:border-sage-500 focus:ring-2 focus:ring-sage-200';
 const secondaryButton = 'inline-flex items-center justify-center gap-2 rounded-lg border border-sage-200 bg-white px-4 py-2 text-xs font-semibold text-sage-700 hover:bg-sage-50 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-sage-600 disabled:opacity-50 disabled:cursor-not-allowed';
@@ -24,9 +26,24 @@ function EvaluationRoster({ facultyId, needsByDefault }) {
   const [students, setStudents] = useState([]);
   const [evaluations, setEvaluations] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [generationCandidate, setGenerationCandidate] = useState(null);
+  const [generationRequestId, setGenerationRequestId] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [generationSlow, setGenerationSlow] = useState(false);
+  const [generationError, setGenerationError] = useState('');
+  const [restoringStudentId, setRestoringStudentId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    if (!generating) {
+      setGenerationSlow(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setGenerationSlow(true), 12000);
+    return () => window.clearTimeout(timer);
+  }, [generating]);
   const [search, setSearch] = useState('');
   const classId = params.get('class') || classes.find(item => item.status === 'active')?.class_record_id || classes[0]?.class_record_id || '';
   const selectedClass = classes.find(item => item.class_record_id === classId);
@@ -40,6 +57,54 @@ function EvaluationRoster({ facultyId, needsByDefault }) {
     setParams(next, { replace: true });
     setSelectedStudent(null);
     if (key === 'class') setSearch('');
+  }
+
+  async function beginEvaluation(student, existing) {
+    const candidate = { ...student, evaluation: existing || null };
+    if (existing) return setSelectedStudent(candidate);
+    setRestoringStudentId(student.user_id);
+    try {
+      const savedDraft = await getLatestGeneratedInterventionPlan({
+        classRecordId: classId,
+        studentId: student.user_id,
+        term
+      });
+      if (savedDraft) {
+        setSelectedStudent({ ...candidate, interventionDraft: savedDraft });
+        return;
+      }
+      setGenerationCandidate(candidate);
+      setGenerationRequestId(crypto.randomUUID());
+      setGenerationError('');
+    } catch (err) {
+      console.error('Unable to restore the generated intervention draft:', err);
+      setGenerationCandidate(candidate);
+      setGenerationRequestId(crypto.randomUUID());
+      setGenerationError('A saved suggestion could not be restored. You may generate a new draft or continue manually.');
+    } finally {
+      setRestoringStudentId(null);
+    }
+  }
+
+  async function generateDraft() {
+    if (!generationCandidate || generating) return;
+    setGenerating(true);
+    setGenerationError('');
+    try {
+      const draft = await generateInterventionDraft({ classRecordId: classId,
+        studentId: generationCandidate.user_id, term, requestId: generationRequestId });
+      setSelectedStudent({ ...generationCandidate, interventionDraft: draft });
+      setGenerationCandidate(null);
+    } catch (err) {
+      console.error('Unable to generate intervention draft:', err);
+      setGenerationError(err.message || 'We could not create the suggested intervention tasks right now. Please try again, or continue manually.');
+    } finally { setGenerating(false); }
+  }
+
+  function continueManually() {
+    setSelectedStudent({ ...generationCandidate, interventionDraft: null });
+    setGenerationCandidate(null);
+    setGenerationError('');
   }
 
   useEffect(() => {
@@ -73,6 +138,8 @@ function EvaluationRoster({ facultyId, needsByDefault }) {
         <Link className={secondaryButton} to={`/faculty/evaluatedstudents?${new URLSearchParams({ class: classId, term, period: selectedClass?.term_id || 'all' })}`}><ClipboardCheck className="h-4 w-4" />Evaluated Students<ArrowRight className="h-4 w-4" /></Link>
       </div>
 
+      <RiskEducationNote variant="evaluationRoster" />
+
       <section className="rounded-2xl border border-sage-200 bg-white shadow-2xs overflow-hidden" aria-label="Evaluation context">
         <div className="flex items-center gap-2 border-b border-sage-100 px-4 py-4 sm:px-6"><BookOpen className="h-4 w-4 text-sage-600" /><h3 className="text-sm font-bold">Class & grading term</h3></div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 sm:p-6">
@@ -101,13 +168,28 @@ function EvaluationRoster({ facultyId, needsByDefault }) {
         {loading ? <div role="status" className="flex items-center justify-center gap-2 p-12 text-sm text-sage-500"><RefreshCw className="h-4 w-4 animate-spin" />Calculating risk roster…</div> : !visible.length ? <div className="p-12 text-center"><Users className="h-8 w-8 mx-auto text-sage-300" /><p className="mt-4 text-sm font-semibold">{needsOnly && !term ? 'All grading terms' : search ? 'No matching students' : 'No students in this view'}</p><p className="mt-2 text-xs text-sage-500">{needsOnly && !term ? 'Choose a term above to identify unevaluated concerns.' : search ? 'Try another name or student number.' : needsOnly ? 'No moderate-or-higher-risk students need an evaluation for this term.' : 'Enrolled students will appear here.'}</p></div> : <div className="overflow-x-auto table-container">
           <table className="w-full text-left text-xs"><thead className="bg-sage-50/70 text-sage-500"><tr>{['Student', 'Current risk', 'Subject standing', 'Absences', 'Evaluation'].map(title => <th key={title} className="px-4 py-4 sm:px-6 font-semibold whitespace-nowrap">{title}</th>)}</tr></thead><tbody className="divide-y divide-sage-100">{visible.map(student => {
             const existing = evaluations.find(item => item.student_id === student.user_id);
-            const disabled = !term || selectedClass?.status !== 'active';
-            return <tr key={student.user_id} className="hover:bg-sage-50/40 transition-colors"><td className="px-4 py-4 sm:px-6"><div className="flex items-center gap-3"><div className="hidden sm:flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-sage-100 bg-sage-50 text-xs font-bold text-sage-600" aria-hidden="true">{student.first_name?.[0]}{student.last_name?.[0]}</div><div><p className="font-bold text-sm whitespace-nowrap">{student.last_name}, {student.first_name}</p><p className="font-mono text-sage-500 mt-1">{student.student_id_number}</p><EnrollmentTypeBadge enrollmentType={student.enrollment_type} /></div></div></td><td className="px-4 py-4 sm:px-6"><span className={`inline-flex rounded-md border px-2 py-1 text-xs font-semibold capitalize ${student.risk_level === 'critical' || student.risk_level === 'high' ? 'bg-rose-50 text-rose-700 border-rose-200' : student.risk_level === 'moderate' ? 'bg-amber-50 text-amber-700 border-amber-200' : student.risk_level === 'low' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-sage-50 text-sage-700 border-sage-200'}`}>{student.risk_level}</span><p className="font-mono text-sage-500 mt-2">{student.risk_score} pts</p></td><td className="px-4 py-4 sm:px-6"><p className="font-mono text-sm font-semibold">{student.current_gwa == null ? 'Pending' : Number(student.current_gwa).toFixed(2)}</p><p className="text-sage-500 mt-1 whitespace-nowrap">{student.standing_source} · {student.standing_milestone || 'No milestone'}</p></td><td className="px-4 py-4 sm:px-6 font-mono text-sm">{student.absences}</td><td className="px-4 py-4 sm:px-6"><button type="button" disabled={disabled} title={!term ? 'Select a grading term first' : disabled ? 'Inactive class is read-only' : undefined} onClick={() => setSelectedStudent({ ...student, evaluation: existing || null })} className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-sage-600 ${disabled ? 'bg-sage-50 text-sage-300 border border-sage-100 cursor-not-allowed' : existing ? `${secondaryButton}` : 'bg-sage-800 text-white hover:bg-sage-700 cursor-pointer'}`}><ClipboardCheck className="h-4 w-4" />{existing ? 'Review / edit' : 'Evaluate'}</button><p className="mt-2 text-xs text-sage-500">{!term ? 'Choose a term above' : selectedClass?.status !== 'active' ? 'Read-only class' : existing ? existing.status : 'Not evaluated'}</p></td></tr>;
+            const restoring = restoringStudentId === student.user_id;
+            const disabled = !term || selectedClass?.status !== 'active' || restoring;
+            return <tr key={student.user_id} className="hover:bg-sage-50/40 transition-colors"><td className="px-4 py-4 sm:px-6"><div className="flex items-center gap-3"><div className="hidden sm:flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-sage-100 bg-sage-50 text-xs font-bold text-sage-600" aria-hidden="true">{student.first_name?.[0]}{student.last_name?.[0]}</div><div><p className="font-bold text-sm whitespace-nowrap">{student.last_name}, {student.first_name}</p><p className="font-mono text-sage-500 mt-1">{student.student_id_number}</p><EnrollmentTypeBadge enrollmentType={student.enrollment_type} /></div></div></td><td className="px-4 py-4 sm:px-6"><span className={`inline-flex rounded-md border px-2 py-1 text-xs font-semibold capitalize ${student.risk_level === 'critical' || student.risk_level === 'high' ? 'bg-rose-50 text-rose-700 border-rose-200' : student.risk_level === 'moderate' ? 'bg-amber-50 text-amber-700 border-amber-200' : student.risk_level === 'low' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-sage-50 text-sage-700 border-sage-200'}`}>{student.risk_level}</span><p className="font-mono text-sage-500 mt-2">{student.risk_score} pts</p></td><td className="px-4 py-4 sm:px-6"><p className="font-mono text-sm font-semibold">{student.current_gwa == null ? 'Pending' : Number(student.current_gwa).toFixed(2)}</p><p className="text-sage-500 mt-1 whitespace-nowrap">{student.standing_source} · {student.standing_milestone || 'No milestone'}</p></td><td className="px-4 py-4 sm:px-6 font-mono text-sm">{student.absences}</td><td className="px-4 py-4 sm:px-6"><button type="button" disabled={disabled} title={!term ? 'Select a grading term first' : selectedClass?.status !== 'active' ? 'Inactive class is read-only' : restoring ? 'Restoring saved draft' : undefined} onClick={() => beginEvaluation(student, existing)} className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-sage-600 ${disabled ? 'bg-sage-50 text-sage-300 border border-sage-100 cursor-not-allowed' : existing ? `${secondaryButton}` : 'bg-sage-800 text-white hover:bg-sage-700 cursor-pointer'}`}>{restoring ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}{restoring ? 'Restoring…' : existing ? 'Review / edit' : 'Evaluate'}</button><p className="mt-2 text-xs text-sage-500">{!term ? 'Choose a term above' : selectedClass?.status !== 'active' ? 'Read-only class' : existing ? existing.status : 'Not evaluated'}</p></td></tr>;
           })}</tbody></table>
         </div>}
         {!loading && !!visible.length && <div className="border-t border-sage-100 px-4 py-4 sm:px-6 text-xs text-sage-500">Showing <span className="font-mono font-semibold text-sage-700">{visible.length}</span> of <span className="font-mono">{roster.length}</span> students{term ? ` · ${term}` : ''}</div>}
       </section>
     </div>
-    {selectedStudent && <StudentRiskEvaluationModal key={`${selectedStudent.user_id}:${term}`} isOpen onClose={() => setSelectedStudent(null)} student={selectedStudent} classRecordId={classId} currentTerm={term} subjectCode={selectedClass?.subjects?.code || ''} subjectName={selectedClass?.subjects?.name || ''} onEvaluationSaved={() => setRefresh(value => value + 1)} />}
+    {generationCandidate && <div className="fixed inset-0 z-50 flex items-center justify-center bg-sage-950/60 p-4">
+      <div role="dialog" aria-modal="true" aria-labelledby="generate-title" className="w-full max-w-lg rounded-2xl border border-sage-200 bg-white p-5 text-sage-900 shadow-xl">
+        <div className="flex items-start justify-between gap-4"><div><h2 id="generate-title" className="font-display text-lg font-bold">Generate intervention draft?</h2><p className="mt-1 text-xs text-sage-500">AI suggestions are saved as drafts for faculty review but are not published automatically.</p></div><button type="button" disabled={generating} onClick={() => setGenerationCandidate(null)} aria-label="Cancel generation" className="rounded-lg p-2 text-sage-500 hover:bg-sage-100 disabled:opacity-50"><X className="h-4 w-4" /></button></div>
+        <div className="mt-4 rounded-xl border border-sage-200 bg-sage-50 p-4 text-sm"><p className="font-bold">{generationCandidate.first_name} {generationCandidate.last_name}</p><p className="mt-1 text-xs text-sage-600">{selectedClass?.subjects?.code} · {selectedClass?.sections?.name} · {term}</p></div>
+        <p className="mt-4 text-sm text-sage-700">The system will securely analyze this subject's grades, released activities, exam and character results, attendance, and academic-risk evidence. Names, email addresses, private notes, and referral reasons are excluded from the AI prompt.</p>
+        {generating && <p role="status" className="mt-4 flex items-center gap-2 rounded-lg bg-sage-100 p-3 text-sm"><Loader2 className="h-4 w-4 animate-spin" />{generationSlow ? 'This is taking a little longer than usual. We’re still preparing the draft—please keep this window open.' : 'Preparing three suggested intervention tasks…'}</p>}
+        {generationError && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{generationError}</p>}
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" disabled={generating} onClick={() => setGenerationCandidate(null)} className={secondaryButton}>Cancel</button>
+          {generationError && <button type="button" disabled={generating} onClick={continueManually} className={secondaryButton}>Continue manually</button>}
+          <button type="button" disabled={generating} onClick={generateDraft} className="inline-flex items-center justify-center gap-2 rounded-lg bg-sage-800 px-4 py-2 text-xs font-semibold text-white hover:bg-sage-700 disabled:opacity-50">{generating && <Loader2 className="h-4 w-4 animate-spin" />}{generationError ? 'Retry generation' : 'Generate Draft'}</button>
+        </div>
+      </div>
+    </div>}
+    {selectedStudent && <StudentRiskEvaluationModal key={`${selectedStudent.user_id}:${term}`} isOpen onClose={() => setSelectedStudent(null)} student={selectedStudent} initialDraft={selectedStudent.interventionDraft} classRecordId={classId} currentTerm={term} subjectCode={selectedClass?.subjects?.code || ''} subjectName={selectedClass?.subjects?.name || ''} onEvaluationSaved={() => setRefresh(value => value + 1)} />}
   </>;
 }

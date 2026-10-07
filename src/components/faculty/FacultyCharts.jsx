@@ -280,11 +280,10 @@ export function StudentRiskInterventionDonut({ riskData = {} }) {
   const [hoveredKey, setHoveredKey] = useState(null);
 
   const segments = [
-    { key: 'onTrack', label: 'On Track / Low Risk', count: riskData.onTrack || 0, color: PALETTE.emerald, desc: 'Score 0-24: Satisfactory standing' },
-    { key: 'plWatch', label: 'PL Honors Retention', count: riskData.plWatch || 0, color: PALETTE.amber, desc: 'High GPA with dragging formative score' },
-    { key: 'moderate', label: 'Moderate Risk', count: riskData.moderate || 0, color: '#f97316', desc: 'Score 25-49: Early academic warning' },
-    { key: 'critical', label: 'Critical / Intervention', count: riskData.critical || 0, color: PALETTE.rose, desc: 'Score 50+: Active HITL intervention required' },
-    { key: 'escalated', label: 'Dean Escalated', count: riskData.escalated || 0, color: PALETTE.purple, desc: 'Referral flagged to College Dean queue' }
+    { key: 'safe', label: 'Safe', count: riskData.safe || 0, color: PALETTE.emerald, desc: 'No current concern' },
+    { key: 'watch', label: 'Watch', count: riskData.watch || 0, color: PALETTE.amber, desc: 'The student may need attention' },
+    { key: 'high', label: 'High', count: riskData.high || 0, color: PALETTE.rose, desc: 'Timely faculty support is recommended' },
+    { key: 'critical', label: 'Critical', count: riskData.critical || 0, color: PALETTE.purple, desc: 'Prompt review and intervention are needed' }
   ];
 
   const total = segments.reduce((sum, s) => sum + s.count, 0);

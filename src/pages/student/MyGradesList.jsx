@@ -11,6 +11,7 @@ import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import { submitJoinRequest } from '../../lib/classRoomService';
 import { GRADE_MILESTONES, findPostedMilestone } from '../../lib/gradeMilestones';
+import { logActivity, resolveActorName } from '../../lib/auditLog';
 
 // ASPIRE v3.1: Transparent Official Milestone Ledger (No clearance locks)
 
@@ -486,7 +487,10 @@ export default function MyGradesList() {
             </div>
 
             <button
-              onClick={() => window.print()}
+              onClick={() => {
+                void logActivity('File Export', `Initiated unofficial grade-slip print for ${selectedSemLabel || 'the selected academic period'}.`, resolveActorName(profile, user));
+                window.print();
+              }}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 hover:border-slate-300 rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap"
               title="Print or export unofficial grade slip"
             >

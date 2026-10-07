@@ -24,6 +24,13 @@ export const RISK_TIERS = Object.freeze({
   HIGH: { min: 50, max: 74, label: 'high', color: 'rose' },
   CRITICAL: { min: 75, max: 100, label: 'critical', color: 'rose' }
 });
+export const RISK_DISPLAY = Object.freeze({
+  low: Object.freeze({ label: 'Safe', description: 'No current concern.' }),
+  moderate: Object.freeze({ label: 'Watch', description: 'The student may need attention.' }),
+  high: Object.freeze({ label: 'High', description: 'Timely faculty support is recommended.' }),
+  critical: Object.freeze({ label: 'Critical', description: 'Prompt review and intervention are needed.' })
+});
+export const getRiskDisplay = (tier = 'low') => RISK_DISPLAY[String(tier).toLowerCase()] || RISK_DISPLAY.low;
 export const GWA_BANDS = Object.freeze([
   { max: 1.25, label: 'Sapientia' }, { max: 1.5, label: 'Excellentia' },
   { max: 1.75, label: 'Virtus' }, { max: 2.5, label: 'Satisfactory' },

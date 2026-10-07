@@ -17,6 +17,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
 import { resolveOfficialGwa, computeStudentGwa } from '../../lib/academicPolicy';
 import { calculateAcademicRisk } from '../../lib/riskEngine';
+import { logActivity, resolveActorName } from '../../lib/auditLog';
 
 // ── Heat map color helpers ──────────────────────────────────────────────────
 function passRateColor(rate) {
@@ -43,7 +44,7 @@ function riskBadge(risk) {
 }
 
 export default function SummaryReports() {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   const [reportType, setReportType] = useState('grade-distribution');
   const [deptFilter, setDeptFilter] = useState('College of Computer Studies');
   const [semFilter, setSemFilter] = useState('1st');
@@ -311,7 +312,7 @@ export default function SummaryReports() {
                 studentName: ev.student ? `${ev.student.first_name} ${ev.student.last_name}` : 'Student',
                 section: ev.class_record?.sections?.name || ev.student?.sections?.name || '—',
                 subject: ev.class_record?.subjects?.code || 'General',
-                context: ev.evaluation_context === 'pl_retention' ? "President's Lister Retention" : "Academic Recovery",
+                context: ev.evaluation_context === 'pl_retention' ? "Legacy President's Lister Retention" : ev.evaluation_context === 'passing_recovery' ? 'Legacy Passing Recovery' : 'Academic Intervention',
                 initialRisk: `${ev.risk_level?.toUpperCase()} (${ev.risk_score || 0})`,
                 baselineGwa: bSnapshot.gwa ? Number(bSnapshot.gwa).toFixed(2) : '—',
                 followupGwa: fSnapshot?.gwa ? Number(fSnapshot.gwa).toFixed(2) : 'Under Review',
@@ -512,20 +513,19 @@ export default function SummaryReports() {
 
     XLSX.utils.book_append_sheet(wb, ws, getReportTitle().substring(0, 31));
     XLSX.writeFile(wb, `${getReportTitle()}_${deptFilter}_${syFilter}.xlsx`);
+    void logActivity('File Export', `Initiated Dean Excel report export: ${getReportTitle()} for ${deptFilter}, ${semFilter} Semester A.Y. ${syFilter}.`, resolveActorName(profile, user));
   };
 
   // ── PDF Export (preserved from original) ──────────────────────────────
    const handlePrint = () => {
+    void logActivity('File Export', `Initiated print export: ${getReportTitle()} for ${deptFilter}, ${semFilter} Semester A.Y. ${syFilter}.`, resolveActorName(profile, user));
     window.print();
   };
 
   const handleDownloadPDF = () => {
     const element = document.getElementById('print-area');
-    if (!element) {
-      console.error('Element #print-area not found');
-      return;
-    }
-
+    if (!element || reportData.length === 0) return;
+    void logActivity('File Export', `Initiated Dean PDF report export: ${getReportTitle()} for ${deptFilter}, ${semFilter} Semester A.Y. ${syFilter}.`, resolveActorName(profile, user));
     setIsGeneratingPdf(true);
 
     // Give state time to render loading modal

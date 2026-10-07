@@ -8,7 +8,7 @@ import {
   resolveGradingFormula
 } from '../lib/gradingMath';
 import { calculateAcademicRisk } from '../lib/riskEngine';
-import { RISK_TIERS } from '../lib/academicPolicy';
+import RiskTierBadge from './faculty/RiskTierBadge';
 import EnrollmentTypeBadge from './common/EnrollmentTypeBadge';
 
 export default function StudentRow({
@@ -36,7 +36,6 @@ export default function StudentRow({
   },
   gradingFormula,
   showCharacter = true,
-  onSelectRiskStudent,
   onSaveStatusChange
 }) {
   const STORAGE_KEY = `sage_scores_${classRecordId || classCode}_${student?.id ?? rowNo}`;
@@ -81,6 +80,7 @@ export default function StudentRow({
         const savedByUuid = authUser?.user?.id || null;
 
         const upsertRows = [];
+        const emptyTerms = [];
         const periods = periodsList || ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
 
         periods.forEach(term => {
@@ -123,7 +123,7 @@ export default function StudentRow({
               exam: examVal,
               saved_by: savedByUuid
             });
-          }
+          } else emptyTerms.push(term);
         });
 
         if (upsertRows.length > 0) {
@@ -133,9 +133,17 @@ export default function StudentRow({
 
           if (error) throw error;
         }
+        if (emptyTerms.length > 0) {
+          const { error } = await supabase.from('student_term_scores').delete()
+            .eq('class_record_id', classRecordId || classCode)
+            .eq('student_id', student.id)
+            .in('term', emptyTerms);
+          if (error) throw error;
+        }
 
         // Also sync dynamic activities to student_activity_scores table if UUIDs exist
         const dynamicScoreUpserts = [];
+        const dynamicScoreDeletes = [];
         periods.forEach(term => {
           const tScores = scores[term] || {};
           const tActs = activities[term] || [];
@@ -143,23 +151,26 @@ export default function StudentRow({
             const actUuid = act.dbId || act.id;
             if (actUuid && typeof actUuid === 'string' && actUuid.length > 20) {
               const val = tScores[act.id] !== undefined ? tScores[act.id] : (tScores[actUuid] !== undefined ? tScores[actUuid] : tScores[`act${idx + 1}`]);
-              dynamicScoreUpserts.push({
-                student_id: student.id,
-                activity_id: actUuid,
-                score: Number(val) || 0
-              });
+              if (val === '' || val === null || val === undefined) dynamicScoreDeletes.push(actUuid);
+              else dynamicScoreUpserts.push({ student_id: student.id, activity_id: actUuid, score: Number(val) });
             }
           });
         });
 
         if (dynamicScoreUpserts.length > 0) {
           try {
-            await supabase
+            const { error } = await supabase
               .from('student_activity_scores')
               .upsert(dynamicScoreUpserts, { onConflict: 'student_id,activity_id' });
+            if (error) throw error;
           } catch (scoreErr) {
             console.warn('Could not sync to student_activity_scores:', scoreErr);
           }
+        }
+        if (dynamicScoreDeletes.length > 0) {
+          const { error } = await supabase.from('student_activity_scores').delete()
+            .eq('student_id', student.id).in('activity_id', dynamicScoreDeletes);
+          if (error) throw error;
         }
 
         setSaveStatus('saved');
@@ -196,16 +207,26 @@ export default function StudentRow({
     });
     const repeatable = result.contributions.filter(component => component.isMultiple);
     const examComponent = result.contributions.find(component =>
-      !component.isMultiple && !/character/i.test(component.name)
+      !component.isMultiple
+      && component.semanticType !== 'character'
+      && (component.semanticType || !/character/i.test(component.name))
     );
     const csTotal = repeatable.reduce((sum, component) => sum + component.earned, 0);
     const csMax = repeatable.reduce((sum, component) => sum + component.possible, 0);
+    const hasActivityData = repeatable.some(component => component.hasData);
 
     return {
-      csTotal,
-      csPercent: csMax > 0 ? (csTotal / csMax) * 100 : 0,
-      examPercent: examComponent?.percentage || 0,
-      rating: result.rating,
+      // Blank activities are excluded from both earned and possible totals by
+      // the formula engine. Entered activities continue to calculate live.
+      csTotal: hasActivityData ? csTotal : null,
+      csPercent: hasActivityData && csMax > 0 ? (csTotal / csMax) * 100 : null,
+      examPercent: examComponent?.hasData ? examComponent.percentage : null,
+      // Partial terms remain useful for live guidance, but are explicitly
+      // calculated only from the weight represented by encoded components.
+      // Posting still requires result.isComplete in ScoreInput.
+      rating: result.hasData ? result.ratingOnEncoded : null,
+      hasData: result.hasData,
+      isComplete: result.isComplete,
       calculationError: result.error
     };
   };
@@ -267,7 +288,7 @@ export default function StudentRow({
   const renderInputCell = (term, key, maxVal, isTermLocked, widthClass = "w-full") => {
     const value = scores[term]?.[key] ?? '';
     if (isTermLocked) {
-      return <span className="font-mono text-xs">{value === '' ? '0' : value}</span>;
+      return <span className="font-mono text-xs">{value === '' ? '—' : value}</span>;
     }
     return (
       <input
@@ -303,6 +324,8 @@ export default function StudentRow({
   });
 
   const effectiveRiskScore = liveRiskData.composite_score;
+  const riskIsTentative = [prelimResult, midtermResult, semiFinalResult, finalResult]
+    .some(result => result.hasData && !result.isComplete);
 
   const stickyBgClass = cn(
     statusInfo.label === 'Safe' && "bg-white group-hover:bg-slate-50",
@@ -329,25 +352,12 @@ export default function StudentRow({
             <span className="truncate">{student.name}</span>
             <EnrollmentTypeBadge enrollmentType={student.enrollment_type} className="shrink-0" />
           </div>
-          {effectiveRiskScore >= RISK_TIERS.MODERATE.min && (
-            <button
-              type="button"
-              onClick={() => onSelectRiskStudent && onSelectRiskStudent(student)}
-              className={cn(
-                "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold shrink-0 border transition-all",
-                effectiveRiskScore >= RISK_TIERS.CRITICAL.min ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 cursor-pointer" :
-                  effectiveRiskScore >= RISK_TIERS.HIGH.min ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 hover:border-rose-300 cursor-pointer" :
-                    "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 hover:border-amber-300 cursor-pointer"
-              )}
-              title="Click to evaluate student risk & interventions"
-            >
-              <span className={cn(
-                "w-1.5 h-1.5 rounded-full",
-                effectiveRiskScore >= RISK_TIERS.HIGH.min ? "bg-rose-500 animate-pulse" : "bg-amber-500"
-              )} />
-              {effectiveRiskScore >= RISK_TIERS.CRITICAL.min ? 'Critical' : effectiveRiskScore >= RISK_TIERS.HIGH.min ? 'High' : 'Watch'}
-            </button>
-          )}
+          <RiskTierBadge
+            tier={liveRiskData.risk_level}
+            score={effectiveRiskScore}
+            tentative={riskIsTentative}
+            className="shrink-0"
+          />
         </div>
       </td>
 
@@ -368,12 +378,12 @@ export default function StudentRow({
               </td>
             );
           })}
-          <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{prelimResult.csTotal}</td>
-          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.csPercent.toFixed(1)}</td>
+          <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{prelimResult.csTotal ?? '—'}</td>
+          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.csPercent === null ? '—' : prelimResult.csPercent.toFixed(1)}</td>
           {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Prelim', 'char', 100, isPrelimCellLocked, "w-16")}</td>}
           <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Prelim', 'exam', maxItems.Prelim?.exam || 40, isPrelimCellLocked)}</td>
-          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.examPercent.toFixed(1)}</td>
-          <td className="px-2 py-3 font-mono font-bold bg-sky-50 border-r border-slate-200 text-sky-850 w-14 text-center">{prelimResult.rating}</td>
+          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.examPercent === null ? '—' : prelimResult.examPercent.toFixed(1)}</td>
+          <td className="px-2 py-3 font-mono font-bold bg-sky-50 border-r border-slate-200 text-sky-850 w-14 text-center">{prelimResult.rating ?? '—'}</td>
         </>
       )}
 
@@ -394,12 +404,12 @@ export default function StudentRow({
               </td>
             );
           })}
-          <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{midtermResult.csTotal}</td>
-          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.csPercent.toFixed(1)}</td>
+          <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{midtermResult.csTotal ?? '—'}</td>
+          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.csPercent === null ? '—' : midtermResult.csPercent.toFixed(1)}</td>
           {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Midterm', 'char', 100, isMidtermCellLocked, "w-16")}</td>}
           <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Midterm', 'exam', maxItems.Midterm?.exam || 40, isMidtermCellLocked)}</td>
-          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.examPercent.toFixed(1)}</td>
-          <td className="px-2 py-3 font-mono font-bold bg-indigo-50 border-r border-slate-200 text-indigo-800 w-14 text-center">{midtermResult.rating}</td>
+          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.examPercent === null ? '—' : midtermResult.examPercent.toFixed(1)}</td>
+          <td className="px-2 py-3 font-mono font-bold bg-indigo-50 border-r border-slate-200 text-indigo-800 w-14 text-center">{midtermResult.rating ?? '—'}</td>
         </>
       )}
 
@@ -424,12 +434,12 @@ export default function StudentRow({
               </td>
             );
           })}
-          <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{semiFinalResult.csTotal}</td>
-          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.csPercent.toFixed(1)}</td>
+          <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{semiFinalResult.csTotal ?? '—'}</td>
+          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.csPercent === null ? '—' : semiFinalResult.csPercent.toFixed(1)}</td>
           {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Semi-Final', 'char', 100, isSemiFinalCellLocked, "w-16")}</td>}
           <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Semi-Final', 'exam', maxItems['Semi-Final']?.exam || 40, isSemiFinalCellLocked)}</td>
-          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.examPercent.toFixed(1)}</td>
-          <td className="px-2 py-3 font-mono font-bold bg-amber-50 border-r border-slate-200 text-amber-800 w-14 text-center">{semiFinalResult.rating}</td>
+          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.examPercent === null ? '—' : semiFinalResult.examPercent.toFixed(1)}</td>
+          <td className="px-2 py-3 font-mono font-bold bg-amber-50 border-r border-slate-200 text-amber-800 w-14 text-center">{semiFinalResult.rating ?? '—'}</td>
         </>
       )}
 
@@ -450,12 +460,12 @@ export default function StudentRow({
               </td>
             );
           })}
-          <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{finalResult.csTotal}</td>
-          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.csPercent.toFixed(1)}</td>
+          <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{finalResult.csTotal ?? '—'}</td>
+          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.csPercent === null ? '—' : finalResult.csPercent.toFixed(1)}</td>
           {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Final', 'char', 100, isFinalCellLocked, "w-16")}</td>}
           <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Final', 'exam', maxItems.Final?.exam || 40, isFinalCellLocked)}</td>
-          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.examPercent.toFixed(1)}</td>
-          <td className="px-2 py-3 font-mono font-bold bg-orange-50 border-r border-slate-200 text-orange-850 w-14 text-center">{finalResult.rating}</td>
+          <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.examPercent === null ? '—' : finalResult.examPercent.toFixed(1)}</td>
+          <td className="px-2 py-3 font-mono font-bold bg-orange-50 border-r border-slate-200 text-orange-850 w-14 text-center">{finalResult.rating ?? '—'}</td>
         </>
       )}
 

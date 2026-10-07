@@ -30,6 +30,7 @@ import {
   AssessmentComponentDistributionBar 
 } from '../../components/faculty/FacultyCharts';
 import InfoModal from '../../components/InfoModal';
+import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 import { getClassPriorityRoster } from '../../lib/classRoomService';
 import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
 
@@ -63,7 +64,7 @@ export default function Dashboard() {
 
   // Analytics states
   const [trajectoryData, setTrajectoryData] = useState([]);
-  const [riskData, setRiskData] = useState({ onTrack: 0, plWatch: 0, moderate: 0, critical: 0, escalated: 0 });
+  const [riskData, setRiskData] = useState({ safe: 0, watch: 0, high: 0, critical: 0 });
   const [componentsData, setComponentsData] = useState([]);
 
 
@@ -236,25 +237,16 @@ export default function Dashboard() {
         });
 
         // 5. ASPIRE v4.0: Calculate Visual Analytics Data + PL Eligibility Tracking
-        const escalated = (evaluationsData || []).filter(e => e.refer_to_dean === true).length;
-        const critical = combinedStudents.filter(s => (s.risk_level === 'critical' || s.risk_level === 'high') && !s.evaluation?.refer_to_dean).length;
-        const moderate = combinedStudents.filter(s => s.risk_level === 'moderate').length;
+        const safe = combinedStudents.filter(s => s.risk_level === 'low').length;
+        const watch = combinedStudents.filter(s => s.risk_level === 'moderate').length;
+        const high = combinedStudents.filter(s => s.risk_level === 'high').length;
+        const critical = combinedStudents.filter(s => s.risk_level === 'critical').length;
         
-        // PL Tracking: Identify students eligible for President's List per DYCI Handbook Sec 3.8
-        // Sapientia (1.00-1.25), Excellentia (1.26-1.50), Virtus (1.51-1.75)
-        const plCandidates = combinedStudents.filter(s => 
-          s.current_gwa !== null && s.current_gwa !== undefined && 
-          !isNaN(s.current_gwa) && s.current_gwa > 0 && s.current_gwa <= 1.75
-        );
-        const plWatch = plCandidates.length;
-        const onTrack = Math.max(0, combinedStudents.length - (escalated + critical + plWatch + moderate));
-
         setRiskData({
-          onTrack,
-          plWatch,
-          moderate,
-          critical,
-          escalated
+          safe,
+          watch,
+          high,
+          critical
         });
 
         // Component breakdown & progression trajectory from student_term_scores
@@ -671,6 +663,7 @@ export default function Dashboard() {
         {/* ========================================================================= */}
         {/* ASPIRE v3.1 FACULTY VISUAL ANALYTICS SUITE                               */}
         {/* ========================================================================= */}
+        <RiskEducationNote variant="dashboard" />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
           
           {/* Left 2 Cols: Class Performance Trajectory */}
@@ -699,7 +692,7 @@ export default function Dashboard() {
               <div className="min-w-0">
                 <h3 className="text-sm sm:text-base font-bold font-display text-slate-900 flex items-center gap-2">
                   <PieChartIcon className="h-4 w-4 text-sage-600" />
-                  <span>Cohort Risk &amp; Interventions</span>
+                  <span>Cohort Risk Distribution</span>
                 </h3>
                 <p className="text-[11px] text-slate-500 mt-0.5">
                   Live student distribution across ASPIRE tiers.
