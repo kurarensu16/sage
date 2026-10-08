@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Sparkles, Info, LayoutGrid, BarChart2, Download, ArrowRightLeft, Settings2 } from 'lucide-react';
+import { Info, LayoutGrid, BarChart2, Download, ArrowRightLeft } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { cn } from '../../lib/utils';
 import { exportDataBreakdownToExcel } from '../../lib/reportsService';
@@ -204,6 +204,7 @@ export default function ReportsPivotPanel({ rows = [], selectedClass, onShowInfo
             type="button" 
             onClick={() => onShowInfo?.({
               title: "How to use Data Breakdown",
+              hideIcon: true,
               message: (
                 <div className="space-y-4 pt-2">
                   <p>
@@ -211,30 +212,21 @@ export default function ReportsPivotPanel({ rows = [], selectedClass, onShowInfo
                   </p>
                   
                   <div>
-                    <h4 className="font-semibold text-slate-800 flex items-center gap-2 mb-1">
-                      <Sparkles className="w-4 h-4 text-sage-500" /> 
-                      1. Quick Presets
-                    </h4>
+                    <h4 className="font-semibold text-slate-800 mb-1">1. Quick Presets</h4>
                     <p className="text-xs text-slate-600">
                       Use the preset buttons at the top to instantly configure the table for common scenarios (e.g., comparing terms or finding top performers).
                     </p>
                   </div>
 
                   <div>
-                    <h4 className="font-semibold text-slate-800 flex items-center gap-2 mb-1">
-                      <LayoutGrid className="w-4 h-4 text-sage-500" /> 
-                      2. Customizing the Grid
-                    </h4>
+                    <h4 className="font-semibold text-slate-800 mb-1">2. Customizing the Grid</h4>
                     <p className="text-xs text-slate-600">
                       Change the <strong>Rows</strong> and <strong>Columns</strong> dropdowns to restructure the table. Choose how to <strong>Aggregate</strong> the data and select which metric to calculate.
                     </p>
                   </div>
 
                   <div>
-                    <h4 className="font-semibold text-slate-800 flex items-center gap-2 mb-1">
-                      <BarChart2 className="w-4 h-4 text-sage-500" /> 
-                      3. Visualizing Data
-                    </h4>
+                    <h4 className="font-semibold text-slate-800 mb-1">3. Visualizing Data</h4>
                     <p className="text-xs text-slate-600">
                       Toggle between <strong>Grid</strong> and <strong>Chart</strong> views using the switch at the top right. While in Chart view, you can swap between Bar, Line, and Radar charts.
                     </p>
@@ -255,7 +247,6 @@ export default function ReportsPivotPanel({ rows = [], selectedClass, onShowInfo
         </div>
         
         <div className="flex flex-wrap items-center gap-2">
-          <Sparkles className="w-3.5 h-3.5 text-sage-500 flex-shrink-0" />
           <span className="text-[11px] uppercase text-slate-400 font-semibold mr-1">Presets:</span>
           {PRESETS.map(preset => (
           <button

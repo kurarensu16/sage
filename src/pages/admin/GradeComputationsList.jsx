@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
-import { Plus, Trash2, Edit2, Save, X, Settings, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Edit2, Save, X, Settings, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
@@ -411,9 +411,7 @@ export default function GradeComputationsList() {
                 {/* Official Presets Quick-Select */}
                 <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                      <Sparkles className="h-3 w-3 text-sage-600" /> Official DYCI Presets
-                    </span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Official DYCI Presets</span>
                     <span className="text-[10px] text-slate-400 font-medium">Click to populate</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">

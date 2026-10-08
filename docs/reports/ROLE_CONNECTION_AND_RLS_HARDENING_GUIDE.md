@@ -1,18 +1,18 @@
-# ASPIRE Role Connection and RLS Hardening Guide
+# ASPIRE Role Connection and RLS hHardening Guide
 
-**Prepared:** October 7, 2026  
-**Purpose:** Explain the role-connection audit findings and provide a safe plan for database hardening after functional testing.  
+**Prepared:** October 7, 2026
+**Purpose:** Explain the role-connection audit findings and provide a safe plan for database hardening after functional testing.
 **Scope:** Documentation only. This guide does not apply SQL or change application behavior.
 
 ## Regrouped hardening plan
 
 The work is divided into three related but independent security layers. All three are required because none of them is sufficient alone.
 
-| Workstream | Main question | Primary implementation | What it prevents |
-|---|---|---|---|
-| **A. RLS** | Which rows is this signed-in user allowed to access? | Enable RLS and create role/relationship-aware policies | Reading or modifying rows outside the user's scope |
-| **B. Database privileges** | Which operations may browser roles attempt on this table at all? | Revoke broad grants and grant only required operations | Anonymous writes and unnecessary delete/update capability |
-| **C. Ownership validation** | Does this specific record belong to the actor's Student account, assigned class, or department? | Policies plus validated transactional RPCs using `auth.uid()` | Forged IDs, cross-class actions, and cross-department approvals |
+| Workstream                        | Main question                                                                                   | Primary implementation                                         | What it prevents                                                |
+| --------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------- |
+| **A. RLS**                  | Which rows is this signed-in user allowed to access?                                            | Enable RLS and create role/relationship-aware policies         | Reading or modifying rows outside the user's scope              |
+| **B. Database privileges**  | Which operations may browser roles attempt on this table at all?                                | Revoke broad grants and grant only required operations         | Anonymous writes and unnecessary delete/update capability       |
+| **C. Ownership validation** | Does this specific record belong to the actor's Student account, assigned class, or department? | Policies plus validated transactional RPCs using`auth.uid()` | Forged IDs, cross-class actions, and cross-department approvals |
 
 ### Shared identity rule
 
@@ -88,12 +88,12 @@ Validate the actor-to-resource relationship for every sensitive action.
 
 #### Ownership rules
 
-| Actor | Required relationship |
-|---|---|
+| Actor   | Required relationship                                                                                 |
+| ------- | ----------------------------------------------------------------------------------------------------- |
 | Student | `target.student_id = auth.uid()` and any referenced class has an active enrollment for that Student |
-| Faculty | Target class is active and `class_records.faculty_id = auth.uid()` |
-| Dean | Dean is active and the target Subject/Class department equals the Dean profile department |
-| Admin | Admin is active; the operation is explicitly authorized and audited |
+| Faculty | Target class is active and`class_records.faculty_id = auth.uid()`                                   |
+| Dean    | Dean is active and the target Subject/Class department equals the Dean profile department             |
+| Admin   | Admin is active; the operation is explicitly authorized and audited                                   |
 
 #### Actions that should use transactional RPCs
 
@@ -109,17 +109,17 @@ Each RPC should authenticate the actor, validate ownership, validate the state t
 
 ### Module regrouping
 
-| Module | RLS | Privileges | Ownership/RPC | Frontend follow-up |
-|---|---|---|---|---|
-| Grading and posting | Required | Remove anonymous writes; limit deletes | Faculty assigned-class validation and atomic posting RPC | Replace direct posting writes with RPC call |
-| Academic Insights | Required | Student read only; trusted writer | Student identity derived from JWT; Edge Function saves authoritative output | Stop trusting client-supplied identity/context |
-| Consultations | Required | Remove anonymous writes; limit direct updates | Student enrollment and Faculty assignment RPCs | Remove cached-local success behavior |
-| Unlock requests | Required | Limit writes to workflow functions | Faculty ownership and Dean department validation | Call approve/reject RPCs |
-| Remark overrides | Tighten existing RLS | Remove broad update rights | Department-scoped transactional approval | Replace separate client updates |
-| Attendance | Tighten existing RLS | Limit writes | Faculty assigned-class validation | Use scoped operations/RPC where necessary |
-| Risk evaluation/referrals | Mostly implemented | Retain restricted grants | Existing secured RPC pattern | Regression testing only |
-| Audit ledger | Required | Revoke client update/delete | Server/trigger-authoritative inserts | Distinguish official audit from UI telemetry |
-| Admin user management | Edge authorization | Service role only | Require active Admin and safe transaction/compensation | Improve errors and remove retired Office choices |
+| Module                    | RLS                  | Privileges                                    | Ownership/RPC                                                               | Frontend follow-up                               |
+| ------------------------- | -------------------- | --------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------ |
+| Grading and posting       | Required             | Remove anonymous writes; limit deletes        | Faculty assigned-class validation and atomic posting RPC                    | Replace direct posting writes with RPC call      |
+| Academic Insights         | Required             | Student read only; trusted writer             | Student identity derived from JWT; Edge Function saves authoritative output | Stop trusting client-supplied identity/context   |
+| Consultations             | Required             | Remove anonymous writes; limit direct updates | Student enrollment and Faculty assignment RPCs                              | Remove cached-local success behavior             |
+| Unlock requests           | Required             | Limit writes to workflow functions            | Faculty ownership and Dean department validation                            | Call approve/reject RPCs                         |
+| Remark overrides          | Tighten existing RLS | Remove broad update rights                    | Department-scoped transactional approval                                    | Replace separate client updates                  |
+| Attendance                | Tighten existing RLS | Limit writes                                  | Faculty assigned-class validation                                           | Use scoped operations/RPC where necessary        |
+| Risk evaluation/referrals | Mostly implemented   | Retain restricted grants                      | Existing secured RPC pattern                                                | Regression testing only                          |
+| Audit ledger              | Required             | Revoke client update/delete                   | Server/trigger-authoritative inserts                                        | Distinguish official audit from UI telemetry     |
+| Admin user management     | Edge authorization   | Service role only                             | Require active Admin and safe transaction/compensation                      | Improve errors and remove retired Office choices |
 
 ### Regrouped delivery sequence
 
@@ -206,22 +206,22 @@ Every feature-hardening package must contain:
 
 Complete this matrix before implementing a feature's SQL:
 
-| Item | Required information |
-|---|---|
-| Feature | Business feature being hardened |
-| User roles | Roles that view or change the feature |
-| Entry points | Routes, buttons, forms, scheduled jobs, and Edge Functions |
-| Read paths | Queries and expected row visibility per role |
-| Write paths | Inserts, upserts, updates, deletes, and RPC calls |
-| Ownership source | Student self, active enrollment, Faculty assignment, Dean department, or active Admin |
-| Client-supplied IDs | IDs currently sent by the browser and whether they are trusted or only treated as targets |
-| Related effects | Recalculation, notification, email, audit, lock, referral, or status transition |
-| Transaction boundary | Which operations must succeed or fail together |
-| Current failure behavior | What the user sees and whether the UI can falsely report success |
-| Future policy | RLS, privileges, RPC, and trigger behavior |
-| Compatibility result | Ready or required code change |
-| Test evidence | Allowed and denied cases with results |
-| Rollback | Safe method for reverting the feature package |
+| Item                     | Required information                                                                      |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| Feature                  | Business feature being hardened                                                           |
+| User roles               | Roles that view or change the feature                                                     |
+| Entry points             | Routes, buttons, forms, scheduled jobs, and Edge Functions                                |
+| Read paths               | Queries and expected row visibility per role                                              |
+| Write paths              | Inserts, upserts, updates, deletes, and RPC calls                                         |
+| Ownership source         | Student self, active enrollment, Faculty assignment, Dean department, or active Admin     |
+| Client-supplied IDs      | IDs currently sent by the browser and whether they are trusted or only treated as targets |
+| Related effects          | Recalculation, notification, email, audit, lock, referral, or status transition           |
+| Transaction boundary     | Which operations must succeed or fail together                                            |
+| Current failure behavior | What the user sees and whether the UI can falsely report success                          |
+| Future policy            | RLS, privileges, RPC, and trigger behavior                                                |
+| Compatibility result     | Ready or required code change                                                             |
+| Test evidence            | Allowed and denied cases with results                                                     |
+| Rollback                 | Safe method for reverting the feature package                                             |
 
 ### Required role audit for every feature
 
@@ -237,17 +237,17 @@ Absence of a button is not evidence that an action is prohibited. Every prohibit
 
 Every code location using Supabase must be registered with at least these fields:
 
-| Field | Example |
-|---|---|
-| Code location | `src/pages/faculty/ScoreInput.jsx` |
-| Database object | `student_component_scores` |
-| Operation | Upsert |
-| Actor | Faculty |
-| Current condition | Browser supplies class and Student IDs |
-| Required ownership | Active Faculty owns class; Student is enrolled |
-| RLS compatibility | Pending review |
-| RPC requirement | Yes for posting; possibly no for autosaved drafts |
-| Failure handling | Display database rejection and keep unsaved state |
+| Field              | Example                                           |
+| ------------------ | ------------------------------------------------- |
+| Code location      | `src/pages/faculty/ScoreInput.jsx`              |
+| Database object    | `student_component_scores`                      |
+| Operation          | Upsert                                            |
+| Actor              | Faculty                                           |
+| Current condition  | Browser supplies class and Student IDs            |
+| Required ownership | Active Faculty owns class; Student is enrolled    |
+| RLS compatibility  | Pending review                                    |
+| RPC requirement    | Yes for posting; possibly no for autosaved drafts |
+| Failure handling   | Display database rejection and keep unsaved state |
 
 This registry becomes the checklist used to confirm that no page or background action was missed.
 
@@ -391,13 +391,13 @@ Other grading tables also have RLS disabled, including core and dynamic grading 
 
 The eventual policies should enforce these rules:
 
-| Role | Read | Create or update | Delete |
-|---|---|---|---|
-| Student | Own enrolled classes and own released/posted grades only | None | None |
-| Faculty | Students and grading data for currently assigned classes | Only currently assigned, active classes and allowed grade state | Only permitted draft/unposted records, if institutionally allowed |
-| Dean | Department-level grades needed for oversight | Prefer approval RPCs only; no unrestricted score editing | None under normal workflow |
-| Admin | Institution-wide operational access | As explicitly required | As explicitly required and audited |
-| Anonymous | Public reference data only | None | None |
+| Role      | Read                                                     | Create or update                                                | Delete                                                            |
+| --------- | -------------------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Student   | Own enrolled classes and own released/posted grades only | None                                                            | None                                                              |
+| Faculty   | Students and grading data for currently assigned classes | Only currently assigned, active classes and allowed grade state | Only permitted draft/unposted records, if institutionally allowed |
+| Dean      | Department-level grades needed for oversight             | Prefer approval RPCs only; no unrestricted score editing        | None under normal workflow                                        |
+| Admin     | Institution-wide operational access                      | As explicitly required                                          | As explicitly required and audited                                |
+| Anonymous | Public reference data only                               | None                                                            | None                                                              |
 
 ### Recommended solution
 
@@ -567,22 +567,22 @@ Test both allowed and deliberately forbidden operations using the Supabase clien
 
 ## 9. Minimum role-connection test matrix
 
-| Scenario | Expected result |
-|---|---|
-| Student requests their assigned Faculty member | Allowed |
-| Student requests an unrelated Faculty member | Denied by database |
-| Student reads their released grades | Allowed |
-| Student reads another Student's grades or insights | Denied by database |
-| Faculty edits an assigned active class | Allowed |
-| Faculty edits another Faculty member's class | Denied by database |
-| Faculty resolves a consultation assigned to them | Allowed |
-| Faculty resolves another Faculty member's consultation | Denied by database |
-| Dean reviews a case in their department | Allowed |
-| Dean approves another department's override | Denied by database |
-| Inactive Admin calls a privileged Edge Function | Denied |
-| Anonymous user writes a score or consultation | Denied |
-| Normal user updates or deletes an audit event | Denied |
-| Failed multi-table approval | Entire transaction rolls back |
+| Scenario                                               | Expected result               |
+| ------------------------------------------------------ | ----------------------------- |
+| Student requests their assigned Faculty member         | Allowed                       |
+| Student requests an unrelated Faculty member           | Denied by database            |
+| Student reads their released grades                    | Allowed                       |
+| Student reads another Student's grades or insights     | Denied by database            |
+| Faculty edits an assigned active class                 | Allowed                       |
+| Faculty edits another Faculty member's class           | Denied by database            |
+| Faculty resolves a consultation assigned to them       | Allowed                       |
+| Faculty resolves another Faculty member's consultation | Denied by database            |
+| Dean reviews a case in their department                | Allowed                       |
+| Dean approves another department's override            | Denied by database            |
+| Inactive Admin calls a privileged Edge Function        | Denied                        |
+| Anonymous user writes a score or consultation          | Denied                        |
+| Normal user updates or deletes an audit event          | Denied                        |
+| Failed multi-table approval                            | Entire transaction rolls back |
 
 ## 10. Release recommendation
 

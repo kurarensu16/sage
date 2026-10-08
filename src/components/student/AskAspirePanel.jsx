@@ -5,7 +5,6 @@ import {
   LoaderCircle,
   Send,
   ShieldCheck,
-  Sparkles,
   UserCheck,
   X
 } from 'lucide-react';
@@ -116,10 +115,7 @@ export default function AskAspirePanel({ open, context, onClose, onRequestConsul
       <section className="relative h-full w-full max-w-xl bg-slate-50 shadow-2xl flex flex-col animate-fade-in">
         <header className="bg-sage-950 text-white px-5 py-4 sm:px-6 border-b border-sage-800">
           <div className="flex items-start justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 rounded-xl bg-sage-800 p-2 text-sage-200">
-                <Sparkles className="h-5 w-5" />
-              </div>
+            <div className="flex items-start">
               <div>
                 <div className="flex items-center gap-2">
                   <h2 id="ask-aspire-title" className="font-display text-lg font-extrabold">Ask ASPIRE</h2>

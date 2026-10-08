@@ -193,14 +193,14 @@ export default function ClassPerformance() {
   const selectedClass = classes.find(c => c.class_record_id === selectedClassId);
 
   return (
-    <div className="space-y-6 text-left">
+    <div className="space-y-4 text-left">
       <PageHeader
         title="Class Performance Report"
         subtitle="Detailed class standing, activity score breakdown, and at-risk monitoring"
       />
 
       {/* Class Selector Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 sm:p-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-3 sm:p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3 flex-1">
           <BookOpen className="w-5 h-5 text-sage-600 flex-shrink-0" />
           <div className="flex-1 max-w-md">
@@ -235,8 +235,6 @@ export default function ClassPerformance() {
         )}
       </div>
 
-      <RiskEducationNote variant="performance" />
-
       {errorMsg && (
         <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-xs sm:text-sm flex items-center gap-2">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -244,11 +242,14 @@ export default function ClassPerformance() {
         </div>
       )}
 
+      <div className="flex flex-col gap-4">
+      <div className="order-2 space-y-4">
+      <h2 className="text-sm font-bold text-slate-900">Performance Overview</h2>
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-3">
         {/* Total Students */}
         <div 
-          className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between cursor-pointer group hover:border-slate-300 transition-all"
+          className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3 flex flex-col justify-between cursor-pointer group hover:border-slate-300 transition-all"
           onClick={() => setInfoModalData({
             title: "Enrolled Students",
             message: "The total number of approved enrollments for this class record."
@@ -258,15 +259,14 @@ export default function ClassPerformance() {
             <span>Enrolled Students</span>
             <Users className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors" />
           </div>
-          <div className="mt-2 font-mono text-2xl font-bold text-slate-900">
+          <div className="mt-1 font-mono text-xl font-bold text-slate-900">
             {summary.total}
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Approved enrollments</p>
         </div>
 
         {/* At-Risk Students */}
         <div 
-          className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between cursor-pointer group hover:border-rose-300 transition-all"
+          className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3 flex flex-col justify-between cursor-pointer group hover:border-rose-300 transition-all"
           onClick={() => setInfoModalData({
             title: "At-Risk Students",
             message: "Students classified in the High or Critical risk tiers by the ASPIRE Early Warning System. These students require immediate intervention."
@@ -276,15 +276,14 @@ export default function ClassPerformance() {
             <span>At-Risk Students</span>
             <AlertTriangle className="w-4 h-4 text-rose-500 group-hover:text-rose-600 transition-colors" />
           </div>
-          <div className="mt-2 font-mono text-2xl font-bold text-rose-600">
+          <div className="mt-1 font-mono text-xl font-bold text-rose-600">
             {summary.atRisk} <span className="text-xs text-rose-400 font-normal">({summary.atRiskPct}%)</span>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Separate risk group · High & Critical</p>
         </div>
 
         {/* Performed Well */}
         <div 
-          className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between cursor-pointer group hover:border-emerald-300 transition-all"
+          className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3 flex flex-col justify-between cursor-pointer group hover:border-emerald-300 transition-all"
           onClick={() => setInfoModalData({
             title: "Performed Well",
             message: "Students excelling in the course with an overall Semestral Grade (SG) of 85% or higher, on track for the President's List."
@@ -294,15 +293,14 @@ export default function ClassPerformance() {
             <span>Performed Well</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-500 group-hover:text-emerald-600 transition-colors" />
           </div>
-          <div className="mt-2 font-mono text-2xl font-bold text-emerald-600">
+          <div className="mt-1 font-mono text-xl font-bold text-emerald-600">
             {summary.wellCount}
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">85% score or higher</p>
         </div>
 
         {/* Average */}
         <div 
-          className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between cursor-pointer group hover:border-amber-300 transition-all"
+          className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3 flex flex-col justify-between cursor-pointer group hover:border-amber-300 transition-all"
           onClick={() => setInfoModalData({
             title: "Average",
             message: "Students performing adequately with an overall Semestral Grade (SG) between 75% and 84%."
@@ -312,15 +310,14 @@ export default function ClassPerformance() {
             <span>Average</span>
             <TrendingUp className="w-4 h-4 text-amber-500 group-hover:text-amber-600 transition-colors" />
           </div>
-          <div className="mt-2 font-mono text-2xl font-bold text-amber-600">
+          <div className="mt-1 font-mono text-xl font-bold text-amber-600">
             {summary.avgCount}
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">75% - 84% score range</p>
         </div>
 
         {/* Struggling */}
         <div 
-          className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 flex flex-col justify-between col-span-2 lg:col-span-1 cursor-pointer group hover:border-slate-300 transition-all"
+          className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-3 flex flex-col justify-between col-span-2 lg:col-span-1 cursor-pointer group hover:border-slate-300 transition-all"
           onClick={() => setInfoModalData({
             title: "Struggling",
             message: "Students who are currently failing the course (GWA > 3.00) or have an overall Semestral Grade (SG) below the 75% passing cut-off."
@@ -330,10 +327,9 @@ export default function ClassPerformance() {
             <span>Struggling</span>
             <AlertCircle className="w-4 h-4 text-slate-400 group-hover:text-slate-500 transition-colors" />
           </div>
-          <div className="mt-2 font-mono text-2xl font-bold text-slate-700">
+          <div className="mt-1 font-mono text-xl font-bold text-slate-700">
             {summary.strCount}
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Below 75% passing cut-off</p>
         </div>
       </div>
 
@@ -343,10 +339,35 @@ export default function ClassPerformance() {
         </p>
       )}
 
+      <section aria-labelledby="attendance-summary-title" className="rounded-2xl border border-slate-200 bg-white p-3 sm:flex sm:items-center sm:gap-4">
+        <div className="mb-3 shrink-0 sm:mb-0 sm:w-52">
+          <h2 id="attendance-summary-title" className="text-sm font-bold text-slate-900">Class Attendance Summary</h2>
+          <p className="text-[11px] text-slate-500">Counts apply only to the selected class record.</p>
+        </div>
+        <div className="grid flex-1 grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="rounded-lg bg-slate-50 px-3 py-2">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Recorded absences</p>
+            <p className="font-mono text-xl font-bold text-slate-900">{summary.totalAbsences}</p>
+            <p className="text-[11px] text-slate-500">All students in this class</p>
+          </div>
+          <div className="rounded-lg bg-amber-50 px-3 py-2">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Near FDA</p>
+            <p className="font-mono text-xl font-bold text-amber-900">{summary.nearFdaCount}</p>
+            <p className="text-[11px] text-amber-800">Exactly 3 recorded absences</p>
+          </div>
+          <div className="rounded-lg bg-rose-50 px-3 py-2">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-rose-800">Recommendation threshold reached</p>
+            <p className="font-mono text-xl font-bold text-rose-900">{summary.recommendationThresholdCount}</p>
+            <p className="text-[11px] text-rose-800">4+ absences; final FDA remains a faculty decision</p>
+          </div>
+        </div>
+      </section>
+      </div>
+
       {/* Main Score Sheet Grid */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+      <div className="order-1 bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
         {/* Table Toolbar: Controls & Export */}
-        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col gap-3">
+        <div className="p-3 sm:p-4 border-b border-slate-100 flex flex-col gap-3">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-sm">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -360,7 +381,7 @@ export default function ClassPerformance() {
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
               {/* View Mode Toggle */}
               <div className="inline-flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200 text-xs">
                 <button
@@ -530,7 +551,7 @@ export default function ClassPerformance() {
           </div>
         ) : viewMode === 'analytics' ? (
           <div className="p-4 sm:p-5">
-            <ClassAnalyticsPanel students={filteredStudents} activities={dataset.activities} />
+            <ClassAnalyticsPanel students={filteredStudents} activities={dataset.activities} rows={dataset.rows} semester={dataset.semester} />
           </div>
         ) : filteredStudents.length === 0 ? (
           <div className="py-16 text-center text-slate-400">
@@ -679,11 +700,15 @@ export default function ClassPerformance() {
           </div>
         )}
       </div>
+      </div>
+
+      <RiskEducationNote variant="performance" />
       {/* Info Modal */}
       <InfoModal 
         isOpen={!!infoModalData}
         title={infoModalData?.title}
         message={infoModalData?.message}
+        hideIcon={infoModalData?.hideIcon}
         onClose={() => setInfoModalData(null)}
       />
 

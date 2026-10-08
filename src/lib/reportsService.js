@@ -43,7 +43,7 @@ export async function fetchClassReportDataset(classRecordId) {
   // 0. Resolve class_record → section_id + subject_id (enrollments table links by these, not class_record_id)
   const { data: classRecord, error: crError } = await supabase
     .from('class_records')
-    .select('class_record_id, section_id, subject_id')
+    .select('class_record_id, section_id, subject_id, semester')
     .eq('class_record_id', classRecordId)
     .maybeSingle();
 
@@ -91,6 +91,19 @@ export async function fetchClassReportDataset(classRecordId) {
   if (actError) {
     console.error('Error fetching class activities:', actError);
     throw actError;
+  }
+
+  // Resolve the class's actual configured component names. Analytics must follow
+  // the assigned COG template instead of assuming universal quiz/activity/exam buckets.
+  const componentIds = [...new Set((activities || []).map(activity => activity.component_id).filter(Boolean))];
+  let componentById = new Map();
+  if (componentIds.length > 0) {
+    const { data: components, error: componentError } = await supabase
+      .from('grade_computation_components')
+      .select('component_id, name, weight')
+      .in('component_id', componentIds);
+    if (componentError) throw componentError;
+    componentById = new Map((components || []).map(component => [component.component_id, component]));
   }
 
   // 3. Fetch activity scores — student_activity_scores has no class_record_id;
@@ -182,6 +195,8 @@ export async function fetchClassReportDataset(classRecordId) {
         activityId: act.activity_id,
         activityTitle: act.title,
         activityTerm: act.term,
+        componentId: act.component_id,
+        componentName: componentById.get(act.component_id)?.name || 'Unassigned',
         score,
         maxScore,
         percentage,
@@ -199,7 +214,21 @@ export async function fetchClassReportDataset(classRecordId) {
     rosterByStudent.set(s.user_id, s);
   });
 
-  return { enrollments: enrollments || [], activities: activities || [], rows, postedDetailsByStudent, attendanceByStudent, rosterByStudent };
+  const enrichedActivities = (activities || []).map(activity => ({
+    ...activity,
+    componentName: componentById.get(activity.component_id)?.name || 'Unassigned',
+    componentWeight: componentById.get(activity.component_id)?.weight ?? null
+  }));
+
+  return {
+    enrollments: enrollments || [],
+    activities: enrichedActivities,
+    rows,
+    postedDetailsByStudent,
+    attendanceByStudent,
+    rosterByStudent,
+    semester: classRecord.semester
+  };
 }
 
 /**
@@ -307,6 +336,7 @@ export function aggregateByStudent(rows = [], postedDetailsByStudent = {}, atten
       officialGwa: realGwa,
       isTentative,
       absenceCount,
+      termRatings: rosterData?.term_ratings || {},
       riskLevel,
       isAtRisk,
       remarks
@@ -332,6 +362,9 @@ export function buildSummaryCards(students = []) {
   const watchCount = students.filter(s => s.riskLevel === 'moderate').length;
   const highCount = students.filter(s => s.riskLevel === 'high').length;
   const criticalCount = students.filter(s => s.riskLevel === 'critical').length;
+  const totalAbsences = students.reduce((sum, student) => sum + Number(student.absenceCount || 0), 0);
+  const nearFdaCount = students.filter(student => Number(student.absenceCount || 0) === 3).length;
+  const recommendationThresholdCount = students.filter(student => Number(student.absenceCount || 0) >= 4).length;
 
   return {
     total,
@@ -344,8 +377,67 @@ export function buildSummaryCards(students = []) {
     safeCount,
     watchCount,
     highCount,
-    criticalCount
+    criticalCount,
+    totalAbsences,
+    nearFdaCount,
+    recommendationThresholdCount
   };
+}
+
+/** Build coverage-aware averages for the configured COG components. */
+export function buildComponentAverages(rows = []) {
+  const groups = new Map();
+  rows.forEach(row => {
+    const key = row.componentId || 'unassigned';
+    if (!groups.has(key)) {
+      groups.set(key, {
+        componentId: key,
+        name: row.componentName || 'Unassigned',
+        earnedPoints: 0,
+        possiblePoints: 0,
+        gradedCount: 0,
+        expectedCount: 0
+      });
+    }
+    const group = groups.get(key);
+    group.expectedCount += 1;
+    if (row.percentage !== null && row.percentage !== undefined && Number.isFinite(Number(row.percentage))) {
+      group.earnedPoints += Number(row.score);
+      group.possiblePoints += Number(row.maxScore);
+      group.gradedCount += 1;
+    }
+  });
+
+  return [...groups.values()].map(group => ({
+    componentId: group.componentId,
+    name: group.name,
+    average: group.gradedCount > 0 && group.possiblePoints > 0
+      ? Math.round((group.earnedPoints / group.possiblePoints) * 100)
+      : null,
+    gradedCount: group.gradedCount,
+    expectedCount: group.expectedCount,
+    coverage: group.expectedCount > 0 ? Math.round((group.gradedCount / group.expectedCount) * 100) : 0,
+    evidenceStatus: group.gradedCount > 0 ? 'available' : 'unavailable'
+  }));
+}
+
+/** Build observed raw-term averages; missing evidence remains null, never zero. */
+export function buildTermProgressionSeries(students = [], semester = '1st') {
+  const terms = semester === 'Summer' ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+  return terms.map(term => {
+    const ratings = students
+      .map(student => student.termRatings?.[term])
+      .filter(value => value !== null && value !== undefined && Number.isFinite(Number(value)))
+      .map(Number);
+    return {
+      term,
+      average: ratings.length > 0 ? Math.round(ratings.reduce((sum, value) => sum + value, 0) / ratings.length) : null,
+      gradedCount: ratings.length,
+      expectedCount: students.length,
+      coverage: students.length > 0 ? Math.round((ratings.length / students.length) * 100) : 0,
+      evidenceStatus: ratings.length > 0 ? 'available' : 'unavailable'
+    };
+  });
 }
 
 /**
@@ -533,10 +625,22 @@ export async function fetchFacultyCourseHistory(facultyId) {
  */
 export async function fetchTermCohortMetrics(classRecordId) {
   if (!classRecordId) {
-    return { classSize: 0, passingRate: 0, atRiskRate: 0, averageGrade: 0, gradedCount: 0, students: [] };
+    return {
+      classSize: 0,
+      passingRate: null,
+      atRiskRate: 0,
+      averageGrade: null,
+      gradedCount: 0,
+      coverage: 0,
+      evidenceStatus: 'unavailable',
+      gradeDistribution: { honors: 0, passing: 0, failing: 0, ungraded: 0 },
+      componentAverages: [],
+      termProgression: [],
+      students: []
+    };
   }
 
-  const { rows, postedDetailsByStudent, attendanceByStudent, rosterByStudent } = await fetchClassReportDataset(classRecordId);
+  const { rows, postedDetailsByStudent, attendanceByStudent, rosterByStudent, semester } = await fetchClassReportDataset(classRecordId);
   const students = aggregateByStudent(rows, postedDetailsByStudent, attendanceByStudent, rosterByStudent);
   const classSize = students.length;
 
@@ -551,6 +655,13 @@ export async function fetchTermCohortMetrics(classRecordId) {
 
   const totalGradeSum = gradedStudents.reduce((acc, s) => acc + s.overallPercentage, 0);
   const averageGrade = gradedCount > 0 ? Math.round(totalGradeSum / gradedCount) : null;
+  const coverage = classSize > 0 ? Math.round((gradedCount / classSize) * 100) : 0;
+  const gradeDistribution = {
+    honors: gradedStudents.filter(student => student.overallPercentage >= 89).length,
+    passing: gradedStudents.filter(student => student.overallPercentage >= PASSING_GRADE && student.overallPercentage < 89).length,
+    failing: gradedStudents.filter(student => student.overallPercentage < PASSING_GRADE).length,
+    ungraded: classSize - gradedCount
+  };
 
   return {
     classSize,
@@ -558,6 +669,11 @@ export async function fetchTermCohortMetrics(classRecordId) {
     atRiskRate,
     averageGrade,
     gradedCount,
+    coverage,
+    evidenceStatus: gradedCount > 0 ? 'available' : 'unavailable',
+    gradeDistribution,
+    componentAverages: buildComponentAverages(rows),
+    termProgression: buildTermProgressionSeries(students, semester),
     students
   };
 }
@@ -624,4 +740,85 @@ export function compareCohortMetrics(current, previous, margin = SAME_MARGIN) {
     classSize:   { current: current.classSize,   previous: previous.classSize,   diff: sizeDiff },
     summary
   };
+}
+
+/** Export the visible A/B cohort comparison and its evidence coverage. */
+export function exportComparisonToExcel({ targetClass, referenceClass, targetMetrics, referenceMetrics }) {
+  if (!targetClass || !referenceClass || !targetMetrics || !referenceMetrics) return false;
+
+  const classLabel = classRecord => `${classRecord.subjects?.code || 'Subject'} - ${classRecord.sections?.name || 'Section'} (${classRecord.semester} ${classRecord.school_year})`;
+  const summaryRows = [
+    ['Metric', classLabel(targetClass), classLabel(referenceClass)],
+    ['Class Size', targetMetrics.classSize, referenceMetrics.classSize],
+    ['Graded Count', targetMetrics.gradedCount, referenceMetrics.gradedCount],
+    ['Coverage (%)', targetMetrics.coverage, referenceMetrics.coverage],
+    ['Passing Rate (%)', targetMetrics.passingRate ?? 'Unavailable', referenceMetrics.passingRate ?? 'Unavailable'],
+    ['At-Risk Rate (%)', targetMetrics.atRiskRate, referenceMetrics.atRiskRate],
+    ['Class Average (%)', targetMetrics.averageGrade ?? 'Unavailable', referenceMetrics.averageGrade ?? 'Unavailable']
+  ];
+  const distributionRows = [
+    ['Distribution', 'Target', 'Reference'],
+    ...['honors', 'passing', 'failing', 'ungraded'].map(key => [
+      key.charAt(0).toUpperCase() + key.slice(1),
+      targetMetrics.gradeDistribution?.[key] ?? 0,
+      referenceMetrics.gradeDistribution?.[key] ?? 0
+    ])
+  ];
+  const componentNames = [...new Set([
+    ...(targetMetrics.componentAverages || []).map(item => item.name),
+    ...(referenceMetrics.componentAverages || []).map(item => item.name)
+  ])];
+  const componentRows = [
+    ['Configured Component', 'Target Average', 'Target Coverage (%)', 'Reference Average', 'Reference Coverage (%)'],
+    ...componentNames.map(name => {
+      const target = targetMetrics.componentAverages?.find(item => item.name === name);
+      const reference = referenceMetrics.componentAverages?.find(item => item.name === name);
+      return [
+        name,
+        target?.average ?? 'Unavailable',
+        target?.coverage ?? 0,
+        reference?.average ?? 'Unavailable',
+        reference?.coverage ?? 0
+      ];
+    })
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryRows), 'Comparison');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(distributionRows), 'Distribution');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(componentRows), 'Components');
+  XLSX.writeFile(workbook, `Performance_Comparison_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  return true;
+}
+
+/** Export the selected multi-term trend range with evidence coverage. */
+export function exportTrendRangeToExcel({ courseCode, courseName, trendRows = [] }) {
+  if (!trendRows.length) return false;
+
+  const rows = [
+    [`${courseCode || 'Course'}${courseName ? ` - ${courseName}` : ''}`],
+    ['Multi-Term Performance Trend'],
+    [],
+    ['Academic Term', 'Class Size', 'Graded Count', 'Coverage (%)', 'Passing Rate (%)', 'At-Risk Rate (%)', 'Class Average (%)'],
+    ...trendRows.map(row => [
+      row.name,
+      row.classSize,
+      row.gradedCount,
+      row.coverage,
+      row.passingRate ?? 'Unavailable',
+      row.atRiskRate ?? 'Unavailable',
+      row.classAverage ?? 'Unavailable'
+    ])
+  ];
+
+  const worksheet = XLSX.utils.aoa_to_sheet(rows);
+  worksheet['!cols'] = [
+    { wch: 28 }, { wch: 12 }, { wch: 14 }, { wch: 14 },
+    { wch: 18 }, { wch: 18 }, { wch: 18 }
+  ];
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Trend Range');
+  const safeCourseCode = String(courseCode || 'Course').replace(/[^A-Za-z0-9_-]/g, '_');
+  XLSX.writeFile(workbook, `${safeCourseCode}_Performance_Trend_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  return true;
 }
