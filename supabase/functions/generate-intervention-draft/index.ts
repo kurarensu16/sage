@@ -211,7 +211,7 @@ Deno.serve(async request => {
       admin.from('users').select('user_id,role,status').eq('user_id', facultyId).single(),
       admin.from('class_records').select(`
         class_record_id,faculty_id,status,section_id,subject_id,term_id,school_year,semester,grading_formula_snapshot,
-        subjects(code,name),sections(name)
+        subjects(code,name,computation_id),sections(name)
       `).eq('class_record_id', classRecordId).single()
     ])
     if (!actor || actor.role !== 'faculty' || actor.status !== 'active') return json({ error: 'An active faculty account is required.' }, 403)
@@ -223,6 +223,48 @@ Deno.serve(async request => {
       .eq('student_id', studentId).eq('section_id', classRecord.section_id).eq('subject_id', classRecord.subject_id)
       .eq('status', 'active').maybeSingle()
     if (!enrollment) return json({ error: 'The student is not enrolled in this class.' }, 403)
+
+    let gradingFormula = classRecord.grading_formula_snapshot
+    if (!gradingFormula) {
+      const computationId = classRecord.subjects?.computation_id
+      if (!computationId) {
+        return json({ error: 'This subject has no assigned Computation of Grades (COG).' }, 422)
+      }
+
+      const { data: formulaComponents, error: formulaError } = await admin
+        .from('grade_computation_components')
+        .select('component_id,name,weight,max_score,is_multiple,semantic_type,display_order,is_required')
+        .eq('computation_id', computationId)
+        .order('display_order', { ascending: true })
+
+      const components = (formulaComponents || []).map((component, index) => ({
+        componentId: component.component_id,
+        key: component.component_id,
+        name: clean(component.name, 100),
+        weight: Number(component.weight),
+        maxScore: Number(component.max_score),
+        isMultiple: Boolean(component.is_multiple),
+        semanticType: component.semantic_type || null,
+        displayOrder: Number(component.display_order ?? index),
+        isRequired: component.is_required ?? true
+      }))
+      const totalWeight = components.reduce((sum, component) => sum + component.weight, 0)
+      const invalidComponent = components.some(component =>
+        !component.name || !Number.isFinite(component.weight) || component.weight <= 0
+        || !Number.isFinite(component.maxScore) || component.maxScore <= 0
+      )
+      if (formulaError || !components.length || invalidComponent || Math.abs(totalWeight - 100) > 0.01) {
+        return json({ error: 'The assigned COG is missing or invalid, so an intervention draft cannot be generated.' }, 422)
+      }
+
+      gradingFormula = {
+        version: 1,
+        computationId,
+        source: 'configured',
+        totalWeight,
+        components
+      }
+    }
 
     const { data: existing } = await admin.from('faculty_intervention_drafts').select('*')
       .eq('faculty_id', facultyId).eq('request_id', requestId).maybeSingle()
@@ -242,8 +284,8 @@ Deno.serve(async request => {
         .eq('class_record_id', classRecordId).eq('student_id', studentId).in('term', eligibleTerms),
       admin.from('class_grading_columns').select('term,act1_max,act2_max,act3_max,act4_max,act5_max,act6_max,exam_max')
         .eq('class_record_id', classRecordId).in('term', eligibleTerms),
-      admin.from('class_activities').select('activity_id,term,name,title,description,max_score,activity_type,topic_tag,is_released')
-        .eq('class_record_id', classRecordId).eq('is_released', true).in('term', eligibleTerms),
+      admin.from('class_activities').select('activity_id,term,name,title,description,max_score,activity_type,topic_tag')
+        .eq('class_record_id', classRecordId).in('term', eligibleTerms),
       admin.from('posted_grades').select('grade_period,computed_grade,effective_grade,posted_at')
         .eq('class_record_id', classRecordId).eq('student_id', studentId),
       admin.from('attendance_records').select('attendance_id', { count: 'exact', head: true })
@@ -264,7 +306,7 @@ Deno.serve(async request => {
       evidence.push({
         code, type: 'activity', term: activity.term, title: clean(activity.title || activity.name, 150),
         description: clean(activity.description, 500), topic: clean(activity.topic_tag, 100) || null,
-        score, maximum, missing: score === null || (maximum > 0 && score === 0)
+        score, maximum, missing: score === null
       })
     }
     const columnsByTerm = new Map((columns || []).map(row => [row.term, row]))
@@ -286,7 +328,7 @@ Deno.serve(async request => {
         computed_grade: grade.computed_grade, effective_grade: grade.effective_grade
       })
     }
-    if (!evidence.length) return json({ error: 'There is not enough released academic evidence to generate a responsible draft.' }, 422)
+    if (!evidence.length) return json({ error: 'There is not enough saved academic evidence to generate a responsible draft.' }, 422)
 
     const concernProfile = buildConcernProfile(evidence)
     if (concernProfile.evidence_sufficiency === 'insufficient') {
@@ -297,7 +339,7 @@ Deno.serve(async request => {
       section: classRecord.sections?.name,
       academic_period: { school_year: classRecord.school_year, semester: classRecord.semester, term },
       evidence_scope: { selected_term: term, included_terms: eligibleTerms, future_terms_excluded: true },
-      grading_formula: classRecord.grading_formula_snapshot || { class_standing: 50, character: 10, exam: 40 },
+      grading_formula: gradingFormula,
       evidence,
       concern_profile: concernProfile,
       generation_rules: {

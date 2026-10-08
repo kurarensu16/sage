@@ -7,7 +7,11 @@ import { getClassPriorityRoster } from '../../lib/classRoomService';
 import { getEvaluationClasses, getTermEvaluations } from '../../lib/evaluationService';
 import { getTermsForPeriod, needsEvaluation } from '../../lib/evaluationTracking';
 import { RISK_TIERS } from '../../lib/academicPolicy';
-import { generateInterventionDraft, getLatestGeneratedInterventionPlan } from '../../lib/interventionDraftService';
+import {
+  generateInterventionDraft,
+  getFacultyInterventionWorkingDraft,
+  getLatestGeneratedInterventionPlan
+} from '../../lib/interventionDraftService';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
 import EnrollmentTypeBadge from '../../components/common/EnrollmentTypeBadge';
 import RiskEducationNote from '../../components/faculty/RiskEducationNote';
@@ -61,9 +65,21 @@ function EvaluationRoster({ facultyId, needsByDefault }) {
 
   async function beginEvaluation(student, existing) {
     const candidate = { ...student, evaluation: existing || null };
-    if (existing) return setSelectedStudent(candidate);
     setRestoringStudentId(student.user_id);
     try {
+      const workingDraft = await getFacultyInterventionWorkingDraft({
+        classRecordId: classId,
+        studentId: student.user_id,
+        term
+      });
+      if (workingDraft) {
+        setSelectedStudent({ ...candidate, interventionDraft: workingDraft });
+        return;
+      }
+      if (existing) {
+        setSelectedStudent(candidate);
+        return;
+      }
       const savedDraft = await getLatestGeneratedInterventionPlan({
         classRecordId: classId,
         studentId: student.user_id,
@@ -77,7 +93,11 @@ function EvaluationRoster({ facultyId, needsByDefault }) {
       setGenerationRequestId(crypto.randomUUID());
       setGenerationError('');
     } catch (err) {
-      console.error('Unable to restore the generated intervention draft:', err);
+      console.error('Unable to restore the intervention draft:', err);
+      if (existing) {
+        setSelectedStudent(candidate);
+        return;
+      }
       setGenerationCandidate(candidate);
       setGenerationRequestId(crypto.randomUUID());
       setGenerationError('A saved suggestion could not be restored. You may generate a new draft or continue manually.');
@@ -180,7 +200,7 @@ function EvaluationRoster({ facultyId, needsByDefault }) {
       <div role="dialog" aria-modal="true" aria-labelledby="generate-title" className="w-full max-w-lg rounded-2xl border border-sage-200 bg-white p-5 text-sage-900 shadow-xl">
         <div className="flex items-start justify-between gap-4"><div><h2 id="generate-title" className="font-display text-lg font-bold">Generate intervention draft?</h2><p className="mt-1 text-xs text-sage-500">AI suggestions are saved as drafts for faculty review but are not published automatically.</p></div><button type="button" disabled={generating} onClick={() => setGenerationCandidate(null)} aria-label="Cancel generation" className="rounded-lg p-2 text-sage-500 hover:bg-sage-100 disabled:opacity-50"><X className="h-4 w-4" /></button></div>
         <div className="mt-4 rounded-xl border border-sage-200 bg-sage-50 p-4 text-sm"><p className="font-bold">{generationCandidate.first_name} {generationCandidate.last_name}</p><p className="mt-1 text-xs text-sage-600">{selectedClass?.subjects?.code} · {selectedClass?.sections?.name} · {term}</p></div>
-        <p className="mt-4 text-sm text-sage-700">The system will securely analyze this subject's grades, released activities, exam and character results, attendance, and academic-risk evidence. Names, email addresses, private notes, and referral reasons are excluded from the AI prompt.</p>
+        <p className="mt-4 text-sm text-sage-700">The system will securely analyze this subject's grades, saved tentative activities, exam and character results, attendance, and academic-risk evidence. Names, email addresses, private notes, and referral reasons are excluded from the AI prompt.</p>
         {generating && <p role="status" className="mt-4 flex items-center gap-2 rounded-lg bg-sage-100 p-3 text-sm"><Loader2 className="h-4 w-4 animate-spin" />{generationSlow ? 'This is taking a little longer than usual. We’re still preparing the draft—please keep this window open.' : 'Preparing three suggested intervention tasks…'}</p>}
         {generationError && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{generationError}</p>}
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

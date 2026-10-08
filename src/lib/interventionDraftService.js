@@ -57,6 +57,44 @@ export function generateAdditionalInterventionTask(args) {
   return invokeInterventionDraft({ ...args, mode: 'additional_task' });
 }
 
+export async function getFacultyInterventionWorkingDraft({ classRecordId, studentId, term }) {
+  const { data, error } = await supabase.rpc('get_faculty_intervention_working_draft', {
+    p_class_record_id: classRecordId,
+    p_student_id: studentId,
+    p_term: term
+  });
+  if (error) throw error;
+  return data || null;
+}
+
+export async function saveFacultyInterventionWorkingDraft({
+  classRecordId,
+  studentId,
+  term,
+  evaluationContext,
+  sharedAcademicFeedback,
+  privateNote,
+  tasks,
+  planDeadline,
+  referToDean,
+  referralReason
+}) {
+  const { data, error } = await supabase.rpc('save_faculty_intervention_working_draft', {
+    p_class_record_id: classRecordId,
+    p_student_id: studentId,
+    p_term: term,
+    p_evaluation_context: evaluationContext,
+    p_shared_academic_feedback: sharedAcademicFeedback,
+    p_private_note: privateNote,
+    p_tasks: tasks,
+    p_plan_deadline: planDeadline || null,
+    p_refer_to_dean: Boolean(referToDean),
+    p_referral_reason: referralReason || ''
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function getLatestGeneratedInterventionPlan({ classRecordId, studentId, term }) {
   const { data: initial, error: initialError } = await supabase
     .from('faculty_intervention_drafts')

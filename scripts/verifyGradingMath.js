@@ -21,11 +21,82 @@ import {
 import { calculateAcademicRisk } from '../src/lib/riskEngine.js';
 import {
   GRADE_MILESTONES,
+  collectPostedMilestoneCoverage,
   findMostAdvancedPostedGrade,
-  getCanonicalGradePeriod
+  getCanonicalGradePeriod,
+  getMilestonePostingPresentation,
+  getPostedMilestoneCoverage,
+  getRequiredTermsForPostingTarget,
+  getUpdatedMilestoneLocks,
+  isSummerClass,
+  isTermCoveredByPostedMilestone
 } from '../src/lib/gradeMilestones.js';
 import { computeTentativeGradeDetails } from '../src/lib/riskEngine.js';
+import { evaluateAcademicAdvising } from '../src/lib/advisingEngine.js';
+import { collectBlankScoreReview, prepareReviewedBlankScores } from '../src/lib/gradeScoreReview.js';
 import { OFFICIAL_DYCI_PRESETS } from '../src/lib/officialGradingPresets.js';
+
+assert.equal(isTermCoveredByPostedMilestone('Prelim', ['Midterm Rating']), true);
+assert.equal(isTermCoveredByPostedMilestone('Midterm', ['midterm_rating']), true);
+assert.equal(isTermCoveredByPostedMilestone('Semi-Final', ['Tentative Final Rating']), true);
+assert.equal(isTermCoveredByPostedMilestone('Final', ['tfr']), true);
+assert.equal(isTermCoveredByPostedMilestone('Prelim', ['Tentative Final Rating']), false);
+assert.equal(isTermCoveredByPostedMilestone('Final', ['Midterm Rating']), false);
+assert.equal(isTermCoveredByPostedMilestone('Prelim', ['Semestral Grade']), true);
+assert.equal(isTermCoveredByPostedMilestone('Final', ['sg']), true);
+assert.equal(isSummerClass({ semester: 'Summer Term' }), true);
+assert.equal(isSummerClass({ sections: { semester: 'summer' } }), true);
+assert.equal(isSummerClass({ semester: '1st' }), false);
+assert.deepEqual(getRequiredTermsForPostingTarget('semestral'), ['Prelim', 'Midterm', 'Semi-Final', 'Final']);
+assert.deepEqual(getRequiredTermsForPostingTarget('semestral', { isSummer: true }), ['Midterm', 'Final']);
+assert.equal(getMilestonePostingPresentation('tfr', { isSummer: true }).gradePeriod, GRADE_MILESTONES.TENTATIVE_FINAL_RATING);
+assert.deepEqual(
+  getUpdatedMilestoneLocks([], 'midterm', { isSummer: true }),
+  ['Midterm', 'Midterm Rating'],
+  'summer milestone locks must not introduce regular-semester periods'
+);
+
+const blankReview = collectBlankScoreReview({
+  targetMilestone: 'midterm',
+  students: [{ id: 'student-1', name: 'Sample Student', student_id_number: 'S-001', periods: { Prelim: { quiz: null, exam: 30 } } }],
+  requiredTerms: ['Prelim'],
+  activities: { Prelim: [{ id: 'quiz', name: 'Quiz 1', max: 20 }] },
+  hasCharacter: false,
+  characterLabel: 'Character',
+  examLabel: 'Exam',
+  getScoreRecord: student => student.periods
+});
+assert.equal(blankReview.fieldCount, 1, 'blank-score review must distinguish NULL from a recorded zero');
+const stagedReview = prepareReviewedBlankScores({
+  review: blankReview,
+  classRecordId: 'class-1',
+  savedBy: 'faculty-1',
+  activities: { Prelim: [{ id: 'quiz', name: 'Quiz 1', max: 20 }] },
+  getScoreRecord: () => ({ Prelim: { quiz: null, exam: 30 } })
+});
+assert.equal(stagedReview.stagedRecords['student-1'].Prelim.quiz, 0);
+assert.equal(stagedReview.termRows[0].act1, 0);
+
+const pendingAdvisor = evaluateAcademicAdvising({
+  courses: [{
+    code: 'SAGE101',
+    name: 'Sample Course',
+    activities: [{ activity_id: 'activity-1', name: 'Quiz 1', term: 'Prelim', score: null, evidenceStatus: 'pending' }]
+  }]
+});
+assert.equal(pendingAdvisor.signalType, 'pending_activities');
+assert.equal(pendingAdvisor.evidence[0].value, 'Pending');
+assert.deepEqual(
+  getPostedMilestoneCoverage({ grade_period: GRADE_MILESTONES.TENTATIVE_FINAL_RATING }),
+  ['Semi-Final', 'Final', 'Tentative Final Rating']
+);
+assert.deepEqual(
+  collectPostedMilestoneCoverage([
+    { grade_period: GRADE_MILESTONES.MIDTERM_RATING, is_locked: true },
+    { grade_period: GRADE_MILESTONES.TENTATIVE_FINAL_RATING, is_locked: false }
+  ], { lockedOnly: true }),
+  ['Prelim', 'Midterm', 'Midterm Rating']
+);
 
 // Presets are consumed directly from the same shared module the admin "Apply Preset"
 // UI uses — no local duplicate of the institutional values, and no hardcoded

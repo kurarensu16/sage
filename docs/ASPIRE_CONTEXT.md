@@ -48,20 +48,60 @@ ASPIRE runs on a Supabase Postgres schema with 21 tables:
 
 ## 4. Key Domain Rules & Logics
 
-### 4.1 Grade Computation
-Term grades (Prelim, Midterm, Semi-Final, Final) are calculated out of **100 points** using centralized subject weight templates:
-1. **General Ed**: 50% Class Standing + 40% Exams + 10% Character.
-2. **Health Sciences (Theory)**: 30% Class Standing + 60% Exams + 10% Character.
-3. **Health Sciences (RLE)**: 50% Checklist Rating + 20% NCP & Case Study + 20% Rubric Assessment + 10% Quizzes.
-4. **Maritime (Lecture)**: 60% Class Standing + 40% Exams.
-5. **Maritime (Laboratory)**: 40% Systematic Exercises + 60% Demonstration of Competence.
+### 4.1 Dynamic, Subject-Specific Grade Computation
 
-#### The Grading Progression Chain
-Intermediate averages are computed and rounded at each step:
-$$\text{Term Rating} = \text{ROUND}(\text{Class Standing}_{50} + \text{Char}_{10} + \text{Exam}_{40}, 0)$$
-$$\text{Midterm Rating (MR)} = \text{ROUND}(\text{AVERAGE}(\text{Prelim Grade}, \text{Midterm Grade}), 0)$$
-$$\text{Tentative Final Rating (TFR)} = \text{ROUND}(\text{AVERAGE}(\text{Semi-Final Grade}, \text{Final Grade}), 0)$$
-$$\text{Semestral Grade (SG)} = \text{ROUND}(\text{AVERAGE}(\text{MR}, \text{TFR}), 0)$$
+Each subject selects its dedicated grading computation through `subjects.computation_id`. The engine resolves that subject's components from `grade_computations` and `grade_computation_components`; it does not substitute a universal COG. A template is valid only when every component has a positive weight and maximum score, component keys are unique, and the weights total exactly 100% within the engine tolerance. A subject with no assigned computation, an empty computation, or an invalid total fails closed: grade calculation and posting remain unavailable and the UI reports the configuration error.
+
+| Supported template | Implemented components and weights |
+|---|---|
+| General Education Core | Class Standing (Formative) 50%; Major Examination 40%; Character Rating 10% |
+| Health Sciences (Theory) | Class Standing (Formative) 30%; Major Examination 60%; Character Rating 10% |
+| Health Sciences (RLE / Clinical Practicum) | Checklist Rating 50%; Nursing Care Plan & Case Study 20%; Rubric Assessment 20%; Quizzes & Written Outputs 10% |
+| Maritime Studies (Lecture) | Class Standing 60%; Major Examination 40% |
+| Maritime Studies (Laboratory / Simulator) | Systematic Exercises 40%; Demonstration of Competence 60% |
+
+For a component with one or more scored items, normalization is point-based rather than an average of percentages:
+
+$$\text{Component Percentage} = \frac{\sum \text{Earned Points}}{\sum \text{Available Points}} \times 100$$
+$$\text{Weighted Contribution} = \frac{\text{Component Percentage}}{100} \times \text{Component Weight}$$
+$$\text{Term Rating} = \text{ROUND}\left(\sum \text{Weighted Contributions}, 0\right)$$
+
+A database `NULL` or absent score means not yet graded and is excluded as missing evidence. Numeric `0` is an intentionally recorded score: it remains part of the calculation and must never be converted back to `NULL` by blank-score handling.
+
+#### Formula snapshots and historical integrity
+
+At the first successful posting for a class, the system copies the assigned subject computation into `class_records.grading_formula_snapshot`. Every posted row also stores that effective snapshot. Once established, these snapshots are immutable. Later edits to a global COG template affect eligible classes that have not started posting; they do not retroactively change the calculation identity of an already snapshotted class.
+
+#### The grading progression chain
+
+Regular semesters use four term ratings. Intermediate averages are rounded at each milestone:
+
+$$\text{MR} = \text{ROUND}(\text{AVERAGE}(\text{Prelim}, \text{Midterm}), 0)$$
+$$\text{TFR} = \text{ROUND}(\text{AVERAGE}(\text{Semi-Final}, \text{Final}), 0)$$
+$$\text{SG} = \text{ROUND}(\text{AVERAGE}(\text{MR}, \text{TFR}), 0)$$
+
+Summer terms use the compressed two-term path:
+
+$$\text{MR} = \text{ROUND}(\text{Midterm}, 0)$$
+$$\text{TFR} = \text{ROUND}(\text{Final}, 0)$$
+$$\text{SG} = \text{ROUND}(\text{AVERAGE}(\text{MR}, \text{TFR}), 0)$$
+
+Posting MR or TFR writes the complete selected milestone atomically for the class. Reposting the same milestone updates the existing unique row rather than creating a duplicate, using the class's effective snapshot. Posting fails and rolls back when required scores remain missing. A posted term also rejects an accidental attempt to clear a previously saved score.
+
+#### SG correction workflow
+
+An official locked SG can be revised through either of two separate authorities:
+
+1. An authorized Admin may perform the existing logged official override.
+2. The assigned faculty may submit an exact proposed SG correction, reason, and optional HTTPS evidence reference. The Dean for the class's department may approve or reject it. Approval only authorizes the correction and unlocks the row; it does not change the student's official SG. The assigned faculty must apply the exact approved percentage, GWA, and remark by successfully reposting. Only that committed repost updates the student-facing grade, relocks it, marks the request applied, records immutable correction history, and sends notifications.
+
+The grade correction does not rewrite or delete an already submitted faculty risk evaluation; its historical baseline and follow-up snapshots remain unchanged.
+
+#### Student-visible activity and advising states
+
+Every saved activity is visible to enrolled students. An activity is **Pending** when it has no score, **Tentative** when a score is saved but is not covered by the applicable posted milestone (or was changed after that posting), and **Official** when the saved score is covered by the applicable posted milestone. Faculty-only activity drafts are not part of this workflow.
+
+Student risk evaluations are visible only after official submission/publication (`submitted` or `acknowledged_by_student` with `published_to_student_at`). Faculty working drafts, raw AI drafts, and private notes remain restricted.
 
 #### Transmutation Scale (GWA)
 * **98 – 100:** `1.00` (Passed) | **95 – 97:** `1.25` (Passed) | **92 – 94:** `1.50` (Passed)
@@ -80,8 +120,8 @@ $$\text{Semestral Grade (SG)} = \text{ROUND}(\text{AVERAGE}(\text{MR}, \text{TFR
    * Completing evaluations signs student clearance at end of term.
    * Incomplete evaluations leave clearance unsigned and lock student grade summary visibility.
 3. **Student Grade & Activity Visibility:**
-   * Real-time term grade recalculation summaries are hidden. Students see finalized **Midterm** and **Final** grade summaries only.
-   * Activity breakdown items remain accessible. Activity names **must be written in full** (no shortened abbreviations like `Q1`).
+   * Students see only committed posted-grade milestones as official grades; unposted running grade calculations remain advisory or faculty-facing.
+   * Every saved activity is visible with an explicit **Pending**, **Tentative**, or **Official** evidence state. Activity names **must be written in full** (no shortened abbreviations like `Q1`).
 4. **Absence Policy (FDA Remarks):**
    * 4 absences trigger an **FDA (Failure Due to Absences)** remark as an **advisory recommendation** for faculty review, NOT an automatic hard fail/lockout.
 5. **Department Evaluation Metrics & Comparative Ratings:**
@@ -92,8 +132,9 @@ $$\text{Semestral Grade (SG)} = \text{ROUND}(\text{AVERAGE}(\text{MR}, \text{TFR
    * Featured on Dean/Admin dashboards using **on-time** evaluation scores exclusively.
 8. **Dean Controlled Access to Evaluation Results:**
    * Evaluation scores/comments are hidden from faculty until released by the Dean (`is_released_to_faculty` toggle per instructor or bulk).
-9. **Grade Resubmission Workflow (Valid Reason + Evidence File):**
-   * Locked grade modifications require a formal resubmission request with a **valid reason** and **attached evidence file** (`evidence_url` stored in Supabase Storage) for Dean review and approval.
+9. **SG Correction Workflow (Exact Proposal + Dean Authorization):**
+   * The assigned faculty submits the original and exact proposed SG values, a valid reason, and an optional HTTPS evidence reference for review by the authorized Dean.
+   * Dean approval authorizes the change but does not itself modify the official SG. The student receives the corrected result only after the assigned faculty successfully reposts the exact approved values.
 
 ---
 

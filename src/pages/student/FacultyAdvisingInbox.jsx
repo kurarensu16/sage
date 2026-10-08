@@ -17,6 +17,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { cn } from '../../lib/utils';
+import { isStudentVisibleEvaluation } from '../../lib/evaluationTracking';
 
 export default function FacultyAdvisingInbox() {
   const { user } = useAuth();
@@ -41,6 +42,7 @@ export default function FacultyAdvisingInbox() {
           advising_plan,
           baseline_snapshot,
           status,
+          published_to_student_at,
           created_at,
           updated_at,
           class_records (
@@ -56,10 +58,12 @@ export default function FacultyAdvisingInbox() {
           )
         `)
         .eq('student_id', user.id)
+        .in('status', ['submitted', 'acknowledged_by_student'])
+        .not('published_to_student_at', 'is', null)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setEvaluations(data || []);
+      setEvaluations((data || []).filter(isStudentVisibleEvaluation));
     } catch (err) {
       console.error('Error loading advising evaluations:', err);
     } finally {

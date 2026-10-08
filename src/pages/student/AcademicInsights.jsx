@@ -46,6 +46,22 @@ import {
   findPostedMilestone,
   getCanonicalGradePeriod
 } from '../../lib/gradeMilestones';
+import { isStudentVisibleEvaluation } from '../../lib/evaluationTracking';
+import {
+  buildStudentInsightEvidence,
+  createInsightEvidenceFingerprint,
+  getFreshInsightText,
+} from '../../lib/insightFreshness';
+
+const readStoredAiCache = (userId) => {
+  if (!userId) return {};
+  try {
+    const saved = localStorage.getItem(`sage_ai_cache_${userId}`);
+    return saved ? JSON.parse(saved) : {};
+  } catch {
+    return {};
+  }
+};
 
 // Helper to compute academic verdict enum ('continue', 'at_risk', 'recommend_shift')
 const computeVerdict = (gwaNum, fdaRisk, absents, failingCount = 0) => {
@@ -151,17 +167,14 @@ export default function AcademicInsights() {
   const [simEstimatedCs] = useState(85);
 
   // AI Guidance states
-  const [aiCache, setAiCache] = useState(() => {
-    try {
-      const saved = localStorage.getItem(`sage_ai_cache_${user?.id || 'guest'}`);
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [aiCache, setAiCache] = useState(() => readStoredAiCache(user?.id));
   const [aiLoading, setAiLoading] = useState(false);
   const [askAspireOpen, setAskAspireOpen] = useState(false);
   const [askAspireSubjectCode, setAskAspireSubjectCode] = useState(null);
+
+  useEffect(() => {
+    setAiCache(readStoredAiCache(user?.id));
+  }, [user?.id]);
 
   useEffect(() => {
     try {
@@ -211,11 +224,20 @@ export default function AcademicInsights() {
   }, [user]);
 
   // Helper to persist AI cache to localStorage
-  const updateAiCache = useCallback((key, val) => {
+  const updateAiCache = useCallback((key, text, evidenceFingerprint) => {
     setAiCache(prev => {
-      const next = { ...prev, [key]: val };
+      const next = {
+        ...prev,
+        [key]: {
+          text,
+          evidenceFingerprint,
+          generatedAt: new Date().toISOString(),
+        },
+      };
       try {
-        localStorage.setItem(`sage_ai_cache_${user?.id || 'guest'}`, JSON.stringify(next));
+        if (user?.id) {
+          localStorage.setItem(`sage_ai_cache_${user.id}`, JSON.stringify(next));
+        }
       } catch (e) {
         console.debug('Failed to write aiCache to storage', e);
       }
@@ -250,7 +272,7 @@ export default function AcademicInsights() {
         // 3. Fetch attendance history
         const { data: attendanceData } = await supabase
           .from('attendance_records')
-          .select('class_record_id, status')
+          .select('*')
           .eq('student_id', user.id);
 
         const attendanceSummary = countAttendance(attendanceData || []);
@@ -281,8 +303,7 @@ export default function AcademicInsights() {
             const { data: classActs } = await supabase
               .from('class_activities')
               .select('*')
-              .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000'])
-              .eq('is_released', true);
+              .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000']);
 
             // Fetch professor evaluations for student
             const { data: riskEvals } = await supabase
@@ -307,7 +328,11 @@ export default function AcademicInsights() {
               `)
               .eq('student_id', user.id)
               .in('class_record_id', classRecordIds.length > 0 ? classRecordIds : ['00000000-0000-0000-0000-000000000000'])
+              .in('status', ['submitted', 'acknowledged_by_student'])
+              .not('published_to_student_at', 'is', null)
               .order('created_at', { ascending: false });
+
+            const studentVisibleRiskEvals = (riskEvals || []).filter(isStudentVisibleEvaluation);
 
             const { data: posted } = await supabase
               .from('posted_grades')
@@ -320,21 +345,21 @@ export default function AcademicInsights() {
               activityIds.length > 0
                 ? supabase
                     .from('student_activity_scores')
-                    .select('activity_id, score, updated_at')
+                    .select('*')
                     .eq('student_id', user.id)
                     .in('activity_id', activityIds)
                 : Promise.resolve({ data: [] }),
               classRecordIds.length > 0
                 ? supabase
                     .from('student_term_scores')
-                    .select('class_record_id, term, char_rating, exam')
+                    .select('*')
                     .eq('student_id', user.id)
                     .in('class_record_id', classRecordIds)
                 : Promise.resolve({ data: [] }),
               classRecordIds.length > 0
                 ? supabase
                     .from('class_grading_columns')
-                    .select('class_record_id, term, exam_max')
+                    .select('*')
                     .in('class_record_id', classRecordIds)
                 : Promise.resolve({ data: [] })
             ]);
@@ -505,17 +530,28 @@ export default function AcademicInsights() {
                       ? null
                       : Number(scoreRecord.score);
                     const maxScore = Number(activity.max_score) || 0;
+                    const applicableMilestone = sgPostedRow
+                      || (['Prelim', 'Midterm'].includes(activity.term) ? mrPostedRow : tfrPostedRow)
+                      || null;
+                    const scoreSavedAt = scoreRecord?.updated_at || null;
+                    const milestonePostedAt = applicableMilestone?.posted_at || null;
+                    const isOfficial = Boolean(
+                      score !== null
+                      && applicableMilestone
+                      && (!scoreSavedAt || !milestonePostedAt || new Date(scoreSavedAt) <= new Date(milestonePostedAt))
+                    );
                     return {
                       ...activity,
                       score,
                       gradingStatus: score === null ? 'ungraded' : score === 0 ? 'graded_zero' : 'graded',
                       submissionStatus: 'unknown',
+                      evidenceStatus: score === null ? 'pending' : isOfficial ? 'official' : 'tentative',
                       percentage: score !== null && maxScore > 0
                         ? Math.round((score / maxScore) * 100)
                         : null
                     };
                   });
-                const latestEval = (riskEvals || []).find(re => re.class_record_id === cr.class_record_id) || null;
+                const latestEval = studentVisibleRiskEvals.find(re => re.class_record_id === cr.class_record_id) || null;
 
                 const scoredActivities = subjectActivities.filter(activity => activity.score !== null && Number(activity.max_score) > 0);
                 const earnedActivityPoints = scoredActivities.reduce((sum, activity) => sum + activity.score, 0);
@@ -687,9 +723,22 @@ export default function AcademicInsights() {
               prioritySub = computedSubjectsList[0];
             }
 
-            // If a saved insight exists in DB, populate the cached summary
-            if (pregenData && pregenData.summary) {
-              updateAiCache('overall', pregenData.summary);
+            const evidenceFingerprint = createInsightEvidenceFingerprint(buildStudentInsightEvidence({
+              postedGrades: posted || [],
+              attendance: attendanceData || [],
+              activities: classActs || [],
+              activityScores: activityScores || [],
+              termScores: termScores || [],
+              gradingColumns: gradingColumns || [],
+              evaluations: studentVisibleRiskEvals,
+            }));
+            const savedEvidenceFingerprint = pregenData?.basis_snapshot?.evidenceFingerprint || null;
+            const savedInsightIsCurrent = Boolean(
+              pregenData?.summary && savedEvidenceFingerprint === evidenceFingerprint
+            );
+
+            if (savedInsightIsCurrent) {
+              updateAiCache('overall', pregenData.summary, evidenceFingerprint);
             }
 
             const activeInsightData = {
@@ -699,7 +748,9 @@ export default function AcademicInsights() {
               totalUnits: computedSubjectsList.reduce((sum, subject) => sum + subject.credits, 0),
               trajectoryVerdict,
               trajectoryType,
-              aiSummary: pregenData?.summary || null,
+              aiSummary: savedInsightIsCurrent ? pregenData.summary : null,
+              evidenceFingerprint,
+              staleAiInsight: Boolean(pregenData?.summary && !savedInsightIsCurrent),
               completeness: {
                 totalSubjectCount,
                 postedSubjectCount,
@@ -766,6 +817,8 @@ export default function AcademicInsights() {
     trajectoryVerdict: hasEnrolledSubjects ? 'Awaiting Milestone Assessments' : 'Not Enrolled',
     trajectoryType: 'good',
     aiSummary: null,
+    evidenceFingerprint: null,
+    staleAiInsight: false,
     dlEligibility: { awardCategory: 'Not Eligible', message: 'No enrolled courses for the current academic term.' },
     diagnostics: { csAvg: 0, examAvg: 0, charAvg: 0, attendanceRate: 100, absentCount: 0, fdaRisk: false },
     prioritySubject: null,
@@ -773,9 +826,21 @@ export default function AcademicInsights() {
   }), [hasEnrolledSubjects, insight, profile?.first_name, profile?.last_name]);
 
   const subjectsList = useMemo(() => studentStats.subjects || [], [studentStats.subjects]);
-  const releasedScoredActivityCount = useMemo(() => subjectsList.reduce(
+  const scoredActivityCount = useMemo(() => subjectsList.reduce(
     (count, subject) => count + (subject.activities || []).filter(
       activity => activity.score !== null && activity.score !== undefined
+    ).length,
+    0
+  ), [subjectsList]);
+  const tentativeScoredActivityCount = useMemo(() => subjectsList.reduce(
+    (count, subject) => count + (subject.activities || []).filter(
+      activity => activity.evidenceStatus === 'tentative'
+    ).length,
+    0
+  ), [subjectsList]);
+  const pendingActivityCount = useMemo(() => subjectsList.reduce(
+    (count, subject) => count + (subject.activities || []).filter(
+      activity => activity.evidenceStatus === 'pending'
     ).length,
     0
   ), [subjectsList]);
@@ -795,6 +860,15 @@ export default function AcademicInsights() {
     low: 'border-sage-200 bg-sage-50 text-sage-900'
   }[advisorEvaluation.severity] || 'border-slate-200 bg-slate-50 text-slate-800';
   const currentSubject = subjectsList.find(s => s.code === selectedSubjectCode) || subjectsList[0] || null;
+  const currentEvidenceFingerprint = studentStats.evidenceFingerprint;
+  const overallAiText = getFreshInsightText(aiCache.overall, currentEvidenceFingerprint)
+    || studentStats.aiSummary;
+  const subjectAiCacheKey = currentSubject
+    ? `${currentSubject.code}_${selectedPeriod}`
+    : null;
+  const subjectAiText = subjectAiCacheKey
+    ? getFreshInsightText(aiCache[subjectAiCacheKey], currentEvidenceFingerprint)
+    : null;
   const currentWeakActivities = useMemo(() => (currentSubject?.activities || []).filter(
     activity => activity.percentage !== null && activity.percentage < 75
   ), [currentSubject]);
@@ -808,7 +882,8 @@ export default function AcademicInsights() {
     .sort((a, b) => (a.percentage ?? 101) - (b.percentage ?? 101));
   const askRiskEvaluation = askAspireSubject?.latestEvaluation || null;
   const overallAdvisorEvidence = [
-    { label: 'Released scored activities', value: String(releasedScoredActivityCount) },
+    { label: 'Pending activities', value: String(pendingActivityCount) },
+    { label: 'Tentative scored activities', value: String(tentativeScoredActivityCount) },
     ...(studentStats.gwa !== null
       ? [{ label: 'Cumulative GWA', value: Number(studentStats.gwa).toFixed(2) }]
       : []),
@@ -818,7 +893,7 @@ export default function AcademicInsights() {
       ? [{
           label: 'Priority course',
           value: studentStats.prioritySubject.runningGwa === '—'
-            ? `${studentStats.prioritySubject.code} · ${studentStats.prioritySubject.diagnostics?.csAvg || 0}% released activity average`
+            ? `${studentStats.prioritySubject.code} · ${studentStats.prioritySubject.diagnostics?.csAvg || 0}% tentative activity average`
             : `${studentStats.prioritySubject.code} · ${studentStats.prioritySubject.runningGwa} official GWA (based on ${studentStats.prioritySubject.milestoneStage || 'no official milestone yet'}${studentStats.prioritySubject.isFinalized ? '' : ' — not yet final'})`
         }]
       : [])
@@ -873,7 +948,7 @@ export default function AcademicInsights() {
       ? PERIODS_MAPPING[selectedPeriod]
       : hasOfficialMilestone
         ? 'Latest official milestones'
-        : 'Released activity and attendance evidence',
+        : 'Pending and tentative activity evidence',
     officialStanding: {
       gwa: studentStats.gwa,
       standing: studentStats.standing,
@@ -903,7 +978,7 @@ export default function AcademicInsights() {
             percentage: activity.percentage,
             gradingStatus: activity.gradingStatus,
             submissionStatus: activity.submissionStatus,
-            isReleased: activity.is_released === true
+            evidenceStatus: activity.evidenceStatus
           }))
         }
       : null,
@@ -914,7 +989,17 @@ export default function AcademicInsights() {
           name: subject.name,
           runningGwa: subject.runningGwa,
           classStandingAverage: subject.diagnostics?.csAvg || null,
-          examAverage: subject.diagnostics?.examAvg || null
+          examAverage: subject.diagnostics?.examAvg || null,
+          activities: (subject.activities || []).map(activity => ({
+            title: activity.title || activity.name,
+            term: activity.term,
+            score: activity.score,
+            maxScore: Number(activity.max_score) || null,
+            percentage: activity.percentage,
+            gradingStatus: activity.gradingStatus,
+            submissionStatus: activity.submissionStatus,
+            evidenceStatus: activity.evidenceStatus
+          }))
         })),
     evidence: askAspireEvidence,
     boundaries: {
@@ -960,14 +1045,14 @@ export default function AcademicInsights() {
 
   // Fetch AI guidance automatically ONLY when official Midterm / Final grades exist and cache is empty
   useEffect(() => {
-    if (loading || !user || !hasEnrolledSubjects || !hasOfficialMilestone) return;
+    if (loading || !user || !hasEnrolledSubjects || !hasOfficialMilestone || !currentEvidenceFingerprint) return;
 
     let cacheKey = '';
     let payload = {};
 
     if (scope === 'overall') {
       cacheKey = 'overall';
-      if (aiCache[cacheKey]) return; // Already loaded from DB / cache
+      if (getFreshInsightText(aiCache[cacheKey], currentEvidenceFingerprint)) return;
 
       payload = {
         type: 'overall',
@@ -988,7 +1073,7 @@ export default function AcademicInsights() {
       
       // Do not query AI for pending/empty periods
       if (periodObj.gwa === '—' || periodObj.status === 'Pending') return;
-      if (aiCache[cacheKey]) return;
+      if (getFreshInsightText(aiCache[cacheKey], currentEvidenceFingerprint)) return;
 
       payload = {
         type: 'subject',
@@ -1012,7 +1097,7 @@ export default function AcademicInsights() {
       try {
         const result = await getAiAcademicInsight(payload);
         if (result) {
-          updateAiCache(cacheKey, result);
+          updateAiCache(cacheKey, result, currentEvidenceFingerprint);
 
           // If overall guidance, persist directly into Supabase `student_academic_insights` table
           if (scope === 'overall') {
@@ -1026,6 +1111,7 @@ export default function AcademicInsights() {
               dlEligibility: studentStats.dlEligibility,
               diagnostics: studentStats.diagnostics,
               hasOfficialMilestone: true,
+              evidenceFingerprint: currentEvidenceFingerprint,
               generatedAt: new Date().toISOString()
             });
           }
@@ -1038,12 +1124,12 @@ export default function AcademicInsights() {
     }
 
     fetchAiGuidance();
-  }, [scope, selectedSubjectCode, selectedPeriod, loading, user, hasEnrolledSubjects, hasOfficialMilestone, studentStats, subjectsList, currentSubject, aiCache, saveInsightToDb, updateAiCache]);
+  }, [scope, selectedSubjectCode, selectedPeriod, loading, user, hasEnrolledSubjects, hasOfficialMilestone, studentStats, subjectsList, currentSubject, currentEvidenceFingerprint, aiCache, saveInsightToDb, updateAiCache]);
 
   // Handler for explicit on-demand re-generation (only enabled when official grades exist)
   const handleRegenerateCurrentInsight = async (e) => {
     e?.stopPropagation?.();
-    if (!hasOfficialMilestone) return;
+    if (!hasOfficialMilestone || !currentEvidenceFingerprint) return;
 
     let cacheKey;
     let payload;
@@ -1087,7 +1173,7 @@ export default function AcademicInsights() {
     try {
       const result = await getAiAcademicInsight(payload);
       if (result) {
-        updateAiCache(cacheKey, result);
+        updateAiCache(cacheKey, result, currentEvidenceFingerprint);
 
         if (scope === 'overall') {
           const v = computeVerdict(studentStats.gwa, studentStats.diagnostics?.fdaRisk, studentStats.diagnostics?.absentCount, 0);
@@ -1100,6 +1186,7 @@ export default function AcademicInsights() {
             dlEligibility: studentStats.dlEligibility,
             diagnostics: studentStats.diagnostics,
             hasOfficialMilestone: true,
+            evidenceFingerprint: currentEvidenceFingerprint,
             generatedAt: new Date().toISOString()
           });
         }
@@ -1295,7 +1382,7 @@ export default function AcademicInsights() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-slate-900">Proactive academic guidance</h3>
-                    <p className="text-[11px] text-slate-400">Released activities, attendance, and official milestone evidence</p>
+                    <p className="text-[11px] text-slate-400">Tentative activities, attendance, and official milestone evidence</p>
                   </div>
                 </div>
 
@@ -1390,19 +1477,19 @@ export default function AcademicInsights() {
                 </div>
               </div>
 
-              {hasOfficialMilestone && (aiLoading || aiCache.overall || studentStats.aiSummary) && (
+              {hasOfficialMilestone && (aiLoading || overallAiText || studentStats.staleAiInsight) && (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
                   <span className="font-bold text-slate-800">Ask ASPIRE explanation: </span>
-                  {aiLoading && !aiCache.overall
+                  {aiLoading && !overallAiText
                     ? 'Preparing a plain-language explanation of the deterministic evidence...'
-                    : aiCache.overall || studentStats.aiSummary}
+                    : overallAiText || 'The previous explanation is outdated because its academic evidence changed. Refresh to generate a current explanation.'}
                 </div>
               )}
 
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Available context</span>
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
-                  Released scored activities: <span className="text-slate-800">{releasedScoredActivityCount}</span>
+                  Tentative scored activities: <span className="text-slate-800">{tentativeScoredActivityCount}</span>
                 </span>
                 {overallAdvisorEvidence.slice(0, 4).map(item => (
                   <span key={`${item.label}-${item.value}`} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
@@ -1430,18 +1517,18 @@ export default function AcademicInsights() {
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Standing (50%)</span>
                     <span className={cn(
                       "text-[10px] font-bold px-2 py-0.5 rounded-full border",
-                      releasedScoredActivityCount === 0
+                      scoredActivityCount === 0
                         ? "bg-slate-50 text-slate-500 border-slate-200"
                         : studentStats.diagnostics.csAvg < 75
                           ? "bg-amber-50 text-amber-700 border-amber-200"
                           : "bg-emerald-50 text-emerald-700 border-emerald-100"
                     )}>
-                      {releasedScoredActivityCount === 0 ? 'Pending' : studentStats.diagnostics.csAvg < 75 ? 'Needs Attention' : studentStats.diagnostics.csAvg >= 85 ? 'Strong Asset' : 'On Track'}
+                      {scoredActivityCount === 0 ? 'Pending' : studentStats.diagnostics.csAvg < 75 ? 'Needs Attention' : studentStats.diagnostics.csAvg >= 85 ? 'Strong Asset' : 'On Track'}
                     </span>
                   </div>
                   <div className="flex items-baseline justify-between">
                     <span className="text-2xl font-extrabold font-mono text-slate-800">
-                      {releasedScoredActivityCount > 0 ? `${studentStats.diagnostics.csAvg}%` : '—'}
+                      {scoredActivityCount > 0 ? `${studentStats.diagnostics.csAvg}%` : '—'}
                     </span>
                     <span className="text-xs text-slate-400 font-medium">Activities & Quizzes</span>
                   </div>
@@ -1455,10 +1542,10 @@ export default function AcademicInsights() {
                     />
                   </div>
                   <p className="text-[11px] text-slate-500 leading-tight">
-                    {releasedScoredActivityCount > 0
+                    {scoredActivityCount > 0
                       ? studentStats.diagnostics.csAvg < 75
-                        ? "Released activity evidence is below the 75% advising benchmark. Follow the action plan above."
-                        : "Released activity evidence is currently at or above the advising benchmark."
+                        ? "Tentative activity evidence is below the 75% advising benchmark. Follow the action plan above."
+                        : "Tentative activity evidence is currently at or above the advising benchmark."
                       : "Class standing scores will compile as activities are graded."}
                   </p>
                 </div>
@@ -1684,7 +1771,7 @@ export default function AcademicInsights() {
                   <div>
                     <h3 className="text-sm font-bold text-slate-900">What-If Grade Simulator</h3>
                     <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                      Available after an official Midterm Rating is posted. Released activity results support study advice, but ASPIRE will not use them to predict or display an unofficial term grade.
+                      Available after an official Midterm Rating is posted. Tentative activity results support study advice, but ASPIRE will not present them as an official term grade.
                     </p>
                   </div>
                 </div>
@@ -1709,7 +1796,7 @@ export default function AcademicInsights() {
                   </div>
                 )) : (
                   <div className="md:col-span-3 rounded-xl border border-dashed border-slate-200 bg-white p-5 text-xs text-slate-500">
-                    Action items will appear when released academic evidence is available.
+                    Action items will appear when saved academic evidence is available.
                   </div>
                 )}
               </div>
@@ -1720,7 +1807,7 @@ export default function AcademicInsights() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">Your courses</h3>
-                  <p className="mt-0.5 text-[11px] text-slate-500">Open a course to review released evidence and official milestones.</p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">Open a course to review tentative activity evidence and official milestones.</p>
                 </div>
                 <button
                   type="button"
@@ -1861,18 +1948,18 @@ export default function AcademicInsights() {
                       </div>
                     </div>
 
-                    {/* Released evidence remains useful before official Midterm/Final posting. */}
+                    {/* Tentative evidence remains useful before official milestone posting. */}
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 sm:p-5 space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <BookOpen className="h-4 w-4 text-sage-600" />
                           <div>
-                            <h4 className="text-xs font-bold text-slate-900">Released activity evidence</h4>
-                            <p className="text-[10px] text-slate-500">Used for study advice, never as an unofficial term grade.</p>
+                            <h4 className="text-xs font-bold text-slate-900">Activity evidence</h4>
+                            <p className="text-[10px] text-slate-500">Activities are Pending before scoring, Tentative after saving, and Official when included in a posted milestone.</p>
                           </div>
                         </div>
                         <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600">
-                          {currentSubject.activities?.length || 0} released
+                          {currentSubject.activities?.length || 0} saved
                         </span>
                       </div>
 
@@ -1880,7 +1967,7 @@ export default function AcademicInsights() {
                         <div className="flex items-center justify-between gap-2">
                           <div>
                             <h5 className="text-xs font-bold text-amber-900">Activities needing attention</h5>
-                            <p className="text-[10px] text-amber-800">Released and scored activities below the 75% passing threshold.</p>
+                            <p className="text-[10px] text-amber-800">Saved scored activities below the 75% passing threshold.</p>
                           </div>
                           <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-amber-900">{currentWeakActivities.length}</span>
                         </div>
@@ -1901,7 +1988,7 @@ export default function AcademicInsights() {
                             ))}
                           </div>
                         ) : (
-                          <p className="mt-3 text-[11px] text-amber-900">No released, scored activity is currently below 75%.</p>
+                          <p className="mt-3 text-[11px] text-amber-900">No saved scored activity is currently below 75%.</p>
                         )}
                       </div>
 
@@ -1922,7 +2009,9 @@ export default function AcademicInsights() {
                                       ? 'bg-amber-100 text-amber-800'
                                       : 'bg-emerald-100 text-emerald-800'
                                 )}>
-                                  {activity.score === null ? 'Not scored' : `${activity.score}/${Number(activity.max_score)} · ${activity.percentage}%`}
+                                  {activity.score === null
+                                    ? 'Pending'
+                                    : `${activity.score}/${Number(activity.max_score)} · ${activity.percentage}% · ${activity.evidenceStatus === 'official' ? 'Official' : 'Tentative'}`}
                                 </span>
                               </div>
                               {activity.description && <p className="text-[10px] leading-relaxed text-slate-500">{activity.description}</p>}
@@ -1931,7 +2020,7 @@ export default function AcademicInsights() {
                         </div>
                       ) : (
                         <div className="rounded-lg border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-500">
-                          No faculty-released activity result is available for this course yet.
+                          No saved activity is available for this course yet.
                         </div>
                       )}
                     </div>
@@ -2021,13 +2110,13 @@ export default function AcademicInsights() {
                           </div>
 
                           <div className="text-xs sm:text-sm font-medium text-slate-700 leading-relaxed italic bg-slate-50 p-3.5 rounded-lg border border-slate-200/60">
-                            {aiLoading && !aiCache[`${currentSubject.code}_${selectedPeriod}`] ? (
+                            {aiLoading && !subjectAiText ? (
                               <div className="flex items-center gap-2 text-xs text-slate-400 not-italic">
                                 <div className="animate-spin rounded-full h-3.5 w-3.5 border-t-2 border-sage-600"></div>
                                 Analyzing subject performance via AI...
                               </div>
                             ) : (
-                              <p>"{aiCache[`${currentSubject.code}_${selectedPeriod}`] || currentSubject.periods[selectedPeriod].insight || 'No qualitative data compiled for this milestone.'}"</p>
+                              <p>"{subjectAiText || currentSubject.periods[selectedPeriod].insight || 'No qualitative data compiled for this milestone.'}"</p>
                             )}
                           </div>
                         </div>
@@ -2140,8 +2229,8 @@ export default function AcademicInsights() {
                   </span>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Released evidence</span>
-                  <span className="mt-1 block font-mono text-2xl font-extrabold text-slate-900">{releasedScoredActivityCount}</span>
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Tentative evidence</span>
+                  <span className="mt-1 block font-mono text-2xl font-extrabold text-slate-900">{tentativeScoredActivityCount}</span>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
                   <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Current advisor state</span>
@@ -2187,7 +2276,7 @@ export default function AcademicInsights() {
                   </div>
                 ) : (
                   <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-xs text-slate-500">
-                    Your progress plan will begin when faculty release academic evidence that supports a specific next step.
+                    Your progress plan will begin when saved academic evidence supports a specific next step.
                   </div>
                 )}
 

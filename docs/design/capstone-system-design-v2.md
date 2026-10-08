@@ -35,16 +35,15 @@ ASPIRE is designed to eliminate manual grade computation, reduce the burden of g
 * Reassign faculty to a classroom (for substitutions or replacements)
 * Create and configure evaluation forms and criteria
 * Set evaluation window open and close dates
-* Perform admin override on locked posted grades
+* Perform an authorized, audit-logged Admin override on locked posted grades
 * Archive classrooms at semester end
 * View all system data and audit logs
 
 ### 2.2 Dean
-* View all class records across departments and sections
+* View class records within the Dean's authorized department
 * Monitor grade posting status per faculty per grading period
-* Use the **Registry Unlock Override Dashboard** to selectively unlock specific grading milestones for faculty edits
-* Approve or reject real-time **Unlock Requests** sent by faculty members for specific class records and milestones
-* Review and approve formal **Grade Resubmission Requests** submitted with student evidence attachments (`evidence_url`) for locked grade adjustments
+* Review and approve or reject exact SG correction proposals submitted by assigned faculty within the Dean's department
+* Treat approval as authorization only; the official SG remains unchanged until the assigned faculty successfully reposts the approved values
 * Control **Evaluation Release Controls** (`is_released_to_faculty` toggle) to release survey scores and feedback to faculty members individually or in bulk
 * Access **Dual-Channel Evaluation Analytics** (On-Time Official vs Late Informational) and **Retaliation-Drift** rating cards
 * View grade distribution summaries per subject and section
@@ -54,19 +53,19 @@ ASPIRE is designed to eliminate manual grade computation, reduce the burden of g
 
 ### 2.3 Faculty
 * Create class records per subject and section
-* Define grade components (activity, quiz, exam, project) with percentage weights or apply department COG templates
+* Use the dedicated COG assigned to each subject and configure its class-level activity/score columns
 * Input student scores per component (enforcing full activity names; shortened codes prohibited)
 * View real-time running grade and Early Warning System indicators per student
 * Post grades dynamically per milestone grading period (Prelim, Midterm, Semi-Final, Final) via a selective choices modal
-* Request the Dean to unlock locked milestones directly from the Posted Grades view
-* Submit formal **Grade Change Requests** for locked grades with required reason notes and uploaded student proof files for Dean review and approval
+* Submit an exact **SG Correction Request** for a locked Semestral Grade, with required reason and optional HTTPS evidence reference, for Dean review
+* Apply an approved SG correction by reposting the exact approved percentage, GWA, and remark; Dean approval alone does not alter the grade
 * Treat 4 student absences as an **FDA Advisory Recommendation** for faculty review, preserving faculty discretion based on overall student circumstances
 * View faculty evaluation results per section (anonymized) **only after Dean release approval**
 * Receive notifications when an evaluation window closes, when an evaluation is released by the Dean, or when a milestone unlock/resubmission request is resolved
 
 ### 2.4 Student
-* View finalized **Midterm** and **Final** grade summaries (real-time daily recalculations removed for official summaries)
-* Access activity, quiz, and assignment breakdown details with full descriptive titles
+* View committed posted-grade milestones; unposted running calculations are not presented as official grades
+* Access every saved activity, quiz, and assignment with full descriptive titles and a Pending, Tentative, or Official state
 * Submit faculty evaluations per subject section within active designated timelines
 * On-time survey completion signs term clearance; missing evaluations lock grade summary visibility and leave clearance unsigned
 * Submit late evaluations to unlock grade visibility and clearance, flagged as `submitted_timely = false` and excluded from faculty teaching effectiveness ratings (Fairness Clause)
@@ -107,26 +106,30 @@ ASPIRE is designed to eliminate manual grade computation, reduce the burden of g
 | FR # | Description |
 |---|---|
 | **FR09** | Faculty shall be able to create a class record per subject and section. |
-| **FR10** | Faculty shall be able to define grade components (activity, quiz, exam, project) with corresponding percentage weights. |
-| **FR11** | The system shall validate that grade component weights sum to 100% before allowing score input. |
+| **FR10** | Admin shall maintain reusable COG templates, and each subject shall reference its dedicated template through `computation_id`. |
+| **FR10a** | The system shall support the five implemented institutional templates: General Education Core, Health Sciences Theory, Health Sciences RLE/Clinical Practicum, Maritime Lecture, and Maritime Laboratory/Simulator. |
+| **FR11** | The system shall reject a missing or invalid subject COG and shall require valid component weights to total 100% before calculation or posting. |
 | **FR12** | Faculty shall be able to input scores per student per component. |
-| **FR13** | The system shall automatically compute the term grades (Prelim, Midterm, Semi-Final, Final) and rating aggregation averages (Midterm Rating, Tentative Final Rating, and Semestral Grade) based on defined weights and rounding rules. |
+| **FR13** | The system shall compute term ratings from point-normalized components and shall compute the regular or summer MR, TFR, and SG progression using the defined rounding rules. |
+| **FR13a** | At first posting, the system shall freeze an immutable class formula snapshot and store the effective snapshot with posted grades so later global template edits do not change historical calculations. |
+| **FR13b** | The system shall preserve the distinction between an ungraded `NULL` and an intentionally recorded numeric zero. |
 | **FR14** | The system shall compute a real-time running grade per student based on currently encoded score components (Class Standing, Character Rating, and Term Exam). |
 | **FR15** | The system shall display a visual standing indicator per student: Safe (green), At-Risk (yellow), or Failing Trajectory (red), based on the running grade GWA. |
 | **FR16** | The system shall display a tooltip on At-Risk and Failing Trajectory indicators showing the exact running percentage. |
-| **FR17** | Faculty shall be able to post grades selectively per grading period milestone (Prelim, Midterm, MR, Semi-Final, Final, TFR, Semestral Grade) via a milestone choice modal. |
+| **FR17** | Assigned faculty shall be able to post complete grade milestones atomically (Prelim, Midterm, MR, Semi-Final, Final, TFR, and SG); reposting MR or TFR updates the existing milestone row without duplication. |
 | **FR17a** | The system shall allow faculty to filter the class record view by individual grading period (Prelim, Midterm, Semi-Final, Final) or view all terms side-by-side. |
 | **FR17b** | The system shall provide a fullscreen expand/collapse toggle on class record tables (Score Input, Computation Preview, and Posted Grades) to maximize viewing area, with Escape key and backdrop-click to exit. |
-| **FR18** | The system shall lock specific grading milestone columns from faculty editing once posted. |
-| **FR18a** | Faculty shall be able to submit a dynamic "Request Unlock" for any locked milestone column, transitioning its state to "Unlock Requested" and notifying the Dean. |
-| **FR18b** | The Dean Portal shall display active faculty unlock requests and provide a "Registry Override Dashboard" to approve/reject unlock requests in real-time or selectively force-unlock any milestone column for a class record. |
+| **FR18** | The system shall lock posted terms and shall reject attempts to clear a saved score to `NULL` while its term is posted. |
+| **FR18a** | Assigned faculty shall be able to submit one unresolved exact SG correction proposal per posted SG, including the original/proposed values, reason, and optional HTTPS evidence reference. |
+| **FR18b** | The authorized Dean shall approve or reject the proposal without directly changing the official SG; only a successful faculty repost of the exact approved values shall update the student record and mark the request applied. |
+| **FR18c** | Admin official override and the faculty-Dean SG correction workflow shall remain separate, auditable authorities. |
 
 
 ### 3.4 Student Portal
 | FR # | Description |
 |---|---|
 | **FR19** | Students shall be able to view their grades per subject per grading period. |
-| **FR19a** | Students shall be able to view individual activity breakdowns (e.g., Activity 1 to 6) under the Class Standing component via an expandable accordion row. |
+| **FR19a** | Students shall be able to view every saved activity with full titles and explicit Pending (ungraded), Tentative (saved but not covered by the current posting), or Official (covered by the applicable posting) state. |
 | **FR19b** | Students shall be able to view a Complete Semestral Grade Record (Spreadsheet View) at the bottom of the breakdown page showing the complete calculation chain (PG, MG, MR, SFG, FG, TFR, SG, GWA, Remarks) with a fullscreen option for easier reading. |
 | **FR20** | The system shall notify students when a new grade period is posted. |
 | **FR21** | The system shall display each student's lapses or missing score components. |
@@ -171,7 +174,7 @@ ASPIRE is designed to eliminate manual grade computation, reduce the burden of g
 | **NFR06** | Reliability | The system must maintain 99% uptime during active evaluation windows. |
 | **NFR07** | Maintainability | Codebase must follow component-based architecture for ease of updates. |
 | **NFR08** | Scalability | The system must support at least 500 concurrent student users. |
-| **NFR09** | Integrity | Posted grades must be immutable without an admin-logged override. |
+| **NFR09** | Integrity | Posted grades must remain immutable except through an authorized, audit-logged Admin override or the approved exact SG correction and faculty repost workflow. |
 
 ---
 

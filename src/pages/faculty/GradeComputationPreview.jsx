@@ -2,6 +2,7 @@ import {
   calculateSemestralGrade,
   calculateStoredTermRating,
   createGradingFormulaSnapshot,
+  getGradingStoragePresentation,
   getTransmutedGrade,
   resolveGradingFormula,
   toEffectiveGradeForPosting
@@ -47,9 +48,87 @@ import EnrollmentTypeBadge from '../../components/common/EnrollmentTypeBadge';
 import { getEnrollmentType } from '../../lib/classRoomService';
 import {
   GRADE_MILESTONES,
+  collectPostedMilestoneCoverage,
   getCanonicalGradePeriod,
-  getMilestoneForPostingTarget
+  getMilestonePostingPresentation,
+  getRequiredTermsForPostingTarget,
+  getUpdatedMilestoneLocks,
+  isSummerClass
 } from '../../lib/gradeMilestones';
+import { postGradeMilestoneAtomic } from '../../lib/gradePostingService';
+import { collectBlankScoreReview, prepareReviewedBlankScores } from '../../lib/gradeScoreReview';
+
+const computeGradePreviewStudents = ({ students, gradingFormula, maxItems, activities, isSummer }) => students.map(student => {
+  const termResults = Object.fromEntries(['Prelim', 'Midterm', 'Semi-Final', 'Final'].map(termName => [
+    termName,
+    calculateStoredTermRating({
+      formula: gradingFormula,
+      termScores: student.periods?.[termName] || {},
+      maxItems: maxItems[termName] || {},
+      activities: activities[termName] || []
+    })
+  ]));
+  const pRate = termResults.Prelim.rating ?? 0;
+  const mRate = termResults.Midterm.rating ?? 0;
+  const sfRate = termResults['Semi-Final'].rating ?? 0;
+  const fRate = termResults.Final.rating ?? 0;
+  const semesterResult = calculateSemestralGrade({
+    prelim: termResults.Prelim.rating,
+    midterm: termResults.Midterm.rating,
+    semiFinal: termResults['Semi-Final'].rating,
+    final: termResults.Final.rating,
+    isSummer
+  });
+  const { mr, tfr, sg } = semesterResult;
+  const calculationError = Object.values(termResults).find(result => !result.ok)?.error || null;
+
+  const hasPrelimScores = Object.values(student.periods?.Prelim || {}).some(value => value !== null && value !== undefined && value !== '' && value !== 0);
+  const hasMidtermScores = Object.values(student.periods?.Midterm || {}).some(value => value !== null && value !== undefined && value !== '' && value !== 0);
+  const hasSemiFinalScores = Object.values(student.periods?.['Semi-Final'] || {}).some(value => value !== null && value !== undefined && value !== '' && value !== 0);
+  const hasFinalScores = Object.values(student.periods?.Final || {}).some(value => value !== null && value !== undefined && value !== '' && value !== 0);
+  const hasAnyScores = isSummer
+    ? (hasMidtermScores || hasFinalScores)
+    : (hasPrelimScores || hasMidtermScores || hasSemiFinalScores || hasFinalScores);
+  const isPrelimMissing = !hasPrelimScores;
+  const isMidtermMissing = !hasMidtermScores;
+  const isSemiFinalMissing = !hasSemiFinalScores;
+  const isFinalMissing = !hasFinalScores;
+  const hasMissingComponents = isSummer
+    ? (isMidtermMissing || isFinalMissing)
+    : (isPrelimMissing || isMidtermMissing || isSemiFinalMissing || isFinalMissing);
+  const rawGwa = hasAnyScores ? getTransmutedGrade(sg) : null;
+  const autoRemarks = hasAnyScores ? getRemarks({ gwa: rawGwa, isComplete: !hasMissingComponents }) : 'Pending';
+  const draftRemarks = student.customRemarks || autoRemarks;
+  const isPassed = hasAnyScores && (draftRemarks === 'Passed' || (draftRemarks !== 'Failed' && draftRemarks !== 'FDA' && draftRemarks !== 'Dropped' && rawGwa !== null && rawGwa <= 3.00));
+  const isFDA = (student.absences || 0) >= 4;
+  const isHonor = isPassed && rawGwa !== null && rawGwa <= 1.75;
+  const isAtRisk = hasAnyScores ? (!isPassed || isFDA || (rawGwa !== null && rawGwa > 3.00)) : isFDA;
+
+  return {
+    ...student,
+    pRate: hasPrelimScores ? pRate : 0,
+    mRate: hasMidtermScores ? mRate : 0,
+    mr: (hasPrelimScores || hasMidtermScores) ? mr : 0,
+    sfRate: hasSemiFinalScores ? sfRate : 0,
+    fRate: hasFinalScores ? fRate : 0,
+    tfr: (hasSemiFinalScores || hasFinalScores) ? tfr : 0,
+    sg: hasAnyScores ? sg : 0,
+    gwa: rawGwa,
+    hasAnyScores,
+    remarks: draftRemarks,
+    isPassed,
+    isFDA,
+    isHonor,
+    isAtRisk,
+    isPrelimMissing,
+    isMidtermMissing,
+    isSemiFinalMissing,
+    isFinalMissing,
+    hasMissingComponents,
+    calculationError,
+    termResults
+  };
+});
 
 export default function GradeComputationPreview() {
   const navigate = useNavigate();
@@ -72,6 +151,7 @@ export default function GradeComputationPreview() {
   const [lockedMilestones, setLockedMilestones] = useState([]);
   const [postingGrades, setPostingGrades] = useState(false);
   const [postSuccess, setPostSuccess] = useState(null);
+  const [nullScoreReview, setNullScoreReview] = useState(null);
   const [changedStudentsPreview, setChangedStudentsPreview] = useState(null); // null = first post, [] or [...] = update diff
   const [isComputingDiff, setIsComputingDiff] = useState(false);
 
@@ -99,7 +179,7 @@ export default function GradeComputationPreview() {
     Final: []
   });
 
-  const isSummer = classInfo?.sections?.semester === 'Summer' || classInfo?.semester === 'Summer';
+  const isSummer = isSummerClass(classInfo);
   const gradingFormula = useMemo(() => {
     const snapshot = classInfo?.grading_formula_snapshot;
     const configuredComponents = snapshot?.components
@@ -114,6 +194,10 @@ export default function GradeComputationPreview() {
       || classInfo?.subjects?.computation_id
       || null
   }), [gradingFormula, classInfo]);
+  const gradingPresentation = useMemo(
+    () => getGradingStoragePresentation(gradingFormula),
+    [gradingFormula]
+  );
 
   // Escape key closes fullscreen
   useEffect(() => {
@@ -399,7 +483,6 @@ export default function GradeComputationPreview() {
           .select('*')
           .eq('class_record_id', classRecordId);
 
-        const lockedSet = new Set();
         const customRemarksMap = {};
         const remarksNoteMap = {};
         if (pgData && pgData.length > 0) {
@@ -409,25 +492,9 @@ export default function GradeComputationPreview() {
               customRemarksMap[row.student_id] = row.remarks;
               remarksNoteMap[row.student_id] = row.remarks_note;
             }
-            if (!row.is_locked) return;
-            if (canonicalPeriod === GRADE_MILESTONES.MIDTERM_RATING) {
-              lockedSet.add('Prelim');
-              lockedSet.add('Midterm');
-              lockedSet.add('Midterm Rating');
-            }
-            if (
-              canonicalPeriod === GRADE_MILESTONES.TENTATIVE_FINAL_RATING
-              || canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE
-            ) {
-              lockedSet.add('Final');
-              lockedSet.add(canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE
-                ? 'Semestral Grade'
-                : 'Tentative Final Rating');
-            }
-            (row.locked_milestones || []).forEach(milestone => lockedSet.add(milestone));
           });
         }
-        setLockedMilestones(Array.from(lockedSet));
+        setLockedMilestones(collectPostedMilestoneCoverage(pgData || [], { lockedOnly: true }));
 
         // Compile complete student datasets
         const compiled = studentList.map(student => {
@@ -464,84 +531,13 @@ export default function GradeComputationPreview() {
   }, [user, classRecordId]);
 
   // Compute live term ratings, GWA, and statuses for every student
-  const computedStudents = useMemo(() => {
-    return students.map(student => {
-      const termResults = Object.fromEntries(['Prelim', 'Midterm', 'Semi-Final', 'Final'].map(termName => [
-        termName,
-        calculateStoredTermRating({
-          formula: gradingFormula,
-          termScores: student.periods?.[termName] || {},
-          maxItems: maxItems[termName] || {},
-          activities: activities[termName] || []
-        })
-      ]));
-      const pRate = termResults.Prelim.rating ?? 0;
-      const mRate = termResults.Midterm.rating ?? 0;
-      const sfRate = termResults['Semi-Final'].rating ?? 0;
-      const fRate = termResults.Final.rating ?? 0;
-      const semesterResult = calculateSemestralGrade({
-        prelim: termResults.Prelim.rating,
-        midterm: termResults.Midterm.rating,
-        semiFinal: termResults['Semi-Final'].rating,
-        final: termResults.Final.rating,
-        isSummer
-      });
-      const { mr, tfr, sg } = semesterResult;
-      const calculationError = Object.values(termResults).find(result => !result.ok)?.error || null;
-
-
-      // Check for missing component marks per student (per USER_JOURNEY_FLOW S31 scope)
-      const hasPrelimScores = Object.values(student.periods?.Prelim || {}).some(v => v !== null && v !== undefined && v !== '' && v !== 0);
-      const hasMidtermScores = Object.values(student.periods?.Midterm || {}).some(v => v !== null && v !== undefined && v !== '' && v !== 0);
-      const hasSemiFinalScores = Object.values(student.periods?.['Semi-Final'] || {}).some(v => v !== null && v !== undefined && v !== '' && v !== 0);
-      const hasFinalScores = Object.values(student.periods?.Final || {}).some(v => v !== null && v !== undefined && v !== '' && v !== 0);
-
-      const hasAnyScores = isSummer 
-        ? (hasMidtermScores || hasFinalScores) 
-        : (hasPrelimScores || hasMidtermScores || hasSemiFinalScores || hasFinalScores);
-
-      const isPrelimMissing = !hasPrelimScores;
-      const isMidtermMissing = !hasMidtermScores;
-      const isSemiFinalMissing = !hasSemiFinalScores;
-      const isFinalMissing = !hasFinalScores;
-      const hasMissingComponents = isSummer 
-        ? (isMidtermMissing || isFinalMissing)
-        : (isPrelimMissing || isMidtermMissing || isSemiFinalMissing || isFinalMissing);
-
-      const rawGwa = hasAnyScores ? getTransmutedGrade(sg) : null;
-      const autoRemarks = hasAnyScores ? getRemarks({ gwa: rawGwa, isComplete: !hasMissingComponents }) : 'Pending';
-      const draftRemarks = student.customRemarks || autoRemarks;
-      const isPassed = hasAnyScores && (draftRemarks === 'Passed' || (draftRemarks !== 'Failed' && draftRemarks !== 'FDA' && draftRemarks !== 'Dropped' && rawGwa !== null && rawGwa <= 3.00));
-      const isFDA = (student.absences || 0) >= 4;
-      const isHonor = isPassed && rawGwa !== null && rawGwa <= 1.75;
-      const isAtRisk = hasAnyScores ? (!isPassed || isFDA || (rawGwa !== null && rawGwa > 3.00)) : isFDA;
-
-      return {
-        ...student,
-        pRate: hasPrelimScores ? pRate : 0,
-        mRate: hasMidtermScores ? mRate : 0,
-        mr: (hasPrelimScores || hasMidtermScores) ? mr : 0,
-        sfRate: hasSemiFinalScores ? sfRate : 0,
-        fRate: hasFinalScores ? fRate : 0,
-        tfr: (hasSemiFinalScores || hasFinalScores) ? tfr : 0,
-        sg: hasAnyScores ? sg : 0,
-        gwa: rawGwa,
-        hasAnyScores,
-        remarks: draftRemarks,
-        isPassed,
-        isFDA,
-        isHonor,
-        isAtRisk,
-        isPrelimMissing,
-        isMidtermMissing,
-        isSemiFinalMissing,
-        isFinalMissing,
-        hasMissingComponents,
-        calculationError,
-        termResults
-      };
-    });
-  }, [students, maxItems, activities, gradingFormula, isSummer]);
+  const computedStudents = useMemo(() => computeGradePreviewStudents({
+    students,
+    gradingFormula,
+    maxItems,
+    activities,
+    isSummer
+  }), [students, maxItems, activities, gradingFormula, isSummer]);
 
   // Aggregate executive metrics & distribution tiers
   const stats = useMemo(() => {
@@ -634,31 +630,9 @@ export default function GradeComputationPreview() {
 
   const computeChangedStudents = async (targetMilestone) => {
     setIsComputingDiff(true);
+    setNullScoreReview(null);
     try {
-      const requiredTerms = targetMilestone === 'midterm' 
-        ? (isSummer ? ['Midterm'] : ['Prelim', 'Midterm'])
-        : targetMilestone === 'tfr' 
-          ? (isSummer ? ['Final'] : ['Semi-Final', 'Final'])
-          : (isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final']);
-
-      const incompleteStudent = computedStudents.find(student => requiredTerms.some(term => {
-        const result = student.termResults[term];
-        return !result.ok || !result.hasData || !result.isComplete;
-      }));
-
-      if (incompleteStudent) {
-        const incompleteTerm = requiredTerms.find(term => {
-          const result = incompleteStudent.termResults[term];
-          return !result.ok || !result.hasData || !result.isComplete;
-        });
-        const result = incompleteStudent.termResults[incompleteTerm];
-        const missing = result.missingComponents?.join(', ');
-        alert(`Grades cannot be posted for ${incompleteStudent.name}: ${result.error || (missing ? `Missing ${incompleteTerm} components: ${missing}.` : `No scores are encoded for ${incompleteTerm}.`)}`);
-        setIsComputingDiff(false);
-        return;
-      }
-
-      let periodParam = getMilestoneForPostingTarget(targetMilestone);
+      const { gradePeriod: periodParam } = getMilestonePostingPresentation(targetMilestone, { isSummer });
       
       const { data: existingPg, error: fetchErr } = await supabase
         .from('posted_grades')
@@ -734,23 +708,60 @@ export default function GradeComputationPreview() {
     }
   };
 
-  const handlePostGrades = async (targetMilestone = 'semestral') => {
+  const handlePostGrades = async (targetMilestone = 'semestral', acceptNullsAsZero = false) => {
     if (!classRecordId || computedStudents.length === 0) return;
     if (!gradingFormula.ok) {
       alert(`Grades cannot be posted: ${gradingFormula.error}`);
       return;
     }
-    const calculationFailure = computedStudents.find(student => student.calculationError);
+    const requiredTerms = getRequiredTermsForPostingTarget(targetMilestone, { isSummer });
+    const scoreReview = collectBlankScoreReview({
+      targetMilestone,
+      students,
+      requiredTerms,
+      activities,
+      hasCharacter: gradingPresentation.hasCharacter,
+      hasExam: gradingPresentation.hasExam,
+      characterLabel: gradingPresentation.characterLabel,
+      examLabel: gradingPresentation.examLabel,
+      getScoreRecord: student => student.periods || {}
+    });
+    if (scoreReview.fieldCount > 0 && !acceptNullsAsZero) {
+      setNullScoreReview(scoreReview);
+      return;
+    }
+
+    const studentsById = new Map(students.map(student => [student.id, student]));
+    const reviewedScoreChanges = scoreReview.fieldCount > 0
+      ? prepareReviewedBlankScores({
+        review: scoreReview,
+        classRecordId,
+        savedBy: user.id,
+        activities,
+        getScoreRecord: studentId => studentsById.get(studentId)?.periods || {}
+      })
+      : { termRows: [], activityRows: [], stagedRecords: {} };
+    const stagedStudents = scoreReview.fieldCount > 0
+      ? students.map(student => reviewedScoreChanges.stagedRecords[student.id]
+        ? { ...student, periods: reviewedScoreChanges.stagedRecords[student.id] }
+        : student)
+      : students;
+    const studentsForPosting = scoreReview.fieldCount > 0
+      ? computeGradePreviewStudents({
+        students: stagedStudents,
+        gradingFormula,
+        maxItems,
+        activities,
+        isSummer
+      })
+      : computedStudents;
+
+    const calculationFailure = studentsForPosting.find(student => student.calculationError);
     if (calculationFailure) {
       alert(`Grades cannot be posted for ${calculationFailure.name}: ${calculationFailure.calculationError}`);
       return;
     }
-    const requiredTerms = targetMilestone === 'midterm'
-      ? (isSummer ? ['Midterm'] : ['Prelim', 'Midterm'])
-      : targetMilestone === 'tfr'
-        ? (isSummer ? ['Final'] : ['Semi-Final', 'Final'])
-        : (isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final']);
-    const incompleteStudent = computedStudents.find(student => requiredTerms.some(term => {
+    const incompleteStudent = studentsForPosting.find(student => requiredTerms.some(term => {
       const result = student.termResults[term];
       return !result.ok || !result.hasData || !result.isComplete;
     }));
@@ -766,20 +777,10 @@ export default function GradeComputationPreview() {
     }
     setPostingGrades(true);
     try {
-      let periodParam = getMilestoneForPostingTarget(targetMilestone);
-      let termNotificationName = 'Official Semestral Grade (SG)';
-      let newMilestoneLock = 'Semestral Grade';
-
-      if (targetMilestone === 'midterm') {
-        termNotificationName = isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)';
-        newMilestoneLock = 'Midterm Rating';
-      } else if (targetMilestone === 'tfr') {
-        termNotificationName = isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)';
-        newMilestoneLock = 'Tentative Final Rating';
-      } else {
-        termNotificationName = 'Official Semestral Grade (SG)';
-        newMilestoneLock = 'Semestral Grade';
-      }
+      const {
+        gradePeriod: periodParam,
+        notificationName: termNotificationName
+      } = getMilestonePostingPresentation(targetMilestone, { isSummer });
 
       const { data: existingPg, error: fetchErr } = await supabase
         .from('posted_grades')
@@ -810,11 +811,11 @@ export default function GradeComputationPreview() {
         return lower;
       };
 
-      const updatedLockedMilestones = Array.from(new Set([
-        ...lockedMilestones, 
-        newMilestoneLock,
-        ...(targetMilestone === 'midterm' ? ['Prelim', 'Midterm'] : targetMilestone === 'tfr' ? ['Semi-Final', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final', 'Semestral Grade'])
-      ]));
+      const updatedLockedMilestones = getUpdatedMilestoneLocks(
+        lockedMilestones,
+        targetMilestone,
+        { isSummer }
+      );
 
       const changedStudentIds = [];
       // Per-student remark, captured alongside changedStudentIds, for the grade_changed
@@ -824,19 +825,9 @@ export default function GradeComputationPreview() {
       const changedStudentRemarks = [];
       const gradeChangeRevision = Date.now();
 
-      if (!classInfo?.grading_formula_snapshot && gradingFormulaSnapshot) {
-        const { error: snapshotErr } = await supabase
-          .from('class_records')
-          .update({ grading_formula_snapshot: gradingFormulaSnapshot })
-          .eq('class_record_id', classRecordId)
-          .is('grading_formula_snapshot', null);
-
-        if (snapshotErr) throw snapshotErr;
-      }
-
       const gradeByStudent = {};
 
-      const postRows = computedStudents.map(stud => {
+      const postRows = studentsForPosting.map(stud => {
         const remarksLabel = mapRemarkToDb(stud.remarks);
         let computedGWA = stud.gwa;
         if (remarksLabel === 'passed' && stud.gwa > 3.00) {
@@ -864,7 +855,7 @@ export default function GradeComputationPreview() {
           if (
             !oldRecord ||
             Number(oldRecord.computed_grade) !== Number(computedTermGrade) ||
-            Number(oldRecord.effective_grade) !== Number(dbEffectiveGrade) ||
+            (oldRecord.effective_grade === null ? null : Number(oldRecord.effective_grade)) !== dbEffectiveGrade ||
             oldRecord.remarks !== remarksLabel
           ) {
             changedStudentIds.push(stud.id);
@@ -895,12 +886,17 @@ export default function GradeComputationPreview() {
         };
       });
 
-      const { error: postErr } = await supabase
-        .from('posted_grades')
-        .upsert(postRows);
+      await postGradeMilestoneAtomic({
+        classRecordId,
+        gradePeriod: periodParam,
+        gradingFormulaSnapshot: classInfo?.grading_formula_snapshot || gradingFormulaSnapshot,
+        termScoreRows: reviewedScoreChanges.termRows,
+        activityScoreRows: reviewedScoreChanges.activityRows,
+        postedGradeRows: postRows
+      });
 
-      if (postErr) throw postErr;
-
+      if (scoreReview.fieldCount > 0) setStudents(stagedStudents);
+      setNullScoreReview(null);
       setLockedMilestones(updatedLockedMilestones);
 
       const actorName = resolveActorName(profile, user);
@@ -920,7 +916,7 @@ export default function GradeComputationPreview() {
         await notifyGradePosted({
           classRecordId,
           term: termNotificationName,
-          students: computedStudents.map(s => ({
+          students: studentsForPosting.map(s => ({
             student_id: s.id,
             student_name: s.name,
             remark: s.remarks || 'Posted',
@@ -2158,6 +2154,7 @@ export default function GradeComputationPreview() {
                   onClick={() => {
                     setShowConfirmModal(false);
                     setPendingPostMilestone(null);
+                    setNullScoreReview(null);
                   }}
                   className="text-slate-400 hover:text-slate-650 transition-colors p-1 cursor-pointer"
                 >
@@ -2193,6 +2190,27 @@ export default function GradeComputationPreview() {
                       </div>
                     </div>
 
+                    {nullScoreReview?.targetMilestone === pendingPostMilestone && (
+                      <div className="rounded-xl border border-rose-200 bg-white p-3 text-xs text-sage-900">
+                        <p className="font-bold text-rose-700">
+                          {nullScoreReview.fieldCount} blank {nullScoreReview.fieldCount === 1 ? 'field' : 'fields'} across {nullScoreReview.affected.length} {nullScoreReview.affected.length === 1 ? 'student' : 'students'} will become official zero scores.
+                        </p>
+                        <p className="mt-1 text-sage-600">Grades, standing, advising evidence, and notifications will be recalculated from these zeros before release.</p>
+                        <div className="mt-3 max-h-52 space-y-2 overflow-y-auto" aria-label="Blank score conversion review">
+                          {nullScoreReview.affected.map(item => (
+                            <div key={item.studentId} className="rounded-lg border border-sage-200 bg-sage-50 p-2.5">
+                              <p className="font-bold">{item.studentName}{item.studentNumber ? ` (${item.studentNumber})` : ''}</p>
+                              <ul className="mt-1 space-y-1 text-sage-700">
+                                {item.fields.map((field, index) => (
+                                  <li key={`${field.term}:${field.key}:${index}`}>{field.term} · {field.label}: blank → 0</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {changedStudentsPreview && changedStudentsPreview.length > 0 && (
                       <div className="mt-2 bg-white/60 rounded-xl border border-amber-200/50 p-3 max-h-60 overflow-y-auto">
                         <p className="text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-2">Affected Students</p>
@@ -2226,6 +2244,7 @@ export default function GradeComputationPreview() {
                         onClick={() => {
                           setPendingPostMilestone(null);
                           setChangedStudentsPreview(null);
+                          setNullScoreReview(null);
                         }}
                         className="px-3.5 py-2 text-xs font-semibold border border-amber-300 text-amber-900 hover:bg-amber-100 rounded-xl transition-colors font-sans cursor-pointer"
                       >
@@ -2233,12 +2252,25 @@ export default function GradeComputationPreview() {
                       </button>
                       <button
                         type="button"
-                        disabled={postingGrades || (changedStudentsPreview && changedStudentsPreview.length === 0)}
-                        onClick={() => handlePostGrades(pendingPostMilestone)}
+                        disabled={postingGrades || (
+                          nullScoreReview?.targetMilestone !== pendingPostMilestone
+                          && changedStudentsPreview
+                          && changedStudentsPreview.length === 0
+                        )}
+                        onClick={() => handlePostGrades(
+                          pendingPostMilestone,
+                          nullScoreReview?.targetMilestone === pendingPostMilestone
+                        )}
                         className="px-4 py-2 text-xs font-bold bg-amber-700 hover:bg-amber-800 text-white rounded-xl transition-colors shadow-2xs font-sans disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
                       >
                         <Check className="w-3.5 h-3.5" />
-                        {postingGrades ? 'Posting...' : changedStudentsPreview ? 'Confirm Update' : 'Yes, Confirm & Release'}
+                        {postingGrades
+                          ? 'Posting...'
+                          : nullScoreReview?.targetMilestone === pendingPostMilestone
+                            ? 'Convert to Zero & Release'
+                            : changedStudentsPreview
+                              ? 'Confirm Update'
+                              : 'Review & Continue'}
                       </button>
                     </div>
                   </div>
