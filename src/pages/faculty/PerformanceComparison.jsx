@@ -5,7 +5,9 @@ import { useAuth } from '../../lib/AuthContext';
 import {
   fetchFacultyCourseHistory,
   fetchTermCohortMetrics,
-  compareCohortMetrics
+  compareCohortMetrics,
+  exportComparisonToExcel,
+  exportTrendRangeToExcel
 } from '../../lib/reportsService';
 import { SAME_MARGIN } from '../../lib/constants';
 import { cn } from '../../lib/utils';
@@ -22,13 +24,14 @@ import {
   AlertTriangle,
   Layers,
   ArrowRight,
-  Sparkles,
-  BarChart2
+  BarChart2,
+  FileSpreadsheet
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { logActivity, resolveActorName } from '../../lib/auditLog';
 export default function PerformanceComparison() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
 
   const [courses, setCourses] = useState([]);
   const [selectedCourseCode, setSelectedCourseCode] = useState('');
@@ -195,9 +198,15 @@ export default function PerformanceComparison() {
     
     return historicalData.slice(minIdx, maxIdx + 1).map(d => ({
       name: `${d.semester} A.Y. ${d.school_year}`,
-      'Passing Rate': d.metrics?.passingRate || 0,
-      'At-Risk Rate': d.metrics?.atRiskRate || 0,
-      'Class Average': d.metrics?.averageGrade || 0
+      'Passing Rate': d.metrics?.passingRate ?? null,
+      'At-Risk Rate': d.metrics?.atRiskRate ?? null,
+      'Class Average': d.metrics?.averageGrade ?? null,
+      passingRate: d.metrics?.passingRate ?? null,
+      atRiskRate: d.metrics?.atRiskRate ?? null,
+      classAverage: d.metrics?.averageGrade ?? null,
+      classSize: d.metrics?.classSize ?? 0,
+      gradedCount: d.metrics?.gradedCount ?? 0,
+      coverage: d.metrics?.coverage ?? 0
     }));
   }, [historicalData, rangeStartClassId, rangeEndClassId]);
 
@@ -206,9 +215,12 @@ export default function PerformanceComparison() {
     
     const start = trendChartData[0];
     const end = trendChartData[trendChartData.length - 1];
+    if (start.passingRate === null || end.passingRate === null || start.atRiskRate === null || end.atRiskRate === null) {
+      return 'Insufficient grading evidence to summarize the selected trend range.';
+    }
     
-    const passDiff = end['Passing Rate'] - start['Passing Rate'];
-    const riskDiff = end['At-Risk Rate'] - start['At-Risk Rate'];
+    const passDiff = end.passingRate - start.passingRate;
+    const riskDiff = end.atRiskRate - start.atRiskRate;
     
     if (passDiff > 5 && riskDiff < -5) {
       return `Over the selected ${trendChartData.length} terms, passing rates improved by ${passDiff}% while at-risk students dropped by ${Math.abs(riskDiff)}%. This indicates a strong positive trajectory in student mastery.`;
@@ -224,15 +236,42 @@ export default function PerformanceComparison() {
   }, [trendChartData]);
 
   return (
-    <div className="space-y-6 text-left">
+    <div className="space-y-4 text-left">
       <PageHeader
-        title="Performance Comparison"
-        subtitle="Multi-term class comparison and trend analysis for identical course codes"
-      />
-      <RiskEducationNote variant="performance" />
-
+        title={comparisonMode === 'range' ? 'Performance Trend Range' : 'Performance Comparison'}
+        breadcrumb="Faculty Reports"
+      >
+        {comparisonMode === 'ab' && targetMetrics && referenceMetrics && (
+          <button
+            type="button"
+            onClick={() => {
+              const exported = exportComparisonToExcel({ targetClass, referenceClass, targetMetrics, referenceMetrics });
+              if (exported) void logActivity('File Export', `Exported faculty performance comparison for ${selectedCourseCode}.`, resolveActorName(profile, user));
+            }}
+            className="inline-flex items-center gap-2 rounded-xl bg-sage-700 px-4 py-2 text-xs font-bold text-white hover:bg-sage-800"
+          >
+            <FileSpreadsheet className="h-4 w-4" /> Export comparison
+          </button>
+        )}
+        {comparisonMode === 'range' && trendChartData.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              const exported = exportTrendRangeToExcel({
+                courseCode: selectedCourse?.courseCode,
+                courseName: selectedCourse?.courseName,
+                trendRows: trendChartData
+              });
+              if (exported) void logActivity('File Export', `Exported multi-term performance trend for ${selectedCourseCode}.`, resolveActorName(profile, user));
+            }}
+            className="inline-flex items-center gap-2 rounded-xl bg-sage-700 px-4 py-2 text-xs font-bold text-white hover:bg-sage-800"
+          >
+            <FileSpreadsheet className="h-4 w-4" /> Export trend range
+          </button>
+        )}
+      </PageHeader>
       {/* Top Bar: Subject and Term Selector */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 sm:p-5 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-3 sm:p-4 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
         {/* Course Code Dropdown */}
         <div className="flex items-center gap-3 flex-1">
           <BookOpen className="w-5 h-5 text-sage-600 flex-shrink-0" />
@@ -257,7 +296,7 @@ export default function PerformanceComparison() {
         </div>
 
         {/* Mode Toggle & Selectors */}
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-4">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg w-max">
             <button
               onClick={() => setComparisonMode('ab')}
@@ -283,7 +322,12 @@ export default function PerformanceComparison() {
           {selectedCourse && selectedCourse.classes.length > 0 && comparisonMode === 'ab' && (
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase">Target:</span>
+              <span className="text-[11px] font-semibold text-slate-400 uppercase">Target</span>
+              {targetMetrics && (
+                <span className="whitespace-nowrap rounded-md bg-sage-50 px-1.5 py-0.5 text-[10px] font-bold text-sage-700">
+                  {targetMetrics.gradedCount}/{targetMetrics.classSize} · {targetMetrics.coverage}%
+                </span>
+              )}
               <select
                 value={targetClassId}
                 onChange={(e) => setTargetClassId(e.target.value)}
@@ -300,7 +344,12 @@ export default function PerformanceComparison() {
             <span className="hidden sm:inline text-slate-300 font-bold">vs</span>
 
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase">Reference:</span>
+              <span className="text-[11px] font-semibold text-slate-400 uppercase">Reference</span>
+              {referenceMetrics && (
+                <span className="whitespace-nowrap rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                  {referenceMetrics.gradedCount}/{referenceMetrics.classSize} · {referenceMetrics.coverage}%
+                </span>
+              )}
               <select
                 value={referenceClassId}
                 onChange={(e) => setReferenceClassId(e.target.value)}
@@ -365,27 +414,15 @@ export default function PerformanceComparison() {
         </div>
       )}
 
-      {/* Pedagogical Disclaimer Banner */}
-      <div className="bg-sage-50/70 border border-sage-200/80 rounded-xl p-3 flex items-center gap-3 text-xs text-sage-900 font-medium">
-        <Info className="w-4 h-4 text-sage-600 flex-shrink-0" />
-        <div>
-          <span className="font-bold text-sage-950">Note: </span>
-          Variations between classes serve as guides for instructional refinement, not definitive proof of efficacy.
-        </div>
-      </div>
-
       {loadingMetrics ? (
         <div className="bg-white rounded-2xl border border-slate-200/90 p-8">
           <TableSkeleton rows={4} cols={4} />
         </div>
       ) : comparisonMode === 'range' ? (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* Executive Summary Card for Range */}
-          <div className="bg-gradient-to-br from-white via-sage-50/50 to-sage-100/50 rounded-2xl border border-sage-200 shadow-sm p-6 flex items-start gap-4 text-slate-800 relative overflow-hidden group">
+          <div className="bg-gradient-to-br from-white via-sage-50/50 to-sage-100/50 rounded-2xl border border-sage-200 shadow-sm p-4 flex items-start gap-3 text-slate-800 relative overflow-hidden group">
             <div className="absolute top-0 right-0 w-64 h-64 bg-sage-300 rounded-full blur-3xl opacity-20 translate-x-1/3 -translate-y-1/3 group-hover:opacity-40 transition-opacity duration-700"></div>
-            <div className="w-10 h-10 rounded-xl bg-sage-100 border border-sage-200 flex items-center justify-center flex-shrink-0 shadow-inner z-10 relative">
-              <Sparkles className="w-5 h-5 text-sage-600" />
-            </div>
             <div className="space-y-1.5 z-10 relative">
               <div className="text-[11px] font-bold text-sage-600 uppercase tracking-wider flex items-center gap-2">
                 Longitudinal Trend Analysis
@@ -394,13 +431,13 @@ export default function PerformanceComparison() {
               <p className="text-sm sm:text-base font-semibold text-slate-800 leading-relaxed">
                 {rangeSummary}
               </p>
-              <p className="text-[11px] text-slate-500 mt-2 font-medium">
+              <p className="text-[11px] text-slate-500 mt-1 font-medium">
                 Analyzing a span of {trendChartData.length} academic terms.
               </p>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 pb-8 overflow-hidden h-[400px]">
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 pb-8 overflow-hidden h-[360px]">
             <h4 className="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-sage-600" />
               Trend Range Overview
@@ -431,13 +468,10 @@ export default function PerformanceComparison() {
           </p>
         </div>
       ) : (
-        <>
+        <div className="flex flex-col gap-4">
           {/* Executive Summary Card */}
-          <div className="bg-gradient-to-br from-white via-sage-50/50 to-sage-100/50 rounded-2xl border border-sage-200 shadow-sm p-6 flex items-start gap-4 text-slate-800 relative overflow-hidden group">
+          <div className="order-1 bg-gradient-to-br from-white via-sage-50/50 to-sage-100/50 rounded-2xl border border-sage-200 shadow-sm p-4 flex items-start gap-3 text-slate-800 relative overflow-hidden group">
             <div className="absolute top-0 right-0 w-64 h-64 bg-sage-300 rounded-full blur-3xl opacity-20 translate-x-1/3 -translate-y-1/3 group-hover:opacity-40 transition-opacity duration-700"></div>
-            <div className="w-10 h-10 rounded-xl bg-sage-100 border border-sage-200 flex items-center justify-center flex-shrink-0 shadow-inner z-10 relative">
-              <Sparkles className="w-5 h-5 text-sage-600" />
-            </div>
             <div className="space-y-1.5 z-10 relative">
               <div className="text-[11px] font-bold text-sage-600 uppercase tracking-wider flex items-center gap-2">
                 Executive Trend Analysis
@@ -446,17 +480,16 @@ export default function PerformanceComparison() {
               <p className="text-sm sm:text-base font-semibold text-slate-800 leading-relaxed">
                 {comparison.summary}
               </p>
-              <p className="text-[11px] text-slate-500 mt-2 font-medium">
+              <p className="text-[11px] text-slate-500 mt-1 font-medium">
                 Comparing {targetClass?.semester} A.Y. {targetClass?.school_year} ({targetClass?.sections?.name}) against {referenceClass?.semester} A.Y. {referenceClass?.school_year} ({referenceClass?.sections?.name}) with ±{SAME_MARGIN}% tolerance.
               </p>
             </div>
           </div>
 
           {/* Comparative KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="order-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {/* Passing Rate */}
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all duration-300 p-4 flex flex-col justify-between relative overflow-hidden group">
-              <div className="absolute top-0 left-0 w-1 h-full bg-emerald-400 opacity-50 group-hover:opacity-100 transition-opacity duration-300"></div>
               <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
                 <span>Passing Rate</span>
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
@@ -499,7 +532,6 @@ export default function PerformanceComparison() {
 
             {/* At-Risk Rate (Lower is better) */}
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all duration-300 p-4 flex flex-col justify-between relative overflow-hidden group">
-              <div className="absolute top-0 left-0 w-1 h-full bg-rose-400 opacity-50 group-hover:opacity-100 transition-opacity duration-300"></div>
               <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
                 <span>At-Risk Quota</span>
                 <AlertTriangle className="w-4 h-4 text-rose-500" />
@@ -542,7 +574,6 @@ export default function PerformanceComparison() {
 
             {/* Average Course Grade */}
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all duration-300 p-4 flex flex-col justify-between relative overflow-hidden group">
-              <div className="absolute top-0 left-0 w-1 h-full bg-sage-400 opacity-50 group-hover:opacity-100 transition-opacity duration-300"></div>
               <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
                 <span>Class Average</span>
                 <TrendingUp className="w-4 h-4 text-sage-600" />
@@ -585,7 +616,6 @@ export default function PerformanceComparison() {
 
             {/* Enrolled Cohort Size */}
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md hover:-translate-y-1 transition-all duration-300 p-4 flex flex-col justify-between relative overflow-hidden group">
-              <div className="absolute top-0 left-0 w-1 h-full bg-slate-300 opacity-50 group-hover:opacity-100 transition-opacity duration-300"></div>
               <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
                 <span>Class Enrollment</span>
                 <Users className="w-4 h-4 text-slate-400" />
@@ -605,7 +635,7 @@ export default function PerformanceComparison() {
           </div>
 
           {/* Visual Comparison Chart */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 pb-8 overflow-hidden h-[260px]">
+          <div className="order-2 bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 pb-8 overflow-hidden h-[300px]">
             <h4 className="font-bold text-slate-800 text-sm mb-4 flex items-center gap-2">
               <BarChart2 className="w-4 h-4 text-sage-600" />
               Target vs. Reference Overview
@@ -625,8 +655,19 @@ export default function PerformanceComparison() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </>
+        </div>
       )}
+
+      <div className="space-y-3">
+        <div className="bg-sage-50/70 border border-sage-200/80 rounded-xl p-3 flex items-center gap-3 text-xs text-sage-900 font-medium">
+          <Info className="w-4 h-4 text-sage-600 flex-shrink-0" />
+          <div>
+            <span className="font-bold text-sage-950">Note: </span>
+            Variations between classes serve as guides for instructional refinement, not definitive proof of efficacy.
+          </div>
+        </div>
+        <RiskEducationNote variant="performance" />
+      </div>
 
       {/* Trajectory Table: All Historical Classes for this Course */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">

@@ -13,7 +13,6 @@ import {
   Search,
   X,
   ShieldAlert,
-  Sparkles
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -708,7 +707,7 @@ export default function ClassAttendance() {
                 onClick={() => setShowInitConfirm(true)}
                 className="px-5 py-2.5 bg-sage-600 hover:bg-sage-700 text-white font-semibold rounded-xl shadow-2xs transition-all cursor-pointer inline-flex items-center gap-2 text-xs sm:text-sm"
               >
-                <Sparkles className="h-4 w-4" /> Initialize Attendance Sheet
+                Initialize Attendance Sheet
               </button>
             </div>
           ) : roster.length === 0 ? (

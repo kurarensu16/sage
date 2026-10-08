@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
-  Search, AlertCircle, Sparkles, Building2, Loader2, AlertTriangle, 
+  Search, AlertCircle, Building2, Loader2, AlertTriangle, 
   Bell, Check, Award, MessageSquare, TrendingUp, CheckCircle2, 
   Clock, AlertOctagon, X, FileText, ShieldAlert, RefreshCw
 } from 'lucide-react';
@@ -961,8 +961,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                           </td>
 
                           <td className="px-6 py-4 text-xs text-slate-600 max-w-xs">
-                            <div className="flex items-start gap-1.5">
-                              <Sparkles className="h-3.5 w-3.5 text-violet-500 shrink-0 mt-0.5" />
+                            <div>
                               <span className="text-[11px] leading-relaxed line-clamp-2">{s.advisory}</span>
                             </div>
                           </td>

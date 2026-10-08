@@ -18,7 +18,6 @@ import {
   Target, 
   Compass, 
   ShieldCheck, 
-  Sparkles, 
   Calculator,
   BarChart3,
   UserCheck, 
@@ -639,13 +638,19 @@ export default function AcademicInsights() {
             // scales with completeness, never the eligibility determination.
             let dlCategory = 'Pending Official Grades';
             let dlMessage = 'President\'s List eligibility will be determined once official milestones are available.';
+            let dlRequirements = ['Pending official grades.'];
+            let dlDistance = null;
 
             if (computedGwa !== null) {
+              const hasIncompleteGrade = (posted || []).some(row => ['inc', 'incomplete'].includes(String(row.remarks || '').toLowerCase()));
               const honors = getHonorTier(computedGwa, {
                 subjectGrades: computedSubjectsList.map(subject => subject.runningGwa),
-                units: computedSubjectsList.reduce((sum, subject) => sum + (Number(subject.credits) || 0), 0)
+                units: computedSubjectsList.reduce((sum, subject) => sum + (Number(subject.credits) || 0), 0),
+                hasInc: hasIncompleteGrade
               });
               dlCategory = honors.tier || 'Not Eligible';
+              dlRequirements = honors.unmetRequirements;
+              dlDistance = Math.max(0, Number((computedGwa - HONORS.ceiling).toFixed(2)));
 
               if (honors.isEligible) {
                 dlMessage = isFullyFinalized
@@ -704,7 +709,10 @@ export default function AcademicInsights() {
               },
               dlEligibility: {
                 awardCategory: dlCategory,
-                message: dlMessage
+                message: dlMessage,
+                unmetRequirements: dlRequirements,
+                gwaDistance: dlDistance,
+                isFinal: isFullyFinalized
               },
               diagnostics: {
                 csAvg: allClassStandingAverages.length > 0
@@ -787,6 +795,9 @@ export default function AcademicInsights() {
     low: 'border-sage-200 bg-sage-50 text-sage-900'
   }[advisorEvaluation.severity] || 'border-slate-200 bg-slate-50 text-slate-800';
   const currentSubject = subjectsList.find(s => s.code === selectedSubjectCode) || subjectsList[0] || null;
+  const currentWeakActivities = useMemo(() => (currentSubject?.activities || []).filter(
+    activity => activity.percentage !== null && activity.percentage < 75
+  ), [currentSubject]);
   const simSubject = subjectsList.find(s => s.code === simSubjectCode) || subjectsList[0] || null;
   const askAspireSubject = askAspireSubjectCode
     ? subjectsList.find(subject => subject.code === askAspireSubjectCode) || null
@@ -1188,7 +1199,6 @@ export default function AcademicInsights() {
                     studentStats.trajectoryType === 'warning' && "bg-amber-500/20 text-amber-300 border border-amber-500/30",
                     studentStats.trajectoryType === 'critical' && "bg-rose-500/20 text-rose-300 border border-rose-500/30"
                   )}>
-                    <Sparkles className="h-3 w-3" />
                     {studentStats.trajectoryVerdict}
                   </span>
                 </div>
@@ -1235,6 +1245,45 @@ export default function AcademicInsights() {
                   )}
                 </div>
               </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">President's List eligibility check</h3>
+                  <p className="mt-1 text-[11px] text-slate-500">Evaluates GWA, individual subject floor, INC status, and enrolled units.</p>
+                </div>
+                <span className={cn(
+                  'rounded-full px-2.5 py-1 text-[10px] font-bold',
+                  studentStats.completeness?.isFullyFinalized ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                )}>
+                  {studentStats.completeness?.isFullyFinalized ? 'Final evidence' : 'Tentative evidence'}
+                </span>
+              </div>
+              {studentStats.gwa === null ? (
+                <p className="mt-4 rounded-xl border border-dashed border-slate-200 p-4 text-xs text-slate-500">Insufficient evidence — official milestone grades are still pending.</p>
+              ) : (
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Current result</p>
+                    <p className="mt-1 text-sm font-bold text-slate-900">{studentStats.dlEligibility?.awardCategory || 'Not Eligible'}</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Distance from 1.75 ceiling</p>
+                    <p className="mt-1 font-mono text-sm font-bold text-slate-900">{Number(studentStats.dlEligibility?.gwaDistance || 0).toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-3 md:col-span-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Requirements</p>
+                    {studentStats.dlEligibility?.unmetRequirements?.length > 0 ? (
+                      <ul className="mt-1 space-y-1 text-[11px] text-amber-800">
+                        {studentStats.dlEligibility.unmetRequirements.map(requirement => <li key={requirement}>• {requirement}</li>)}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-[11px] font-semibold text-emerald-800">No current blockers detected.</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 2. Deterministic ASPIRE Academic Advisor Guidance */}
@@ -1825,6 +1874,35 @@ export default function AcademicInsights() {
                         <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600">
                           {currentSubject.activities?.length || 0} released
                         </span>
+                      </div>
+
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <h5 className="text-xs font-bold text-amber-900">Activities needing attention</h5>
+                            <p className="text-[10px] text-amber-800">Released and scored activities below the 75% passing threshold.</p>
+                          </div>
+                          <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-amber-900">{currentWeakActivities.length}</span>
+                        </div>
+                        {currentWeakActivities.length > 0 ? (
+                          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {currentWeakActivities.map(activity => (
+                              <div key={`weak-${activity.activity_id}`} className="rounded-lg border border-amber-200 bg-white p-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="text-xs font-bold text-slate-900">{activity.title || activity.name}</p>
+                                    <p className="text-[10px] text-slate-500">{activity.term || 'Course activity'}</p>
+                                  </div>
+                                  <span className="font-mono text-xs font-bold text-amber-900">{activity.percentage}%</span>
+                                </div>
+                                <p className="mt-1 text-[10px] text-slate-600">Score: {activity.score}/{Number(activity.max_score)}</p>
+                                {activity.description && <p className="mt-1 text-[10px] leading-relaxed text-slate-500">{activity.description}</p>}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-[11px] text-amber-900">No released, scored activity is currently below 75%.</p>
+                        )}
                       </div>
 
                       {currentSubject.activities?.length > 0 ? (

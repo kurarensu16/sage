@@ -4,6 +4,7 @@ import {
   PieChart, Pie, Cell,
   LineChart, Line
 } from 'recharts';
+import { buildComponentAverages, buildTermProgressionSeries } from '../../lib/reportsService';
 
 const RISK_COLORS = {
   'Performed well': '#10b981', // emerald-500
@@ -11,7 +12,7 @@ const RISK_COLORS = {
   'Struggling': '#ef4444' // rose-500
 };
 
-export default function ClassAnalyticsPanel({ students = [], activities = [] }) {
+export default function ClassAnalyticsPanel({ students = [], activities = [], rows = [], semester = '1st' }) {
   // 1. Grade Distribution (Histogram)
   const gradeDistribution = useMemo(() => {
     const bins = [
@@ -76,6 +77,9 @@ export default function ClassAnalyticsPanel({ students = [], activities = [] }) 
     }).filter(d => d['Class Average'] !== null);
   }, [activities, students]);
 
+  const componentAverages = useMemo(() => buildComponentAverages(rows), [rows]);
+  const termProgression = useMemo(() => buildTermProgressionSeries(students, semester), [students, semester]);
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -123,6 +127,54 @@ export default function ClassAnalyticsPanel({ students = [], activities = [] }) 
                 <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '20px' }} />
               </PieChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 pb-8 overflow-hidden min-h-[360px]">
+          <h4 className="font-bold text-slate-800 text-sm">Configured Component Averages</h4>
+          <p className="mt-1 text-[11px] text-slate-500">Uses this class's assigned COG components; blank scores are excluded.</p>
+          {componentAverages.some(item => item.average !== null) ? (
+            <div className="h-[250px] mt-3">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={componentAverages} margin={{ top: 0, right: 0, left: -20, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} tickLine={false} />
+                  <Tooltip formatter={(value, name, item) => [`${value}% · ${item.payload.coverage}% coverage`, name]} />
+                  <Bar dataKey="average" name="Class Average" fill="var(--color-sage-600)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="mt-6 rounded-xl border border-dashed border-slate-200 p-8 text-center text-xs text-slate-500">Insufficient evidence — no configured component has a recorded score.</div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {componentAverages.map(item => <span key={item.componentId} className="rounded-md bg-slate-100 px-2 py-1 text-[10px] text-slate-600">{item.name}: {item.gradedCount}/{item.expectedCount} scored</span>)}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5 pb-8 overflow-hidden min-h-[360px]">
+          <h4 className="font-bold text-slate-800 text-sm">Within-Semester Term Progression</h4>
+          <p className="mt-1 text-[11px] text-slate-500">Observed raw term ratings, not a future-grade projection.</p>
+          {termProgression.some(item => item.average !== null) ? (
+            <div className="h-[250px] mt-3">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={termProgression} margin={{ top: 0, right: 10, left: -20, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="term" tick={{ fontSize: 11 }} tickLine={false} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} tickLine={false} />
+                  <Tooltip formatter={(value, name, item) => [`${value}% · ${item.payload.coverage}% coverage`, name]} />
+                  <Line connectNulls={false} type="monotone" dataKey="average" name="Class Average" stroke="var(--color-sage-700)" strokeWidth={3} dot={{ r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="mt-6 rounded-xl border border-dashed border-slate-200 p-8 text-center text-xs text-slate-500">Insufficient evidence — no raw term rating is available.</div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {termProgression.map(item => <span key={item.term} className="rounded-md bg-slate-100 px-2 py-1 text-[10px] text-slate-600">{item.term}: {item.coverage}% coverage</span>)}
           </div>
         </div>
       </div>

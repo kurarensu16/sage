@@ -1,7 +1,6 @@
-import React from 'react';
 import { Info } from 'lucide-react';
 
-export default function InfoModal({ isOpen, title, message, onClose }) {
+export default function InfoModal({ isOpen, title, message, onClose, hideIcon = false }) {
   if (!isOpen) return null;
 
   return (
@@ -10,9 +9,11 @@ export default function InfoModal({ isOpen, title, message, onClose }) {
         
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-          <div className="w-10 h-10 rounded-full bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600 flex-shrink-0">
-            <Info className="h-5 w-5 stroke-[2.5]" />
-          </div>
+          {!hideIcon && (
+            <div className="w-10 h-10 rounded-full bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600 flex-shrink-0">
+              <Info className="h-5 w-5 stroke-[2.5]" />
+            </div>
+          )}
           <h3 className="text-lg font-bold font-display text-slate-900">{title}</h3>
         </div>
 

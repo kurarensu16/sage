@@ -10,7 +10,6 @@ import {
   PlusSquare, 
   ExternalLink,
   ArrowRight,
-  Sparkles
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import SageLogo from './SageLogo';
@@ -221,8 +220,7 @@ export default function SmartInstallModal({
           {/* TAB 2: IOS (SAFARI PWA) */}
           {currentTab === 'ios' && (
             <div className="space-y-4 animate-in fade-in duration-200">
-              <div className="p-3.5 bg-indigo-50/70 rounded-xl border border-indigo-200/80 text-xs text-indigo-900 flex items-start gap-2.5">
-                <Sparkles className="h-4 w-4 text-indigo-600 flex-shrink-0 mt-0.5" />
+              <div className="p-3.5 bg-indigo-50/70 rounded-xl border border-indigo-200/80 text-xs text-indigo-900">
                 <span>
                   iOS installs web applications directly to your Home Screen without needing the App Store. Follow the 3 steps below in <strong>Safari</strong>.
                 </span>
