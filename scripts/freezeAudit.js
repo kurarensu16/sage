@@ -10,6 +10,12 @@ const FREEZE_BASE = 'b977c7d';
 const RECORDS_DIR = 'docs/05-operations/agents/feature-updates';
 const CODE_PATHS = /^(src\/|supabase\/|scripts\/|public\/|package\.json$|index\.html$|vite\.config\.js$|capacitor\.config\.)/;
 
+// The FREEZE switch in AGENTS.md also controls this audit and the pre-commit hook.
+if (/\*\*FREEZE:\s*OFF\*\*/i.test(readFileSync('AGENTS.md', 'utf8'))) {
+  console.log('Freeze audit skipped: AGENTS.md says FREEZE: OFF.');
+  process.exit(0);
+}
+
 const git = command => execSync(`git ${command}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
   .split('\n').map(line => line.trim()).filter(Boolean);
 
