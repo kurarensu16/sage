@@ -2,7 +2,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { stripTypeScriptTypes } from 'node:module';
-import { countMissingActivities, manilaDate, needsEvaluation, referralEligibility, scoreOrNull, taskState } from '../src/lib/evaluationTracking.js';
+import {
+  countMissingActivities,
+  countPendingActivities,
+  countRecordedZeroScores,
+  isStudentVisibleEvaluation,
+  manilaDate,
+  needsEvaluation,
+  referralEligibility,
+  scoreOrNull,
+  taskState
+} from '../src/lib/evaluationTracking.js';
 import { calculateAcademicRisk, computeTentativeGradeDetails } from '../src/lib/riskEngine.js';
 import { RISK_TIERS, resolveOfficialGwa } from '../src/lib/academicPolicy.js';
 import { resolveGradingFormula } from '../src/lib/gradingMath.js';
@@ -16,11 +26,19 @@ const activities = [{ activity_id: 'a', term: 'Prelim', max_score: 20 }, { activ
 assert.equal(countMissingActivities([{ term: 'Prelim', act1: 0, act2: 0 }], cols, activities,
   [{ activity_id: 'a', score: 0 }, { activity_id: 'b', score: 0 }]), 1, 'Dynamic and legacy slots must not double count');
 assert.equal(countMissingActivities([], cols, activities, [{ activity_id: 'a', score: null }]), 0);
+assert.equal(countPendingActivities(activities, []), 1);
+assert.equal(countPendingActivities(activities, [{ activity_id: 'a', score: null }]), 1);
+assert.equal(countPendingActivities(activities, [{ activity_id: 'a', score: 0 }]), 0);
 assert.equal(scoreOrNull(''), null);
 assert.equal(scoreOrNull(null), null);
 assert.equal(scoreOrNull(0), 0);
 assert.equal(scoreOrNull('  '), null);
 assert.equal(scoreOrNull(false), null);
+assert.equal(isStudentVisibleEvaluation({ status: 'submitted', published_to_student_at: '2026-10-08T00:00:00Z' }), true);
+assert.equal(isStudentVisibleEvaluation({ status: 'acknowledged_by_student', published_to_student_at: '2026-10-08T00:00:00Z' }), true);
+assert.equal(isStudentVisibleEvaluation({ status: 'draft', published_to_student_at: null }), false);
+assert.equal(isStudentVisibleEvaluation({ status: 'pending_review', published_to_student_at: '2026-10-08T00:00:00Z' }), false);
+assert.equal(isStudentVisibleEvaluation({ status: 'submitted', published_to_student_at: null }), false);
 const blankRisk = calculateAcademicRisk({ currentGwa: null, zeroSubmissionsCount: 0 });
 const ghostRisk = calculateAcademicRisk({ currentGwa: null, zeroSubmissionsCount: 5 });
 assert.ok(ghostRisk.composite_score > blankRisk.composite_score, 'Explicit activity zeros must contribute to real risk calculation');
@@ -66,7 +84,8 @@ const rosterSource = fs.readFileSync(new URL('../src/lib/classRoomService.js', i
 const actualRoster = vm.runInNewContext(`${rosterSource}; getClassPriorityRoster`, {
   supabase: { from: table => new RosterQuery(table) }, console: { error() {} },
   calculateAcademicRisk, computeTentativeGradeDetails, resolveGradingFormula,
-  resolveOfficialGwa, findMostAdvancedPostedGrade, getCanonicalGradePeriod, countMissingActivities, scoreOrNull
+  resolveOfficialGwa, findMostAdvancedPostedGrade, getCanonicalGradePeriod, countMissingActivities,
+  countPendingActivities, countRecordedZeroScores, scoreOrNull
 });
 let actual = await actualRoster('c', { throwOnError: true });
 assert.equal(actual.find(row => row.user_id === 'ghost').risk_analysis.factors.missing_work.zero_submissions_count, 6);

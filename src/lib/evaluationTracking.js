@@ -35,14 +35,17 @@ export function countRecordedZeroScores(termScores, columns, activities = [], gr
 // activities and not a confirmed submission status.
 export const countMissingActivities = countRecordedZeroScores;
 
-export function countPendingReleasedActivities(activities = [], granularScores = []) {
+export function countPendingActivities(activities = [], granularScores = []) {
   const scoreMap = new Map(granularScores.map(row => [row.activity_id, scoreOrNull(row.score)]));
   return activities.filter(activity =>
-    activity.is_released === true
-    && Number(activity.max_score) > 0
+    Number(activity.max_score) > 0
     && (!scoreMap.has(activity.activity_id) || scoreMap.get(activity.activity_id) === null)
   ).length;
 }
+
+// Compatibility alias for older callers. Activity visibility is automatic now;
+// pending means the saved activity has no recorded numeric score.
+export const countPendingReleasedActivities = countPendingActivities;
 
 export function manilaDate(value = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -62,6 +65,11 @@ export function taskState(task, today = manilaDate()) {
 export function needsEvaluation(student, evaluations, term, threshold) {
   return Boolean(term) && (student.risk_score ?? 0) >= threshold
     && !evaluations.some(item => item.student_id === student.user_id && item.term === term);
+}
+
+export function isStudentVisibleEvaluation(evaluation) {
+  return ['submitted', 'acknowledged_by_student'].includes(evaluation?.status)
+    && Boolean(evaluation?.published_to_student_at);
 }
 
 export function referralEligibility(evaluation, classRecord, facultyId, history = false) {

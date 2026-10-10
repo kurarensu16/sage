@@ -5,6 +5,7 @@ import { Search, Clock, Shield, RefreshCw, DownloadCloud } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { buildCsv } from '../../lib/csvExport';
 
 const ACTION_BADGE_MAP = {
   'Grade Override':            'bg-rose-50 text-rose-700 border-rose-200',
@@ -37,12 +38,40 @@ const ACTION_BADGE_MAP = {
 const getActionBadgeColor = (action) =>
   ACTION_BADGE_MAP[action] || 'bg-slate-100 text-slate-600 border-slate-200';
 
+const normalizeSource = (source) => source || 'application';
+
+const SOURCE_PRESENTATION = {
+  application: {
+    label: 'Application',
+    className: 'bg-sage-50 text-sage-700 border-sage-200',
+  },
+  database_trigger: {
+    label: 'Database trigger',
+    className: 'bg-violet-50 text-violet-700 border-violet-200',
+  },
+};
+
+const getSourcePresentation = (source) => {
+  const normalizedSource = normalizeSource(source);
+  return SOURCE_PRESENTATION[normalizedSource] || {
+    label: normalizedSource.replaceAll('_', ' '),
+    className: 'bg-slate-100 text-slate-600 border-slate-200',
+  };
+};
+
+const toStableIsoTimestamp = (value) => {
+  if (!value) return '';
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? String(value) : timestamp.toISOString();
+};
+
 export default function AuditLog() {
   const { user, profile } = useAuth();
   const location = useLocation();
   const [logs, setLogs] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -59,7 +88,7 @@ export default function AuditLog() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, actionFilter, dateFilter]);
+  }, [searchTerm, actionFilter, sourceFilter, dateFilter]);
 
   const loadLogs = async () => {
     setErrorMsg('');
@@ -104,15 +133,20 @@ export default function AuditLog() {
   // Get unique action types for filter dropdown (sorted alphabetically)
   const uniqueActions = Array.from(new Set(logs.map(log => log.action))).sort();
 
+  const uniqueSources = Array.from(new Set(logs.map(log => normalizeSource(log.source)))).sort();
+
   // Get unique dates for filter dropdown
   const uniqueDates = Array.from(new Set(logs.map(log => formatDateKey(log.timestamp)))).sort().reverse();
 
   const filteredLogs = logs.filter(log => {
-    const haystack = `${log.message} ${log.actor} ${log.actor_role || ''} ${log.entity_type || ''} ${log.entity_id || ''}`.toLowerCase();
+    const source = normalizeSource(log.source);
+    const sourceLabel = getSourcePresentation(source).label;
+    const haystack = `${log.message} ${log.actor} ${log.actor_role || ''} ${log.entity_type || ''} ${log.entity_id || ''} ${source} ${sourceLabel}`.toLowerCase();
     const matchesSearch = searchTerm ? haystack.includes(searchTerm.toLowerCase()) : true;
     const matchesAction = actionFilter ? log.action === actionFilter : true;
+    const matchesSource = sourceFilter ? source === sourceFilter : true;
     const matchesDate = dateFilter ? formatDateKey(log.timestamp) === dateFilter : true;
-    return matchesSearch && matchesAction && matchesDate;
+    return matchesSearch && matchesAction && matchesSource && matchesDate;
   });
 
   const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
@@ -127,19 +161,19 @@ export default function AuditLog() {
     const header = ['Log ID', 'Action', 'Operation', 'Actor', 'Actor ID', 'Role', 'Entity', 'Entity ID', 'Source', 'Message', 'Timestamp'];
     const rows = filteredLogs.map(l => [
       l.log_id,
-      `"${l.action}"`,
-      `"${l.operation || ''}"`,
-      `"${l.actor}"`,
-      `"${l.actor_id || ''}"`,
-      `"${l.actor_role || ''}"`,
-      `"${l.entity_type || ''}"`,
-      `"${l.entity_id || ''}"`,
-      `"${l.source || 'application'}"`,
-      `"${l.message?.replace(/"/g, "'")}"`,
-      formatTimestamp(l.timestamp)
+      l.action,
+      l.operation,
+      l.actor,
+      l.actor_id,
+      l.actor_role,
+      l.entity_type,
+      l.entity_id,
+      normalizeSource(l.source),
+      l.message,
+      toStableIsoTimestamp(l.timestamp),
     ]);
-    const csv = [header.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const csv = buildCsv([header, ...rows]);
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -206,7 +240,7 @@ export default function AuditLog() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-xl text-xs sm:text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors"
-              placeholder="Search message or actor..."
+              placeholder="Search message, actor, or source..."
             />
           </div>
 
@@ -235,9 +269,21 @@ export default function AuditLog() {
               ))}
             </select>
 
-            {(searchTerm || actionFilter || dateFilter) && (
+            <select
+              id="audit-source-filter"
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+              className="bg-white border border-slate-200 rounded-xl text-xs sm:text-sm px-3 py-2 outline-none cursor-pointer hover:border-sage-300 transition-colors flex-1 sm:flex-none"
+            >
+              <option value="">All Sources</option>
+              {uniqueSources.map(source => (
+                <option key={source} value={source}>{getSourcePresentation(source).label}</option>
+              ))}
+            </select>
+
+            {(searchTerm || actionFilter || sourceFilter || dateFilter) && (
               <button
-                onClick={() => { setSearchTerm(''); setActionFilter(''); setDateFilter(''); }}
+                onClick={() => { setSearchTerm(''); setActionFilter(''); setSourceFilter(''); setDateFilter(''); }}
                 className="text-xs text-rose-600 hover:text-rose-700 font-semibold transition-colors py-1 px-2 rounded-lg hover:bg-rose-50 cursor-pointer whitespace-nowrap"
               >
                 Clear
@@ -260,7 +306,7 @@ export default function AuditLog() {
             </span>
           </div>
 
-          <div className="divide-y divide-slate-100 overflow-y-auto" style={{ maxHeight: '560px' }}>
+          <div className="divide-y divide-slate-100 overflow-y-auto max-h-[560px]">
             {paginatedLogs.length > 0 ? (
               paginatedLogs.map((log) => (
                 <div
@@ -271,6 +317,9 @@ export default function AuditLog() {
                     <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs font-bold border ${getActionBadgeColor(log.action)}`}>
                         {log.action}
+                      </span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs font-bold border ${getSourcePresentation(log.source).className}`}>
+                        {getSourcePresentation(log.source).label}
                       </span>
                       <span className="text-[10px] sm:text-xs font-mono text-slate-400 flex items-center gap-1">
                         <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0" />

@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity } from '../../lib/auditLog';
 import { notifyOverrideApproved, notifyOverrideRejected } from '../../lib/notificationDispatcher';
+import { reviewSgCorrectionRequest } from '../../lib/gradeCorrectionService';
 import {
   Search,
   Filter,
@@ -38,7 +39,7 @@ function displayRemark(r) {
 }
 
 export default function RemarkOverrideRequests() {
-  const { user, profile } = useAuth();
+  const { profile } = useAuth();
 
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -72,6 +73,20 @@ export default function RemarkOverrideRequests() {
             effective_grade,
             current_remark,
             requested_remark,
+            posted_grade_id,
+            original_computed_grade,
+            original_effective_grade,
+            original_remark,
+            proposed_computed_grade,
+            proposed_effective_grade,
+            proposed_remark,
+            proposed_score_changes,
+            evidence_url,
+            applied_by,
+            applied_at,
+            final_computed_grade,
+            final_effective_grade,
+            final_remark,
             note,
             status,
             resolved_by,
@@ -104,10 +119,19 @@ export default function RemarkOverrideRequests() {
           studentName: r.student
             ? `${r.student.last_name}, ${r.student.first_name}`
             : '—',
-          computedGrade: r.computed_grade != null ? parseFloat(r.computed_grade).toFixed(2) : '—',
-          effectiveGrade: r.effective_grade != null ? parseFloat(r.effective_grade).toFixed(2) : '—',
-          currentRemark: displayRemark(r.current_remark),
-          requestedRemark: displayRemark(r.requested_remark),
+          postedGradeId: r.posted_grade_id,
+          computedGrade: r.original_computed_grade != null ? parseFloat(r.original_computed_grade).toFixed(2) : r.computed_grade != null ? parseFloat(r.computed_grade).toFixed(2) : '—',
+          effectiveGrade: r.original_effective_grade != null ? parseFloat(r.original_effective_grade).toFixed(2) : r.effective_grade != null ? parseFloat(r.effective_grade).toFixed(2) : '—',
+          currentRemark: displayRemark(r.original_remark || r.current_remark),
+          requestedRemark: displayRemark(r.proposed_remark || r.requested_remark),
+          proposedComputedGrade: r.proposed_computed_grade,
+          proposedEffectiveGrade: r.proposed_effective_grade,
+          proposedScoreChanges: r.proposed_score_changes || [],
+          evidenceUrl: r.evidence_url || null,
+          appliedAt: r.applied_at,
+          finalComputedGrade: r.final_computed_grade,
+          finalEffectiveGrade: r.final_effective_grade,
+          finalRemark: displayRemark(r.final_remark),
           note: r.note,
           requestedAt: r.requested_at,
           status: r.status,
@@ -135,32 +159,8 @@ export default function RemarkOverrideRequests() {
   const handleApprove = async (req) => {
     setActionLoading(req.id);
     try {
-      const resolvedAt = new Date().toISOString();
       const actorName = profile ? `${profile.first_name} ${profile.last_name}` : 'Dean';
-
-      // 1. Update remark_override_requests status
-      const { error: rorErr } = await supabase
-        .from('remark_override_requests')
-        .update({ status: 'approved', resolved_by: user.id, resolved_at: resolvedAt })
-        .eq('request_id', req.id);
-
-      if (rorErr) throw rorErr;
-
-      // 2. Approve matching Semestral Grade unlock_request for this class
-      await supabase
-        .from('unlock_requests')
-        .update({ status: 'approved', resolved_by: user.id, resolved_at: resolvedAt })
-        .eq('class_record_id', req.classCode)
-        .eq('milestone', 'Semestral Grade')
-        .eq('status', 'pending');
-
-      // 3. Unlock posted_grades for the Final period in this class (ONLY for the specific student)
-      await supabase
-        .from('posted_grades')
-        .update({ is_locked: false })
-        .eq('class_record_id', req.classCode)
-        .eq('student_id', req.studentId)
-        .in('grade_period', ['semestral_grade', 'final']);
+      await reviewSgCorrectionRequest({ requestId: req.id, decision: 'approved' });
 
       // 4. Audit log
       await logActivity(
@@ -169,19 +169,22 @@ export default function RemarkOverrideRequests() {
         actorName
       );
 
-      // 5. Notify Faculty and Student
+      // Approval notifies faculty only. The student is notified after the
+      // approved correction is actually reposted and becomes official.
       await notifyOverrideApproved({
         facultyId: req.facultyId,
-        studentId: req.studentId,
         studentName: req.studentName,
         subjectName: req.subjectName,
         requestedRemark: req.requestedRemark,
+        proposedComputedGrade: req.proposedComputedGrade,
+        proposedEffectiveGrade: req.proposedEffectiveGrade,
         actorName
       });
 
       setRefreshKey(k => k + 1);
     } catch (err) {
       console.error('Error approving request:', err);
+      setError(err.message || 'The correction request could not be approved.');
     } finally {
       setActionLoading(null);
     }
@@ -191,25 +194,9 @@ export default function RemarkOverrideRequests() {
   const handleReject = async (req) => {
     setActionLoading(req.id);
     try {
-      const resolvedAt = new Date().toISOString();
       const dNote = rejectNote[req.id] || '';
       const actorName = profile ? `${profile.first_name} ${profile.last_name}` : 'Dean';
-
-      // 1. Update remark_override_requests status
-      const { error: rorErr } = await supabase
-        .from('remark_override_requests')
-        .update({ status: 'rejected', resolved_by: user.id, resolved_at: resolvedAt, dean_note: dNote })
-        .eq('request_id', req.id);
-
-      if (rorErr) throw rorErr;
-
-      // 2. Reject matching Semestral Grade unlock_request for this class
-      await supabase
-        .from('unlock_requests')
-        .update({ status: 'rejected', resolved_by: user.id, resolved_at: resolvedAt })
-        .eq('class_record_id', req.classCode)
-        .eq('milestone', 'Semestral Grade')
-        .eq('status', 'pending');
+      await reviewSgCorrectionRequest({ requestId: req.id, decision: 'rejected', deanNote: dNote });
 
       // 3. Audit log
       await logActivity(
@@ -230,6 +217,7 @@ export default function RemarkOverrideRequests() {
       setRefreshKey(k => k + 1);
     } catch (err) {
       console.error('Error rejecting request:', err);
+      setError(err.message || 'The correction request could not be rejected.');
     } finally {
       setActionLoading(null);
     }
@@ -254,6 +242,8 @@ export default function RemarkOverrideRequests() {
     if (status === 'pending')  return 'bg-amber-50 text-amber-700 border border-amber-300';
     if (status === 'approved') return 'bg-emerald-50 text-emerald-700 border border-emerald-300';
     if (status === 'rejected') return 'bg-rose-50 text-rose-700 border border-rose-300';
+    if (status === 'applied') return 'bg-blue-50 text-blue-700 border border-blue-300';
+    if (status === 'cancelled') return 'bg-slate-50 text-slate-600 border border-slate-300';
     return '';
   };
 
@@ -268,7 +258,7 @@ export default function RemarkOverrideRequests() {
 
   return (
     <>
-      <PageHeader title="Remark Override Requests" breadcrumb="Dean Portal" />
+      <PageHeader title="SG Correction Requests" breadcrumb="Dean Portal" />
 
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
 
@@ -276,11 +266,11 @@ export default function RemarkOverrideRequests() {
         <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl px-5 py-4 text-sm text-blue-800 shadow-sm">
           <Info className="h-4 w-4 mt-0.5 flex-shrink-0 text-blue-500" />
           <div>
-            <p className="font-semibold">About Remark Override Requests</p>
+            <p className="font-semibold">About SG Correction Requests</p>
             <p className="text-xs text-blue-600 mt-0.5">
-              When faculty need to change a posted student's remark (e.g. <strong>Failed → INC</strong> or <strong>Failed → Passed (grace)</strong>),
-              they must submit a request here. Approving unlocks that student's grade row for one edit.
-              The row re-locks automatically after the faculty saves the change.
+              Faculty must submit the exact proposed SG percentage, effective GWA, academic remark, reason, and evidence reference.
+              Approval grants one revision but does not change the official SG.
+              The row changes and re-locks only after the assigned faculty reposts the approved correction.
             </p>
           </div>
         </div>
@@ -294,11 +284,12 @@ export default function RemarkOverrideRequests() {
         )}
 
         {/* ── Stats strip ── */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: 'Pending Review', value: requests.filter(r => r.status === 'pending').length, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' },
             { label: 'Approved', value: requests.filter(r => r.status === 'approved').length, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
             { label: 'Rejected', value: requests.filter(r => r.status === 'rejected').length, color: 'text-rose-600', bg: 'bg-rose-50 border-rose-200' },
+            { label: 'Applied', value: requests.filter(r => r.status === 'applied').length, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200' },
           ].map(s => (
             <div key={s.label} className={cn('rounded-xl border p-4 shadow-sm flex items-center gap-3', s.bg)}>
               <span className={cn('text-2xl font-extrabold font-mono', s.color)}>{s.value}</span>
@@ -321,7 +312,7 @@ export default function RemarkOverrideRequests() {
           </div>
           <div className="flex items-center gap-2">
             <Filter className="h-3.5 w-3.5 text-slate-400" />
-            {['pending', 'approved', 'rejected', ''].map(s => (
+            {['pending', 'approved', 'applied', 'rejected', 'cancelled', ''].map(s => (
               <button
                 key={s || 'all'}
                 onClick={() => setStatusFilter(s)}
@@ -371,7 +362,9 @@ export default function RemarkOverrideRequests() {
 
             {filtered.map(req => {
               const isExpanded = expandedId === req.id;
-              const isGracePass = req.requestedRemark === 'Passed' && parseFloat(req.computedGrade) > 3.00;
+              const isGracePass = req.requestedRemark === 'Passed'
+                && Number(req.proposedEffectiveGrade) === 3
+                && Number(req.proposedComputedGrade ?? req.computedGrade) < 75;
               const isActioning = actionLoading === req.id;
 
               return (
@@ -420,10 +413,10 @@ export default function RemarkOverrideRequests() {
                     </div>
 
                     <div className="flex items-center gap-1.5 text-[10px] font-mono">
-                      <span className="text-rose-600 font-bold">{req.computedGrade}</span>
+                      <span className="font-bold text-slate-600">{req.computedGrade}%</span>
                       <span className="text-slate-300">→</span>
-                      <span className={cn('font-bold', parseFloat(req.effectiveGrade) <= 3.00 ? 'text-emerald-600' : 'text-rose-600')}>
-                        {req.effectiveGrade}
+                      <span className="font-bold text-violet-700">
+                        {req.proposedComputedGrade != null ? Number(req.proposedComputedGrade).toFixed(2) : req.computedGrade}%
                       </span>
                     </div>
 
@@ -472,8 +465,10 @@ export default function RemarkOverrideRequests() {
                       {/* Grade breakdown */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                         {[
-                          { label: 'Computed Grade', value: req.computedGrade, color: 'text-rose-600' },
-                          { label: 'Effective Grade', value: req.effectiveGrade, color: parseFloat(req.effectiveGrade) <= 3.00 ? 'text-emerald-600' : 'text-rose-600' },
+                          { label: 'Original SG %', value: req.computedGrade, color: 'text-slate-700' },
+                          { label: 'Proposed SG %', value: req.proposedComputedGrade != null ? Number(req.proposedComputedGrade).toFixed(2) : req.computedGrade, color: 'text-violet-700' },
+                          { label: 'Original GWA', value: req.effectiveGrade, color: parseFloat(req.effectiveGrade) <= 3.00 ? 'text-emerald-600' : 'text-rose-600' },
+                          { label: 'Proposed GWA', value: req.proposedEffectiveGrade != null ? Number(req.proposedEffectiveGrade).toFixed(2) : req.effectiveGrade, color: 'text-violet-700' },
                           { label: 'From Remark', value: req.currentRemark, color: '' },
                           { label: 'To Remark', value: req.requestedRemark, color: '' },
                         ].map(item => (
@@ -489,7 +484,7 @@ export default function RemarkOverrideRequests() {
                         <div className="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-lg px-4 py-2.5">
                           <AlertTriangle className="h-3.5 w-3.5 text-violet-500 flex-shrink-0 mt-0.5" />
                           <p className="text-xs text-violet-700">
-                            <strong>Grace Pass detected:</strong> The computed grade is {req.computedGrade} (failing), but the faculty is requesting it be recorded as <strong>Passed</strong> (effective grade: 3.00). Please verify this is justified.
+                            <strong>Grace Pass detected:</strong> The proposed SG is {req.proposedComputedGrade ?? req.computedGrade}, but the faculty is requesting <strong>Passed</strong> with an effective grade of 3.00. Please verify the complete exact proposal.
                           </p>
                         </div>
                       )}
@@ -517,7 +512,7 @@ export default function RemarkOverrideRequests() {
                               className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors outline-none disabled:opacity-60"
                             >
                               {isActioning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                              Approve & Unlock
+                              Approve Revision
                             </button>
                             <button
                               onClick={() => handleReject(req)}
@@ -537,11 +532,15 @@ export default function RemarkOverrideRequests() {
                           'flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold border',
                           req.status === 'approved'
                             ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                            : 'bg-rose-50 border-rose-200 text-rose-700'
+                            : req.status === 'applied'
+                              ? 'bg-blue-50 border-blue-200 text-blue-700'
+                              : 'bg-rose-50 border-rose-200 text-rose-700'
                         )}>
                           {req.status === 'approved'
-                            ? <><Unlock className="h-3.5 w-3.5" /> Grade row unlocked for faculty edit — resolved {formatDate(req.resolvedAt)}</>
-                            : <><Lock className="h-3.5 w-3.5" /> Request rejected — {formatDate(req.resolvedAt)}{req.deanNote ? ` · "${req.deanNote}"` : ''}</>
+                            ? <><Unlock className="h-3.5 w-3.5" /> Revision approved; official SG is unchanged until faculty reposts — {formatDate(req.resolvedAt)}</>
+                            : req.status === 'applied'
+                              ? <><CheckCircle2 className="h-3.5 w-3.5" /> Corrected SG applied and relocked — {formatDate(req.appliedAt)}</>
+                              : <><Lock className="h-3.5 w-3.5" /> Request {req.status} — {formatDate(req.resolvedAt)}{req.deanNote ? ` · "${req.deanNote}"` : ''}</>
                           }
                         </div>
                       )}

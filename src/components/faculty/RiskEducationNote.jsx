@@ -40,7 +40,7 @@ const content = {
     ['High · 50–74 points', 'Significant concern. Timely faculty review and a documented support plan are needed.'],
     ['Critical · 75–100 points', 'Severe or combined concerns. Prioritize prompt faculty intervention and consider Dean review when appropriate.'],
     ['How points are formed', 'Current GWA contributes up to 60 points, attendance up to 50, recorded zero scores up to 15, and a declining term trajectory up to 10. The final score is capped at 100.'],
-    ['Pending versus recorded zero', 'An ungraded released activity is pending and adds no zero-score points. A numerical 0 is a recorded result and can increase risk.'],
+    ['Pending versus recorded zero', 'A saved activity without a score is pending and adds no zero-score points. A numerical 0 is a recorded tentative result and can increase risk.'],
     ['Tentative standing', 'The displayed grade uses the scores currently available and may change when pending scores are recorded or grades are officially posted.'],
     ['Needs evaluation', 'Counts Moderate, High, or Critical students who do not yet have an evaluation for the selected subject and grading term.']
   ],

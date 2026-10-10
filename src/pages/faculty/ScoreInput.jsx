@@ -2,11 +2,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import StudentRow from '../../components/StudentRow';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus, X, AlertTriangle, AlertCircle, Info, Settings, Sliders, CloudUpload, Eye, EyeOff } from 'lucide-react';
+import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus, X, AlertTriangle, AlertCircle, Info, Settings, Sliders, CloudUpload, Eye } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { notifyGradePosted, notifyGradeChanged } from '../../lib/notificationDispatcher';
+import { notifyGradePosted, notifyGradeChanged, notifyOverrideApplied } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import {
   calculateSemestralGrade,
@@ -20,6 +20,7 @@ import {
 import { getRemarks } from '../../lib/academicPolicy';
 import { triggerExcelExport } from '../../lib/excelExport';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
+import ErrorModal from '../../components/ErrorModal';
 import html2pdf from 'html2pdf.js';
 import { cn } from '../../lib/utils';
 import { TableSkeleton } from '../../components/common/Skeleton';
@@ -27,9 +28,16 @@ import { getClassPriorityRoster, getEnrollmentType } from '../../lib/classRoomSe
 import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 import {
   GRADE_MILESTONES,
+  collectPostedMilestoneCoverage,
   getCanonicalGradePeriod,
-  getMilestoneForPostingTarget
+  getMilestonePostingPresentation,
+  getRequiredTermsForPostingTarget,
+  getUpdatedMilestoneLocks,
+  isSummerClass,
+  isTermCoveredByPostedMilestone
 } from '../../lib/gradeMilestones';
+import { postGradeMilestoneAtomic } from '../../lib/gradePostingService';
+import { collectBlankScoreReview, prepareReviewedBlankScores } from '../../lib/gradeScoreReview';
 
 export default function ScoreInput() {
   const navigate = useNavigate();
@@ -44,8 +52,9 @@ export default function ScoreInput() {
   const [sortMode, setSortMode] = useState('alphabetical'); // 'alphabetical' | 'risk_priority'
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lockedMilestones, setLockedMilestones] = useState([]);
+  const [postedMilestones, setPostedMilestones] = useState([]);
   const [studentLocks, setStudentLocks] = useState({});
-  const [savingDrafts, setSavingDrafts] = useState(false);
+  const [savingScores, setSavingScores] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState('saved'); // 'saving' | 'saved'
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [classesList, setClassesList] = useState([]);
@@ -54,6 +63,7 @@ export default function ScoreInput() {
   const [showPopup, setShowPopup] = useState(false);
   const [popupTitle, setPopupTitle] = useState('');
   const [popupDesc, setPopupDesc] = useState('');
+  const [postedTermEmptyNotice, setPostedTermEmptyNotice] = useState(null);
   const [showPostModal, setShowPostModal] = useState(false);
   const [pendingPostMilestone, setPendingPostMilestone] = useState(null);
   const [postingGrades, setPostingGrades] = useState(false);
@@ -82,7 +92,6 @@ export default function ScoreInput() {
   const [configTopicTag, setConfigTopicTag] = useState('');
   const [configComponentId, setConfigComponentId] = useState('');
   const [configMaxScore, setConfigMaxScore] = useState(20);
-  const [configIsReleased, setConfigIsReleased] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
 
   const [isAddActivityModalOpen, setIsAddActivityModalOpen] = useState(false);
@@ -108,7 +117,7 @@ export default function ScoreInput() {
     time: '07:00 - 10:00'
   });
 
-  const isSummer = classInfo?.sections?.semester === 'Summer' || classInfo?.sections?.semester?.toLowerCase().includes('summer') || classInfo?.semester === 'Summer';
+  const isSummer = isSummerClass(classInfo);
   const periodsList = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
   const gradingFormula = useMemo(() => {
     const snapshot = classInfo?.grading_formula_snapshot;
@@ -557,7 +566,6 @@ export default function ScoreInput() {
                 max: parseFloat(a.max_score) || 20,
                 description: a.description || '',
                 topicTag: a.topic_tag || '',
-                isReleased: Boolean(a.is_released),
                 releasedAt: a.released_at || null,
                 releasedBy: a.released_by || null,
                 componentId: a.component_id || null
@@ -699,7 +707,6 @@ export default function ScoreInput() {
           .select('*')
           .eq('class_record_id', classRecordId);
 
-        const locked = new Set();
         const locksMap = {};
 
         (pgData || []).forEach(row => {
@@ -722,41 +729,10 @@ export default function ScoreInput() {
             locksMap[row.student_id] = row.is_locked;
           }
 
-          if (row.is_locked) {
-            if (canonicalPeriod === GRADE_MILESTONES.MIDTERM_RATING) {
-              locked.add('Prelim');
-              locked.add('Midterm');
-              locked.add('Midterm Rating');
-            }
-            if (
-              canonicalPeriod === GRADE_MILESTONES.TENTATIVE_FINAL_RATING
-              || canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE
-            ) {
-              locked.add('Final');
-              locked.add('Semestral Grade');
-            }
-            if (row.locked_milestones) {
-              row.locked_milestones.forEach(m => {
-                const norm = m.toLowerCase();
-                if (norm === 'final' || norm === 'semestral grade' || norm === 'semestral_grade') {
-                  locked.add('Final');
-                  locked.add('Semestral Grade');
-                }
-                if (norm === 'prelim' || norm === 'midterm' || norm === 'midterm rating' || norm === 'midterm_rating') {
-                  locked.add('Prelim');
-                  locked.add('Midterm');
-                  locked.add('Midterm Rating');
-                }
-                if (norm === 'semi-final' || norm === 'semi_final' || norm === 'tentative final rating' || norm === 'tentative_final_rating') {
-                  locked.add('Semi-Final');
-                  locked.add('Tentative Final Rating');
-                }
-              });
-            }
-          }
         });
 
-        setLockedMilestones(Array.from(locked));
+        setLockedMilestones(collectPostedMilestoneCoverage(pgData || [], { lockedOnly: true }));
+        setPostedMilestones(collectPostedMilestoneCoverage(pgData || []));
         setStudentLocks(locksMap);
 
         // 6. Initialize local draft caches
@@ -915,7 +891,6 @@ export default function ScoreInput() {
       || ''
     );
     setConfigMaxScore(act.max || 20);
-    setConfigIsReleased(Boolean(act.isReleased));
     setIsConfigModalOpen(true);
   };
 
@@ -943,24 +918,6 @@ export default function ScoreInput() {
     try {
       const isNew = !configActivityId || configActivityId.length <= 10;
       const currentActivity = activities[configTerm]?.[configSlotIndex];
-
-      if (configIsReleased && isNew) {
-        alert('Save this activity as a draft and record student scores before releasing it.');
-        return;
-      }
-
-      if (configIsReleased && !currentActivity?.isReleased) {
-        const { count: recordedScoreCount, error: scoreCountError } = await supabase
-          .from('student_activity_scores')
-          .select('score_id', { count: 'exact', head: true })
-          .eq('activity_id', configActivityId);
-
-        if (scoreCountError) throw scoreCountError;
-        if (!recordedScoreCount) {
-          alert('Record at least one student score before releasing this activity.');
-          return;
-        }
-      }
       
       const payload = {
         class_record_id: classRecordId,
@@ -971,9 +928,11 @@ export default function ScoreInput() {
         description: trimmedDesc,
         topic_tag: configTopicTag.trim() || null,
         component_id: configComponentId || null,
-        is_released: configIsReleased,
-        released_at: configIsReleased ? currentActivity?.releasedAt || new Date().toISOString() : null,
-        released_by: configIsReleased ? currentActivity?.releasedBy || user?.id || null : null
+        // Compatibility fields remain populated while the legacy release column
+        // is phased out. Every saved activity is student-visible by policy.
+        is_released: true,
+        released_at: currentActivity?.releasedAt || new Date().toISOString(),
+        released_by: currentActivity?.releasedBy || user?.id || null
       };
 
       if (!isNew) {
@@ -1001,7 +960,6 @@ export default function ScoreInput() {
         description: savedAct.description || '',
         topicTag: savedAct.topic_tag || '',
         componentId: savedAct.component_id || null,
-        isReleased: Boolean(savedAct.is_released),
         releasedAt: savedAct.released_at || null,
         releasedBy: savedAct.released_by || null
       };
@@ -1035,10 +993,8 @@ export default function ScoreInput() {
       setIsConfigModalOpen(false);
       
       // Show success
-      setPopupTitle(configIsReleased ? 'Activity Released' : 'Activity Saved as Draft');
-      setPopupDesc(configIsReleased
-        ? `"${trimmedTitle}" is now visible to enrolled students and can support ASPIRE advising.`
-        : `"${trimmedTitle}" remains faculty-only until you release it.`);
+      setPopupTitle('Activity Saved');
+      setPopupDesc(`"${trimmedTitle}" is visible to enrolled students. Scores remain tentative until the applicable milestone is posted.`);
       setShowPopup(true);
     } catch (err) {
       console.error('Error saving activity config:', err);
@@ -1098,9 +1054,11 @@ export default function ScoreInput() {
           component_id: newActivityComponentId
             || (repeatableGradingComponents.length === 1 ? repeatableGradingComponents[0].componentId : null)
             || null,
-          is_released: false,
-          released_at: null,
-          released_by: null
+          // New activities are visible immediately. A missing score is Pending;
+          // a saved numeric score is Tentative until milestone posting.
+          is_released: true,
+          released_at: new Date().toISOString(),
+          released_by: user?.id || null
         })
         .select()
         .single();
@@ -1120,7 +1078,6 @@ export default function ScoreInput() {
         description: savedAct.description || trimmedDesc,
         topicTag: savedAct.topic_tag || '',
         componentId: savedAct.component_id || null,
-        isReleased: Boolean(savedAct.is_released),
         releasedAt: savedAct.released_at || null,
         releasedBy: savedAct.released_by || null
       };
@@ -1155,8 +1112,8 @@ export default function ScoreInput() {
       setNewActivityTopicTag('');
       setNewActivityComponentId('');
       
-      setPopupTitle('Activity Added as Draft');
-      setPopupDesc(`"${trimmedName}" is faculty-only until you record scores and release it.`);
+      setPopupTitle('Activity Added');
+      setPopupDesc(`"${trimmedName}" is now visible to enrolled students with a Pending score.`);
       setShowPopup(true);
     } catch (err) {
       console.error('Error adding activity:', err);
@@ -1164,10 +1121,52 @@ export default function ScoreInput() {
     }
   };
 
+  const findPostedTermEmptyCells = () => {
+    const emptyCells = [];
+    students.forEach(stud => {
+      const storageKey = `sage_scores_${classRecordId}_${stud.id}`;
+      const draft = JSON.parse(localStorage.getItem(storageKey) || '{}');
+      periodsList.forEach(term => {
+        if (!isTermCoveredByPostedMilestone(term, postedMilestones)) return;
+        const termScores = draft[term] || {};
+        (activities[term] || []).filter(activity => activity?.name).forEach((activity, index) => {
+          const value = termScores[activity.id]
+            ?? termScores[activity.dbId]
+            ?? termScores[activity.slotKey]
+            ?? termScores[`act${index + 1}`];
+          if (value === '' || value === null || value === undefined) {
+            emptyCells.push({ studentName: stud.name, term, field: activity.name });
+          }
+        });
+        if (gradingPresentation.hasCharacter) {
+          const value = termScores.char;
+          if (value === '' || value === null || value === undefined) {
+            emptyCells.push({ studentName: stud.name, term, field: gradingPresentation.characterLabel });
+          }
+        }
+        const examValue = termScores.exam;
+        if (examValue === '' || examValue === null || examValue === undefined) {
+          emptyCells.push({ studentName: stud.name, term, field: gradingPresentation.examLabel });
+        }
+      });
+    });
+    return emptyCells;
+  };
+
   const handleBulkSave = async () => {
     if (!classRecordId || students.length === 0) return;
+
+    const postedTermEmptyCells = findPostedTermEmptyCells();
+    if (postedTermEmptyCells.length > 0) {
+      const first = postedTermEmptyCells[0];
+      setPostedTermEmptyNotice({
+        title: 'Posted term score required',
+        message: `${first.studentName}'s ${first.term} ${first.field} cannot be empty because this term is already covered by a posted milestone. Enter a numeric replacement before saving.${postedTermEmptyCells.length > 1 ? ` ${postedTermEmptyCells.length - 1} additional posted-term cell(s) also require a score.` : ''}`
+      });
+      return;
+    }
     
-    setSavingDrafts(true);
+    setSavingScores(true);
     try {
       const upsertScoresRows = [];
       const granularScoreUpserts = [];
@@ -1234,9 +1233,13 @@ export default function ScoreInput() {
       }
 
       if (granularScoreUpserts.length > 0) {
+        const updatedAt = new Date().toISOString();
         const { error } = await supabase
           .from('student_activity_scores')
-          .upsert(granularScoreUpserts, { onConflict: 'student_id,activity_id' });
+          .upsert(
+            granularScoreUpserts.map(row => ({ ...row, updated_at: updatedAt })),
+            { onConflict: 'student_id,activity_id' }
+          );
         if (error) throw error;
       }
       await Promise.all(emptyTermRows.map(async row => {
@@ -1256,98 +1259,55 @@ export default function ScoreInput() {
       // Log activity
       const actorName = resolveActorName(profile, user);
       await logActivity(
-        'Save Draft Scores',
-        `Saved draft scores for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
+        'Save Scores',
+        `Saved tentative scores for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
         actorName
       );
 
       // Show success popup
-      setPopupTitle('Drafts Saved!');
-      setPopupDesc(`All draft scores for ${classInfo?.subjects?.code} (${classInfo?.sections?.name}) have been successfully synced to the database.`);
+      setPopupTitle('Scores Saved');
+      setPopupDesc(`All tentative scores for ${classInfo?.subjects?.code} (${classInfo?.sections?.name}) have been successfully synced to the database.`);
       setShowPopup(true);
     } catch (err) {
-      console.error('Error saving drafts to database:', err);
+      console.error('Error saving scores to database:', err);
     } finally {
-      setSavingDrafts(false);
+      setSavingScores(false);
     }
   };
 
-  const requiredTermsForMilestone = (targetMilestone) => targetMilestone === 'midterm'
-    ? (isSummer ? ['Midterm'] : ['Prelim', 'Midterm'])
-    : targetMilestone === 'tfr'
-      ? (isSummer ? ['Final'] : ['Semi-Final', 'Final'])
-      : periodsList;
+  const requiredTermsForMilestone = (targetMilestone) => getRequiredTermsForPostingTarget(
+    targetMilestone,
+    { isSummer }
+  );
 
   const collectNullScores = (targetMilestone) => {
     const requiredTerms = requiredTermsForMilestone(targetMilestone);
-    const affected = [];
-    students.forEach(stud => {
-      const draft = JSON.parse(localStorage.getItem(`sage_scores_${classRecordId}_${stud.id}`) || '{}');
-      const fields = [];
-      requiredTerms.forEach(term => {
-        (activities[term] || []).forEach((activity, index) => {
-          const termScores = draft[term] || {};
-          const value = termScores[activity.id]
-            ?? termScores[activity.dbId]
-            ?? termScores[activity.slotKey]
-            ?? termScores[`act${index + 1}`];
-          if (value === '' || value === null || value === undefined) {
-            fields.push({ term, key: activity.id || activity.dbId || `act${index + 1}`, label: activity.name || activity.title || `Activity ${index + 1}` });
-          }
-        });
-        const termScores = draft[term] || {};
-        if (gradingPresentation.hasCharacter && (termScores.char === '' || termScores.char === null || termScores.char === undefined)) {
-          fields.push({ term, key: 'char', label: gradingPresentation.characterLabel });
-        }
-        if (termScores.exam === '' || termScores.exam === null || termScores.exam === undefined) {
-          fields.push({ term, key: 'exam', label: gradingPresentation.examLabel });
-        }
-      });
-      if (fields.length) affected.push({ studentId: stud.id, studentName: stud.name, studentNumber: stud.student_id_number, fields });
+    return collectBlankScoreReview({
+      targetMilestone,
+      students,
+      requiredTerms,
+      activities,
+      hasCharacter: gradingPresentation.hasCharacter,
+      hasExam: gradingPresentation.hasExam,
+      characterLabel: gradingPresentation.characterLabel,
+      examLabel: gradingPresentation.examLabel,
+      getScoreRecord: student => JSON.parse(
+        localStorage.getItem(`sage_scores_${classRecordId}_${student.id}`) || '{}'
+      )
     });
-    return { targetMilestone, requiredTerms, affected, fieldCount: affected.reduce((sum, item) => sum + item.fields.length, 0) };
   };
 
-  const persistReviewedNullsAsZero = async (review) => {
-    const termRows = [];
-    const activityRows = [];
-    review.affected.forEach(item => {
-      const storageKey = `sage_scores_${classRecordId}_${item.studentId}`;
-      const draft = JSON.parse(localStorage.getItem(storageKey) || '{}');
-      item.fields.forEach(field => {
-        draft[field.term] = { ...(draft[field.term] || {}), [field.key]: 0 };
-      });
-      localStorage.setItem(storageKey, JSON.stringify(draft));
-
-      review.requiredTerms.forEach(term => {
-        const termScores = draft[term] || {};
-        const row = {
-          class_record_id: classRecordId,
-          student_id: item.studentId,
-          term,
-          char_rating: termScores.char ?? null,
-          exam: termScores.exam ?? null,
-          saved_by: user.id
-        };
-        (activities[term] || []).forEach((activity, index) => {
-          const value = termScores[activity.id] ?? termScores[activity.dbId] ?? termScores[activity.slotKey] ?? termScores[`act${index + 1}`] ?? null;
-          if (index < 6) row[`act${index + 1}`] = value;
-          const activityId = activity.dbId || activity.id;
-          if (activityId && typeof activityId === 'string' && activityId.length > 20 && value !== null) {
-            activityRows.push({ student_id: item.studentId, activity_id: activityId, score: Number(value) });
-          }
-        });
-        termRows.push(row);
-      });
+  const prepareReviewedNullsAsZero = (review) => {
+    const result = prepareReviewedBlankScores({
+      review,
+      classRecordId,
+      savedBy: user.id,
+      activities,
+      getScoreRecord: studentId => JSON.parse(
+        localStorage.getItem(`sage_scores_${classRecordId}_${studentId}`) || '{}'
+      )
     });
-    if (termRows.length) {
-      const { error } = await supabase.from('student_term_scores').upsert(termRows, { onConflict: 'class_record_id,student_id,term' });
-      if (error) throw error;
-    }
-    if (activityRows.length) {
-      const { error } = await supabase.from('student_activity_scores').upsert(activityRows, { onConflict: 'student_id,activity_id' });
-      if (error) throw error;
-    }
+    return { ...result, stagedDrafts: result.stagedRecords };
   };
 
   const handlePostGrades = async (targetMilestone = 'semestral', acceptNullsAsZero = false) => {
@@ -1364,24 +1324,14 @@ export default function ScoreInput() {
         setNullScoreReview(nullReview);
         return;
       }
-      if (nullReview.fieldCount > 0) {
-        await persistReviewedNullsAsZero(nullReview);
-        setNullScoreReview(null);
-      }
-      let periodParam = getMilestoneForPostingTarget(targetMilestone);
-      let termNotificationName = 'Official Semestral Grade (SG)';
-      let newMilestoneLock = 'Semestral Grade';
-
-      if (targetMilestone === 'midterm') {
-        termNotificationName = isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)';
-        newMilestoneLock = 'Midterm Rating';
-      } else if (targetMilestone === 'tfr') {
-        termNotificationName = isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)';
-        newMilestoneLock = 'Tentative Final Rating';
-      } else {
-        termNotificationName = 'Official Semestral Grade (SG)';
-        newMilestoneLock = 'Semestral Grade';
-      }
+      const reviewedScoreChanges = nullReview.fieldCount > 0
+        ? prepareReviewedNullsAsZero(nullReview)
+        : { termRows: [], activityRows: [], stagedDrafts: {} };
+      if (nullReview.fieldCount > 0) setNullScoreReview(null);
+      const {
+        gradePeriod: periodParam,
+        notificationName: termNotificationName
+      } = getMilestonePostingPresentation(targetMilestone, { isSummer });
 
       // 1. Fetch existing posted grades for this class record and period to match primary keys & detect changes
       const { data: existingPg, error: fetchErr } = await supabase
@@ -1391,6 +1341,17 @@ export default function ScoreInput() {
         .eq('grade_period', periodParam);
 
       if (fetchErr) throw fetchErr;
+
+      let approvedCorrections = [];
+      if (targetMilestone === 'semestral') {
+        const { data: correctionRows, error: correctionErr } = await supabase
+          .from('remark_override_requests')
+          .select('request_id, student_id, decision_by, proposed_remark')
+          .eq('class_record_id', classRecordId)
+          .eq('status', 'approved');
+        if (correctionErr) throw correctionErr;
+        approvedCorrections = correctionRows || [];
+      }
 
       const existingMap = {};
       const isFirstPost = !existingPg || existingPg.length === 0;
@@ -1418,11 +1379,11 @@ export default function ScoreInput() {
       // a fresh revision and notifies again.
       const changedStudentRemarks = [];
       const gradeChangeRevision = Date.now();
-      const updatedLockedMilestones = Array.from(new Set([
-        ...lockedMilestones, 
-        newMilestoneLock,
-        ...(targetMilestone === 'midterm' ? ['Prelim', 'Midterm'] : targetMilestone === 'tfr' ? ['Semi-Final', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final', 'Semestral Grade'])
-      ]));
+      const updatedLockedMilestones = getUpdatedMilestoneLocks(
+        postedMilestones,
+        targetMilestone,
+        { isSummer }
+      );
 
       const mapRemarkToDb = (remarkStr) => {
         if (!remarkStr) return 'passed';
@@ -1431,19 +1392,10 @@ export default function ScoreInput() {
         return lower; // 'passed', 'failed', 'fda', 'dropped'
       };
 
-      if (!classInfo?.grading_formula_snapshot && gradingFormulaSnapshot) {
-        const { error: snapshotErr } = await supabase
-          .from('class_records')
-          .update({ grading_formula_snapshot: gradingFormulaSnapshot })
-          .eq('class_record_id', classRecordId)
-          .is('grading_formula_snapshot', null);
-
-        if (snapshotErr) throw snapshotErr;
-      }
-
       students.forEach(stud => {
         const STORAGE_KEY = `sage_scores_${classRecordId}_${stud.id}`;
-        const draft = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        const draft = reviewedScoreChanges.stagedDrafts[stud.id]
+          || JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
         
         const termResults = Object.fromEntries(['Prelim', 'Midterm', 'Semi-Final', 'Final'].map(termName => [
           termName,
@@ -1495,6 +1447,7 @@ export default function ScoreInput() {
 
         const effectiveGrade = targetMilestone === 'semestral' ? computedGWA : toEffectiveGradeForPosting(computedTermGrade);
         if (effectiveGrade === null) throw new Error(`${stud.name}: no complete rating is available for this milestone.`);
+        const dbEffectiveGrade = targetMilestone === 'semestral' ? effectiveGrade : null;
 
         studentGradeResults[stud.id] = { rating: computedTermGrade, gwa: effectiveGrade };
 
@@ -1503,7 +1456,7 @@ export default function ScoreInput() {
           if (
             !oldRecord ||
             Number(oldRecord.computed_grade) !== Number(computedTermGrade) ||
-            Number(oldRecord.effective_grade) !== Number(effectiveGrade) ||
+            (oldRecord.effective_grade === null ? null : Number(oldRecord.effective_grade)) !== dbEffectiveGrade ||
             oldRecord.remarks !== remarksLabel
           ) {
             changedStudentIds.push(stud.id);
@@ -1516,7 +1469,7 @@ export default function ScoreInput() {
           student_id: stud.id,
           grade_period: periodParam,
           computed_grade: computedTermGrade,
-          effective_grade: effectiveGrade,
+          effective_grade: dbEffectiveGrade,
           remarks: remarksLabel,
           remarks_note: draft.remarksNote || null,
           remarks_set_by: user.id,
@@ -1537,15 +1490,28 @@ export default function ScoreInput() {
         postRows.push(payloadRow);
       });
 
-      // Post to db
-      const { error: postErr } = await supabase
-        .from('posted_grades')
-        .upsert(postRows);
+      await postGradeMilestoneAtomic({
+        classRecordId,
+        gradePeriod: periodParam,
+        gradingFormulaSnapshot: classInfo?.grading_formula_snapshot || gradingFormulaSnapshot,
+        termScoreRows: reviewedScoreChanges.termRows,
+        activityScoreRows: reviewedScoreChanges.activityRows,
+        postedGradeRows: postRows
+      });
 
-      if (postErr) throw postErr;
+      // Commit the reviewed zero substitutions to the browser cache only after
+      // the database transaction succeeds. A failed post leaves blanks intact.
+      try {
+        Object.entries(reviewedScoreChanges.stagedDrafts).forEach(([studentId, draft]) => {
+          localStorage.setItem(`sage_scores_${classRecordId}_${studentId}`, JSON.stringify(draft));
+        });
+      } catch (cacheError) {
+        console.warn('Grades posted, but the local score cache could not be refreshed:', cacheError);
+      }
 
       // Update state
       setLockedMilestones(updatedLockedMilestones);
+      setPostedMilestones(updatedLockedMilestones);
 
       // Log activity
       const actorName = resolveActorName(profile, user);
@@ -1607,6 +1573,32 @@ export default function ScoreInput() {
           } catch (err) {
             console.warn('Error dispatching notifyGradeChanged:', err);
           }
+        }
+      }
+
+      const appliedCandidateIds = approvedCorrections
+        .filter(request => changedStudentIds.includes(request.student_id))
+        .map(request => request.request_id);
+      if (appliedCandidateIds.length > 0) {
+        try {
+          const { data: appliedCorrections, error: appliedErr } = await supabase
+            .from('remark_override_requests')
+            .select('request_id, student_id, decision_by, final_remark')
+            .in('request_id', appliedCandidateIds)
+            .eq('status', 'applied');
+          if (appliedErr) throw appliedErr;
+
+          for (const correction of appliedCorrections || []) {
+            const correctedStudent = students.find(student => student.id === correction.student_id);
+            await notifyOverrideApplied({
+              deanId: correction.decision_by,
+              studentName: correctedStudent?.name || 'Student',
+              subjectName: `${classInfo?.subjects?.code || 'Subject'} - ${classInfo?.subjects?.name || ''}`,
+              finalRemark: correction.final_remark || ''
+            });
+          }
+        } catch (err) {
+          console.warn('Error dispatching applied-correction notification:', err);
         }
       }
 
@@ -1761,18 +1753,13 @@ export default function ScoreInput() {
     return a.name.localeCompare(b.name);
   });
 
-  const renderActivityReleaseStatus = (activity) => (
+  const renderActivityVisibilityStatus = () => (
     <span
-      className={cn(
-        "inline-flex items-center gap-0.5 rounded-full border px-1 py-0.5 font-sans text-[7px] font-bold leading-none",
-        activity.isReleased
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-          : "border-slate-200 bg-slate-100 text-slate-500"
-      )}
-      title={activity.isReleased ? 'Released to students' : 'Faculty-only draft'}
+      className="inline-flex items-center gap-0.5 rounded-full border border-sage-200 bg-sage-50 px-1 py-0.5 font-sans text-[7px] font-bold leading-none text-sage-700"
+      title="Visible to students; recorded scores remain tentative until milestone posting"
     >
-      {activity.isReleased ? <Eye className="h-2 w-2" /> : <EyeOff className="h-2 w-2" />}
-      {activity.isReleased ? 'Released' : 'Draft'}
+      <Eye className="h-2 w-2" />
+      Visible
     </span>
   );
 
@@ -1799,13 +1786,13 @@ export default function ScoreInput() {
             <span className="sm:hidden">Post</span>
           </button>
           <button 
-            disabled={savingDrafts || students.length === 0}
+            disabled={savingScores || students.length === 0}
             onClick={handleBulkSave}
             className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer whitespace-nowrap"
           >
             <Save className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">{savingDrafts ? 'Saving...' : 'Save All Drafts'}</span>
-            <span className="sm:hidden">{savingDrafts ? 'Saving...' : 'Save'}</span>
+            <span className="hidden sm:inline">{savingScores ? 'Saving...' : 'Save All Scores'}</span>
+            <span className="sm:hidden">{savingScores ? 'Saving...' : 'Save'}</span>
           </button>
         </div>
       </PageHeader>
@@ -1839,7 +1826,7 @@ export default function ScoreInput() {
                 </span>
 
                 {/* Auto-Save Live Status Indicator */}
-                {savingDrafts || autoSaveStatus === 'saving' ? (
+                {savingScores || autoSaveStatus === 'saving' ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200/80 animate-pulse ml-2 shadow-2xs">
                     <CloudUpload className="h-3 w-3 text-amber-500 animate-spin" /> Saving grades...
                   </span>
@@ -2058,7 +2045,7 @@ export default function ScoreInput() {
                                         <span>{index + 1}</span>
                                         {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
                                         {isConfigured && <span className="text-[7px] text-sky-750 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
-                                        {isConfigured && renderActivityReleaseStatus(act)}
+                                        {isConfigured && renderActivityVisibilityStatus()}
                                       </div>
                                     </th>
                                   );
@@ -2094,7 +2081,7 @@ export default function ScoreInput() {
                                         <span>{index + 1}</span>
                                         {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
                                         {isConfigured && <span className="text-[7px] text-indigo-755 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
-                                        {isConfigured && renderActivityReleaseStatus(act)}
+                                        {isConfigured && renderActivityVisibilityStatus()}
                                       </div>
                                     </th>
                                   );
@@ -2130,7 +2117,7 @@ export default function ScoreInput() {
                                         <span>{index + 1}</span>
                                         {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
                                         {isConfigured && <span className="text-[7px] text-amber-755 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
-                                        {isConfigured && renderActivityReleaseStatus(act)}
+                                        {isConfigured && renderActivityVisibilityStatus()}
                                       </div>
                                     </th>
                                   );
@@ -2166,7 +2153,7 @@ export default function ScoreInput() {
                                         <span>{index + 1}</span>
                                         {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
                                         {isConfigured && <span className="text-[7px] text-orange-755 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
-                                        {isConfigured && renderActivityReleaseStatus(act)}
+                                        {isConfigured && renderActivityVisibilityStatus()}
                                       </div>
                                     </th>
                                   );
@@ -2415,12 +2402,18 @@ export default function ScoreInput() {
                               activities={activities}
                               gradingFormula={gradingFormula}
                               showCharacter={gradingPresentation.hasCharacter}
-                              lockedMilestones={lockedMilestones}
+                              postedMilestones={postedMilestones}
                               studentLocked={studentLocks[student.id]}
                               periodsList={periodsList}
                               onSaveStatusChange={(st) => {
                                 setAutoSaveStatus(st);
                                 if (st === 'saved') setLastSavedAt(new Date());
+                              }}
+                              onPostedTermEmptyAttempt={({ term, field, studentName, restored }) => {
+                                setPostedTermEmptyNotice({
+                                  title: 'Posted term score required',
+                                  message: `${studentName}'s ${term} ${field} cannot be empty because the term is already posted. ${restored ? 'The previous recorded value was restored.' : 'Enter a numeric replacement before leaving this cell.'} Re-post the applicable milestone after completing the correction.`
+                                });
                               }}
                             />
                           ))
@@ -2543,8 +2536,8 @@ export default function ScoreInput() {
             </div>
             
             <div className="p-6 space-y-4">
-              <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3.5 text-xs leading-relaxed">
-                <strong>Visibility policy:</strong> Saving as Draft keeps this activity faculty-only. Release it only when its recorded results are ready for students and the ASPIRE Advisor.
+              <div className="bg-sage-50 border border-sage-200 text-sage-900 rounded-xl p-3.5 text-xs leading-relaxed">
+                <strong>Visibility policy:</strong> Saved activities are visible to enrolled students. An unrecorded score appears as Pending; a saved score remains Tentative until the applicable milestone is posted.
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -2628,25 +2621,15 @@ export default function ScoreInput() {
                 />
               </div>
 
-              <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={configIsReleased}
-                  onChange={(e) => setConfigIsReleased(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sage-600 focus:ring-sage-500"
-                />
+              <div className="flex items-start gap-3 rounded-xl border border-sage-200 bg-sage-50 p-3.5">
+                <Eye className="mt-0.5 h-4 w-4 shrink-0 text-sage-600" />
                 <span className="min-w-0">
-                  <span className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                    {configIsReleased ? <Eye className="h-3.5 w-3.5 text-emerald-600" /> : <EyeOff className="h-3.5 w-3.5 text-slate-500" />}
-                    {configIsReleased ? 'Released to students' : 'Faculty-only draft'}
-                  </span>
-                  <span className="mt-1 block text-[10px] leading-relaxed text-slate-500">
-                    {configIsReleased
-                      ? 'Students can see this activity result and ASPIRE may use it as advising evidence.'
-                      : 'Students and the ASPIRE Advisor cannot access this activity result.'}
+                  <span className="text-xs font-bold text-sage-900">Visible to enrolled students</span>
+                  <span className="mt-1 block text-[10px] leading-relaxed text-sage-700">
+                    ASPIRE may use saved non-NULL scores as tentative advising and live-performance evidence.
                   </span>
                 </span>
-              </label>
+              </div>
             </div>
 
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
@@ -2663,8 +2646,8 @@ export default function ScoreInput() {
                 disabled={savingConfig || !configTitle.trim() || !configDescription.trim() || (repeatableGradingComponents.length > 1 && !configComponentId)}
                 className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
               >
-                <Lock className="h-3.5 w-3.5" />
-                <span>{savingConfig ? 'Saving...' : configIsReleased ? 'Save & Release' : 'Save as Draft'}</span>
+                <Save className="h-3.5 w-3.5" />
+                <span>{savingConfig ? 'Saving...' : 'Save Activity'}</span>
               </button>
             </div>
           </div>
@@ -2799,11 +2782,11 @@ export default function ScoreInput() {
                   />
                 </div>
 
-                <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5">
-                  <EyeOff className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                <div className="flex items-start gap-3 rounded-xl border border-sage-200 bg-sage-50 p-3.5">
+                  <Eye className="mt-0.5 h-4 w-4 shrink-0 text-sage-600" />
                   <div>
-                    <p className="text-xs font-bold text-slate-800">New activities begin as faculty-only drafts</p>
-                    <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Enter student scores first, then open the activity header to release it.</p>
+                    <p className="text-xs font-bold text-sage-900">Visible after saving</p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-sage-700">Students see Pending until a score is saved, then Tentative until milestone posting.</p>
                   </div>
                 </div>
               </div>
@@ -2822,7 +2805,7 @@ export default function ScoreInput() {
                   onClick={handleAddActivitySubmit}
                   className="px-5 py-2.5 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
                 >
-                  Add Draft
+                  Save Activity
                 </button>
               </div>
             </div>
@@ -3050,6 +3033,13 @@ export default function ScoreInput() {
       )}
 
       {/* Shared Success Popup Modal */}
+      <ErrorModal
+        isOpen={Boolean(postedTermEmptyNotice)}
+        title={postedTermEmptyNotice?.title}
+        message={postedTermEmptyNotice?.message}
+        onClose={() => setPostedTermEmptyNotice(null)}
+      />
+
       {showPopup && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 animate-in fade-in duration-200 sm:p-4 text-center">
           <div className="bg-white rounded-t-3xl sm:rounded-2xl p-5 sm:p-6 max-w-sm w-full shadow-2xl border border-slate-100 flex flex-col items-center space-y-4 animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">

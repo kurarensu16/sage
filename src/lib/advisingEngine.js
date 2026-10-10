@@ -28,7 +28,7 @@ const getActivityGroup = (activity) => {
   return topic ? `${term}:topic:${topic}` : `${term}:category:${inferCategory(activity)}`;
 };
 
-const getActivityLabel = (activity) => activity.title || activity.name || 'Released activity';
+const getActivityLabel = (activity) => activity.title || activity.name || 'Saved activity';
 
 const getActivityTopic = (activity) =>
   activity.topic_tag || activity.topicTag || activity.description || inferCategory(activity);
@@ -62,7 +62,7 @@ export function evaluateAcademicAdvising({
       severity: 'low',
       signalType: 'no_enrollment',
       headline: 'No active courses available',
-      summary: 'ASPIRE will begin monitoring released academic evidence after your active course enrollment is available.',
+      summary: 'ASPIRE will begin monitoring saved academic evidence after your active course enrollment is available.',
       evidence: [],
       focusTopics: [],
       actions: [],
@@ -142,6 +142,18 @@ export function evaluateAcademicAdvising({
           : Math.round((Number(activity.score) / Number(activity.max_score)) * 100)
       }))
   );
+  const pendingEvidence = courses.flatMap((course) =>
+    (course.activities || [])
+      .filter((activity) => activity.evidenceStatus === 'pending'
+        || activity.score === null
+        || activity.score === undefined)
+      .map((activity) => ({
+        ...activity,
+        courseCode: course.code,
+        courseName: course.name,
+        instructor: course.instructor
+      }))
+  );
 
   const weakGroups = new Map();
   scoredEvidence
@@ -174,7 +186,7 @@ export function evaluateAcademicAdvising({
       signalType: 'related_weak_activities',
       courseCode,
       headline: `${courseCode} needs focused review before the next activity`,
-      summary: `Two related released results average ${average}%. Focus on ${topic} now; this is an activity-level study signal, not an unofficial term grade.`,
+      summary: `Two related tentative results average ${average}%. Focus on ${topic} now; this is an activity-level study signal, not an official term grade.`,
       evidence: latestTwo.map((item) => ({
         id: item.activity_id,
         label: getActivityLabel(item),
@@ -186,7 +198,7 @@ export function evaluateAcademicAdvising({
         action('targeted-practice', `Practice ${topic}`, 'Complete one focused practice set before the next related activity.'),
         action('verify-understanding', 'Verify your understanding', 'Bring one unresolved example to your instructor or consultation session.')
       ],
-      reviewTrigger: 'next_related_activity_release',
+      reviewTrigger: 'next_related_activity_score',
       consultationRecommended: average < 60,
       boundaryStatement
     };
@@ -207,8 +219,8 @@ export function evaluateAcademicAdvising({
       summary: `${getActivityLabel(latest)} in ${latest.courseCode} is recorded at ${latest.percentage}%. One result is not enough to classify a trend, but you can review it before the next related activity.`,
       evidence: [{ id: latest.activity_id, label: getActivityLabel(latest), value: `${latest.score}/${latest.max_score} (${latest.percentage}%)` }],
       focusTopics: [getActivityTopic(latest)],
-      actions: [action('early-review', 'Review this activity early', 'Check the missed items now while waiting for the next related released result.')],
-      reviewTrigger: 'next_related_activity_release',
+      actions: [action('early-review', 'Review this activity early', 'Check the missed items now while waiting for the next related saved score.')],
+      reviewTrigger: 'next_related_activity_score',
       consultationRecommended: false,
       boundaryStatement
     };
@@ -226,32 +238,58 @@ export function evaluateAcademicAdvising({
       summaryText = `Your final Semestral Grade is ${Number(officialGwa).toFixed(2)}, which is a passing standing.`;
     }
 
+    if (pendingEvidence.length > 0) {
+      summaryText += ` ${pendingEvidence.length} ${pendingEvidence.length === 1 ? 'activity is' : 'activities are'} still labeled Pending because no score has been recorded.`;
+    }
+
     return {
       state: 'monitoring',
       severity: 'low',
       signalType: 'official_grade_passing',
       headline: `${milestoneText} grade is on track`,
       summary: summaryText,
-      evidence: [{ label: `${milestoneText} GWA`, value: Number(officialGwa).toFixed(2) }],
+      evidence: [
+        { label: `${milestoneText} GWA`, value: Number(officialGwa).toFixed(2) },
+        ...(pendingEvidence.length > 0 ? [{ label: 'Pending activities', value: String(pendingEvidence.length) }] : [])
+      ],
       focusTopics: [],
       actions: [action('maintain-routine', 'Maintain your study routine', 'Continue your current study habits and review upcoming requirements.')],
-      reviewTrigger: 'next_activity_release',
+      reviewTrigger: 'next_activity_score',
       consultationRecommended: false,
       boundaryStatement
     };
   }
 
   if (scoredEvidence.length === 0) {
+    if (pendingEvidence.length > 0) {
+      return {
+        state: 'building_evidence',
+        severity: 'low',
+        signalType: 'pending_activities',
+        headline: `${pendingEvidence.length} ${pendingEvidence.length === 1 ? 'activity is' : 'activities are'} pending`,
+        summary: 'These activities are available to ASPIRE, but no score has been recorded. They remain labeled Pending and are not treated as zero, failed, missing, or official evidence.',
+        evidence: pendingEvidence.slice(0, 4).map(item => ({
+          id: item.activity_id,
+          label: `${item.courseCode} · ${getActivityLabel(item)}`,
+          value: 'Pending'
+        })),
+        focusTopics: [],
+        actions: [action('confirm-pending-activities', 'Review pending activities', 'Check the activity instructions and confirm requirements or schedules with your instructor.')],
+        reviewTrigger: 'next_activity_score',
+        consultationRecommended: false,
+        boundaryStatement
+      };
+    }
     return {
       state: 'no_evidence',
       severity: 'low',
-      signalType: 'awaiting_released_activity',
-      headline: 'Waiting for released academic evidence',
-      summary: 'No faculty-released activity result is available yet. ASPIRE will begin with activity-level guidance before the official Midterm or Final grade when enough evidence exists.',
+      signalType: 'awaiting_activity_score',
+      headline: 'Waiting for tentative academic evidence',
+      summary: 'No saved activity score is available yet. ASPIRE will begin with activity-level guidance before an official milestone grade when enough evidence exists.',
       evidence: [],
       focusTopics: [],
-      actions: [action('continue-coursework', 'Continue current coursework', 'Complete upcoming activities and review faculty feedback when results are released.')],
-      reviewTrigger: 'next_activity_release',
+      actions: [action('continue-coursework', 'Continue current coursework', 'Complete upcoming activities and review faculty feedback when scores are saved.')],
+      reviewTrigger: 'next_activity_score',
       consultationRecommended: false,
       boundaryStatement
     };
@@ -260,17 +298,17 @@ export function evaluateAcademicAdvising({
   return {
     state: 'monitoring',
     severity: 'low',
-    signalType: 'released_activities_on_track',
-    headline: 'Released activity evidence is currently on track',
-    summary: `${scoredEvidence.length} released scored ${scoredEvidence.length === 1 ? 'activity is' : 'activities are'} available, with no repeated below-benchmark pattern detected.`,
+    signalType: 'tentative_activities_on_track',
+    headline: 'Tentative activity evidence is currently on track',
+    summary: `${scoredEvidence.length} tentative scored ${scoredEvidence.length === 1 ? 'activity is' : 'activities are'} available, with no repeated below-benchmark pattern detected.${pendingEvidence.length > 0 ? ` ${pendingEvidence.length} additional ${pendingEvidence.length === 1 ? 'activity remains' : 'activities remain'} labeled Pending.` : ''}`,
     evidence: scoredEvidence.slice(-2).map((item) => ({
       id: item.activity_id,
       label: `${item.courseCode} · ${getActivityLabel(item)}`,
       value: `${item.percentage}%`
     })),
     focusTopics: [],
-    actions: [action('maintain-routine', 'Maintain your study routine', 'Review feedback from each released activity before starting the next one.')],
-    reviewTrigger: 'next_activity_release',
+    actions: [action('maintain-routine', 'Maintain your study routine', 'Review feedback from each saved activity before starting the next one.')],
+    reviewTrigger: 'next_activity_score',
     consultationRecommended: false,
     boundaryStatement
   };

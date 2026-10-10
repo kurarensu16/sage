@@ -304,6 +304,7 @@ export function getGradingStoragePresentation(formula) {
     hasCharacter: Boolean(characterComponent),
     characterLabel: characterComponent?.name || 'Character Rating',
     characterWeight: characterComponent?.weight || 0,
+    hasExam: Boolean(primarySingleComponent),
     examLabel: primarySingleComponent?.name || 'Examination',
     examWeight: primarySingleComponent?.weight || 0
   };

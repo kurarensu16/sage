@@ -31,13 +31,24 @@ import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
 import {
   getGradingStoragePresentation,
+  getTransmutedGrade,
   resolveGradingFormula
 } from '../../lib/gradingMath';
 import {
   GRADE_MILESTONES,
+  collectPostedMilestoneCoverage,
   getCanonicalGradePeriod,
   findPostedMilestone
 } from '../../lib/gradeMilestones';
+import { cancelSgCorrectionRequest, submitSgCorrectionRequest } from '../../lib/gradeCorrectionService';
+
+const REMARK_TO_DB = Object.freeze({
+  Passed: 'passed',
+  Failed: 'failed',
+  INC: 'incomplete',
+  FDA: 'fda',
+  Dropped: 'dropped'
+});
 
 export default function PostedGradesView() {
   const navigate = useNavigate();
@@ -117,9 +128,13 @@ export default function PostedGradesView() {
   const [remarkReqStudentId, setRemarkReqStudentId] = useState('');
   const [remarkReqFrom, setRemarkReqFrom] = useState('Failed');
   const [remarkReqTo, setRemarkReqTo] = useState('INC');
+  const [remarkReqComputed, setRemarkReqComputed] = useState('');
+  const [remarkReqEffective, setRemarkReqEffective] = useState('');
   const [remarkReqNote, setRemarkReqNote] = useState('');
-  const [evidenceFileName, setEvidenceFileName] = useState('');
+  const [evidenceReference, setEvidenceReference] = useState('');
   const [remarkReqSent, setRemarkReqSent] = useState(false);
+  const [activeCorrectionRequests, setActiveCorrectionRequests] = useState([]);
+  const [cancellingCorrectionId, setCancellingCorrectionId] = useState(null);
 
   // Maximum items configuration for activities and exams per period
   const [maxItems, setMaxItems] = useState({
@@ -623,8 +638,6 @@ export default function PostedGradesView() {
           .select('*')
           .eq('class_record_id', classRecordId);
 
-        const locked = new Set();
-
         (pgData || []).forEach(row => {
           if (!scoresByStudent[row.student_id]) {
             scoresByStudent[row.student_id] = {
@@ -642,41 +655,18 @@ export default function PostedGradesView() {
             scoresByStudent[row.student_id].remarksNote = row.remarks_note || '';
           }
 
-          if (row.is_locked) {
-            if (canonicalPeriod === GRADE_MILESTONES.MIDTERM_RATING) {
-              locked.add('Prelim');
-              locked.add('Midterm');
-              locked.add('Midterm Rating');
-            }
-            if (
-              canonicalPeriod === GRADE_MILESTONES.TENTATIVE_FINAL_RATING
-              || canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE
-            ) {
-              locked.add('Final');
-              locked.add('Semestral Grade');
-            }
-            if (row.locked_milestones) {
-              row.locked_milestones.forEach(m => {
-                const norm = m.toLowerCase();
-                if (norm === 'final' || norm === 'semestral grade' || norm === 'semestral_grade') {
-                  locked.add('Final');
-                  locked.add('Semestral Grade');
-                }
-                if (norm === 'prelim' || norm === 'midterm' || norm === 'midterm rating' || norm === 'midterm_rating') {
-                  locked.add('Prelim');
-                  locked.add('Midterm');
-                  locked.add('Midterm Rating');
-                }
-                if (norm === 'semi-final' || norm === 'semi_final' || norm === 'tentative final rating' || norm === 'tentative_final_rating') {
-                  locked.add('Semi-Final');
-                  locked.add('Tentative Final Rating');
-                }
-              });
-            }
-          }
         });
 
-        setLockedMilestones(Array.from(locked));
+        setLockedMilestones(collectPostedMilestoneCoverage(pgData || [], { lockedOnly: true }));
+
+        const { data: correctionRows, error: correctionError } = await supabase
+          .from('remark_override_requests')
+          .select('request_id, student_id, status, original_computed_grade, original_effective_grade, original_remark, proposed_computed_grade, proposed_effective_grade, proposed_remark, requested_at')
+          .eq('class_record_id', classRecordId)
+          .in('status', ['pending', 'approved'])
+          .order('requested_at', { ascending: false });
+        if (correctionError) throw correctionError;
+        setActiveCorrectionRequests(correctionRows || []);
 
         // 6. Fetch unlock requests from database
         const { data: dbReqs } = await supabase
@@ -815,80 +805,62 @@ export default function PostedGradesView() {
     }
   };
 
+  const prepareCorrectionRequest = (student) => {
+    if (!student) return;
+    const currentRemark = student.customRemarks || 'Passed';
+    const nextRemark = currentRemark === 'Passed' ? 'INC' : 'Passed';
+    const computed = student.computedGrade == null ? '' : String(student.computedGrade);
+    const rawGwa = student.computedGrade == null ? student.effectiveGrade : getTransmutedGrade(student.computedGrade);
+    const proposedEffective = nextRemark === 'Passed' && Number(rawGwa) > 3
+      ? 3
+      : rawGwa;
+    setRemarkReqStudent(student.name);
+    setRemarkReqStudentId(student.id);
+    setRemarkReqFrom(currentRemark);
+    setRemarkReqTo(nextRemark);
+    setRemarkReqComputed(computed);
+    setRemarkReqEffective(proposedEffective == null ? '' : String(proposedEffective));
+  };
+
+  const handleProposedRemarkChange = (nextRemark) => {
+    setRemarkReqTo(nextRemark);
+    const selected = students.find(student => student.id === remarkReqStudentId);
+    if (!selected || selected.computedGrade == null) return;
+    const rawGwa = getTransmutedGrade(selected.computedGrade);
+    setRemarkReqEffective(String(nextRemark === 'Passed' && rawGwa > 3 ? 3 : rawGwa));
+  };
+
   const handleSubmitRemarkRequest = async () => {
-    if (!remarkReqStudent || !remarkReqNote.trim() || !classRecordId) return;
+    const proposedComputedGrade = Number(remarkReqComputed);
+    const proposedEffectiveGrade = Number(remarkReqEffective);
+    const proposalIsValid = String(remarkReqComputed).trim() !== ''
+      && String(remarkReqEffective).trim() !== ''
+      && Number.isFinite(proposedComputedGrade)
+      && proposedComputedGrade >= 0
+      && proposedComputedGrade <= 100
+      && Number.isFinite(proposedEffectiveGrade)
+      && proposedEffectiveGrade >= 1
+      && proposedEffectiveGrade <= 5
+      && (!evidenceReference.trim() || /^https:\/\/\S+$/i.test(evidenceReference.trim()));
+    if (!remarkReqStudent || !remarkReqTo || !remarkReqNote.trim() || !classRecordId || !proposalIsValid) return;
 
     try {
-      const selectedStud = students.find(s => s.id === remarkReqStudentId);
-      const compGrade = selectedStud ? selectedStud.computedGrade : null;
-      const effGrade = selectedStud ? selectedStud.effectiveGrade : null;
-
       const subjCode = classInfo?.subjects?.code || '';
       const subjName = classInfo?.subjects?.name || '';
-      const sectName = classInfo?.sections?.name || '';
       const actorName = resolveActorName(profile, user);
-      // 1. Database: Insert into remark_override_requests (primary store)
-      const evidenceUrl = evidenceFileName ? `https://storage.sage.edu.ph/proofs/${evidenceFileName}` : null;
-      const { data: rorRow, error: rorErr } = await supabase
-        .from('remark_override_requests')
-        .insert({
-          class_record_id: classRecordId,
-          student_id: remarkReqStudentId || null,
-          requested_by: user.id,
-          subject_name: `${subjCode} - ${subjName}`,
-          section_name: sectName,
-          faculty_name: actorName,
-          computed_grade: compGrade,
-          effective_grade: effGrade,
-          current_remark: remarkReqFrom,
-          requested_remark: 'Pending Edit',
-          note: remarkReqNote,
-          evidence_url: evidenceUrl,
-          status: 'pending'
-        })
-        .select('request_id')
-        .single();
-
-      // 2. LocalStorage: Dual-write fallback for backward compatibility
-      const existing = JSON.parse(localStorage.getItem('remark_override_requests') || '[]');
-      const newReq = {
-        request_id: rorRow?.request_id || `ror-${Date.now()}`,
-        id: rorRow?.request_id || `ror-${Date.now()}`,
-        class_record_id: classRecordId,
-        classCode: classRecordId,
-        student_id: remarkReqStudentId,
+      const evidenceUrl = evidenceReference.trim() || null;
+      const correctionRequest = await submitSgCorrectionRequest({
+        classRecordId,
         studentId: remarkReqStudentId,
-        student_name: remarkReqStudent,
-        studentName: remarkReqStudent,
-        subject_name: `${subjCode} - ${subjName}`,
-        subjectName: `${subjCode} - ${subjName}`,
-        section_name: sectName,
-        section: sectName,
-        faculty_name: actorName,
-        facultyName: actorName,
-        computed_grade: compGrade != null ? compGrade : 5.00,
-        effective_grade: effGrade != null ? effGrade : 5.00,
-        computedGrade: compGrade != null ? compGrade : '—',
-        effectiveGrade: effGrade != null ? effGrade : '—',
-        current_remark: remarkReqFrom,
-        currentRemark: remarkReqFrom,
-        requested_remark: remarkReqTo || 'Pending Edit',
-        requestedRemark: remarkReqTo || 'Pending Edit',
-        note: remarkReqNote,
-        evidence_url: evidenceUrl,
-        status: 'pending',
-        requested_at: new Date().toISOString()
-      };
-      if (rorErr) {
-        console.warn('DB insert failed, storing to localStorage only:', rorErr.message);
-        existing.push(newReq);
-        localStorage.setItem('remark_override_requests', JSON.stringify(existing));
-      } else {
-        existing.push(newReq);
-        localStorage.setItem('remark_override_requests', JSON.stringify(existing));
-      }
+        proposedRemark: REMARK_TO_DB[remarkReqTo],
+        reason: remarkReqNote.trim(),
+        evidenceUrl,
+        proposedComputedGrade,
+        proposedEffectiveGrade
+      });
 
-      // 4. Log activity
+      // The secured RPC is the only source of truth. No local fallback can
+      // create an authorization record that the database did not accept.
       await logActivity(
         'Remark Override Request',
         `Requested remark override for student ${remarkReqStudent} (${remarkReqFrom} -> ${remarkReqTo}) in ${subjCode}`,
@@ -904,6 +876,13 @@ export default function PostedGradesView() {
         requestedRemark: remarkReqTo
       });
 
+      setActiveCorrectionRequests(previous => [{
+        ...correctionRequest,
+        student_id: remarkReqStudentId,
+        status: 'pending',
+        requested_at: new Date().toISOString()
+      }, ...previous.filter(request => request.student_id !== remarkReqStudentId)]);
+
       setRemarkReqSent(true);
       setTimeout(() => {
         setShowRemarkModal(false);
@@ -912,13 +891,37 @@ export default function PostedGradesView() {
         setRemarkReqStudentId('');
         setRemarkReqNote('');
         setRemarkReqTo('INC');
+        setRemarkReqComputed('');
+        setRemarkReqEffective('');
+        setEvidenceReference('');
         setPopupTitle('Override Submitted');
-        setPopupDesc(`Remark change request for ${newReq.studentName} has been submitted to the Dean.`);
+        setPopupDesc(`Remark change request ${correctionRequest.request_id} for ${remarkReqStudent} has been submitted to the Dean.`);
         setShowPopup(true);
       }, 1500);
 
     } catch (err) {
       console.error('Error submitting remark change request:', err);
+      setPopupTitle('Correction Request Failed');
+      setPopupDesc(err.message || 'The correction request could not be submitted. No revision permission was created.');
+      setShowPopup(true);
+    }
+  };
+
+  const handleCancelCorrection = async (request) => {
+    setCancellingCorrectionId(request.request_id);
+    try {
+      await cancelSgCorrectionRequest({ requestId: request.request_id });
+      setActiveCorrectionRequests(previous => previous.filter(item => item.request_id !== request.request_id));
+      setPopupTitle('Correction Request Cancelled');
+      setPopupDesc('The unresolved correction request was cancelled. The official SG remains unchanged and locked.');
+      setShowPopup(true);
+    } catch (err) {
+      console.error('Error cancelling SG correction request:', err);
+      setPopupTitle('Cancellation Failed');
+      setPopupDesc(err.message || 'The correction request could not be cancelled.');
+      setShowPopup(true);
+    } finally {
+      setCancellingCorrectionId(null);
     }
   };
 
@@ -940,6 +943,23 @@ export default function PostedGradesView() {
 
   const filteredStudents = students.filter(student => 
     student.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const proposedComputedNumber = Number(remarkReqComputed);
+  const proposedEffectiveNumber = Number(remarkReqEffective);
+  const evidenceReferenceIsValid = !evidenceReference.trim() || /^https:\/\/\S+$/i.test(evidenceReference.trim());
+  const isCorrectionProposalValid = Boolean(
+    remarkReqStudent
+    && remarkReqTo
+    && remarkReqNote.trim()
+    && String(remarkReqComputed).trim() !== ''
+    && String(remarkReqEffective).trim() !== ''
+    && Number.isFinite(proposedComputedNumber)
+    && proposedComputedNumber >= 0
+    && proposedComputedNumber <= 100
+    && Number.isFinite(proposedEffectiveNumber)
+    && proposedEffectiveNumber >= 1
+    && proposedEffectiveNumber <= 5
+    && evidenceReferenceIsValid
   );
 
   return (
@@ -985,7 +1005,7 @@ export default function PostedGradesView() {
               <div>
                 <h4 className="font-bold text-xs sm:text-sm text-slate-800">Class Record Registry &amp; Remark Management</h4>
                 <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  Posted semestral grades are active. Score sheets can be updated and re-posted by faculty anytime. For formal administrative remark overrides (e.g. clearing INC status), submit a Request Remark Change for Dean review.
+                  Posted semestral grades remain official and locked. Submit an exact correction request for Dean review; approval grants one revision, and the student record changes only after faculty reposts the corrected SG.
                 </p>
                 <div className="flex flex-wrap gap-2 mt-2.5 sm:mt-3">
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 border border-emerald-250 text-emerald-700">
@@ -1001,9 +1021,36 @@ export default function PostedGradesView() {
               className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-300 rounded-xl transition-colors shadow-2xs outline-none flex-shrink-0 font-sans cursor-pointer"
             >
               <MessageSquare className="h-3.5 w-3.5" />
-              Request Remark Change
+              Request SG Correction
             </button>
           </div>
+          {activeCorrectionRequests.length > 0 && (
+            <div className="space-y-2 border-t border-slate-200 pt-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Unresolved SG corrections</p>
+              {activeCorrectionRequests.map(request => {
+                const requestStudent = students.find(student => student.id === request.student_id);
+                return (
+                  <div key={request.request_id} className="flex flex-col gap-2 rounded-xl border border-violet-200 bg-violet-50/60 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-[11px] text-slate-700">
+                      <span className="font-bold">{requestStudent?.name || 'Student'}</span>
+                      <span className="mx-1.5 text-slate-400">·</span>
+                      <span className="font-mono">{request.original_computed_grade ?? '—'}% → {request.proposed_computed_grade ?? request.original_computed_grade ?? '—'}%</span>
+                      <span className="mx-1.5 text-slate-400">·</span>
+                      <span className="font-semibold capitalize">{request.status}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCancelCorrection(request)}
+                      disabled={cancellingCorrectionId === request.request_id}
+                      className="rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-rose-700 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                    >
+                      {cancellingCorrectionId === request.request_id ? 'Cancelling…' : 'Cancel Request'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Class Selection & Search Toolbar */}
@@ -1111,9 +1158,7 @@ export default function PostedGradesView() {
 
                   <button
                     onClick={() => {
-                      setRemarkReqStudent(student.name);
-                      setRemarkReqStudentId(student.id);
-                      setRemarkReqFrom(student.customRemarks || 'Passed');
+                      prepareCorrectionRequest(student);
                       setShowRemarkModal(true);
                     }}
                     className="text-violet-600 hover:text-violet-700 font-bold text-[11px] hover:underline cursor-pointer"
@@ -1271,7 +1316,7 @@ export default function PostedGradesView() {
                               showCharacter={gradingPresentation.hasCharacter}
                               viewMode={viewMode}
                               periodsList={periodsList}
-                              lockedMilestones={lockedMilestones}
+                              postedMilestones={lockedMilestones}
                             />
                           ))
                         ) : (
@@ -1303,10 +1348,10 @@ export default function PostedGradesView() {
               <div>
                 <h3 className="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-2 font-display">
                   <MessageSquare className="h-4 w-4 text-violet-600" />
-                  Request Remark Change
+                  Request SG Correction
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Submit to Dean for approval. Grade row will be unlocked only after Dean approves.
+                  Approval grants one revision. The official student SG remains unchanged until faculty applies the approved correction and reposts it.
                 </p>
               </div>
               <button
@@ -1325,8 +1370,11 @@ export default function PostedGradesView() {
                   setRemarkReqStudent(e.target.value);
                   const selected = students.find(s => s.name === e.target.value);
                   if (selected) {
-                    setRemarkReqStudentId(selected.id);
-                    setRemarkReqFrom(selected.customRemarks || 'Passed');
+                    prepareCorrectionRequest(selected);
+                  } else {
+                    setRemarkReqStudentId('');
+                    setRemarkReqComputed('');
+                    setRemarkReqEffective('');
                   }
                 }}
                 className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-semibold outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 bg-white cursor-pointer shadow-2xs"
@@ -1346,10 +1394,55 @@ export default function PostedGradesView() {
                 </div>
               </div>
             )}
+            {remarkReqStudent && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Exact Proposed Remark</label>
+                <select
+                  value={remarkReqTo}
+                  onChange={event => handleProposedRemarkChange(event.target.value)}
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs sm:text-sm font-semibold outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300 bg-white cursor-pointer shadow-2xs"
+                >
+                  {['Passed', 'Failed', 'INC', 'FDA', 'Dropped']
+                    .map(remark => <option key={remark} value={remark}>{remark}</option>)}
+                </select>
+                <p className="text-[9px] text-slate-400">Dean approval applies only to this proposed remark and does not immediately change the official SG.</p>
+              </div>
+            )}
+            {remarkReqStudent && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Exact SG Percentage</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={remarkReqComputed}
+                    onChange={event => setRemarkReqComputed(event.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-mono outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Exact Effective GWA</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="5"
+                    step="0.01"
+                    value={remarkReqEffective}
+                    onChange={event => setRemarkReqEffective(event.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-mono outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300"
+                  />
+                </div>
+                <p className="col-span-2 text-[9px] leading-relaxed text-slate-400">
+                  Enter the exact values expected after the official grading engine recalculates the corrected scores. Reposting is rejected if the result differs from this approved proposal.
+                </p>
+              </div>
+            )}
             {remarkReqTo === 'Passed' && (
               <div className="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2.5 text-xs text-violet-700">
                 <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-violet-500" />
-                <span>Grace Pass: if approved, effective grade will be recorded as <strong>3.00</strong> regardless of computed grade.</span>
+                <span>Grace Pass: when the recalculated GWA is above 3.00, the grading engine caps the approved Passed result at <strong>3.00</strong>.</span>
               </div>
             )}
 
@@ -1368,20 +1461,23 @@ export default function PostedGradesView() {
             {/* Evidence attachment (Capstone Resubmission Policy) */}
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans flex items-center justify-between">
-                <span>Proof / Evidence Attachment</span>
-                <span className="text-[9px] text-slate-400 font-normal">Optional / Medical & Official docs</span>
+                <span>Proof / Evidence URL</span>
+                <span className="text-[9px] text-slate-400 font-normal">Optional / secure link</span>
               </label>
               <div className="flex items-center gap-2 border border-slate-200 rounded-xl p-2.5 bg-slate-50/50">
                 <Paperclip className="h-4 w-4 text-slate-400 flex-shrink-0" />
                 <input
-                  type="text"
-                  value={evidenceFileName}
-                  onChange={e => setEvidenceFileName(e.target.value)}
-                  placeholder="e.g. medical_certificate_jan2026.pdf"
+                  type="url"
+                  value={evidenceReference}
+                  onChange={e => setEvidenceReference(e.target.value)}
+                  placeholder="https://…/supporting-document.pdf"
                   className="w-full text-xs bg-transparent outline-none text-slate-700"
                 />
               </div>
-              <p className="text-[9px] text-slate-400">Attached evidence will be hosted in Cloudflare R2 bucket for Dean review.</p>
+              <p className="text-[9px] text-slate-400">Paste an existing secure document URL. ASPIRE stores the reference for Dean review; this field does not upload a file.</p>
+              {!evidenceReferenceIsValid && (
+                <p className="text-[9px] font-semibold text-rose-600">Use a complete HTTPS URL or leave this field empty.</p>
+              )}
             </div>
 
             {/* Action buttons */}
@@ -1394,12 +1490,12 @@ export default function PostedGradesView() {
               </button>
               <button
                 onClick={handleSubmitRemarkRequest}
-                disabled={!remarkReqStudent || !remarkReqNote.trim() || remarkReqSent}
+                disabled={!isCorrectionProposalValid || remarkReqSent}
                 className={cn(
                   'flex-1 px-4 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 font-sans cursor-pointer shadow-2xs',
                   remarkReqSent
                     ? 'bg-emerald-500 text-white'
-                    : !remarkReqStudent || !remarkReqNote.trim()
+                    : !isCorrectionProposalValid
                       ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                       : 'bg-violet-600 hover:bg-violet-700 text-white shadow-sm'
                 )}

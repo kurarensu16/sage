@@ -410,14 +410,16 @@ export async function notifyOverrideRequested({
 }
 
 /**
- * Notify Faculty and Student when Dean approves a remark override.
+ * Notify Faculty when Dean approves a correction request. Approval grants
+ * revision permission; the student is notified only after faculty reposts.
  */
 export async function notifyOverrideApproved({
   facultyId,
-  studentId = null,
   studentName = 'Student',
   subjectName = 'Subject',
   requestedRemark = 'Passed',
+  proposedComputedGrade = null,
+  proposedEffectiveGrade = null,
   actorName = 'Dean'
 }) {
   try {
@@ -426,14 +428,7 @@ export async function notifyOverrideApproved({
       list.push({
         recipient_id: facultyId,
         type: 'override_approved',
-        message: `Override Request Approved: Your remark override request for ${studentName} in ${subjectName} was approved by ${actorName}. New remark: ${requestedRemark}.`
-      });
-    }
-    if (studentId) {
-      list.push({
-        recipient_id: studentId,
-        type: 'grade_posted',
-        message: `Official Remark Update: Your semestral grade remark for ${subjectName} has been officially updated to ${requestedRemark}.`
+        message: `Correction Request Approved: Your requested revision for ${studentName} in ${subjectName} was approved by ${actorName}. Authorized result: ${proposedComputedGrade ?? 'unchanged'}% / GWA ${proposedEffectiveGrade ?? 'unchanged'} / ${requestedRemark}. Apply the correction and repost the SG before it becomes official.`
       });
     }
     await dispatchNotifications(list);
@@ -461,6 +456,25 @@ export async function notifyOverrideRejected({
     }]);
   } catch (err) {
     console.warn('Error in notifyOverrideRejected:', err);
+  }
+}
+
+/** Notify the reviewing Dean only after an approved SG correction is applied. */
+export async function notifyOverrideApplied({
+  deanId,
+  studentName = 'Student',
+  subjectName = 'Subject',
+  finalRemark = ''
+}) {
+  try {
+    if (!deanId) return;
+    await dispatchNotifications([{
+      recipient_id: deanId,
+      type: 'override_approved',
+      message: `Approved SG Correction Applied: ${studentName}'s corrected semestral grade in ${subjectName} was reposted and relocked${finalRemark ? ` with the remark ${finalRemark}` : ''}.`
+    }]);
+  } catch (err) {
+    console.warn('Error in notifyOverrideApplied:', err);
   }
 }
 

@@ -112,7 +112,9 @@ function sanitizeContext(input: any) {
             ? activity.gradingStatus
             : Number.isFinite(activity?.score) ? (activity.score === 0 ? 'graded_zero' : 'graded') : 'ungraded',
           submissionStatus: text(activity?.submissionStatus, 40) || 'unknown',
-          isReleased: activity?.isReleased === true
+          evidenceStatus: ['pending', 'tentative', 'official'].includes(activity?.evidenceStatus)
+            ? activity.evidenceStatus
+            : Number.isFinite(activity?.score) ? 'tentative' : 'pending'
         }))
         : []
     } : null,
@@ -131,11 +133,14 @@ function sanitizeContext(input: any) {
             term: text(activity?.term, 40),
             score: Number.isFinite(activity?.score) ? activity.score : null,
             maxScore: Number.isFinite(activity?.maxScore) ? activity.maxScore : null,
+            percentage: Number.isFinite(activity?.percentage) ? activity.percentage : null,
             gradingStatus: ['ungraded', 'graded_zero', 'graded'].includes(activity?.gradingStatus)
               ? activity.gradingStatus
               : Number.isFinite(activity?.score) ? (activity.score === 0 ? 'graded_zero' : 'graded') : 'ungraded',
             submissionStatus: text(activity?.submissionStatus, 40) || 'unknown',
-            isReleased: activity?.isReleased === true
+            evidenceStatus: ['pending', 'tentative', 'official'].includes(activity?.evidenceStatus)
+              ? activity.evidenceStatus
+              : Number.isFinite(activity?.score) ? 'tentative' : 'pending'
           }))
           : []
       }))
@@ -225,7 +230,7 @@ Rules:
 2. Never contradict the deterministic advising state, visible evidence, or actions.
 3. Faculty shared academic feedback is approved student-visible context. You may explain it, but must not reinterpret it as a new grade, risk decision, or diagnosis.
 4. Unencoded future terms are missing, not zero. Do not treat them as failures. ALWAYS use the student's ongoing performance (current Class Standing, Exam averages) and grading weights to provide proactive projections and strategic advice on what scores they need on upcoming activities or exams to maintain or achieve a better target grade.
-4a. Released activities marked "ungraded" are known activities with no recorded grade. Include them when summarizing pending academic evidence and suggest confirming their status or preparing/completing them if still required. Do not call them missing submissions, failures, or zero scores unless an explicit submissionStatus confirms that. "graded_zero" is a real recorded zero and must be discussed as a low score, not as an empty field.
+4a. Saved activities marked "ungraded" or with evidenceStatus "pending" are known activities with no recorded grade. Include them when summarizing pending academic evidence and suggest confirming their status or preparing/completing them if still required. Do not call them missing submissions, failures, or zero scores unless an explicit submissionStatus confirms that. "graded_zero" is a real recorded zero and must be discussed as a low score, not as an empty field. Treat evidenceStatus "tentative" as changeable until its milestone is posted.
 5. Absences do not deduct grade points. Four or more absences per subject may support an FDA recommendation, but the faculty instructor makes the official decision.
 6. If the student asks about missing activities or low scores and there are none recorded, explicitly state that there are no recorded missed activities or low scores. Do NOT say "I don't have enough information" for this case.
 7. When context.completeness.isFullyFinalized is false, treat GWA, standing, and President's List eligibility as in-progress — use language like "based on your current performance" or "possible candidate." Never say a partial-term reading "confirms" or "finalizes" anything.

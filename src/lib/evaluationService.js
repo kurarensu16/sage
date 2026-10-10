@@ -26,7 +26,7 @@ export async function getTermEvaluations(classId, term) {
 
 export async function getEvaluationDetails(evaluationId) {
   const { data, error } = await supabase.from('student_risk_evaluations')
-    .select('evaluation_id,evaluation_context,shared_academic_feedback,advising_plan,baseline_snapshot,status,refer_to_dean,private_notes:student_risk_private_notes(note_text,author_id)')
+    .select('evaluation_id,evaluation_context,shared_academic_feedback,advising_plan,baseline_snapshot,status,refer_to_dean,private_notes:student_risk_private_notes(note_text,author_id),referrals:student_evaluation_referrals(reason,state)')
     .eq('evaluation_id', evaluationId).single();
   if (error) throw error;
   return data;

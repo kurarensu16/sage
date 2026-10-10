@@ -6,7 +6,7 @@ import { calculateAcademicRisk, computeTentativeGradeDetails } from './riskEngin
 import { resolveGradingFormula } from './gradingMath';
 import { resolveOfficialGwa } from './academicPolicy';
 import { findMostAdvancedPostedGrade, getCanonicalGradePeriod } from './gradeMilestones';
-import { countPendingReleasedActivities, countRecordedZeroScores, scoreOrNull } from './evaluationTracking';
+import { countPendingActivities, countRecordedZeroScores, scoreOrNull } from './evaluationTracking';
 // Note: riskEngine.js is now the single source of truth for all risk calculations (V4).
 
 /**
@@ -488,7 +488,7 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
 
     const { data: classActivities } = await read(supabase
       .from('class_activities')
-      .select('activity_id, term, name, max_score, component_id, is_released')
+      .select('activity_id, term, name, max_score, component_id')
       .eq('class_record_id', classRecordId));
 
     const activityIds = (classActivities || []).map(activity => activity.activity_id);
@@ -508,8 +508,7 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
         dbId: activity.activity_id,
         name: activity.name,
         max: scoreOrNull(activity.max_score) ?? 0,
-        componentId: activity.component_id || null,
-        isReleased: activity.is_released === true
+        componentId: activity.component_id || null
       });
     });
 
@@ -600,14 +599,14 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
       // Count zero submissions ONLY for activities that are actually configured (max > 0)
       const zeroSubmissionsCount = countRecordedZeroScores(studScores, colsMap,
         classActivities || [], (granularScores || []).filter(score => score.student_id === stud.user_id));
-      const pendingActivityCount = countPendingReleasedActivities(
+      const pendingActivityCount = countPendingActivities(
         classActivities || [],
         (granularScores || []).filter(score => score.student_id === stud.user_id)
       );
       const pendingActivityCounts = Object.fromEntries(
         [...new Set((classActivities || []).map(activity => activity.term).filter(Boolean))].map(term => [
           term,
-          countPendingReleasedActivities(
+          countPendingActivities(
             (classActivities || []).filter(activity => activity.term === term),
             (granularScores || []).filter(score => score.student_id === stud.user_id)
           )

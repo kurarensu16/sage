@@ -22,6 +22,7 @@ import {
   findPostedMilestone,
   getCanonicalGradePeriod
 } from '../../lib/gradeMilestones';
+import { scoreOrNull } from '../../lib/evaluationTracking';
 
 export default function MyGradesDetail() {
   const navigate = useNavigate();
@@ -38,10 +39,10 @@ export default function MyGradesDetail() {
   
   // Dynamic grade data
   const [termData, setTermData] = useState({
-    Prelim: { rating: 0, grade: '—', status: 'Draft', overallPct: 0, components: [], missingScores: [] },
-    Midterm: { rating: 0, grade: '—', status: 'Draft', overallPct: 0, components: [], missingScores: [] },
-    'Semi-Final': { rating: 0, grade: '—', status: 'Draft', overallPct: 0, components: [], missingScores: [] },
-    Final: { rating: 0, grade: '—', status: 'Draft', overallPct: 0, components: [], missingScores: [] }
+    Prelim: { rating: 0, grade: '—', status: 'Pending', overallPct: 0, components: [], missingScores: [] },
+    Midterm: { rating: 0, grade: '—', status: 'Pending', overallPct: 0, components: [], missingScores: [] },
+    'Semi-Final': { rating: 0, grade: '—', status: 'Pending', overallPct: 0, components: [], missingScores: [] },
+    Final: { rating: 0, grade: '—', status: 'Pending', overallPct: 0, components: [], missingScores: [] }
   });
 
   const [finalCalculations, setFinalCalculations] = useState({
@@ -126,6 +127,7 @@ export default function MyGradesDetail() {
         // 4. Fetch dynamic custom activities & individual student scores from Supabase
         let dynamicActivities = [];
         let studentScoresByActivity = {};
+        let studentScoreRecordsByActivity = {};
         try {
           const { data: acts } = await supabase
             .from('class_activities')
@@ -142,7 +144,8 @@ export default function MyGradesDetail() {
               .in('activity_id', acts.map(a => a.activity_id));
 
             (actScores || []).forEach(sc => {
-              studentScoresByActivity[sc.activity_id] = parseFloat(sc.score);
+              studentScoresByActivity[sc.activity_id] = scoreOrNull(sc.score);
+              studentScoreRecordsByActivity[sc.activity_id] = sc;
             });
           }
         } catch (actErr) {
@@ -198,6 +201,10 @@ export default function MyGradesDetail() {
           }
         });
 
+        const postedMr = findPostedMilestone(posted, GRADE_MILESTONES.MIDTERM_RATING);
+        const postedTfr = findPostedMilestone(posted, GRADE_MILESTONES.TENTATIVE_FINAL_RATING);
+        const postedSg = findPostedMilestone(posted, GRADE_MILESTONES.SEMESTRAL_GRADE);
+
         const gradingSnapshot = crInfo?.grading_formula_snapshot
           || posted?.find(row => row.grading_formula_snapshot)?.grading_formula_snapshot
           || null;
@@ -240,6 +247,9 @@ export default function MyGradesDetail() {
           // Check if posted
           const postedRow = postedMap[term];
           const isPosted = !!postedRow;
+          const applicablePostedMilestone = postedSg
+            || (['Prelim', 'Midterm'].includes(term) ? postedMr : postedTfr)
+            || null;
           
           const finalRating = isPosted 
             ? parseFloat(postedRow.computed_grade) 
@@ -262,17 +272,35 @@ export default function MyGradesDetail() {
                 ? termActs.filter(act => act.component_id === component.componentId)
                 : termActs;
               breakdown = matchingActivities.length > 0
-                ? matchingActivities.map(act => ({
-                    name: act.title || act.name || 'Activity',
-                    obtained: studentScoresByActivity[act.activity_id] ?? 0,
-                    max: parseFloat(act.max_score) || 20,
-                    description: act.description || ''
-                  }))
+                ? matchingActivities.map(act => {
+                    const obtained = studentScoresByActivity[act.activity_id] ?? null;
+                    const scoreRecord = studentScoreRecordsByActivity[act.activity_id];
+                    const scoreSavedAt = scoreRecord?.updated_at || scoreRecord?.created_at || null;
+                    const milestonePostedAt = applicablePostedMilestone?.posted_at || null;
+                    const isIncludedInPostedMilestone = Boolean(
+                      applicablePostedMilestone
+                      && (!scoreSavedAt || !milestonePostedAt || new Date(scoreSavedAt) <= new Date(milestonePostedAt))
+                    );
+                    return {
+                      name: act.title || act.name || 'Activity',
+                      obtained,
+                      max: parseFloat(act.max_score) || 20,
+                      description: act.description || '',
+                      scoreStatus: obtained === null
+                        ? 'pending'
+                        : isIncludedInPostedMilestone ? 'official_context' : 'tentative',
+                      isRecordedZero: obtained === 0
+                    };
+                  })
                 : ['act1', 'act2', 'act3', 'act4', 'act5', 'act6'].map((actKey, index) => ({
                     name: `Assessment ${index + 1}`,
-                    obtained: studScores[actKey] ?? 0,
+                    obtained: studScores[actKey] ?? null,
                     max: Number(max[actKey]) || 20,
-                    description: ''
+                    description: '',
+                    scoreStatus: studScores[actKey] === null || studScores[actKey] === undefined
+                      ? 'pending'
+                      : applicablePostedMilestone ? 'official_context' : 'tentative',
+                    isRecordedZero: studScores[actKey] === 0
                   }));
             }
             return {
@@ -281,6 +309,7 @@ export default function MyGradesDetail() {
               obtained: component.earned,
               max: component.possible,
               contribution: component.contribution,
+              hasData: component.hasData,
               breakdown
             };
           });
@@ -324,9 +353,6 @@ export default function MyGradesDetail() {
           final: newTermData['Final']?.rating,
           isSummer
         });
-        const postedMr = findPostedMilestone(posted, GRADE_MILESTONES.MIDTERM_RATING);
-        const postedTfr = findPostedMilestone(posted, GRADE_MILESTONES.TENTATIVE_FINAL_RATING);
-        const postedSg = findPostedMilestone(posted, GRADE_MILESTONES.SEMESTRAL_GRADE);
         const sgValue = postedSg ? Number(postedSg.computed_grade) : calculatedFallback.sg;
         const calcResult = {
           mr: postedMr ? Number(postedMr.computed_grade) : calculatedFallback.mr,
@@ -417,7 +443,7 @@ export default function MyGradesDetail() {
     );
   }
 
-  const activeData = termData[activeTab] || { rating: 0, grade: '—', status: 'Draft', overallPct: 0, components: [], missingScores: [] };
+  const activeData = termData[activeTab] || { rating: 0, grade: '—', status: 'Pending', overallPct: 0, components: [], missingScores: [] };
   const isSummer = classInfo?.sections?.semester === 'Summer' || classInfo?.sections?.semester?.toLowerCase().includes('summer') || classInfo?.semester === 'Summer';
   const periodsList = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
   const subjectCode = classInfo.subjects?.code || '—';
@@ -512,7 +538,9 @@ export default function MyGradesDetail() {
                           </td>
                           <td className="px-4 py-3 text-center text-slate-500 font-mono">{item.weight}%</td>
                           <td className="px-4 py-3 text-right font-mono text-slate-700">
-                            {item.obtained} <span className="text-slate-400 font-normal">/ {item.max}</span>
+                            {item.hasData
+                              ? <>{item.obtained} <span className="text-slate-400 font-normal">/ {item.max}</span></>
+                              : <span className="text-slate-400 font-sans font-semibold">Pending</span>}
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-sage-600 font-bold">
                             {item.contribution.toFixed(2)}%
@@ -544,9 +572,27 @@ export default function MyGradesDetail() {
                                             {act.description ? 'Click to view description' : `${item.name} item`}
                                           </span>
                                         </div>
-                                        <span className="text-sm font-bold font-mono text-slate-850">
-                                          {act.obtained} <span className="text-xs font-normal text-slate-400">/ {act.max}</span>
-                                        </span>
+                                        <div className="flex flex-col items-end gap-1">
+                                          <span className="text-sm font-bold font-mono text-slate-850">
+                                            {act.obtained === null
+                                              ? 'Pending'
+                                              : <>{act.obtained} <span className="text-xs font-normal text-slate-400">/ {act.max}</span></>}
+                                          </span>
+                                          {act.obtained !== null && (
+                                            <span className={cn(
+                                              'rounded-full border px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide',
+                                              act.scoreStatus === 'official_context'
+                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                                : act.isRecordedZero
+                                                  ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                                  : 'border-sage-200 bg-sage-50 text-sage-700'
+                                            )}>
+                                              {act.scoreStatus === 'official_context'
+                                                ? 'Included in posted milestone'
+                                                : act.isRecordedZero ? 'Tentative · Recorded Zero' : 'Tentative'}
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
                                     ))
                                   )}
@@ -685,12 +731,23 @@ export default function MyGradesDetail() {
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Your Score</span>
-                  <span className="text-sm font-extrabold text-slate-900 block mt-0.5">{selectedActivity.obtained}</span>
+                  <span className="text-sm font-extrabold text-slate-900 block mt-0.5">
+                    {selectedActivity.obtained === null ? 'Pending' : selectedActivity.obtained}
+                  </span>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Maximum Points</span>
                   <span className="text-sm font-bold text-slate-500 block mt-0.5">{selectedActivity.max}</span>
                 </div>
+              </div>
+              <div className="rounded-xl border border-sage-200 bg-sage-50 p-3 text-xs text-sage-800">
+                {selectedActivity.obtained === null
+                  ? 'No score has been recorded for this activity yet.'
+                  : selectedActivity.scoreStatus === 'official_context'
+                    ? 'This result was included in a posted grading milestone.'
+                    : selectedActivity.isRecordedZero
+                      ? 'This is a recorded numeric zero. It is tentative until the applicable milestone is posted.'
+                      : 'This saved score is tentative and may change until the applicable milestone is posted.'}
               </div>
             </div>
 

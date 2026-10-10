@@ -8,6 +8,7 @@ import {
   resolveGradingFormula
 } from '../lib/gradingMath';
 import { calculateAcademicRisk } from '../lib/riskEngine';
+import { isTermCoveredByPostedMilestone } from '../lib/gradeMilestones';
 import RiskTierBadge from './faculty/RiskTierBadge';
 import EnrollmentTypeBadge from './common/EnrollmentTypeBadge';
 
@@ -16,7 +17,7 @@ export default function StudentRow({
   rowNo,
   initialPeriods,
   readOnly = false,
-  lockedMilestones = [],
+  postedMilestones = [],
   viewMode = 'All',
   classCode = 'default',
   classRecordId,
@@ -36,7 +37,8 @@ export default function StudentRow({
   },
   gradingFormula,
   showCharacter = true,
-  onSaveStatusChange
+  onSaveStatusChange,
+  onPostedTermEmptyAttempt
 }) {
   const STORAGE_KEY = `sage_scores_${classRecordId || classCode}_${student?.id ?? rowNo}`;
 
@@ -64,6 +66,8 @@ export default function StudentRow({
   const [showNoteInput, setShowNoteInput] = useState(Boolean(scores.remarksNote));
   const debounceRef = useRef(null);
   const isFirstRender = useRef(true);
+  const lastValidScoresRef = useRef(scores);
+  const protectedEmptyCellsRef = useRef(new Set());
 
   // Auto-save effect
   useEffect(() => {
@@ -71,6 +75,14 @@ export default function StudentRow({
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(async () => {
+      // A posted term may be corrected with another numeric value, but clearing
+      // an existing cell must never reach localStorage or Supabase.
+      if (protectedEmptyCellsRef.current.size > 0) {
+        setSaveStatus('idle');
+        onSaveStatusChange?.('idle');
+        return;
+      }
+
       setSaveStatus('saving');
       onSaveStatusChange?.('saving');
       localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
@@ -144,6 +156,7 @@ export default function StudentRow({
         // Also sync dynamic activities to student_activity_scores table if UUIDs exist
         const dynamicScoreUpserts = [];
         const dynamicScoreDeletes = [];
+        const scoreUpdatedAt = new Date().toISOString();
         periods.forEach(term => {
           const tScores = scores[term] || {};
           const tActs = activities[term] || [];
@@ -152,7 +165,12 @@ export default function StudentRow({
             if (actUuid && typeof actUuid === 'string' && actUuid.length > 20) {
               const val = tScores[act.id] !== undefined ? tScores[act.id] : (tScores[actUuid] !== undefined ? tScores[actUuid] : tScores[`act${idx + 1}`]);
               if (val === '' || val === null || val === undefined) dynamicScoreDeletes.push(actUuid);
-              else dynamicScoreUpserts.push({ student_id: student.id, activity_id: actUuid, score: Number(val) });
+              else dynamicScoreUpserts.push({
+                student_id: student.id,
+                activity_id: actUuid,
+                score: Number(val),
+                updated_at: scoreUpdatedAt
+              });
             }
           });
         });
@@ -174,9 +192,10 @@ export default function StudentRow({
         }
 
         setSaveStatus('saved');
+        lastValidScoresRef.current = scores;
         onSaveStatusChange?.('saved');
       } catch (err) {
-        console.error('Failed to sync scores draft:', err);
+        console.error('Failed to sync scores:', err);
         setSaveStatus('idle');
         onSaveStatusChange?.('idle');
       }
@@ -184,13 +203,53 @@ export default function StudentRow({
   }, [scores]);
 
   const handleCellChange = (term, key, val) => {
-    setScores(prev => ({
-      ...prev,
-      [term]: {
-        ...(prev[term] || {}),
-        [key]: val
-      }
-    }));
+    const cellId = `${term}:${key}`;
+    const protectsPostedValue = isTermCoveredByPostedMilestone(term, postedMilestones);
+
+    if (protectsPostedValue && val === '') {
+      protectedEmptyCellsRef.current.add(cellId);
+    } else {
+      protectedEmptyCellsRef.current.delete(cellId);
+    }
+
+    setScores(prev => {
+      const next = {
+        ...prev,
+        [term]: {
+          ...(prev[term] || {}),
+          [key]: val
+        }
+      };
+      if (val !== '') lastValidScoresRef.current = next;
+      return next;
+    });
+  };
+
+  const handleCellBlur = (term, key, label) => {
+    if (!isTermCoveredByPostedMilestone(term, postedMilestones)) return;
+    const currentValue = scores[term]?.[key];
+    if (currentValue !== '' && currentValue !== null && currentValue !== undefined) return;
+
+    const previousValue = lastValidScoresRef.current?.[term]?.[key];
+    const hasPreviousValue = previousValue !== '' && previousValue !== null && previousValue !== undefined;
+    protectedEmptyCellsRef.current.delete(`${term}:${key}`);
+
+    if (hasPreviousValue) {
+      setScores(prev => ({
+        ...prev,
+        [term]: {
+          ...(prev[term] || {}),
+          [key]: previousValue
+        }
+      }));
+    }
+
+    onPostedTermEmptyAttempt?.({
+      term,
+      field: label,
+      studentName: student?.name || 'Student',
+      restored: hasPreviousValue
+    });
   };
 
   const effectiveFormula = gradingFormula || null;
@@ -285,7 +344,7 @@ export default function StudentRow({
   const isSemiFinalCellLocked = isLocked;
   const isFinalCellLocked = isLocked;
 
-  const renderInputCell = (term, key, maxVal, isTermLocked, widthClass = "w-full") => {
+  const renderInputCell = (term, key, maxVal, isTermLocked, widthClass = "w-full", label = key) => {
     const value = scores[term]?.[key] ?? '';
     if (isTermLocked) {
       return <span className="font-mono text-xs">{value === '' ? '—' : value}</span>;
@@ -301,6 +360,10 @@ export default function StudentRow({
           const val = e.target.value === '' ? '' : Math.max(0, Math.min(maxVal, Number(e.target.value)));
           handleCellChange(term, key, val);
         }}
+        onBlur={() => handleCellBlur(term, key, label)}
+        title={isTermCoveredByPostedMilestone(term, postedMilestones)
+          ? 'This term has been posted. Replace the score with another number; it cannot be left empty.'
+          : undefined}
         className={cn(
           widthClass,
           "px-1 py-0.5 text-center font-mono border border-slate-200 rounded focus:border-sage-400 focus:ring-1 focus:ring-sage-400 outline-none text-xs"
@@ -369,7 +432,7 @@ export default function StudentRow({
             const cellLocked = isPrelimCellLocked || !isConfigured;
             return (
               <td key={act.id} className="p-1 border-r border-slate-100 w-12 relative">
-                {renderInputCell('Prelim', act.id, act.max, cellLocked)}
+                {renderInputCell('Prelim', act.id, act.max, cellLocked, 'w-full', act.name || `Activity ${act.id}`)}
                 {!isConfigured && !isPrelimCellLocked && (
                   <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
                     <Lock className="w-2.5 h-2.5 text-slate-400 select-none" />
@@ -380,8 +443,8 @@ export default function StudentRow({
           })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{prelimResult.csTotal ?? '—'}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.csPercent === null ? '—' : prelimResult.csPercent.toFixed(1)}</td>
-          {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Prelim', 'char', 100, isPrelimCellLocked, "w-16")}</td>}
-          <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Prelim', 'exam', maxItems.Prelim?.exam || 40, isPrelimCellLocked)}</td>
+          {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Prelim', 'char', 100, isPrelimCellLocked, "w-16", 'Character')}</td>}
+          <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Prelim', 'exam', maxItems.Prelim?.exam || 40, isPrelimCellLocked, 'w-full', 'Exam')}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{prelimResult.examPercent === null ? '—' : prelimResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-sky-50 border-r border-slate-200 text-sky-850 w-14 text-center">{prelimResult.rating ?? '—'}</td>
         </>
@@ -395,7 +458,7 @@ export default function StudentRow({
             const cellLocked = isMidtermCellLocked || !isConfigured;
             return (
               <td key={act.id} className="p-1 border-r border-slate-100 w-12 relative">
-                {renderInputCell('Midterm', act.id, act.max, cellLocked)}
+                {renderInputCell('Midterm', act.id, act.max, cellLocked, 'w-full', act.name || `Activity ${act.id}`)}
                 {!isConfigured && !isMidtermCellLocked && (
                   <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
                     <Lock className="w-2.5 h-2.5 text-slate-400 select-none" />
@@ -406,8 +469,8 @@ export default function StudentRow({
           })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{midtermResult.csTotal ?? '—'}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.csPercent === null ? '—' : midtermResult.csPercent.toFixed(1)}</td>
-          {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Midterm', 'char', 100, isMidtermCellLocked, "w-16")}</td>}
-          <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Midterm', 'exam', maxItems.Midterm?.exam || 40, isMidtermCellLocked)}</td>
+          {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Midterm', 'char', 100, isMidtermCellLocked, "w-16", 'Character')}</td>}
+          <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Midterm', 'exam', maxItems.Midterm?.exam || 40, isMidtermCellLocked, 'w-full', 'Exam')}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{midtermResult.examPercent === null ? '—' : midtermResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-indigo-50 border-r border-slate-200 text-indigo-800 w-14 text-center">{midtermResult.rating ?? '—'}</td>
         </>
@@ -425,7 +488,7 @@ export default function StudentRow({
             const cellLocked = isSemiFinalCellLocked || !isConfigured;
             return (
               <td key={act.id} className="p-1 border-r border-slate-100 w-12 relative">
-                {renderInputCell('Semi-Final', act.id, act.max, cellLocked)}
+                {renderInputCell('Semi-Final', act.id, act.max, cellLocked, 'w-full', act.name || `Activity ${act.id}`)}
                 {!isConfigured && !isSemiFinalCellLocked && (
                   <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
                     <Lock className="w-2.5 h-2.5 text-slate-400 select-none" />
@@ -436,8 +499,8 @@ export default function StudentRow({
           })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{semiFinalResult.csTotal ?? '—'}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.csPercent === null ? '—' : semiFinalResult.csPercent.toFixed(1)}</td>
-          {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Semi-Final', 'char', 100, isSemiFinalCellLocked, "w-16")}</td>}
-          <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Semi-Final', 'exam', maxItems['Semi-Final']?.exam || 40, isSemiFinalCellLocked)}</td>
+          {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Semi-Final', 'char', 100, isSemiFinalCellLocked, "w-16", 'Character')}</td>}
+          <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Semi-Final', 'exam', maxItems['Semi-Final']?.exam || 40, isSemiFinalCellLocked, 'w-full', 'Exam')}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{semiFinalResult.examPercent === null ? '—' : semiFinalResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-amber-50 border-r border-slate-200 text-amber-800 w-14 text-center">{semiFinalResult.rating ?? '—'}</td>
         </>
@@ -451,7 +514,7 @@ export default function StudentRow({
             const cellLocked = isFinalCellLocked || !isConfigured;
             return (
               <td key={act.id} className="p-1 border-r border-slate-100 w-12 relative">
-                {renderInputCell('Final', act.id, act.max, cellLocked)}
+                {renderInputCell('Final', act.id, act.max, cellLocked, 'w-full', act.name || `Activity ${act.id}`)}
                 {!isConfigured && !isFinalCellLocked && (
                   <div className="absolute inset-0 bg-slate-100/50 flex items-center justify-center pointer-events-none" title="Configure column header first">
                     <Lock className="w-2.5 h-2.5 text-slate-400 select-none" />
@@ -462,8 +525,8 @@ export default function StudentRow({
           })}
           <td className="px-1.5 py-3 font-mono font-semibold bg-slate-50/50 border-r border-slate-100 text-slate-650 w-12">{finalResult.csTotal ?? '—'}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.csPercent === null ? '—' : finalResult.csPercent.toFixed(1)}</td>
-          {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Final', 'char', 100, isFinalCellLocked, "w-16")}</td>}
-          <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Final', 'exam', maxItems.Final?.exam || 40, isFinalCellLocked)}</td>
+          {showCharacter && <td className="p-1 border-r border-slate-100 w-16">{renderInputCell('Final', 'char', 100, isFinalCellLocked, "w-16", 'Character')}</td>}
+          <td className="p-1 border-r border-slate-100 w-14">{renderInputCell('Final', 'exam', maxItems.Final?.exam || 40, isFinalCellLocked, 'w-full', 'Exam')}</td>
           <td className="px-1.5 py-3 font-mono text-[11px] bg-slate-50/50 border-r border-slate-100 text-slate-500 w-12">{finalResult.examPercent === null ? '—' : finalResult.examPercent.toFixed(1)}</td>
           <td className="px-2 py-3 font-mono font-bold bg-orange-50 border-r border-slate-200 text-orange-850 w-14 text-center">{finalResult.rating ?? '—'}</td>
         </>

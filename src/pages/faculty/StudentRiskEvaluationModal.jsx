@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   X, 
   AlertCircle, 
@@ -15,7 +15,10 @@ import { getEvaluationDetails } from '../../lib/evaluationService';
 import { EVALUATION_TERMS } from '../../lib/evaluationTracking';
 import { dispatchNotifications } from '../../lib/notificationDispatcher';
 import { cn } from '../../lib/utils';
-import { generateAdditionalInterventionTask } from '../../lib/interventionDraftService';
+import {
+  generateAdditionalInterventionTask,
+  saveFacultyInterventionWorkingDraft
+} from '../../lib/interventionDraftService';
 
 const latestTaskDeadline = tasks => (tasks || []).map(task => task?.due_date).filter(Boolean).sort().at(-1) || '';
 
@@ -46,13 +49,20 @@ export default function StudentRiskEvaluationModal({
   onEvaluationSaved
 }) {
   const { user } = useAuth();
-
-  const [context, setContext] = useState('academic_intervention');
-
-  const [privateNote, setPrivateNote] = useState('');
-  const [sharedAcademicFeedback, setSharedAcademicFeedback] = useState('');
-  const [tasks, setTasks] = useState(() => Array.isArray(initialDraft?.tasks) && initialDraft.tasks.length === 3
+  const studentId = student?.user_id || student?.id;
+  const restoredWorkingDraft = initialDraft?.working_draft === true ? initialDraft : null;
+  const restoredTasks = Array.isArray(initialDraft?.tasks)
+    && initialDraft.tasks.length >= 1
+    && initialDraft.tasks.length <= 5
     ? initialDraft.tasks
+    : null;
+
+  const [context, setContext] = useState(restoredWorkingDraft?.evaluation_context || 'academic_intervention');
+
+  const [privateNote, setPrivateNote] = useState(restoredWorkingDraft?.private_note || '');
+  const [sharedAcademicFeedback, setSharedAcademicFeedback] = useState(restoredWorkingDraft?.shared_academic_feedback || '');
+  const [tasks, setTasks] = useState(() => restoredTasks
+    ? restoredTasks
     : [{
       task_id: 'task-init-1',
       description: '',
@@ -62,16 +72,26 @@ export default function StudentRiskEvaluationModal({
       completed_at: null,
       source: 'manual'
     }]);
-  const [planDeadline, setPlanDeadline] = useState(() => latestTaskDeadline(initialDraft?.tasks));
-  const [referToDean, setReferToDean] = useState(false);
+  const [planDeadline, setPlanDeadline] = useState(() => restoredWorkingDraft?.plan_deadline || latestTaskDeadline(initialDraft?.tasks));
+  const [referToDean, setReferToDean] = useState(Boolean(restoredWorkingDraft?.refer_to_dean));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(Boolean(student?.evaluation));
   const referralRequest = useRef(crypto.randomUUID());
-  const [referralReason, setReferralReason] = useState('');
+  const [referralReason, setReferralReason] = useState(restoredWorkingDraft?.referral_reason || '');
   const [existingPending, setExistingPending] = useState(Boolean(student?.evaluation?.refer_to_dean));
   const [addingAiTask, setAddingAiTask] = useState(false);
+  const [draftSaveState, setDraftSaveState] = useState('idle');
+  const [draftUpdatedAt, setDraftUpdatedAt] = useState(restoredWorkingDraft?.updated_at || null);
+  const [draftHydrated, setDraftHydrated] = useState(!student?.evaluation?.evaluation_id);
+  const submittedRef = useRef(false);
+  const draftHydratedRef = useRef(draftHydrated);
+  const latestDraftPayloadRef = useRef(null);
+  const latestDraftFingerprintRef = useRef('');
+  const lastSavedDraftFingerprintRef = useRef('');
+  const skipInitialDraftPersistenceRef = useRef(Boolean(student?.evaluation?.evaluation_id || restoredWorkingDraft));
+  const draftSaveQueueRef = useRef(Promise.resolve());
   const minimumPlanDeadline = earliestFutureDate();
 
   // Compute live explainable risk metrics
@@ -81,17 +101,125 @@ export default function StudentRiskEvaluationModal({
     if (!student?.evaluation?.evaluation_id) return;
     getEvaluationDetails(student.evaluation.evaluation_id).then(existing => {
       if (cancelled) return;
-      setContext(existing.evaluation_context);
-      setSharedAcademicFeedback(existing.shared_academic_feedback || '');
+      setContext(restoredWorkingDraft?.evaluation_context || existing.evaluation_context);
+      setSharedAcademicFeedback(restoredWorkingDraft?.shared_academic_feedback ?? existing.shared_academic_feedback ?? '');
       const existingTasks = Array.isArray(existing.advising_plan) ? existing.advising_plan : [];
-      setTasks(existingTasks);
-      setPlanDeadline(latestTaskDeadline(existingTasks));
-      setPrivateNote(existing.private_notes?.find(note => note.author_id === user?.id)?.note_text || '');
+      setTasks(restoredTasks || existingTasks);
+      setPlanDeadline(restoredWorkingDraft?.plan_deadline || latestTaskDeadline(existingTasks));
+      setPrivateNote(restoredWorkingDraft?.private_note ?? existing.private_notes?.find(note => note.author_id === user?.id)?.note_text ?? '');
+      setReferToDean(Boolean(existing.refer_to_dean) || Boolean(restoredWorkingDraft?.refer_to_dean));
+      setReferralReason(restoredWorkingDraft?.referral_reason
+        || existing.referrals?.find(referral => referral.state === 'pending')?.reason
+        || '');
       setExistingPending(Boolean(existing.refer_to_dean));
       setLoadingExisting(false);
+      setDraftHydrated(true);
     }).catch(err => { if (!cancelled) setError(`Unable to load the existing evaluation: ${err.message}. Close and retry.`); });
     return () => { cancelled = true; };
-  }, [student?.evaluation?.evaluation_id, user?.id]);
+  }, [student?.evaluation?.evaluation_id, user?.id, restoredWorkingDraft, restoredTasks]);
+
+  const draftPayload = useMemo(() => ({
+    classRecordId,
+    studentId,
+    term: currentTerm,
+    evaluationContext: context,
+    sharedAcademicFeedback,
+    privateNote,
+    tasks,
+    planDeadline,
+    referToDean,
+    referralReason
+  }), [
+    classRecordId,
+    studentId,
+    currentTerm,
+    context,
+    sharedAcademicFeedback,
+    privateNote,
+    tasks,
+    planDeadline,
+    referToDean,
+    referralReason
+  ]);
+
+  const queueDraftSave = useCallback((payload) => {
+    const queued = draftSaveQueueRef.current
+      .catch(() => undefined)
+      .then(() => saveFacultyInterventionWorkingDraft(payload));
+    draftSaveQueueRef.current = queued;
+    return queued;
+  }, []);
+
+  useEffect(() => {
+    draftHydratedRef.current = draftHydrated;
+    latestDraftPayloadRef.current = draftPayload;
+    latestDraftFingerprintRef.current = JSON.stringify(draftPayload);
+  }, [draftHydrated, draftPayload]);
+
+  useEffect(() => {
+    if (!draftHydrated || submittedRef.current || !isOpen || !classRecordId || !studentId
+      || !EVALUATION_TERMS.includes(currentTerm) || tasks.length < 1 || tasks.length > 5) return undefined;
+
+    const fingerprint = JSON.stringify(draftPayload);
+    if (skipInitialDraftPersistenceRef.current) {
+      skipInitialDraftPersistenceRef.current = false;
+      lastSavedDraftFingerprintRef.current = fingerprint;
+      return undefined;
+    }
+    if (fingerprint === lastSavedDraftFingerprintRef.current) return undefined;
+
+    setDraftSaveState('pending');
+    const timer = window.setTimeout(async () => {
+      setDraftSaveState('saving');
+      try {
+        const saved = await queueDraftSave(draftPayload);
+        if (!submittedRef.current) {
+          lastSavedDraftFingerprintRef.current = fingerprint;
+          setDraftUpdatedAt(saved?.updated_at || new Date().toISOString());
+          setDraftSaveState('saved');
+        }
+      } catch (saveError) {
+        console.error('Unable to autosave the intervention working draft:', saveError);
+        if (!submittedRef.current) setDraftSaveState('error');
+      }
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [draftHydrated, draftPayload, isOpen, classRecordId, studentId, currentTerm, tasks.length, queueDraftSave]);
+
+  useEffect(() => () => {
+    if (!submittedRef.current
+      && draftHydratedRef.current
+      && latestDraftPayloadRef.current
+      && latestDraftFingerprintRef.current !== lastSavedDraftFingerprintRef.current) {
+      void queueDraftSave(latestDraftPayloadRef.current).catch(saveError => {
+        console.error('Unable to persist the intervention draft while leaving the page:', saveError);
+      });
+    }
+  }, [queueDraftSave]);
+
+  const handleClose = async () => {
+    if (saving || addingAiTask) return;
+    if (!draftHydrated || !latestDraftPayloadRef.current) {
+      onClose();
+      return;
+    }
+    if (latestDraftFingerprintRef.current === lastSavedDraftFingerprintRef.current) {
+      onClose();
+      return;
+    }
+    setDraftSaveState('saving');
+    try {
+      const saved = await queueDraftSave(latestDraftPayloadRef.current);
+      lastSavedDraftFingerprintRef.current = latestDraftFingerprintRef.current;
+      setDraftUpdatedAt(saved?.updated_at || new Date().toISOString());
+      setDraftSaveState('saved');
+      onClose();
+    } catch (saveError) {
+      console.error('Unable to save the intervention draft before closing:', saveError);
+      setDraftSaveState('error');
+      setError('The working draft could not be saved. Keep this window open and retry before leaving.');
+    }
+  };
 
   if (!isOpen || !student) return null;
 
@@ -195,11 +323,17 @@ export default function StudentRiskEvaluationModal({
     if (saving) return;
     setSaving(true);
     setError(null);
+    submittedRef.current = true;
 
     const validTasks = tasks.filter(t => typeof t.description === 'string' && t.description.trim().length > 0)
       .map(task => ({ ...task, description: task.description.trim(), due_date: planDeadline }));
 
     try {
+      // Flush the latest faculty-authored working state first. The database
+      // submission trigger links this exact draft to the official evaluation
+      // in the same transaction that publishes the evaluation.
+      await queueDraftSave(draftPayload);
+
       const baselineSnapshot = {
         captured_at: new Date().toISOString(),
         term: currentTerm,
@@ -256,6 +390,7 @@ export default function StudentRiskEvaluationModal({
       onClose();
     } catch (err) {
       console.error('Failed to submit risk evaluation:', err);
+      submittedRef.current = false;
       setError(err.message || 'Failed to save evaluation. Please check your network and try again.');
     } finally {
       setSaving(false);
@@ -277,12 +412,27 @@ export default function StudentRiskEvaluationModal({
               {student.first_name} {student.last_name} {student.student_id_number ? `(${student.student_id_number})` : ''} • {subjectCode} {subjectName ? `— ${subjectName}` : ''}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <span className={cn(
+              'text-[10px] font-semibold',
+              draftSaveState === 'error' ? 'text-rose-600' : 'text-sage-600'
+            )}>
+              {draftSaveState === 'saving' || draftSaveState === 'pending'
+                ? 'Saving draft…'
+                : draftSaveState === 'error'
+                  ? 'Draft not saved'
+                  : draftUpdatedAt
+                    ? 'Draft saved'
+                    : 'Faculty-only draft'}
+            </span>
+            <button
+              onClick={handleClose}
+              disabled={draftSaveState === 'saving'}
+              className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Form Content */}
@@ -413,10 +563,14 @@ export default function StudentRiskEvaluationModal({
 
           {/* Actionable Tasks Checklist Builder */}
           <div className="space-y-2">
-            {initialDraft && !student?.evaluation && <div className="rounded-lg border border-sage-200 bg-sage-50 p-3">
+            {initialDraft && !initialDraft.working_draft && !student?.evaluation && <div className="rounded-lg border border-sage-200 bg-sage-50 p-3">
               <p className="text-[11px] font-bold uppercase tracking-wider text-sage-700">AI draft — faculty review required</p>
               <p className="mt-1 text-xs text-sage-700">{initialDraft.summary}</p>
               <p className="mt-2 text-[10px] text-sage-500">Edit, delete, or add tasks as needed. Nothing is published to the student until you confirm submission.</p>
+            </div>}
+            {initialDraft?.working_draft && <div className="rounded-lg border border-sage-200 bg-sage-50 p-3">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-sage-700">Restored faculty-only working draft</p>
+              <p className="mt-1 text-xs text-sage-700">Your saved edits, task order, guidance, notes, deadline, and referral choice were restored. Nothing is published until official submission.</p>
             </div>}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
@@ -516,10 +670,11 @@ export default function StudentRiskEvaluationModal({
           <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
+              disabled={draftSaveState === 'saving'}
               className="px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-md transition-colors cursor-pointer"
             >
-              Cancel
+              Save &amp; Close
             </button>
             <button
               type="submit"

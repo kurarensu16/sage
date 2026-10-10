@@ -17,30 +17,35 @@ import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { DashboardSkeleton } from '../../components/common/Skeleton';
 import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
 import { computeStudentGwa, getGwaBand, resolveOfficialGwa } from '../../lib/academicPolicy';
+import { isStudentVisibleEvaluation } from '../../lib/evaluationTracking';
+import {
+  buildStudentInsightEvidence,
+  createInsightEvidenceFingerprint,
+} from '../../lib/insightFreshness';
 
 // Helper to check pending advising tasks
 const checkPendingAdvisingTasks = async (studentId) => {
   try {
     const { data: evals } = await supabase
       .from('student_risk_evaluations')
-      .select('evaluation_id, advising_plan, evaluation_context, shared_academic_feedback, status, created_at')
+      .select('evaluation_id, advising_plan, evaluation_context, shared_academic_feedback, status, published_to_student_at, created_at')
       .eq('student_id', studentId)
+      .in('status', ['submitted', 'acknowledged_by_student'])
+      .not('published_to_student_at', 'is', null)
       .order('created_at', { ascending: false });
 
-    if (!evals || evals.length === 0) return { pendingCount: 0, latestPlan: null };
+    const visibleEvaluations = (evals || []).filter(isStudentVisibleEvaluation);
+    if (visibleEvaluations.length === 0) return { pendingCount: 0, latestPlan: null };
 
     let pendingCount = 0;
-    evals.forEach(ev => {
-      // Published plans contain active actionable tasks for the student
-      if (ev.status !== 'draft') {
-        const items = Array.isArray(ev.advising_plan) ? ev.advising_plan : [];
-        pendingCount += items.filter(item => !item.completed).length;
-      }
+    visibleEvaluations.forEach(ev => {
+      const items = Array.isArray(ev.advising_plan) ? ev.advising_plan : [];
+      pendingCount += items.filter(item => !item.completed).length;
     });
 
     return {
       pendingCount,
-      latestPlan: evals[0]
+      latestPlan: visibleEvaluations[0]
     };
   } catch {
     return { pendingCount: 0, latestPlan: null };
@@ -75,8 +80,10 @@ export default function Dashboard() {
         setGwaStanding(cached.gwaStanding);
         setPendingAdvisingCount(cached.pendingAdvisingCount || 0);
         setLatestAdvisingPlan(cached.latestAdvisingPlan || null);
-        setInsightVerdict(cached.insightVerdict);
-        setInsightSummary(cached.insightSummary);
+        // Cached academic facts may render immediately, but AI text is withheld
+        // until its evidence fingerprint is revalidated against current records.
+        setInsightVerdict('Checking');
+        setInsightSummary('Validating the latest academic evidence...');
         setLoading(false);
       }
 
@@ -184,20 +191,101 @@ export default function Dashboard() {
         setPendingAdvisingCount(resolvedPendingCount);
         setLatestAdvisingPlan(resolvedLatestPlan);
 
-        // 9. Academic Insights
-        const { data: insightData } = await supabase
-          .from('student_academic_insights')
-          .select('*')
-          .eq('student_id', user.id)
-          .order('generated_at', { ascending: false })
-          .limit(1);
+        // 9. Academic Insights — reuse generated text only when all evidence still matches.
+        const classRecordIds = activeEnrolled.map(item => item.class_record_id).filter(Boolean);
+        const queryClassRecordIds = classRecordIds.length > 0
+          ? classRecordIds
+          : ['00000000-0000-0000-0000-000000000000'];
+        const currentPostedGrades = (posted || []).filter(item => classRecordIds.includes(item.class_record_id));
+
+        const [
+          { data: insightActivities },
+          { data: insightAttendance },
+          { data: insightTermScores },
+          { data: insightGradingColumns },
+          { data: insightEvaluations },
+          { data: insightData },
+        ] = await Promise.all([
+          supabase
+            .from('class_activities')
+            .select('*')
+            .in('class_record_id', queryClassRecordIds),
+          supabase
+            .from('attendance_records')
+            .select('*')
+            .eq('student_id', user.id),
+          supabase
+            .from('student_term_scores')
+            .select('*')
+            .eq('student_id', user.id)
+            .in('class_record_id', queryClassRecordIds),
+          supabase
+            .from('class_grading_columns')
+            .select('*')
+            .in('class_record_id', queryClassRecordIds),
+          supabase
+            .from('student_risk_evaluations')
+            .select(`
+              evaluation_id,
+              class_record_id,
+              student_id,
+              faculty_id,
+              term,
+              evaluation_context,
+              shared_academic_feedback,
+              advising_plan,
+              baseline_snapshot,
+              followup_snapshot,
+              refer_to_dean,
+              requires_tutoring,
+              status,
+              published_to_student_at,
+              created_at,
+              updated_at
+            `)
+            .eq('student_id', user.id)
+            .in('class_record_id', queryClassRecordIds)
+            .in('status', ['submitted', 'acknowledged_by_student'])
+            .not('published_to_student_at', 'is', null),
+          supabase
+            .from('student_academic_insights')
+            .select('*')
+            .eq('student_id', user.id)
+            .order('generated_at', { ascending: false })
+            .limit(1),
+        ]);
+
+        const insightActivityIds = (insightActivities || []).map(item => item.activity_id);
+        const { data: insightActivityScores } = insightActivityIds.length > 0
+          ? await supabase
+              .from('student_activity_scores')
+              .select('*')
+              .eq('student_id', user.id)
+              .in('activity_id', insightActivityIds)
+          : { data: [] };
+
+        const visibleInsightEvaluations = (insightEvaluations || []).filter(isStudentVisibleEvaluation);
+        const currentEvidenceFingerprint = createInsightEvidenceFingerprint(buildStudentInsightEvidence({
+          postedGrades: currentPostedGrades,
+          attendance: insightAttendance || [],
+          activities: insightActivities || [],
+          activityScores: insightActivityScores || [],
+          termScores: insightTermScores || [],
+          gradingColumns: insightGradingColumns || [],
+          evaluations: visibleInsightEvaluations,
+        }));
 
         let resolvedVerdict = 'Normal';
         let resolvedSummary = 'No academic risk flags detected. Keep up the good work!';
         if (insightData && insightData.length > 0) {
           const latest = insightData[0];
-          resolvedVerdict = latest.verdict === 'continue' ? 'Safe' : latest.verdict === 'at_risk' ? 'Struggling' : 'At Risk';
-          resolvedSummary = latest.summary;
+          const isCurrent = latest.basis_snapshot?.evidenceFingerprint === currentEvidenceFingerprint;
+          resolvedVerdict = isCurrent
+            ? latest.verdict === 'continue' ? 'Safe' : latest.verdict === 'at_risk' ? 'Struggling' : 'At Risk'
+            : 'Update needed';
+          resolvedSummary = isCurrent
+            ? latest.summary
+            : 'Academic evidence changed after the previous explanation. Open the Academic Advisor to generate a current insight.';
           setInsightVerdict(resolvedVerdict);
           setInsightSummary(resolvedSummary);
         } else {
