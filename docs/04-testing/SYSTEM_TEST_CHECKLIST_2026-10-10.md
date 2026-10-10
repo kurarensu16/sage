@@ -17,12 +17,13 @@
 - [ ] Confirm every migration up to `20261008180000_grading_authorization_hardening.sql` is applied to the target Supabase project. Check in the Supabase dashboard, SQL editor, or migration history.
 - [x] Apply `20261010120000_intervention_followup_and_task_verification.sql`. Applied 2026-10-10.
 - [x] Apply `20261010130000_profile_contact_and_photo.sql`. Applied 2026-10-10; it creates the private `avatars` storage bucket and its owner-only policies.
-- [ ] Apply `20261010140000_followup_requires_task_review.sql`. It redefines `record_intervention_followup` so a follow-up cannot be recorded while a reported task is unreviewed.
+- [x] Apply `20261010140000_followup_requires_task_review.sql`. Applied 2026-10-10; it redefines `record_intervention_followup` so a follow-up cannot be recorded while a reported task is unreviewed.
 - [x] Confirm the new functions exist (verified 2026-10-10): `acknowledge_student_evaluation`, `verify_intervention_task`, `record_intervention_followup`, `update_own_contact_number`, and `set_own_avatar_path`.
 - [x] Confirm the new columns exist (verified 2026-10-10):
   - `student_risk_evaluations.acknowledged_at`, `followup_recorded_at`, `followup_recorded_by`
   - `users.contact_number`, `users.avatar_path`
 - [x] Confirm the `avatars` bucket exists, is **private**, has a 2 MB limit, and allows JPG/PNG/WebP only. Verified 2026-10-10: `public=false`, `limit=2097152`, `image/jpeg,png,webp`.
+- [x] Evaluation data reset for a clean QA run (2026-10-10). Removed 4 legacy evaluations (all created before the 2026-10-10 update; none acknowledged), with their 4 private notes and 2 Dean referrals, plus 13 AI intervention drafts; working drafts were already empty. Post-reset counts were 0 for `student_risk_evaluations`, `student_risk_private_notes`, `student_evaluation_referrals`, `student_evaluation_referral_requests`, `faculty_intervention_working_drafts`, and `faculty_intervention_drafts`. Grades, scores, attendance, posted milestones, users, classes, and old notifications were not touched.
 
 ### 0.2 Team execution rules (from the remediation checklist)
 
@@ -243,7 +244,7 @@
 - [ ] FU-10 Repeat FU-01 to FU-04 for a summer class, using the Midterm or Final milestone.
 - [ ] FU-15 Unreviewed tasks block the follow-up: with a milestone posted and a task the student reported but the faculty has not verified or returned, the button reads **Review reported tasks first** and is disabled. After verifying or returning that task, it becomes **Record follow-up**. Tasks the student never reported do not block it.
 - [ ] FU-16 Database check: calling `record_intervention_followup` while a reported task is unreviewed fails with "Review every task the student reported (verify or return it) before recording the follow-up…".
-- [ ] FU-17 Legacy record (e.g., Caleb Tolentino · ITP113 · Midterm, closed before this fix): the student sees the unreviewed task as "Not verified before the plan closed". The record itself is unchanged.
+- [ ] FU-17 **N/A for this run:** the legacy record it needed (Caleb Tolentino · ITP113 · Midterm) was removed by the 2026-10-10 evaluation data reset (§0.1). FU-15 and FU-16 now prevent new records from reaching this state. *(Original case: the student sees the unreviewed task of a plan closed before this fix as "Not verified before the plan closed".)*
 - [ ] FU-11 Re-evaluation, same term (closed): on **Evaluate Students**, select the term whose follow-up was recorded. That student's button reads **Closed** (disabled), the line below reads "Follow-up recorded · evaluate again in a later term", and hovering explains why.
 - [ ] FU-12 Re-evaluation note: on **Evaluated Students**, the closed case reads "Closed for {term}. If the student still needs support, evaluate again in a later grading term." The link opens Evaluate Students. Both pages' help notes include a **Re-evaluation** entry.
 - [ ] FU-13 Re-evaluation, later term: select the next grading term (e.g., Semi-Final) for the same class. The student shows **Evaluate** (or appears in Needs evaluation if Moderate or higher). Publish it; the new case has its own baseline (the current standing), and the earlier closed case remains unchanged in history.
