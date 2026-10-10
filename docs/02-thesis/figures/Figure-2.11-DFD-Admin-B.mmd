@@ -1,0 +1,34 @@
+flowchart LR
+%% ===== Figure 2.11 — Level 1 DFD: Admin Portal — column B (processes 7.0–12.0), revised 2026-10-10 =====
+%% Two-column layout (see compose_columns.py); content unchanged from the single-column version.
+
+  %% ---------- 7.0 ----------
+  E7["Admin"] <-- "structure data, section CSV/Excel /<br/>directory" --> P7(("7.0<br/>Manage Academic<br/>Structure"))
+  P7 <-- "colleges" --> D2g@{ shape: lin-rect, label: "D2&nbsp; departments" }
+  P7 <-- "programs" --> D26g@{ shape: lin-rect, label: "D26&nbsp; programs" }
+  P7 <-- "section shells" --> D3g@{ shape: lin-rect, label: "D3&nbsp; sections" }
+
+  %% ---------- 8.0 ----------
+  E8["Admin"] <-- "classroom assignments / classroom list" --> P8(("8.0<br/>Provision<br/>Classrooms"))
+  P8 <-- "classroom instances" --> D7h@{ shape: lin-rect, label: "D7&nbsp; class_records" }
+  P8 <-- "section" --> D3h@{ shape: lin-rect, label: "D3&nbsp; sections" }
+  P8 <-- "subject" --> D5h@{ shape: lin-rect, label: "D5&nbsp; subjects" }
+
+  %% ---------- 9.0 ----------
+  E9["Admin"] <-- "term settings / active term" --> P9(("9.0<br/>Configure Term<br/>Settings"))
+  P9 <-- "school year, semester" --> D4i@{ shape: lin-rect, label: "D4&nbsp; academic_terms" }
+
+  %% ---------- 10.0 ----------
+  E10["Admin"] <-- "authorized override / override result" --> P10(("10.0<br/>Apply Grade<br/>Override"))
+  P10 -- "overridden effective grade" --> D12j@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P10 -- "audit entry" --> D25j@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+
+  %% ---------- 11.0 ----------
+  E11["Admin"] <-- "filters / audit entries" --> P11(("11.0<br/>View Activity<br/>Logs"))
+  P11 <-- "immutable ledger" --> D25k@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+
+  %% ---------- 12.0 ----------
+  E12["Admin"] <-- "photo, contact number,<br/>password, alert choices / profile" --> P12(("12.0<br/>Manage<br/>Account"))
+  P12 <-- "contact number, photo reference" --> D1l@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P12 <-- "profile photo file" --> D30l@{ shape: lin-rect, label: "D30&nbsp; avatars (private storage)" }
+  P12 <-- "device alert choices" --> D29l@{ shape: lin-rect, label: "D29&nbsp; notification_preferences" }

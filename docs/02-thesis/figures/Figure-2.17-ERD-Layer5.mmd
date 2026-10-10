@@ -1,0 +1,9 @@
+erDiagram
+%% ===== Figure 2.17 — ERD Layer 5: System & Notifications (updated 2026-10-10) =====
+%% Adds NOTIFICATION_DELIVERIES, NOTIFICATION_PREFERENCES, USER_PUSH_TOKENS, GUARDIANS.
+    USERS ||--o{ NOTIFICATIONS : "receives"
+    NOTIFICATIONS ||--o{ NOTIFICATION_DELIVERIES : "delivered via"
+    USERS ||--o{ NOTIFICATION_PREFERENCES : "sets device / email choices"
+    USERS ||--o{ USER_PUSH_TOKENS : "registers device"
+    USERS ||--o{ GUARDIANS : "student guardian"
+    ACTIVITY_LOGS

@@ -1,17 +1,46 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, ChevronDown, ChevronUp, RefreshCw, Send, X } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronUp, ClipboardCheck, RefreshCw, RotateCcw, Send, X } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import { useAuth } from '../../lib/AuthContext';
-import { CASE_PAGE_SIZE, getEvaluatedCases, getEvaluationClasses, getReferralHistory, referEvaluation } from '../../lib/evaluationService';
-import { getTermsForPeriod, referralEligibility, taskState } from '../../lib/evaluationTracking';
+import {
+  CASE_PAGE_SIZE, buildFollowupSnapshot, getEvaluatedCases, getEvaluationClasses, getReferralHistory,
+  recordInterventionFollowup, referEvaluation, verifyInterventionTask
+} from '../../lib/evaluationService';
+import {
+  FOLLOWUP_MILESTONE_LABELS, countTaskProgress, getTermsForPeriod, isAcknowledged, referralEligibility,
+  summarizeInterventionOutcome, taskState, taskVerification
+} from '../../lib/evaluationTracking';
+import { getRiskDisplay } from '../../lib/academicPolicy';
 import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 
 const field = 'rounded-lg border border-sage-200 bg-sage-50 px-3 py-2 text-sm text-sage-900 focus:ring-2 focus:ring-sage-400';
 const action = 'rounded-lg border border-sage-200 px-3 py-2 text-sm font-semibold text-sage-700 hover:bg-sage-100 disabled:opacity-50';
+const smallAction = 'rounded-lg border border-sage-200 px-2.5 py-1 text-xs font-semibold text-sage-700 hover:bg-sage-100 disabled:opacity-50';
 const dateText = value => value ? new Date(value).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : 'Unknown';
 const gradeText = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
   ? Number(value).toFixed(2) : 'Pending';
+const tierText = level => level ? getRiskDisplay(level).label : '—';
+const EMPTY_RESULT = { cases: [], count: 0, standings: {}, followupMilestones: {} };
+
+function managementBlock(item, facultyId, history) {
+  if (history || item.class_record?.faculty_id !== facultyId) return 'History is read-only';
+  if (item.class_record?.status !== 'active') return 'Class is inactive';
+  if (!['submitted', 'acknowledged_by_student'].includes(item.status) || !item.published_to_student_at) return 'Publish the evaluation first';
+  return '';
+}
+
+function followupBlock(item, facultyId, history, milestone, standing) {
+  if (item.followup_snapshot) return 'Follow-up recorded';
+  const blocked = managementBlock(item, facultyId, history);
+  if (blocked) return blocked;
+  if (!milestone) return 'Available after the next MR, TFR, or SG is posted';
+  if (!standing) return 'Current standing unavailable';
+  // Mirrors record_intervention_followup: reported tasks must be verified or returned first.
+  const { reported, verified } = countTaskProgress(item.advising_plan);
+  if (reported > verified) return 'Review reported tasks first';
+  return '';
+}
 
 export default function EvaluatedStudents() {
   const { user } = useAuth();
@@ -21,7 +50,7 @@ export default function EvaluatedStudents() {
 function Tracker({ facultyId }) {
   const [params, setParams] = useSearchParams();
   const [metadata, setMetadata] = useState(null);
-  const [result, setResult] = useState({ cases: [], count: 0, standings: {} });
+  const [result, setResult] = useState(EMPTY_RESULT);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -31,8 +60,14 @@ function Tracker({ facultyId }) {
   const [reason, setReason] = useState('');
   const [referralError, setReferralError] = useState('');
   const [sending, setSending] = useState(false);
+  const [taskBusy, setTaskBusy] = useState('');
+  const [taskErrors, setTaskErrors] = useState({});
+  const [returnDraft, setReturnDraft] = useState(null);
+  const [followupCase, setFollowupCase] = useState(null);
+  const [followupError, setFollowupError] = useState('');
+  const [recording, setRecording] = useState(false);
   const requestId = useRef(null);
-  const referralTrigger = useRef(null);
+  const dialogTrigger = useRef(null);
   const [refresh, setRefresh] = useState(0);
   const [searchText, setSearchText] = useState(params.get('search') || '');
   const queryKey = params.toString();
@@ -42,7 +77,7 @@ function Tracker({ facultyId }) {
     referral: params.get('referral') || '', search: params.get('search') || '',
     page: Math.max(0, Number.parseInt(params.get('page') || '0', 10) || 0)
   };
-  
+
   const allowedClasses = metadata?.classes.filter(item => filters.history || item.status === 'active') || [];
   const selectedPeriod = metadata?.periods.find(item => item.term_id === filters.periodId);
   const termOptions = getTermsForPeriod(selectedPeriod?.semester);
@@ -59,16 +94,29 @@ function Tracker({ facultyId }) {
   function closeReferral() {
     if (sending) return;
     setReferralCase(null);
-    referralTrigger.current?.focus();
+    dialogTrigger.current?.focus();
   }
 
-  function dialogKeys(event) {
-    if (event.key === 'Escape') { event.preventDefault(); closeReferral(); }
+  function closeFollowup() {
+    if (recording) return;
+    setFollowupCase(null);
+    dialogTrigger.current?.focus();
+  }
+
+  function dialogKeys(event, onClose) {
+    if (event.key === 'Escape') { event.preventDefault(); onClose(); }
     if (event.key !== 'Tab') return;
     const controls = event.currentTarget.querySelectorAll('button:not(:disabled), textarea:not(:disabled)');
     const first = controls[0], last = controls[controls.length - 1];
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
     if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  }
+
+  function updateCase(evaluationId, changes) {
+    setResult(previous => ({
+      ...previous,
+      cases: previous.cases.map(item => item.evaluation_id === evaluationId ? { ...item, ...changes } : item)
+    }));
   }
 
   useEffect(() => {
@@ -88,7 +136,7 @@ function Tracker({ facultyId }) {
     getEvaluatedCases({ ...filters, periodId: period, facultyId,
       classIds: allowedClasses.map(item => item.class_record_id) }).then(data => {
       if (!cancelled) { setResult(data); setLoading(false); }
-    }).catch(err => { if (!cancelled) { setError(err.message); setResult({ cases: [], count: 0, standings: {} }); setLoading(false); } });
+    }).catch(err => { if (!cancelled) { setError(err.message); setResult(EMPTY_RESULT); setLoading(false); } });
     return () => { cancelled = true; };
     // queryKey includes every server filter, including pagination.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,17 +173,61 @@ function Tracker({ facultyId }) {
         : saved.referral.legacy ? 'The existing legacy referral is pending. No duplicate notification was sent.'
           : 'Referral saved in-app for the responsible Dean. External delivery follows the notification pipeline.');
       setReferralCase(null);
-      referralTrigger.current?.focus();
+      dialogTrigger.current?.focus();
       setRefresh(value => value + 1);
     } catch (err) { setReferralError(err.message || 'Referral could not be saved. Retry with the same request.'); }
     finally { setSending(false); }
   }
 
+  async function decideTask(item, task, verified, note = null) {
+    const key = `${item.evaluation_id}:${task.task_id}`;
+    if (taskBusy) return;
+    setTaskBusy(key);
+    setTaskErrors(previous => ({ ...previous, [item.evaluation_id]: '' }));
+    try {
+      const plan = await verifyInterventionTask(item.evaluation_id, task.task_id, verified, note);
+      updateCase(item.evaluation_id, { advising_plan: plan });
+      setReturnDraft(null);
+      setNotice(verified ? 'Task verified. It now counts toward the verified completion rate.'
+        : 'Task returned to the student with your note.');
+    } catch (err) {
+      setTaskErrors(previous => ({ ...previous, [item.evaluation_id]: err.message || 'The task decision could not be saved.' }));
+    } finally {
+      setTaskBusy('');
+    }
+  }
+
+  async function submitFollowup(event) {
+    event.preventDefault();
+    const standing = followupCase && result.standings[followupCase.class_record_id]?.[followupCase.student_id];
+    if (recording || !followupCase || !standing) return;
+    setRecording(true);
+    setFollowupError('');
+    try {
+      const saved = await recordInterventionFollowup(followupCase.evaluation_id, buildFollowupSnapshot(standing));
+      updateCase(saved.evaluation_id, {
+        followup_snapshot: saved.followup_snapshot,
+        followup_recorded_at: saved.followup_recorded_at
+      });
+      setNotice('Follow-up recorded. This intervention record is now closed and its outcome appears in the Dean\'s Intervention Results.');
+      setFollowupCase(null);
+      dialogTrigger.current?.focus();
+    } catch (err) {
+      setFollowupError(err.message || 'The follow-up could not be recorded.');
+    } finally {
+      setRecording(false);
+    }
+  }
+
+  const followupStanding = followupCase ? result.standings[followupCase.class_record_id]?.[followupCase.student_id] : null;
+  const followupProgress = followupCase ? countTaskProgress(followupCase.advising_plan) : null;
+  const followupMilestone = followupCase ? result.followupMilestones?.[followupCase.evaluation_id] : null;
+
   return <>
     <PageHeader title="Evaluated Students" breadcrumb="Faculty Portal" />
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-sage-900">
       <div className="flex flex-wrap justify-between gap-3">
-        <p className="text-sm">Track each evaluation by subject and term. Task completion is reported by the student.</p>
+        <p className="text-sm">Track each evaluation by subject and term. Students report task completion; you verify or return each reported task and record the follow-up after the next posted milestone.</p>
         <Link className={action} to={`/faculty/evaluatestudent?${new URLSearchParams({ class: filters.classId, term: filters.term })}`}>Evaluate Students</Link>
       </div>
       <RiskEducationNote variant="evaluationHistory" />
@@ -153,23 +245,64 @@ function Tracker({ facultyId }) {
       {loading ? <p role="status">Loading evaluations and current subject standings…</p> : !result.cases.length ? <p className="p-6 rounded-xl border border-sage-200">No evaluations match these filters.</p> : result.cases.map(item => {
         const tasks = Array.isArray(item.advising_plan) ? item.advising_plan : [];
         const planDeadline = tasks.map(task => task.due_date).filter(Boolean).sort().at(-1) || null;
-        const complete = tasks.filter(task => task.completed === true).length;
+        const progress = countTaskProgress(tasks);
+        const awaiting = progress.reported - progress.verified;
         const standing = result.standings[item.class_record_id]?.[item.student_id];
+        const milestone = result.followupMilestones?.[item.evaluation_id] || null;
+        const summary = summarizeInterventionOutcome(item, milestone);
         const unavailable = referralEligibility(item, item.class_record, facultyId, filters.history);
+        const manageBlocked = managementBlock(item, facultyId, filters.history) || (item.followup_snapshot ? 'Follow-up recorded' : '');
+        const followupBlocked = followupBlock(item, facultyId, filters.history, milestone, standing);
         const open = expanded === item.evaluation_id;
         const history = historyDetails[item.evaluation_id];
         return <article key={item.evaluation_id} className="rounded-xl border border-sage-200 bg-sage-50 overflow-hidden">
           <div className="p-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div><h2 className="font-display font-semibold">{item.student?.last_name}, {item.student?.first_name}</h2><p className="text-xs font-mono">{item.student?.user_number}</p><p className="text-sm mt-2">{item.class_record?.subjects?.code} · {item.class_record?.sections?.name}</p><p className="text-xs">{item.class_record?.school_year} · {item.class_record?.semester} · {item.term}</p><p className="text-xs mt-1">Evaluation: {dateText(item.baseline_snapshot?.captured_at || item.created_at)} · {item.status}</p></div>
+            <div><h2 className="font-display font-semibold">{item.student?.last_name}, {item.student?.first_name}</h2><p className="text-xs font-mono">{item.student?.user_number}</p><p className="text-sm mt-2">{item.class_record?.subjects?.code} · {item.class_record?.sections?.name}</p><p className="text-xs">{item.class_record?.school_year} · {item.class_record?.semester} · {item.term}</p><p className="text-xs mt-1">Evaluation: {dateText(item.baseline_snapshot?.captured_at || item.created_at)}</p><p className="text-xs font-semibold">{item.status === 'draft' ? 'Draft (not published)' : isAcknowledged(item) ? `Acknowledged by student · ${dateText(item.acknowledged_at)}` : 'Not yet acknowledged by student'}</p></div>
             <div><h3 className="text-xs font-semibold uppercase">At evaluation</h3><p className="text-sm font-semibold capitalize"><span className={item.risk_level === 'critical' || item.risk_level === 'high' ? 'text-rose-600' : item.risk_level === 'moderate' ? 'text-amber-600' : item.risk_level === 'low' ? 'text-emerald-600' : ''}>{item.risk_level}</span><span className="font-normal text-sage-900"> · {item.risk_score} pts</span></p><p className="font-mono text-sm mt-1">Baseline GWA: {gradeText(item.baseline_snapshot?.gwa)}</p><p className="text-xs">{item.baseline_snapshot?.term || item.term} · {dateText(item.baseline_snapshot?.captured_at)}</p></div>
-            <div><h3 className="text-xs font-semibold uppercase">Current subject standing</h3><p className="font-mono">{gradeText(standing?.current_gwa)}</p><p className="text-xs">{standing?.standing_source || 'Pending'} · {standing?.standing_milestone || 'No available milestone'}</p><p className="text-xs mt-2">Reported tasks: {complete}/{tasks.length}</p><p className="text-xs">{item.refer_to_dean ? 'Pending Dean referral' : item.referrals?.some(r => r.state === 'resolved') ? 'Previous referral resolved' : 'No active referral'}</p></div>
-            <div className="flex flex-col gap-2 justify-start"><button className={action} aria-expanded={open} aria-controls={`case-${item.evaluation_id}`} onClick={() => setExpanded(open ? null : item.evaluation_id)}>{open ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />} Tasks and referrals</button><button className={action} disabled={Boolean(unavailable)} onClick={event => { referralTrigger.current = event.currentTarget; setReferralCase(item); setReason(''); setReferralError(''); requestId.current = crypto.randomUUID(); }}><Send className="inline h-4 w-4 mr-1" />{unavailable || 'Escalate to Dean'}</button></div>
+            {item.followup_snapshot ? <div>
+              <h3 className="text-xs font-semibold uppercase">Recorded follow-up</h3>
+              <p className="text-sm font-semibold">{tierText(summary.outcome?.baselineRiskLevel)} → {tierText(summary.outcome?.followupRiskLevel)} <span className="font-normal">· {summary.status}</span></p>
+              <p className="font-mono text-sm mt-1">Follow-up GWA: {gradeText(item.followup_snapshot.gwa)}</p>
+              <p className="text-xs">{FOLLOWUP_MILESTONE_LABELS[item.followup_snapshot.milestone] || item.followup_snapshot.milestone} · {dateText(item.followup_snapshot.captured_at)}</p>
+              <p className="text-xs mt-2 font-mono">Verified tasks: {summary.tasks.verified}/{summary.tasks.total}{summary.completionRate !== null ? ` (${summary.completionRate}%)` : ''}</p>
+              <p className="text-xs mt-2">Closed for {item.term}. If the student still needs support, <Link to="/faculty/evaluatestudent" className="font-semibold underline">evaluate again in a later grading term</Link>.</p>
+            </div> : <div>
+              <h3 className="text-xs font-semibold uppercase">Current subject standing</h3><p className="font-mono">{gradeText(standing?.current_gwa)}</p><p className="text-xs">{standing?.standing_source || 'Pending'} · {standing?.standing_milestone || 'No available milestone'}</p>
+              <p className="text-xs mt-2 font-mono">Tasks: {progress.verified} verified · {awaiting} awaiting review · {progress.total} total</p>
+              <p className="text-xs">{item.refer_to_dean ? 'Pending Dean referral' : item.referrals?.some(r => r.state === 'resolved') ? 'Previous referral resolved' : 'No active referral'}</p>
+              {summary.followupDue && <p className="text-xs font-semibold mt-1">Follow-up due · {FOLLOWUP_MILESTONE_LABELS[milestone.grade_period]} posted</p>}
+            </div>}
+            <div className="flex flex-col gap-2 justify-start">
+              <button className={action} aria-expanded={open} aria-controls={`case-${item.evaluation_id}`} onClick={() => setExpanded(open ? null : item.evaluation_id)}>{open ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />} Tasks and referrals{awaiting > 0 && !item.followup_snapshot ? ` (${awaiting} to review)` : ''}</button>
+              <button className={action} disabled={Boolean(followupBlocked)} onClick={event => { dialogTrigger.current = event.currentTarget; setFollowupCase(item); setFollowupError(''); }}><ClipboardCheck className="inline h-4 w-4 mr-1" />{followupBlocked || 'Record follow-up'}</button>
+              <button className={action} disabled={Boolean(unavailable)} onClick={event => { dialogTrigger.current = event.currentTarget; setReferralCase(item); setReason(''); setReferralError(''); requestId.current = crypto.randomUUID(); }}><Send className="inline h-4 w-4 mr-1" />{unavailable || 'Escalate to Dean'}</button>
+            </div>
           </div>
           {open && <div id={`case-${item.evaluation_id}`} className="border-t border-sage-200 p-4 space-y-3">
-            <h3 className="font-semibold text-sm">Student-reported tasks</h3>
+            <h3 className="font-semibold text-sm">Intervention tasks</h3>
             {!tasks.length && <p className="text-sm">No tasks assigned</p>}
             {planDeadline && <p className="rounded-lg border border-sage-200 bg-sage-50 p-3 text-xs"><strong>Plan completion date:</strong> {planDeadline} · Complete all steps in order by this date.</p>}
-            {tasks.map((task, index) => <div key={task.task_id || index} className="rounded-lg bg-sage-100 p-3 text-sm"><p>{task.description}</p><p className="text-xs mt-1">Target: {task.target_term || 'Not specified'} · {taskState(task)}</p>{task.completed === true && <p className="text-xs"><CheckCircle2 className="inline h-3 w-3" /> Reported at: {dateText(task.completed_at)}</p>}</div>)}
+            {taskErrors[item.evaluation_id] && <p role="alert" className="rounded-lg border border-sage-400 p-3 text-sm">{taskErrors[item.evaluation_id]}</p>}
+            {tasks.map((task, index) => {
+              const state = taskVerification(task);
+              const key = `${item.evaluation_id}:${task.task_id}`;
+              const returning = returnDraft?.key === key;
+              return <div key={task.task_id || index} className="rounded-lg bg-sage-100 p-3 text-sm space-y-1">
+                <p>{task.description}</p>
+                <p className="text-xs">Target: {task.target_term || 'Not specified'} · {taskState(task)}</p>
+                {task.completed === true && <p className="text-xs"><CheckCircle2 className="inline h-3 w-3" /> Reported at: {dateText(task.completed_at)}</p>}
+                {state === 'verified' && <p className="text-xs">Verified at: {dateText(task.verified_at)}</p>}
+                {state === 'returned' && <p className="text-xs">Returned {dateText(task.returned_at)}: {task.return_note}</p>}
+                {state === 'reported' && !manageBlocked && !returning && <div className="flex flex-wrap gap-2 pt-1">
+                  <button className={smallAction} disabled={Boolean(taskBusy)} onClick={() => decideTask(item, task, true)}><CheckCircle2 className="inline h-3 w-3 mr-1" />{taskBusy === key ? 'Saving…' : 'Verify'}</button>
+                  <button className={smallAction} disabled={Boolean(taskBusy)} onClick={() => setReturnDraft({ key, note: '' })}><RotateCcw className="inline h-3 w-3 mr-1" />Return to student</button>
+                </div>}
+                {returning && <form className="space-y-2 pt-1" onSubmit={event => { event.preventDefault(); decideTask(item, task, false, returnDraft.note); }}>
+                  <label className="block text-xs font-semibold">What does the student still need to do?<textarea autoFocus required maxLength={500} value={returnDraft.note} onChange={event => setReturnDraft({ key, note: event.target.value })} className={`${field} block w-full mt-1 min-h-20`} /></label>
+                  <div className="flex gap-2"><button className={smallAction} disabled={Boolean(taskBusy) || !returnDraft.note.trim()}>{taskBusy === key ? 'Saving…' : 'Return task'}</button><button type="button" className={smallAction} disabled={Boolean(taskBusy)} onClick={() => setReturnDraft(null)}>Cancel</button></div>
+                </form>}
+              </div>;
+            })}
             <h3 className="font-semibold text-sm">Referral history</h3>
             {history?.loading && <p role="status" className="text-sm">Loading authorized referral details…</p>}
             {history?.error && <p role="alert" className="text-sm">{history.error}</p>}
@@ -181,15 +314,30 @@ function Tracker({ facultyId }) {
       <div className="flex items-center justify-end gap-3"><button className={action} disabled={loading || filters.page === 0} onClick={() => changeFilter('page', String(filters.page - 1))}>Previous</button><span className="text-sm">Page {filters.page + 1}</span><button className={action} disabled={loading || (filters.page + 1) * CASE_PAGE_SIZE >= result.count} onClick={() => changeFilter('page', String(filters.page + 1))}>Next</button></div>
     </div>
     {referralCase && <div className="fixed inset-0 z-50 bg-sage-950/60 p-4 flex items-center justify-center">
-      <form onSubmit={submitReferral} onKeyDown={dialogKeys} role="dialog" aria-modal="true" aria-labelledby="referral-title" className="rounded-xl bg-sage-50 border border-sage-200 p-5 w-full max-w-lg max-h-full overflow-y-auto space-y-4 text-sage-900">
+      <form onSubmit={submitReferral} onKeyDown={event => dialogKeys(event, closeReferral)} role="dialog" aria-modal="true" aria-labelledby="referral-title" className="rounded-xl bg-sage-50 border border-sage-200 p-5 w-full max-w-lg max-h-full overflow-y-auto space-y-4 text-sage-900">
         <div className="flex justify-between"><h2 id="referral-title" className="font-display font-semibold">Escalate to Dean</h2><button type="button" className={action} aria-label="Close referral" disabled={sending} onClick={closeReferral}><X className="h-4 w-4" /></button></div>
         <p className="text-sm">{referralCase.student?.first_name} {referralCase.student?.last_name} · {referralCase.class_record?.subjects?.code} · {referralCase.class_record?.sections?.name} · {referralCase.term}</p>
         <ul className="text-xs space-y-1">{(Array.isArray(referralCase.advising_plan) ? referralCase.advising_plan : []).map(task => <li key={task.task_id}>{task.description} · {taskState(task)}</li>)}</ul>
         {!referralCase.advising_plan?.length && <p className="text-xs">No tasks assigned</p>}
         <label className="block text-sm">Reason for Dean review<textarea autoFocus required maxLength={2000} value={reason} onChange={e => setReason(e.target.value)} className={`${field} block w-full mt-1 min-h-28`} /></label>
-        <p className="text-xs">The reason is restricted to authorized faculty, department Deans, and admins. Reported completion does not establish instructor verification.</p>
+        <p className="text-xs">The reason is restricted to authorized faculty, department Deans, and admins. Only tasks you have verified count as verified completion.</p>
         {referralError && <p role="alert" className="text-sm">{referralError}</p>}
         <button className={`${action} w-full`} disabled={sending || !reason.trim()}>{sending ? 'Saving…' : 'Save referral'}</button>
+      </form>
+    </div>}
+    {followupCase && <div className="fixed inset-0 z-50 bg-sage-950/60 p-4 flex items-center justify-center">
+      <form onSubmit={submitFollowup} onKeyDown={event => dialogKeys(event, closeFollowup)} role="dialog" aria-modal="true" aria-labelledby="followup-title" className="rounded-xl bg-sage-50 border border-sage-200 p-5 w-full max-w-lg max-h-full overflow-y-auto space-y-4 text-sage-900">
+        <div className="flex justify-between"><h2 id="followup-title" className="font-display font-semibold">Record follow-up</h2><button type="button" className={action} aria-label="Close follow-up" disabled={recording} onClick={closeFollowup}><X className="h-4 w-4" /></button></div>
+        <p className="text-sm">{followupCase.student?.first_name} {followupCase.student?.last_name} · {followupCase.class_record?.subjects?.code} · {followupCase.class_record?.sections?.name} · {followupCase.term}</p>
+        {followupStanding ? <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="rounded-lg border border-sage-200 p-3"><p className="text-xs font-semibold uppercase">Baseline</p><p>{tierText(followupCase.baseline_snapshot?.risk_level || followupCase.risk_level)} · {followupCase.baseline_snapshot?.risk_score ?? followupCase.risk_score} pts</p><p className="font-mono">GWA {gradeText(followupCase.baseline_snapshot?.gwa)}</p></div>
+          <div className="rounded-lg border border-sage-200 p-3"><p className="text-xs font-semibold uppercase">Follow-up (now)</p><p>{tierText(followupStanding.risk_level)} · {followupStanding.risk_score} pts</p><p className="font-mono">GWA {gradeText(followupStanding.current_gwa)}</p></div>
+        </div> : <p role="alert" className="text-sm">The current standing for this student is unavailable. Refresh and try again.</p>}
+        <p className="text-sm font-mono">Verified tasks: {followupProgress.verified}/{followupProgress.total}{followupProgress.reported > followupProgress.verified ? ` · ${followupProgress.reported - followupProgress.verified} still awaiting your review` : ''}</p>
+        {followupMilestone && <p className="text-xs">Follow-up point: {FOLLOWUP_MILESTONE_LABELS[followupMilestone.grade_period]} posted {dateText(followupMilestone.posted_at)}.</p>}
+        <p className="text-xs">Recording freezes these values permanently next to the baseline and closes the intervention plan: tasks can no longer be reported, verified, or edited. It does not change any grade.</p>
+        {followupError && <p role="alert" className="text-sm">{followupError}</p>}
+        <button className={`${action} w-full`} disabled={recording || !followupStanding}>{recording ? 'Recording…' : 'Record follow-up'}</button>
       </form>
     </div>}
   </>;

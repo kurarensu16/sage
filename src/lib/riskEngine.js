@@ -342,23 +342,38 @@ export function isStudentModerateRisk(riskLevel) {
   return riskLevel === 'moderate';
 }
 
+const RISK_TIER_ORDER = Object.freeze({ low: 0, moderate: 1, high: 2, critical: 3 });
+const numberOrNull = value => value === null || value === undefined || value === '' || !Number.isFinite(Number(value))
+  ? null : Number(value);
+const tierOrNull = level => Object.hasOwn(RISK_TIER_ORDER, level) ? level : null;
+
 /**
- * Computes difference between baseline and followup snapshots to measure outcome.
+ * Compares a frozen baseline snapshot with its recorded follow-up snapshot.
+ * gwaChange is follow-up minus baseline, so a negative value is an improvement on
+ * the 1.00-5.00 scale. Missing values stay null rather than defaulting.
  */
 export function calculateInterventionOutcome(baseline, followup) {
   if (!baseline || !followup) return null;
 
-  const scoreDelta = (followup.risk_score || 0) - (baseline.risk_score || 0);
-  const examDelta = (followup.exam_average || 0) - (baseline.exam_average || 0);
-  const gwaDelta = (followup.gwa !== null && baseline.gwa !== null) ? (parseFloat(baseline.gwa) - parseFloat(followup.gwa)) : 0;
+  const baselineGwa = numberOrNull(baseline.gwa);
+  const followupGwa = numberOrNull(followup.gwa);
+  const baselineScore = numberOrNull(baseline.risk_score);
+  const followupScore = numberOrNull(followup.risk_score);
+  const baselineRiskLevel = tierOrNull(baseline.risk_level);
+  const followupRiskLevel = tierOrNull(followup.risk_level);
+  const tierDelta = baselineRiskLevel && followupRiskLevel
+    ? RISK_TIER_ORDER[followupRiskLevel] - RISK_TIER_ORDER[baselineRiskLevel] : null;
+  const tasksTotal = numberOrNull(followup.tasks_total) ?? 0;
+  const tasksVerified = numberOrNull(followup.tasks_verified ?? followup.tasks_completed) ?? 0;
 
   return {
-    riskScoreChange: scoreDelta,      // negative is good (e.g. -36 points)
-    examAverageChange: examDelta,     // positive is good (e.g. +11%)
-    gwaImprovement: gwaDelta,         // positive is good (e.g. +0.25)
-    tasksCompletionRate: baseline.tasks_total > 0 
-      ? Math.round(((followup.tasks_completed || 0) / baseline.tasks_total) * 100) 
-      : 0,
-    improved: scoreDelta < 0 || examDelta > 0
+    gwaChange: baselineGwa !== null && followupGwa !== null ? Number((followupGwa - baselineGwa).toFixed(2)) : null,
+    riskScoreChange: baselineScore !== null && followupScore !== null ? followupScore - baselineScore : null,
+    baselineRiskLevel,
+    followupRiskLevel,
+    riskTransition: tierDelta === null ? null : tierDelta < 0 ? 'improved' : tierDelta > 0 ? 'worsened' : 'unchanged',
+    tasksTotal,
+    tasksVerified,
+    tasksCompletionRate: tasksTotal > 0 ? Math.round((tasksVerified / tasksTotal) * 100) : null
   };
 }

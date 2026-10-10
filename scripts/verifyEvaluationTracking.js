@@ -6,14 +6,19 @@ import {
   countMissingActivities,
   countPendingActivities,
   countRecordedZeroScores,
+  countTaskProgress,
+  findFollowupMilestone,
+  isAcknowledged,
   isStudentVisibleEvaluation,
   manilaDate,
   needsEvaluation,
   referralEligibility,
   scoreOrNull,
-  taskState
+  summarizeInterventionOutcome,
+  taskState,
+  taskVerification
 } from '../src/lib/evaluationTracking.js';
-import { calculateAcademicRisk, computeTentativeGradeDetails } from '../src/lib/riskEngine.js';
+import { calculateAcademicRisk, calculateInterventionOutcome, computeTentativeGradeDetails } from '../src/lib/riskEngine.js';
 import { RISK_TIERS, resolveOfficialGwa } from '../src/lib/academicPolicy.js';
 import { resolveGradingFormula } from '../src/lib/gradingMath.js';
 import { findMostAdvancedPostedGrade, getCanonicalGradePeriod } from '../src/lib/gradeMilestones.js';
@@ -49,7 +54,58 @@ assert.equal(taskState({ due_date: '2026-10-05', completed: false }, '2026-10-06
 assert.equal(taskState({ due_date: '2026-10-06', completed: false }, '2026-10-06'), 'Pending');
 assert.equal(taskState({ due_date: '2026-02-30', completed: false }, '2026-10-06'), 'Pending');
 assert.equal(taskState({ due_date: '', completed: false }), 'Pending');
-assert.equal(taskState({ due_date: '2026-10-05', completed: true }, '2026-10-06'), 'Reported complete');
+assert.equal(taskState({ due_date: '2026-10-05', completed: true }, '2026-10-06'), 'Reported, awaiting verification');
+assert.equal(taskState({ completed: true, verification_status: 'verified' }), 'Verified by instructor');
+assert.equal(taskState({ due_date: '2026-10-05', completed: false, verification_status: 'returned' }, '2026-10-06'), 'Returned · Overdue');
+assert.equal(isAcknowledged({ status: 'acknowledged_by_student', acknowledged_at: '2026-10-10T00:00:00Z' }), true);
+assert.equal(isAcknowledged({ status: 'submitted', acknowledged_at: null }), false);
+assert.equal(isAcknowledged({ status: 'acknowledged_by_student', acknowledged_at: null }), false,
+  'A legacy status without a recorded acknowledgment time does not count');
+assert.equal(taskVerification({ completed: false, verification_status: 'returned' }), 'returned');
+assert.equal(taskVerification({ completed: true, verification_status: 'returned' }), 'reported', 'Re-reporting a returned task re-enters review');
+assert.deepEqual(countTaskProgress([
+  { completed: true, verification_status: 'verified' }, { completed: true }, { completed: false, verification_status: 'returned' }, {}
+]), { total: 4, reported: 2, verified: 1 });
+assert.deepEqual(countTaskProgress(null), { total: 0, reported: 0, verified: 0 });
+
+// Outcome math: GWA change is follow-up minus baseline; completion counts verified tasks only.
+const outcome = calculateInterventionOutcome(
+  { gwa: 3.25, risk_score: 62, risk_level: 'high' },
+  { gwa: 2.75, risk_score: 31, risk_level: 'moderate', tasks_total: 5, tasks_verified: 4, tasks_reported: 5 }
+);
+assert.equal(outcome.gwaChange, -0.5);
+assert.equal(outcome.riskScoreChange, -31);
+assert.equal(outcome.riskTransition, 'improved');
+assert.equal(outcome.tasksCompletionRate, 80);
+assert.equal(calculateInterventionOutcome({ gwa: null, risk_level: 'high' }, { gwa: 2.5, risk_level: 'critical', tasks_total: 0 }).gwaChange, null,
+  'A missing GWA must stay unavailable instead of defaulting to 3.00');
+assert.equal(calculateInterventionOutcome({ risk_level: 'high' }, { risk_level: 'critical', tasks_total: 0 }).riskTransition, 'worsened');
+assert.equal(calculateInterventionOutcome({ risk_level: 'low' }, { risk_level: 'low', tasks_total: 0 }).tasksCompletionRate, null);
+assert.equal(calculateInterventionOutcome({}, null), null);
+
+// Follow-up eligibility mirrors record_intervention_followup.
+const evaluation = { evaluation_id: 'e', class_record_id: 'c', student_id: 's', published_to_student_at: '2026-09-01T00:00:00Z' };
+const posted = [
+  { class_record_id: 'c', student_id: 's', grade_period: 'midterm_rating', posted_at: '2026-08-30T00:00:00Z' },
+  { class_record_id: 'c', student_id: 'other', grade_period: 'midterm_rating', posted_at: '2026-09-20T00:00:00Z' },
+  { class_record_id: 'c', student_id: 's', grade_period: 'midterm', posted_at: '2026-09-20T00:00:00Z' }
+];
+assert.equal(findFollowupMilestone(evaluation, posted), null, 'Earlier, other-student, and per-term rows do not qualify');
+posted.push({ class_record_id: 'c', student_id: 's', grade_period: 'tentative_final_rating', posted_at: '2026-10-01T00:00:00Z' });
+assert.equal(findFollowupMilestone(evaluation, posted).grade_period, 'tentative_final_rating');
+assert.equal(findFollowupMilestone({ ...evaluation, published_to_student_at: null }, posted), null);
+assert.equal(summarizeInterventionOutcome({ ...evaluation, advising_plan: [] }, posted.at(-1)).status, 'Follow-up due');
+assert.equal(summarizeInterventionOutcome({ ...evaluation, refer_to_dean: true, advising_plan: [] }, null).status, 'Escalated to Dean');
+const closed = summarizeInterventionOutcome({
+  ...evaluation,
+  baseline_snapshot: { gwa: 3.25, risk_score: 62, risk_level: 'high' },
+  followup_snapshot: { gwa: 3.5, risk_score: 80, risk_level: 'critical', tasks_total: 2, tasks_verified: 1, tasks_reported: 2 },
+  advising_plan: [{ completed: true, verification_status: 'verified' }, { completed: true }, { completed: true }]
+}, posted.at(-1));
+assert.equal(closed.status, 'Worsened');
+assert.deepEqual(closed.tasks, { total: 2, verified: 1, reported: 2 }, 'A recorded follow-up uses its frozen task counts');
+assert.equal(closed.completionRate, 50);
+assert.equal(closed.followupDue, false);
 const student = { user_id: 's', risk_score: RISK_TIERS.MODERATE.min };
 assert.equal(needsEvaluation(student, [{ student_id: 's', term: 'Prelim' }], 'Midterm', RISK_TIERS.MODERATE.min), true);
 assert.equal(needsEvaluation(student, [{ student_id: 's', term: 'Midterm' }], 'Midterm', RISK_TIERS.MODERATE.min), false);
@@ -110,4 +166,4 @@ const render = vm.runInNewContext(`${templateSource}; renderDeanReferralTemplate
 const mail = render({ evaluation_id: '00000000-0000-4000-8000-000000000001', reason: 'PRIVATE_REASON', student_name: 'PRIVATE_STUDENT', risk: 'PRIVATE_RISK' });
 assert.ok(!JSON.stringify(mail).includes('PRIVATE_'));
 assert.ok(mail.text.includes('/dean/atriskstudents?tab=discussion_queue&evaluation_id='));
-console.log('Evaluation tracking checks passed: zeros/blanks, dynamic activity coverage, risk contribution, Manila dates, term coverage, eligibility, and referral email syntax/privacy.');
+console.log('Evaluation tracking checks passed: zeros/blanks, dynamic activity coverage, risk contribution, Manila dates, term coverage, eligibility, task verification, follow-up eligibility, intervention outcomes, and referral email syntax/privacy.');

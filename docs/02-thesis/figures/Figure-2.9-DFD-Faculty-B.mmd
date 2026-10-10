@@ -1,0 +1,38 @@
+flowchart LR
+%% ===== Figure 2.9 — Level 1 DFD: Faculty Portal — column B (processes 8.0–13.0), revised 2026-10-10 =====
+%% Two-column layout (see compose_columns.py); adds 11.0 Generate Performance Reports.
+
+  %% ---------- 8.0 ----------
+  F8["Faculty"] <-- "observations, plan, referral /<br/>baseline, AI task drafts" --> P8(("8.0<br/>Academic<br/>Intervention Form"))
+  P8 <-- "risk score, published plan,<br/>frozen baseline" --> D16h@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
+  P8 -- "private observations" --> D17h@{ shape: lin-rect, label: "D17&nbsp; student_risk_private_notes" }
+  P8 <-- "unpublished work" --> D33h@{ shape: lin-rect, label: "D33&nbsp; faculty_intervention_working_drafts" }
+  P8 <-- "AI task drafts" --> D32h@{ shape: lin-rect, label: "D32&nbsp; faculty_intervention_drafts" }
+  P8 -- "Dean referral, reason" --> D31h@{ shape: lin-rect, label: "D31&nbsp; student_evaluation_referrals" }
+  P8 <-- "evaluation snapshot / 3 draft tasks" --> AIP["AI Model Provider<br/>(Gemini 2.5 Flash<br/>via OpenRouter)"]
+
+  %% ---------- 9.0 ----------
+  F9["Faculty"] <-- "acknowledgment, reported tasks /<br/>verify or return, record follow-up" --> P9(("9.0<br/>Evaluated<br/>Students"))
+  P9 <-- "task verification,<br/>one-time follow-up snapshot" --> D16i@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
+  P9 <-- "milestone posted after publication" --> D12i@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P9 -- "audit entry" --> D25i@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+
+  %% ---------- 10.0 ----------
+  F10["Faculty"] <-- "attendance entries / FDA warning badges" --> P10(("10.0<br/>Monitor<br/>Attendance"))
+  P10 <-- "Present / Late / Absent" --> D15j@{ shape: lin-rect, label: "D15&nbsp; attendance_records" }
+
+  %% ---------- 11.0 ----------
+  F11["Faculty"] <-- "report filters / class performance,<br/>comparison, Excel export" --> P11(("11.0<br/>Generate<br/>Performance<br/>Reports"))
+  P11 <-- "milestone grades" --> D12k@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P11 <-- "activity scores" --> D11k@{ shape: lin-rect, label: "D11&nbsp; student_activity_scores" }
+  P11 <-- "attendance counts" --> D15k@{ shape: lin-rect, label: "D15&nbsp; attendance_records" }
+
+  %% ---------- 12.0 ----------
+  F12["Faculty"] <-- "consultation requests /<br/>response, resolution notes" --> P12(("12.0<br/>Handle<br/>Consultations"))
+  P12 <-- "request and status" --> D23l@{ shape: lin-rect, label: "D23&nbsp; student_consultation_requests" }
+
+  %% ---------- 13.0 ----------
+  F13["Faculty"] <-- "photo, contact number,<br/>password, alert choices / profile" --> P13(("13.0<br/>Manage<br/>Account"))
+  P13 <-- "contact number, photo reference" --> D1m@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P13 <-- "profile photo file" --> D30m@{ shape: lin-rect, label: "D30&nbsp; avatars (private storage)" }
+  P13 <-- "device alert choices" --> D29m@{ shape: lin-rect, label: "D29&nbsp; notification_preferences" }

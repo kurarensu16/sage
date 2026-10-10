@@ -120,7 +120,7 @@ export default function AskAspirePanel({ open, context, onClose, onRequestConsul
                 <div className="flex items-center gap-2">
                   <h2 id="ask-aspire-title" className="font-display text-lg font-extrabold">Ask ASPIRE</h2>
                   <span className="rounded-full border border-sage-700 bg-sage-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sage-200">
-                    Academic advisor
+                    AI Study Tutor
                   </span>
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-sage-200">

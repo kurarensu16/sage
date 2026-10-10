@@ -15,7 +15,9 @@ import * as XLSX from 'xlsx-js-style';
 import { DYCI_ACADEMIC_PROGRAMS } from '../../lib/constants';
 import { useAuth } from '../../lib/AuthContext';
 import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
-import { resolveOfficialGwa, computeStudentGwa } from '../../lib/academicPolicy';
+import { resolveOfficialGwa, computeStudentGwa, getRiskDisplay } from '../../lib/academicPolicy';
+import { getFollowupMilestoneMap } from '../../lib/evaluationService';
+import { isAcknowledged, summarizeInterventionOutcome } from '../../lib/evaluationTracking';
 import { calculateAcademicRisk } from '../../lib/riskEngine';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 
@@ -288,38 +290,36 @@ export default function SummaryReports() {
               class_record:class_records(subjects(code, name), sections(name))
             `);
 
-          const list = (evaluationsData || [])
+          const departmentEvaluations = (evaluationsData || [])
             .filter(ev => {
               const deptName = ev.student?.departments?.name || ev.student?.sections?.departments?.name;
-              return !deptFilter || deptName === deptFilter;
-            })
-            .map(ev => {
-              const bSnapshot = ev.baseline_snapshot || {};
-              const fSnapshot = ev.followup_snapshot || null;
-
-              let statusLabel = 'In Intervention';
-              if (fSnapshot) {
-                const bGwa = parseFloat(bSnapshot.gwa || 3.0);
-                const fGwa = parseFloat(fSnapshot.gwa || 3.0);
-                if (fGwa < bGwa) statusLabel = 'Recovered / GWA Improved';
-                else if (fGwa === bGwa) statusLabel = 'Stabilized';
-                else statusLabel = 'Needs Continued Escalation';
-              } else if (ev.refer_to_dean) {
-                statusLabel = 'Escalated to Dean';
-              }
-
-              return {
-                studentName: ev.student ? `${ev.student.first_name} ${ev.student.last_name}` : 'Student',
-                section: ev.class_record?.sections?.name || ev.student?.sections?.name || '—',
-                subject: ev.class_record?.subjects?.code || 'General',
-                context: ev.evaluation_context === 'pl_retention' ? "Legacy President's Lister Retention" : ev.evaluation_context === 'passing_recovery' ? 'Legacy Passing Recovery' : 'Academic Intervention',
-                initialRisk: `${ev.risk_level?.toUpperCase()} (${ev.risk_score || 0})`,
-                baselineGwa: bSnapshot.gwa ? Number(bSnapshot.gwa).toFixed(2) : '—',
-                followupGwa: fSnapshot?.gwa ? Number(fSnapshot.gwa).toFixed(2) : 'Under Review',
-                outcome: statusLabel,
-                faculty: ev.faculty ? `Prof. ${ev.faculty.first_name} ${ev.faculty.last_name}` : 'Assigned Faculty'
-              };
+              return ev.published_to_student_at && (!deptFilter || deptName === deptFilter);
             });
+          const milestoneMap = await getFollowupMilestoneMap(departmentEvaluations);
+          const gwaText = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+            ? Number(value).toFixed(2) : '—';
+          const riskText = (level, score) => level ? `${getRiskDisplay(level).label} (${score ?? '—'})` : '—';
+
+          const list = departmentEvaluations.map(ev => {
+            const summary = summarizeInterventionOutcome(ev, milestoneMap[ev.evaluation_id] || null);
+            const gwaChange = summary.outcome?.gwaChange;
+            return {
+              studentName: ev.student ? `${ev.student.first_name} ${ev.student.last_name}` : 'Student',
+              section: ev.class_record?.sections?.name || ev.student?.sections?.name || '—',
+              subject: ev.class_record?.subjects?.code || 'General',
+              context: ev.evaluation_context === 'pl_retention' ? "Legacy President's Lister Retention" : ev.evaluation_context === 'passing_recovery' ? 'Legacy Passing Recovery' : 'Academic Intervention',
+              baselineRisk: riskText(summary.baseline.risk_level || ev.risk_level, summary.baseline.risk_score ?? ev.risk_score),
+              baselineGwa: gwaText(summary.baseline.gwa),
+              followupRisk: summary.followup ? riskText(summary.followup.risk_level, summary.followup.risk_score) : '—',
+              followupGwa: summary.followup ? gwaText(summary.followup.gwa) : summary.followupDue ? 'Due' : 'Not yet',
+              gwaChange: gwaChange === null || gwaChange === undefined ? '—' : `${gwaChange > 0 ? '+' : ''}${gwaChange.toFixed(2)}`,
+              tasksVerified: `${summary.tasks.verified}/${summary.tasks.total}`,
+              completionRate: summary.completionRate === null ? '—' : `${summary.completionRate}%`,
+              acknowledgment: isAcknowledged(ev) ? new Date(ev.acknowledged_at).toLocaleDateString() : 'Not acknowledged',
+              outcome: summary.status,
+              faculty: ev.faculty ? `Prof. ${ev.faculty.first_name} ${ev.faculty.last_name}` : 'Assigned Faculty'
+            };
+          });
 
           setReportData(list);
         } else {
@@ -472,9 +472,9 @@ export default function SummaryReports() {
         wsData.push([r.section, r.subjects, r.totalEnrolled, r.avgPerSubject, r.facultyCount]);
       });
     } else if (reportType === 'intervention-outcomes') {
-      wsData.push(['Student', 'Section', 'Scope', 'Baseline GWA', 'Follow-up GWA', 'Status', 'Faculty']);
+      wsData.push(['Student', 'Section', 'Scope', 'Student Acknowledged', 'Baseline Risk', 'Baseline GWA', 'Follow-up Risk', 'Follow-up GWA', 'GWA Change', 'Verified Tasks', 'Task Completion', 'Risk Transition / Status', 'Faculty']);
       reportData.forEach(r => {
-        wsData.push([r.studentName, r.section, r.context, r.baselineGwa, r.followupGwa, r.outcome, r.faculty]);
+        wsData.push([r.studentName, r.section, r.context, r.acknowledgment, r.baselineRisk, r.baselineGwa, r.followupRisk, r.followupGwa, r.gwaChange, r.tasksVerified, r.completionRate, r.outcome, r.faculty]);
       });
     } else {
       wsData.push(['Student Name', 'Email', 'Department', 'Running GWA', 'Risk Classification']);
@@ -1227,25 +1227,29 @@ export default function SummaryReports() {
                       <th className="py-2.5">Student Name</th>
                       <th className="py-2.5">Section</th>
                       <th className="py-2.5">Evaluation Scope</th>
-                      <th className="py-2.5 text-center">Baseline GWA</th>
-                      <th className="py-2.5 text-center">Follow-up GWA</th>
-                      <th className="py-2.5 text-center">Intervention Status</th>
+                      <th className="py-2.5 text-center">Baseline</th>
+                      <th className="py-2.5 text-center">Follow-up</th>
+                      <th className="py-2.5 text-center">GWA Change</th>
+                      <th className="py-2.5 text-center">Verified Tasks</th>
+                      <th className="py-2.5 text-center">Risk Transition</th>
                       <th className="py-2.5">Faculty In-Charge</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {reportData.map((row, idx) => (
                       <tr key={idx} className="text-slate-700">
-                        <td className="py-2.5 font-bold">{row.studentName}</td>
+                        <td className="py-2.5"><span className="block font-bold">{row.studentName}</span><span className="block text-[10px] text-slate-500">Acknowledged: {row.acknowledgment}</span></td>
                         <td className="py-2.5">{row.section}</td>
                         <td className="py-2.5">{row.context}</td>
-                        <td className="py-2.5 text-center font-mono">{row.baselineGwa}</td>
-                        <td className="py-2.5 text-center font-mono font-bold">{row.followupGwa}</td>
+                        <td className="py-2.5 text-center"><span className="block">{row.baselineRisk}</span><span className="block font-mono">GWA {row.baselineGwa}</span></td>
+                        <td className="py-2.5 text-center"><span className="block font-bold">{row.followupRisk}</span><span className="block font-mono">GWA {row.followupGwa}</span></td>
+                        <td className="py-2.5 text-center font-mono">{row.gwaChange}</td>
+                        <td className="py-2.5 text-center font-mono">{row.tasksVerified} · {row.completionRate}</td>
                         <td className="py-2.5 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            row.outcome?.includes('Recovered') || row.outcome?.includes('Maintained')
+                            row.outcome === 'Improved'
                               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : row.outcome?.includes('Escalation') || row.outcome?.includes('Dean')
+                              : row.outcome === 'Worsened' || row.outcome === 'Escalated to Dean'
                               ? 'bg-rose-50 text-rose-700 border border-rose-200'
                               : 'bg-amber-50 text-amber-700 border border-amber-200'
                           }`}>

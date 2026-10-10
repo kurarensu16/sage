@@ -80,14 +80,14 @@ export default function SmartInstallModal({
             className={cn(
               "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer",
               currentTab === 'android'
-                ? "bg-white text-emerald-800 shadow-xs"
+                ? "bg-white text-sage-800 shadow-xs"
                 : "text-slate-600 hover:text-slate-900"
             )}
           >
-            <Smartphone className="h-4 w-4 text-emerald-600" />
+            <Smartphone className="h-4 w-4 text-sage-600" />
             <span>Android APK</span>
             {platform === 'android' && (
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Your current device" />
+              <span className="w-1.5 h-1.5 rounded-full bg-sage-500" title="Your current device" />
             )}
           </button>
 
@@ -97,14 +97,14 @@ export default function SmartInstallModal({
             className={cn(
               "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer",
               currentTab === 'ios'
-                ? "bg-white text-indigo-800 shadow-xs"
+                ? "bg-white text-sage-800 shadow-xs"
                 : "text-slate-600 hover:text-slate-900"
             )}
           >
-            <Smartphone className="h-4 w-4 text-indigo-600" />
+            <Smartphone className="h-4 w-4 text-sage-600" />
             <span>iOS (Safari)</span>
             {platform === 'ios' && (
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" title="Your current device" />
+              <span className="w-1.5 h-1.5 rounded-full bg-sage-500" title="Your current device" />
             )}
           </button>
 
@@ -133,10 +133,10 @@ export default function SmartInstallModal({
           {currentTab === 'android' && (
             <div className="space-y-4 animate-in fade-in duration-200">
               {/* Primary APK Download Action Card */}
-              <div className="p-4 bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-2xl border border-emerald-200/80 shadow-xs flex flex-col gap-3">
+              <div className="p-4 bg-gradient-to-br from-sage-50 to-sage-100/50 rounded-2xl border border-sage-200/80 shadow-xs flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                    <div className="w-9 h-9 rounded-xl bg-sage-600 text-white flex items-center justify-center shadow-xs">
                       <Download className="h-5 w-5" />
                     </div>
                     <div>
@@ -144,7 +144,7 @@ export default function SmartInstallModal({
                       <p className="text-[11px] text-slate-500 font-mono">ph.edu.dyci.sage • Release Build</p>
                     </div>
                   </div>
-                  <span className="text-[10px] font-mono font-medium px-2 py-1 rounded-md bg-emerald-200/70 text-emerald-900">
+                  <span className="text-[10px] font-mono font-medium px-2 py-1 rounded-md bg-sage-200/70 text-sage-900">
                     Android 8.0+
                   </span>
                 </div>
@@ -152,7 +152,7 @@ export default function SmartInstallModal({
                 <button
                   type="button"
                   onClick={handleApkDownloadClick}
-                  className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl font-semibold text-xs transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-2.5 px-4 bg-sage-600 hover:bg-sage-700 active:scale-[0.99] text-white rounded-xl font-semibold text-xs transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Download className="h-4 w-4" />
                   <span>Download ASPIRE APK (.apk)</span>
@@ -168,7 +168,7 @@ export default function SmartInstallModal({
                 <div className="space-y-2 text-xs">
                   {/* Step 1 */}
                   <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200/80">
-                    <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 font-mono font-bold text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <div className="w-5 h-5 rounded-full bg-sage-100 text-sage-700 font-mono font-bold text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">
                       1
                     </div>
                     <div className="min-w-0">
@@ -181,20 +181,20 @@ export default function SmartInstallModal({
 
                   {/* Step 2 */}
                   <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200/80">
-                    <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 font-mono font-bold text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <div className="w-5 h-5 rounded-full bg-sage-100 text-sage-700 font-mono font-bold text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">
                       2
                     </div>
                     <div className="min-w-0">
                       <p className="font-semibold text-slate-900">Open Downloaded File</p>
                       <p className="text-slate-500 text-[11px] mt-0.5">
-                        Once finished, tap the completed download notification or open <code className="font-mono text-emerald-800 bg-emerald-50 px-1 py-0.5 rounded">aspire.apk</code> from your <strong>Downloads</strong> folder.
+                        Once finished, tap the completed download notification or open <code className="font-mono text-sage-800 bg-sage-50 px-1 py-0.5 rounded">aspire.apk</code> from your <strong>Downloads</strong> folder.
                       </p>
                     </div>
                   </div>
 
                   {/* Step 3 */}
                   <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200/80">
-                    <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 font-mono font-bold text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <div className="w-5 h-5 rounded-full bg-sage-100 text-sage-700 font-mono font-bold text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">
                       3
                     </div>
                     <div className="min-w-0">
@@ -209,7 +209,7 @@ export default function SmartInstallModal({
 
               {/* Verified Institutional Note */}
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center gap-2.5 text-[11px] text-slate-600">
-                <ShieldCheck className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                <ShieldCheck className="h-4 w-4 text-sage-600 flex-shrink-0" />
                 <span>
                   Official native application for Dr. Yanga's Colleges, Inc. Includes real-time lockscreen alerts and offline grade caching.
                 </span>
@@ -220,7 +220,7 @@ export default function SmartInstallModal({
           {/* TAB 2: IOS (SAFARI PWA) */}
           {currentTab === 'ios' && (
             <div className="space-y-4 animate-in fade-in duration-200">
-              <div className="p-3.5 bg-indigo-50/70 rounded-xl border border-indigo-200/80 text-xs text-indigo-900">
+              <div className="p-3.5 bg-sage-50/70 rounded-xl border border-sage-200/80 text-xs text-sage-900">
                 <span>
                   iOS installs web applications directly to your Home Screen without needing the App Store. Follow the 3 steps below in <strong>Safari</strong>.
                 </span>
@@ -229,7 +229,7 @@ export default function SmartInstallModal({
               <div className="space-y-2 text-xs">
                 {/* Step 1 */}
                 <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200/80">
-                  <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 font-mono font-bold text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <div className="w-5 h-5 rounded-full bg-sage-100 text-sage-700 font-mono font-bold text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">
                     1
                   </div>
                   <div className="min-w-0">
@@ -242,13 +242,13 @@ export default function SmartInstallModal({
 
                 {/* Step 2 */}
                 <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200/80">
-                  <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 font-mono font-bold text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <div className="w-5 h-5 rounded-full bg-sage-100 text-sage-700 font-mono font-bold text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">
                     2
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 font-semibold text-slate-900">
                       <span>Tap the Share Button</span>
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 text-[10px] font-mono">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-sage-100 text-sage-800 text-[10px] font-mono">
                         <Share2 className="h-3 w-3 inline mr-1" /> Share
                       </span>
                     </div>
@@ -260,13 +260,13 @@ export default function SmartInstallModal({
 
                 {/* Step 3 */}
                 <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200/80">
-                  <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 font-mono font-bold text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <div className="w-5 h-5 rounded-full bg-sage-100 text-sage-700 font-mono font-bold text-[11px] flex items-center justify-center flex-shrink-0 mt-0.5">
                     3
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 font-semibold text-slate-900">
                       <span>Select "Add to Home Screen"</span>
-                      <PlusSquare className="h-3.5 w-3.5 text-indigo-600" />
+                      <PlusSquare className="h-3.5 w-3.5 text-sage-600" />
                     </div>
                     <p className="text-slate-500 text-[11px] mt-0.5">
                       Scroll down the share sheet, tap <strong>"Add to Home Screen"</strong>, then tap <strong>Add</strong> in the top-right corner.
@@ -276,7 +276,7 @@ export default function SmartInstallModal({
               </div>
 
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center gap-2.5 text-[11px] text-slate-600">
-                <CheckCircle2 className="h-4 w-4 text-indigo-600 flex-shrink-0" />
+                <CheckCircle2 className="h-4 w-4 text-sage-600 flex-shrink-0" />
                 <span>
                   ASPIRE will launch full-screen directly from your Home Screen with instant portal access.
                 </span>
@@ -351,7 +351,7 @@ export default function SmartInstallModal({
               <button
                 type="button"
                 onClick={handleApkDownloadClick}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-xl font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
               >
                 <Download className="h-3.5 w-3.5" />
                 <span>Download APK</span>

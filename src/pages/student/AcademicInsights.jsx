@@ -207,7 +207,7 @@ export default function AcademicInsights() {
 
         // Immediate local alert
         await showLocalNotification({
-          title: 'AI Counseling Ready',
+          title: 'AI Study Tutor Insight Ready',
           body: '🧠 Your personalized academic guidance and counseling verdict is ready.'
         });
 
@@ -1206,7 +1206,7 @@ export default function AcademicInsights() {
   return (
     <>
       <PageHeader 
-        title="ASPIRE Academic Advisor"
+        title="AI Study Tutor"
         breadcrumb="Student Portal" 
       >
         <button

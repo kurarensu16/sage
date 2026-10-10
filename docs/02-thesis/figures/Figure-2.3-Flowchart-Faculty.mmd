@@ -1,0 +1,98 @@
+flowchart TB
+%% ===== Figure 2.3 — Proposed System Flowchart: Faculty Portal (updated 2026-10-10) =====
+%% UI labels (Preview & Post Grades, My Class Records, Evaluate Students, Performance Reports);
+%% SG correction proposal and matching repost; task verify/return; one-time follow-up.
+
+  SEL{"Select module"}
+  OUT(["<b>Log out / End</b>"]):::accent
+
+  subgraph LOGIN["<b>Authentication</b>"]
+    direction LR
+    START(["<b>Start</b>"]):::accent --> CRED[/"Enter credentials"/] --> VALID{"Valid credentials?"}
+    VALID -- "No" --> ERR["Show login error"]
+    ERR -.-> CRED
+    VALID -- "Yes" --> FIRST{"First login?"}
+    FIRST -- "Yes" --> CHG["Change temporary password"] --> DASH["<b>Dashboard</b>"]:::accent
+    FIRST -- "No" --> DASH
+  end
+
+  LOGIN --> SEL
+  SEL -- "Log out" --> OUT
+
+  SEL -- "Grades" --> GM
+  SEL -- "Classes" --> KM
+  SEL -- "Student Risk" --> RM
+  SEL -- "Attendance" --> TM
+  SEL -- "Reports" --> PM
+  SEL -- "Consult" --> CM
+  SEL -- "Account" --> NM
+
+  subgraph ROW1[" "]
+    direction LR
+    subgraph GM["<b>Grades Module</b>"]
+      direction TB
+      G1["Log Class Scores"] --> GQ{"Metadata<br/>set?"}
+      GQ -- "No" --> GL["Column locked"]
+      GQ -- "Yes" --> GE["Enter raw scores"]
+      GE --> GP["Preview & Post Grades:<br/>COG applied, post milestone"]
+      GP --> GC{"SG needs<br/>correction?"}
+      GC -- "Yes" --> GS["Submit SG correction<br/>proposal to Dean"]
+      GS --> GA{"Dean<br/>approved?"}
+      GA -- "Yes" --> GR["Repost the<br/>approved SG"]
+      GA -- "No" --> GN["SG stays locked"]
+    end
+    subgraph KM["<b>Classes Module</b>"]
+      direction TB
+      K1["My Class Records:<br/>rosters and join codes"]
+      K2["Create Classrooms<br/>from teaching load"]
+      K3["Enrollment Requests"] --> KQ{"Approve?"}
+      KQ -- "No" --> KN["Request rejected"]
+      KQ -- "Yes" --> KY["Added to roster<br/>and gradebook"]
+      K1 ~~~ K2 ~~~ K3
+    end
+    subgraph RM["<b>Student Risk Module</b>"]
+      direction TB
+      R1["Evaluate Students:<br/>risk-sorted roster"] --> R2["Academic Intervention Form:<br/>factor breakdown, notes,<br/>1-5 catch-up tasks (manual or AI)"]
+      R2 --> R3["Publish plan;<br/>baseline frozen;<br/>optional Dean referral"]
+      R3 --> RS["Evaluated Students:<br/>student acknowledges<br/>and reports tasks"]
+      RS --> RA{"Verify?"}
+      RA -- "Yes" --> RV["Task verified"]
+      RA -- "No" --> RR["Returned<br/>with a note"]
+      RV --> RF["After next MR / TFR / SG:<br/>record one-time follow-up;<br/>plan closed"]
+    end
+  end
+
+  subgraph ROW2[" "]
+    direction LR
+    subgraph TM["<b>Attendance Module</b>"]
+      direction TB
+      T1["Attendance Monitoring"] --> TQ{"4 or more<br/>absences?"}
+      TQ -- "No" --> TN["No warning"]
+      TQ -- "Yes" --> TY["FDA warning badge<br/>(advisory only)"] --> TD["Instructor decides<br/>FDA remark"]
+    end
+    subgraph PM["<b>Performance Reports Module</b>"]
+      direction TB
+      P1["Class Performance:<br/>score distribution,<br/>component averages"]
+      P2["Performance Comparison:<br/>across sections and<br/>grading periods"]
+      P1 --> PX["Export or print"]
+      P2 --> PX
+    end
+    subgraph CM["<b>Consultations Module</b>"]
+      direction TB
+      C1["Consultation Requests"] --> C2["Respond and log<br/>resolution notes"]
+    end
+    subgraph NM["<b>Account Module</b>"]
+      direction TB
+      N1["My Profile: photo,<br/>contact number"]
+      N2["Change Password"]
+      N3["Notification Preferences"]
+      N1 ~~~ N2 ~~~ N3
+    end
+  end
+
+  ROW1 ~~~ ROW2
+
+  classDef accent fill:#14532D,stroke:#14532D,color:#FFFFFF;
+
+  style ROW1 fill:#FFFFFF,stroke:#FFFFFF
+  style ROW2 fill:#FFFFFF,stroke:#FFFFFF

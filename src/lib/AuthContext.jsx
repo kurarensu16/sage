@@ -6,6 +6,7 @@ import { App as CapApp } from '@capacitor/app';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { initLocalNotifications, showLocalNotification } from './notificationService';
 import { NOTIFICATION_TITLES } from './notificationDispatcher';
+import { isChannelEnabled, loadNotificationPreferences } from './notificationPreferences';
 import { invalidateCache } from './dataCache';
 
 const AuthContext = createContext({});
@@ -188,6 +189,14 @@ export const AuthProvider = ({ children }) => {
     initLocalNotifications();
     fetchUnreadCount(userId);
 
+    // Device alerts honor the user's per-type "Device" preference; the inbox row is unaffected.
+    let devicePreferences = {};
+    loadNotificationPreferences(userId)
+      .then(prefs => { devicePreferences = prefs; })
+      .catch(err => console.warn('Could not load notification preferences:', err));
+    const onPreferencesChanged = event => { devicePreferences = event.detail || {}; };
+    window.addEventListener('aspire:notification-preferences-changed', onPreferencesChanged);
+
     // 1. Initial baseline: Record current existing notifications once to avoid re-alerting on app launch
     const initBaseline = async () => {
       try {
@@ -216,7 +225,7 @@ export const AuthProvider = ({ children }) => {
     // academic_notice carries dean directive text; grade_posted/grade_changed carry
     // the remark plus an adviser-consult line per item (i) of
     // IMPLEMENTATION_CORRECTIONS.md). Per
-    // docs/update_plan/NOTIFICATION_DELIVERY_ARCHITECTURE.md §6: "Push / lock
+    // docs/01-system/notifications/NOTIFICATION_DELIVERY_ARCHITECTURE.md §6: "Push / lock
     // screen: Event only. Never the grade, the remark, or the risk status" — and
     // its standing rule that nothing naming a student's risk or failing status
     // leaves the authenticated app. This function fires for every unread/incoming
@@ -231,6 +240,7 @@ export const AuthProvider = ({ children }) => {
       if (!notif || !notif.notification_id || !notif.message) return;
       if (displayedNotificationIds.current.has(notif.notification_id)) return;
       displayedNotificationIds.current.add(notif.notification_id);
+      if (!isChannelEnabled(devicePreferences, notif.type, 'push')) return;
 
       try {
         const rawTitle = NOTIFICATION_TITLES[notif.type] || 'SAGE Notification';
@@ -306,6 +316,7 @@ export const AuthProvider = ({ children }) => {
       .subscribe();
 
     return () => {
+      window.removeEventListener('aspire:notification-preferences-changed', onPreferencesChanged);
       clearInterval(pollerInterval);
       if (appStateListener) appStateListener.remove();
       supabase.removeChannel(dbChannel);

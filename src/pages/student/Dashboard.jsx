@@ -285,7 +285,7 @@ export default function Dashboard() {
             : 'Update needed';
           resolvedSummary = isCurrent
             ? latest.summary
-            : 'Academic evidence changed after the previous explanation. Open the Academic Advisor to generate a current insight.';
+            : 'Academic evidence changed after the previous explanation. Open the AI Study Tutor to generate a current insight.';
           setInsightVerdict(resolvedVerdict);
           setInsightSummary(resolvedSummary);
         } else {
@@ -344,7 +344,7 @@ export default function Dashboard() {
               Welcome Back, {profile?.first_name || 'Student'}!
             </h1>
             <p className="text-xs sm:text-sm text-sage-200/90 max-w-xl leading-relaxed">
-              Track your real-time academic milestones, review faculty intervention checklists, and explore AI counseling insights.
+              Track your real-time academic milestones, review faculty intervention checklists, and explore AI Study Tutor insights.
             </p>
           </div>
           
@@ -599,7 +599,7 @@ export default function Dashboard() {
               )}
               {infoModalType === 'ai' && (
                 <>
-                  <p>The <strong>AI Study Advisor</strong> analyzes your real-time grades, absences, and academic history to predict your trajectory.</p>
+                  <p>The <strong>AI Study Tutor</strong> analyzes your real-time grades, absences, and academic history to predict your trajectory.</p>
                   
                   <div className="space-y-3 mt-4">
                     <div className="bg-emerald-50/50 border border-emerald-100 p-3 rounded-xl flex gap-3">

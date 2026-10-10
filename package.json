@@ -11,6 +11,7 @@
     "verify:csv": "node scripts/verifyCsvExport.js",
     "verify:insights": "node scripts/verifyInsightFreshness.js",
     "diff:grading": "node scripts/diffGradingSnapshot.js",
+    "audit:freeze": "node scripts/freezeAudit.js",
     "preview": "vite preview",
     "cap:sync": "npm run build && npx cap sync",
     "cap:open": "npx cap open android",

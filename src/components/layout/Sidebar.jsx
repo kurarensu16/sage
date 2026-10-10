@@ -70,7 +70,7 @@ const PORTAL_NAVIGATION = {
       icon: BrainCircuit,
       items: [
         { to: '/student/advising-inbox', label: 'Advisories & Study Plans', icon: ClipboardList },
-        { to: '/student/academic-insights', label: 'AI Study Advisor', icon: BrainCircuit }
+        { to: '/student/academic-insights', label: 'AI Study Tutor', icon: BrainCircuit }
       ]
     },
     {
@@ -195,7 +195,7 @@ const PORTAL_NAVIGATION = {
       icon: Users,
       items: [
         { to: '/admin/userlist', label: 'Manage Users', icon: Users },
-        { to: '/admin/userlist?action=import', label: 'Import Users (CSV)', icon: FileSpreadsheet }
+        { to: '/admin/userlist?action=import', label: 'Import Users (CSV/Excel)', icon: FileSpreadsheet }
       ]
     },
     {
@@ -318,22 +318,22 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
     android: {
       label: 'Download Android App (.APK)',
       icon: Smartphone,
-      iconColor: 'text-emerald-400'
+      iconColor: 'text-sage-300'
     },
     ios: {
       label: 'Add to Home Screen',
       icon: Smartphone,
-      iconColor: 'text-indigo-400'
+      iconColor: 'text-sage-300'
     },
     desktop: {
       label: 'Install Desktop App',
       icon: Download,
-      iconColor: 'text-emerald-400'
+      iconColor: 'text-sage-300'
     }
   }[platform] || {
     label: 'Install ASPIRE App',
     icon: Download,
-    iconColor: 'text-emerald-400'
+    iconColor: 'text-sage-300'
   };
 
   const InstallIcon = installButtonConfig.icon;
@@ -346,9 +346,9 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
       {/* Header section */}
       <div className={cn(
         "border-b border-sage-800 flex items-center justify-between transition-all duration-300 flex-shrink-0",
-        isCollapsed ? "p-4 justify-center h-16" : "px-5 py-4 h-20"
+        isCollapsed && !mobileOpen ? "p-4 justify-center h-16" : "px-5 py-4 h-20"
       )}>
-        {isCollapsed ? (
+        {isCollapsed && !mobileOpen ? (
           <SageLogo variant="white" className="h-7 w-7" title="ASPIRE" />
         ) : (
           <div>

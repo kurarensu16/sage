@@ -8,7 +8,7 @@ export const NOTIFICATION_TITLES = {
   eval_closed: 'Faculty Evaluation Closed',
   eval_deadline_reminder: 'Evaluation Deadline Reminder',
   ews_alert: 'Early Warning System Alert',
-  ai_recommendation: 'AI Counseling Ready',
+  ai_recommendation: 'AI Study Tutor Insight Ready',
   class_assigned: 'New Class Assigned',
   term_rollover_reminder: 'Grade Submission Reminder',
   override_approved: 'Grade Override Approved',

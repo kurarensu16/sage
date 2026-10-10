@@ -80,7 +80,7 @@ export default function Notifications() {
             iconColor = 'text-amber-600 bg-amber-50 border-amber-200';
           } else if (n.type === 'ai_recommendation') {
             type = 'ai';
-            title = 'AI Counseling Verdict Ready';
+            title = 'AI Study Tutor Insight Ready';
             icon = BrainCircuit;
             iconColor = 'text-purple-600 bg-purple-50 border-purple-200';
           } else if (n.type === 'class_enrolled') {

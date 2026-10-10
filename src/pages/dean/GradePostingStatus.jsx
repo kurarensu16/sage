@@ -1,19 +1,17 @@
 import { useState, useEffect, useMemo } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, Filter, Loader2, RefreshCw, Unlock } from 'lucide-react';
+import { Search, Filter, Loader2, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
-import { notifyUnlockApproved } from '../../lib/notificationDispatcher';
 import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
 
 export default function GradePostingStatus() {
-  const { user, profile } = useAuth();
+  const { profile } = useAuth();
   
   // Data state
   const [classrooms, setClassrooms] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [postedGradesMap, setPostedGradesMap] = useState({});
-  const [unlockRequestsMap, setUnlockRequestsMap] = useState({});
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -88,19 +86,6 @@ export default function GradePostingStatus() {
       });
       setPostedGradesMap(postedMap);
 
-      // 4. Fetch pending unlock requests
-      const { data: unlockData } = await supabase
-        .from('unlock_requests')
-        .select('*')
-        .eq('status', 'pending');
-
-      const unlockMap = {};
-      (unlockData || []).forEach(ur => {
-        if (!unlockMap[ur.class_record_id]) unlockMap[ur.class_record_id] = [];
-        unlockMap[ur.class_record_id].push(ur);
-      });
-      setUnlockRequestsMap(unlockMap);
-
       // Normalize classroom items
       const formatted = (classData || []).map(c => {
         const facFirst = c.faculty?.first_name || '';
@@ -133,51 +118,12 @@ export default function GradePostingStatus() {
     loadPostingData();
   }, []);
 
-  const handleApproveUnlock = async (classRecordId) => {
-    try {
-      const resolvedAt = new Date().toISOString();
-      const resolvedBy = user?.id;
-
-      // 1. Resolve pending unlock requests in Supabase
-      await supabase
-        .from('unlock_requests')
-        .update({ status: 'approved', resolved_by: resolvedBy, resolved_at: resolvedAt })
-        .eq('class_record_id', classRecordId)
-        .eq('status', 'pending');
-
-      // 2. Unlock posted grades if locked
-      await supabase
-        .from('posted_grades')
-        .update({ is_locked: false })
-        .eq('class_record_id', classRecordId);
-
-      // 3. Dispatch notification to class faculty
-      const targetClass = classrooms.find(c => c.id === classRecordId);
-      if (targetClass?.facultyId) {
-        const actorName = profile ? `${profile.first_name} ${profile.last_name}` : 'Dean';
-        await notifyUnlockApproved({
-          facultyId: targetClass.facultyId,
-          subjectName: `${targetClass.subjectCode} (${targetClass.section})`,
-          milestone: 'Semestral Grade',
-          actorName
-        });
-      }
-
-      // Refresh data
-      await loadPostingData();
-    } catch (dbErr) {
-      console.error('Error approving unlock request:', dbErr);
-    }
-  };
-
   const getStatusBadge = (classId, milestone) => {
     const postedList = postedGradesMap[classId] || [];
-    const unlockList = unlockRequestsMap[classId] || [];
     
     const isPosted = postedList.some(row =>
       getCanonicalGradePeriod(row) === milestone
     );
-    const isRequested = unlockList.length > 0;
     
     if (isPosted) {
       return (
@@ -185,16 +131,6 @@ export default function GradePostingStatus() {
           <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
             Posted
           </span>
-          {isRequested && (
-            <button
-              onClick={() => handleApproveUnlock(classId)}
-              className="px-2 py-0.5 text-[9px] font-extrabold bg-amber-500 hover:bg-amber-600 text-white rounded shadow-sm transition-colors flex items-center gap-1 animate-pulse outline-none cursor-pointer"
-              title="Click to approve faculty request and unlock registry"
-            >
-              <Unlock className="h-3 w-3" />
-              Approve Request
-            </button>
-          )}
         </div>
       );
     }

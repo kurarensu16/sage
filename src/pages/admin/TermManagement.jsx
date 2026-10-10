@@ -160,9 +160,9 @@ export default function TermManagement() {
           milestone: 'Finals (Draft)'
         }));
 
-      // 3. Query unlock requests
+      // 3. Query pending SG correction requests awaiting a Dean decision
       const { count: pendingUnlocks, error: unlockErr } = await supabase
-        .from('unlock_requests')
+        .from('remark_override_requests')
         .select('request_id', { count: 'exact', head: true })
         .eq('status', 'pending');
 

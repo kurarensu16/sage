@@ -2557,7 +2557,7 @@ export default function ScoreInput() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between">
                   <span>Lesson Topic Scope / Description <span className="text-rose-500">*</span></span>
-                  <span className="text-[11px] font-normal text-slate-500 lowercase">(Required for AI Advisor)</span>
+                  <span className="text-[11px] font-normal text-slate-500 lowercase">(Required for AI Study Tutor)</span>
                 </label>
                 <textarea
                   required
@@ -2716,7 +2716,7 @@ export default function ScoreInput() {
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between">
                     <span>Lesson Topic Scope / Description <span className="text-rose-500">*</span></span>
-                    <span className="text-[11px] font-normal text-slate-500 lowercase">(Required for AI Advisor)</span>
+                    <span className="text-[11px] font-normal text-slate-500 lowercase">(Required for AI Study Tutor)</span>
                   </label>
                   <textarea
                     disabled={isTermFull}

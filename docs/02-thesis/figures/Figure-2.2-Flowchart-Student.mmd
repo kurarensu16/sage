@@ -1,0 +1,75 @@
+flowchart TB
+%% ===== Figure 2.2 — Proposed System Flowchart: Student Portal (updated 2026-10-10) =====
+%% Plans appear only after publication and must be acknowledged; faculty verify or return
+%% reported tasks; feature renamed "AI Study Tutor"; Account shows photo/contact/guardian.
+
+  SEL{"Select module"}
+  OUT(["<b>Log out / End</b>"]):::accent
+
+  subgraph LOGIN["<b>Authentication</b>"]
+    direction LR
+    START(["<b>Start</b>"]):::accent --> CRED[/"Enter credentials"/] --> VALID{"Valid credentials?"}
+    VALID -- "No" --> ERR["Show login error"]
+    ERR -.-> CRED
+    VALID -- "Yes" --> FIRST{"First login?"}
+    FIRST -- "Yes" --> CHG["Change temporary password<br/>(8+ characters, upper and<br/>lower case, number, symbol)"] --> DASH["<b>Dashboard</b>"]:::accent
+    FIRST -- "No" --> DASH
+  end
+
+  LOGIN --> SEL
+  SEL -- "Log out" --> OUT
+
+  SEL -- "My Grades" --> GM
+  SEL -- "Attendance" --> TM
+  SEL -- "Support" --> PM
+  SEL -- "Consult" --> CM
+  SEL -- "Account" --> NM
+
+  subgraph GM["<b>My Grades Module</b>"]
+    direction TB
+    G1["My Subjects:<br/>select a subject"] --> GB["Score Breakdown:<br/>activity title,<br/>description, score"]
+    G1 --> GQ{"Milestone<br/>officially posted?"}
+    GQ -- "Not yet" --> GH["Milestone hidden<br/>from student"]
+    GQ -- "Yes" --> GR["Grade Report:<br/>MR, TFR, SG, GWA"]
+  end
+
+  subgraph TM["<b>Attendance and Warnings Module</b>"]
+    direction TB
+    T1["View per-subject<br/>attendance record"] --> TQ{"4 or more<br/>absences?"}
+    TQ -- "No" --> TN["No warning shown"]
+    TQ -- "Yes" --> TY["Show FDA<br/>warning badge"]
+  end
+
+  subgraph PM["<b>Academic Support Module</b>"]
+    direction TB
+    P1["Advisories and<br/>Study Plans inbox"] --> PQ{"Published by<br/>instructor?"}
+    PQ -- "No" --> PN["Plan not shown<br/>to student"]
+    PQ -- "Yes" --> PA{"Plan<br/>acknowledged?"}
+    PA -- "No" --> PK["Acknowledge plan<br/>(time recorded)"]
+    PK --> PY
+    PA -- "Yes" --> PY["Report task done"] --> PV{"Instructor<br/>decision"}
+    PV -- "Verified" --> PVV["Task locked<br/>as verified"]
+    PV -- "Returned" --> PR["Read instructor note,<br/>redo and report again"]
+    P2["AI Study Tutor"] --> AQ{"AI service<br/>available?"}
+    AQ -- "No" --> AN["Local fallback<br/>recommendation"]
+    AQ -- "Yes" --> AY["Topic-grounded diagnostics<br/>and what-if GWA simulator"]
+  end
+
+  subgraph CM["<b>Consultations Module</b>"]
+    direction TB
+    C1["Request consultation:<br/>concern and schedule"] --> C2["View instructor<br/>response and status"]
+  end
+
+  subgraph NM["<b>Account Module</b>"]
+    direction TB
+    N1["My Profile: photo,<br/>contact number,<br/>guardian contact"]
+    N2["Change Password"]
+    N3["Notification Preferences:<br/>device and email alerts"]
+    N1 ~~~ N2 ~~~ N3
+  end
+
+
+  classDef accent fill:#1E3A8A,stroke:#1E3A8A,color:#FFFFFF;
+
+  GM ~~~ CM
+  PM ~~~ NM

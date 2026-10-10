@@ -4,7 +4,7 @@
 //
 // Scope: grade_posted, grade_changed, and authorized Dean referral events.
 //
-// Privacy rule for the STUDENT's own copy (docs/update_plan/NOTIFICATION_DELIVERY_ARCHITECTURE.md
+// Privacy rule for the STUDENT's own copy (docs/01-system/notifications/NOTIFICATION_DELIVERY_ARCHITECTURE.md
 // §6): the email body NEVER contains the grade value, remark, or pass/fail status — only an
 // event notice and a link into the authenticated portal. Mail sits in a mailbox indefinitely and
 // may be synced to shared/family devices; a grade or "Failed" status does not belong there. Do

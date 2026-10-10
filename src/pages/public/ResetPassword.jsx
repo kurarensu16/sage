@@ -4,6 +4,8 @@ import { Lock, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { logActivity } from '../../lib/auditLog';
 import SageLogo from '../../components/layout/SageLogo';
+import PasswordRequirements from '../../components/auth/PasswordRequirements';
+import { checkPassword, PASSWORD_POLICY_MESSAGE } from '../../lib/passwordPolicy';
 
 export default function ResetPassword() {
   const [newPassword, setNewPassword] = useState('');
@@ -12,13 +14,15 @@ export default function ResetPassword() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [signOutOthers, setSignOutOthers] = useState(true);
+  const [otherSessionsEnded, setOtherSessionsEnded] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
-    if (newPassword.length < 6) {
-      setErrorMsg('Password must be at least 6 characters long.');
+    if (!checkPassword(newPassword).valid) {
+      setErrorMsg(PASSWORD_POLICY_MESSAGE);
       return;
     }
 
@@ -32,10 +36,24 @@ export default function ResetPassword() {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
 
-      // 2. Log password update success to audit log
+      // 2. Optionally revoke every other signed-in session; this recovery session stays.
+      let endedOthers = false;
+      if (signOutOthers) {
+        const { error: signOutError } = await supabase.auth.signOut({ scope: 'others' });
+        if (signOutError) {
+          console.warn('Could not end other sessions:', signOutError);
+        } else {
+          endedOthers = true;
+        }
+      }
+      setOtherSessionsEnded(endedOthers);
+
+      // 3. Log password update success to audit log
       await logActivity(
         'Password Reset Success',
-        'Password successfully updated for user account via recovery link.',
+        endedOthers
+          ? 'Password updated via recovery link; all other active sessions were signed out.'
+          : 'Password updated via recovery link; other active sessions were left signed in.',
         'Public Account Service'
       );
 
@@ -72,6 +90,13 @@ export default function ResetPassword() {
               <h3 className="text-lg font-bold font-display text-slate-900">Password Updated</h3>
               <p className="text-xs text-slate-500 leading-relaxed">
                 Your password credentials have been successfully updated. You can now sign in using your new credentials.
+              </p>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                {otherSessionsEnded
+                  ? 'All other devices signed in to your account have been signed out.'
+                  : signOutOthers
+                    ? 'Other devices could not be signed out automatically. Sign out of them manually if you do not recognize them.'
+                    : 'Other devices signed in to your account remain signed in.'}
               </p>
               
               <RouterLink 
@@ -117,6 +142,7 @@ export default function ResetPassword() {
                     )}
                   </button>
                 </div>
+                <PasswordRequirements value={newPassword} />
               </div>
 
               {/* Confirm Password field */}
@@ -148,8 +174,21 @@ export default function ResetPassword() {
                 </div>
               </div>
 
+              <label className="flex items-start gap-2.5 text-xs text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={signOutOthers}
+                  onChange={(e) => setSignOutOthers(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-sage-600"
+                />
+                <span>
+                  <span className="font-bold block">Sign out of all other devices</span>
+                  <span className="text-slate-500">Recommended if you reset your password because you suspect someone else used your account.</span>
+                </span>
+              </label>
+
               {/* Submit */}
-              <button 
+              <button
                 type="submit"
                 className="w-full py-3 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-sm font-bold transition-all shadow-sm mt-4 cursor-pointer"
               >

@@ -1,0 +1,32 @@
+flowchart LR
+%% ===== Figure 1.1 — Conceptual Framework of ASPIRE (IPOF Model) =====
+
+  subgraph IN["<b>INPUT</b>"]
+    direction TB
+    I1["Raw Academic Data<br/>(student scores)"]
+    I2["Activity Metadata<br/>(title, description,<br/>maximum score)"]
+    I3["Attendance Logs"]
+    I4["User Credentials<br/>and Role"]
+    I1 ~~~ I2 ~~~ I3 ~~~ I4
+  end
+
+  subgraph PR["<b>PROCESS</b>"]
+    direction TB
+    P1["Grading Engine<br/>(COG templates,<br/>milestone rounding)"]
+    P2["Academic Risk Scoring Engine<br/>(four-factor composite)"]
+    P3["AI Engine<br/>(metadata-grounded<br/>advisories)"]
+    P4["HITL Workflow<br/>(faculty evaluations,<br/>Dean approvals)"]
+    P1 --> P2 --> P3 --> P4
+  end
+
+  subgraph OUT["<b>OUTPUT</b>"]
+    direction TB
+    O1["Students:<br/>Grade Reports and<br/>AI Study Plans"]
+    O2["Faculty:<br/>Risk-Sorted<br/>Triage Rosters"]
+    O3["Deans:<br/>Risk and Honors<br/>Analytics Matrix"]
+    O4["Admins:<br/>Immutable<br/>Audit Logs"]
+    O1 ~~~ O2 ~~~ O3 ~~~ O4
+  end
+
+  IN ==> PR ==> OUT
+  OUT -. "<b>FEEDBACK:</b> TAM and ISO/IEC 25010:2023<br/>evaluation results refine the system" .-> PR

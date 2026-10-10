@@ -1,0 +1,20 @@
+erDiagram
+%% ===== Figure 2.16 — ERD Layer 4: Risk, Advising & Consultation (updated 2026-10-10) =====
+%% Adds STUDENT_EVALUATION_REFERRALS, FACULTY_INTERVENTION_DRAFTS, FACULTY_INTERVENTION_WORKING_DRAFTS.
+    ACADEMIC_TERMS ||--o{ ATTENDANCE_RECORDS : "term of"
+    CLASS_RECORDS ||--o{ ATTENDANCE_RECORDS : "recorded in"
+    USERS ||--o{ ATTENDANCE_RECORDS : "attendance of"
+    USERS ||--o{ STUDENT_ACADEMIC_INSIGHTS : "receives"
+    CLASS_RECORDS ||--o{ STUDENT_CONSULTATION_REQUESTS : "regarding"
+    USERS ||--o{ STUDENT_CONSULTATION_REQUESTS : "requests / receives"
+    CLASS_RECORDS ||--o{ STUDENT_RISK_EVALUATIONS : "evaluated within"
+    USERS ||--o{ STUDENT_RISK_EVALUATIONS : "student / faculty evaluator"
+    STUDENT_RISK_EVALUATIONS ||--o{ STUDENT_RISK_PRIVATE_NOTES : "has restricted notes"
+    USERS ||--o{ STUDENT_RISK_PRIVATE_NOTES : "authors"
+    STUDENT_RISK_EVALUATIONS ||--o{ STUDENT_EVALUATION_REFERRALS : "referred to Dean"
+    USERS ||--o{ STUDENT_EVALUATION_REFERRALS : "refers / resolves"
+    USERS ||--o{ FACULTY_INTERVENTION_DRAFTS : "AI drafts for"
+    STUDENT_RISK_EVALUATIONS |o--o{ FACULTY_INTERVENTION_DRAFTS : "accepted into"
+    USERS ||--o{ FACULTY_INTERVENTION_WORKING_DRAFTS : "unpublished work of"
+    STUDENT_RISK_EVALUATIONS |o--o{ FACULTY_INTERVENTION_WORKING_DRAFTS : "submitted as"
+    USERS ||--o{ FACULTY_PERFORMANCE_INSIGHTS : "evaluated faculty"

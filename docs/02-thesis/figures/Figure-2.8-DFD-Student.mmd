@@ -1,0 +1,49 @@
+flowchart LR
+%% ===== Figure 2.8 — Level 1 DFD: Student Portal (updated 2026-10-10) =====
+%% 6.0 renamed AI Study Tutor; 7.0 adds acknowledgment and task decisions; adds 9.0 Manage Account.
+%% Layout: External entity (left) -> Process (middle) -> Data stores (right)
+
+  %% ---------- 1.0 ----------
+  S1["Student"] <-- "credentials / access session" --> P1(("1.0<br/>Authenticate<br/>User"))
+  P1 <-- "account record" --> D1@{ shape: lin-rect, label: "D1&nbsp; users" }
+
+  %% ---------- 2.0 ----------
+  S2["Student"] <-- "GWA summary, risk badge" --> P2(("2.0<br/>Load<br/>Dashboard"))
+  P2 <-- "enrolled subjects" --> D8@{ shape: lin-rect, label: "D8&nbsp; enrollments" }
+  P2 <-- "posted grades" --> D12b@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P2 <-- "latest risk score" --> D16b@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
+
+  %% ---------- 3.0 ----------
+  S3["Student"] <-- "posted milestone grades" --> P3(("3.0<br/>View Grade<br/>Report"))
+  P3 <-- "MR / TFR / SG, GWA" --> D12c@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+
+  %% ---------- 4.0 ----------
+  S4["Student"] <-- "activity scores and metadata" --> P4(("4.0<br/>View Score<br/>Breakdown"))
+  P4 <-- "activity title, description" --> D10d@{ shape: lin-rect, label: "D10&nbsp; class_activities" }
+  P4 <-- "released scores" --> D11d@{ shape: lin-rect, label: "D11&nbsp; student_activity_scores" }
+
+  %% ---------- 5.0 ----------
+  S5["Student"] <-- "counts, FDA warning" --> P5(("5.0<br/>View<br/>Attendance"))
+  P5 <-- "attendance per subject" --> D15e@{ shape: lin-rect, label: "D15&nbsp; attendance_records" }
+
+  %% ---------- 6.0 ----------
+  S6["Student"] <-- "question / topic diagnostics,<br/>GWA and PL forecast" --> P6(("6.0<br/>AI Study<br/>Tutor"))
+  P6 <-- "activity metadata" --> D10f@{ shape: lin-rect, label: "D10&nbsp; class_activities" }
+  P6 <-- "official standing" --> D12f@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P6 -- "advisory log" --> D20f@{ shape: lin-rect, label: "D20&nbsp; student_academic_insights" }
+  P6 <-- "grounded prompt / JSON diagnostics" --> AIP["AI Model Provider<br/>(Gemini 2.5 Flash<br/>via OpenRouter)"]
+
+  %% ---------- 7.0 ----------
+  S7["Student"] <-- "published plans, task decisions /<br/>acknowledgment, task reports" --> P7(("7.0<br/>View Advisories<br/>and Study Plans"))
+  P7 <-- "published plan, acknowledgment,<br/>reported and verified tasks" --> D16g@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
+
+  %% ---------- 8.0 ----------
+  S8["Student"] <-- "consultation request /<br/>response and status" --> P8(("8.0<br/>Request<br/>Consultation"))
+  P8 <-- "booking record" --> D23h@{ shape: lin-rect, label: "D23&nbsp; student_consultation_requests" }
+
+  %% ---------- 9.0 ----------
+  S9["Student"] <-- "photo, contact number, guardian,<br/>password, alert choices / profile" --> P9(("9.0<br/>Manage<br/>Account"))
+  P9 <-- "contact number, photo reference" --> D1i@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P9 <-- "profile photo file" --> D30i@{ shape: lin-rect, label: "D30&nbsp; avatars (private storage)" }
+  P9 <-- "primary guardian contact" --> D28i@{ shape: lin-rect, label: "D28&nbsp; guardians" }
+  P9 <-- "device and email choices" --> D29i@{ shape: lin-rect, label: "D29&nbsp; notification_preferences" }

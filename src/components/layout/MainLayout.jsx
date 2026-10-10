@@ -50,7 +50,7 @@ export default function MainLayout() {
         </main>
       </div>
 
-      <BottomNav />
+      <BottomNav onOpenMenu={() => setMobileOpen(true)} menuOpen={mobileOpen} />
       <OfflineBadge />
       <GuardianInfoGate />
     </div>
