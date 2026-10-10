@@ -12,6 +12,7 @@ import {
   ChevronDown,
   CheckSquare,
   Square,
+  Users,
   X
 } from 'lucide-react';
 import { cn, formatRelativeTime } from '../../lib/utils';
@@ -84,6 +85,11 @@ export default function Notifications() {
             title = 'New Class Assigned';
             icon = Info;
             iconColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
+          } else if (n.type === 'class_join_request' || n.type === 'class_roster_added') {
+            type = 'system';
+            title = n.type === 'class_join_request' ? 'New Enrollment Request' : 'Class Roster Update';
+            icon = Users;
+            iconColor = 'text-sage-700 bg-sage-50 border-sage-200';
           } else if (n.type === 'compliance') {
             type = 'override';
             title = 'Grading Compliance Notice';

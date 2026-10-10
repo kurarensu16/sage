@@ -88,6 +88,11 @@ export default function Notifications() {
             title = 'Class Registration Success';
             icon = Info;
             iconColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
+          } else if (n.type === 'class_join_declined') {
+            type = 'system';
+            title = 'Enrollment Request Not Approved';
+            icon = Info;
+            iconColor = 'text-rose-600 bg-rose-50 border-rose-200';
           } else if (n.type === 'ews_alert') {
             type = 'grade';
             title = 'Early Warning System Alert';

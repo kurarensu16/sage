@@ -44,7 +44,7 @@ How each tool finds the rules:
 2. The AI investigates (reading is allowed), then proposes: *"I'd edit `src/pages/student/FacultyAdvisingInbox.jsx` to count verified tasks. No migration. OK?"*
 3. You answer **yes**. The AI edits that file only.
 4. If it needs another file, it asks again for that file.
-5. The AI creates a change record, e.g., `feature-updates/2026-10-12_student-badge-count.md`, from the template, with the date, its tool name, your git name and email, the type, any migration, the files, what changed and why, and how to verify.
+5. The AI creates a change record, e.g., `feature-updates/2026-10-12_1430_student-badge-count.md` (date and time, so a day's records stay in order), from the template, with the date, its tool name, your git name and email, the type, any migration, the files, what changed and why, and how to verify.
 6. Commit. The commit check (§6.1) runs the audit automatically and blocks the commit if a change record is missing. You can also run `npm run audit:freeze` yourself first.
 
 If you edit code yourself without AI, create a record with AI tool `Manual`.

@@ -17,6 +17,7 @@ Every document in `docs/` is listed here with its status. **Agents and contribut
 | Report on finished implementation work | `03-development/implementation-reports/` | `TOPIC_YYYY-MM-DD.md` |
 | Test checklist, QA runbook, evidence | `04-testing/` | `TOPIC_YYYY-MM-DD.md` |
 | Setup, DB reset/seed, deployment, PWA/APK | `05-operations/<topic>/` | `TOPIC.md` |
+| Planned improvements, documented but not built | `06-future-enhancements/` | `TOPIC_YYYY-MM-DD.md` |
 | Superseded, completed, or rejected | `archive/<era-or-kind>/` | keep original name |
 
 Do not add `.md` files to the repository root. The root holds only `README.md`, `AGENTS.md` (all agent rules, including the change freeze), and the one-line `CLAUDE.md`/`GEMINI.md` pointers to it.
@@ -51,6 +52,8 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | [defense/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md](02-thesis/defense/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md) | Reference | Capstone 1 panel rulings and policy specs. |
 | [decisions/COLLEGE_OFFICE_PORTAL_DISCARD_ANALYSIS.md](02-thesis/decisions/COLLEGE_OFFICE_PORTAL_DISCARD_ANALYSIS.md) | Current | Why the Office portal was dropped (4 portals). |
 | [decisions/ROSTER_IMPORT_VS_USER_MANAGEMENT_ANALYSIS.md](02-thesis/decisions/ROSTER_IMPORT_VS_USER_MANAGEMENT_ANALYSIS.md) | Current | Import Users (CSV/Excel) vs. user management. |
+| [decisions/LATE_JOINER_MISSING_ACTIVITIES_2026-10-10.md](02-thesis/decisions/LATE_JOINER_MISSING_ACTIVITIES_2026-10-10.md) | Current | Late joiners get `0` for missing posted-term work so the risk is visible; corrected after make-up. |
+| [defense/SCALABILITY_DEFENSE_QA_2026-10-10.md](02-thesis/defense/SCALABILITY_DEFENSE_QA_2026-10-10.md) | Current | Panel answers on 1,000-user scale, data handling, caching, and late joiners. |
 
 ## 03 · Development: implementation reports
 
@@ -62,6 +65,7 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | [ASPIRE-AI-Advisor-Implementation-Log.md](03-development/implementation-reports/ASPIRE-AI-Advisor-Implementation-Log.md) | Reference | AI Study Tutor build log (earlier name "AI Advisor"). |
 | [FACULTY_TRACKER_AND_GHOST_STUDENT_IMPLEMENTATION_REPORT.md](03-development/implementation-reports/FACULTY_TRACKER_AND_GHOST_STUDENT_IMPLEMENTATION_REPORT.md) | Reference | Faculty tracker and ghost-student handling. |
 | [IRREGULAR_STUDENT_AUDIT_CURRENT_STATE_REVIEW.md](03-development/implementation-reports/IRREGULAR_STUDENT_AUDIT_CURRENT_STATE_REVIEW.md) | Reference | Irregular-student handling review. |
+| [CLASS_JOIN_APPROVAL_2026-10-10.md](03-development/implementation-reports/CLASS_JOIN_APPROVAL_2026-10-10.md) | Current | Class-code joins require faculty approval (pending requests, one-step faculty-only approval, locked request cards, late-join hint, in-app notifications). Also block-section enrollment on section assignment and *Class Roster Update* notices (§8). Migrations `20261010150000`, `20261010160000`. |
 
 ## 04 · Testing
 
@@ -81,6 +85,17 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | [mobile-pwa/WALKTHROUGH_PWA.md](05-operations/mobile-pwa/WALKTHROUGH_PWA.md) | Reference | PWA install and mobile walkthrough. |
 | [agents/CHANGE_FREEZE_GUIDE.md](05-operations/agents/CHANGE_FREEZE_GUIDE.md) | Current | How the AI-agent change freeze works and how to switch it ON/OFF (`FREEZE:` line in `AGENTS.md` + `.claude/settings.json`). |
 | [agents/feature-updates/](05-operations/agents/feature-updates/README.md) | Current | One change record per change made while the freeze is ON (AI tool, device owner, type, migration, files, reason, how to verify). Template in its README. Checked by `npm run audit:freeze`. |
+
+## 06 · Future enhancements: documented, not built
+
+| Document | Status | Notes |
+|---|---|---|
+| [README.md](06-future-enhancements/README.md) | Current | What belongs here, priority scale (P0–P3), status legend. Never lists the owner's deferred items. |
+| [SCALABILITY_AND_DATA_HANDLING_2026-10-10.md](06-future-enhancements/SCALABILITY_AND_DATA_HANDLING_2026-10-10.md) | Proposed | Data handling, caching, and 1,000+ concurrent users: 13 findings, target design, roadmap E-01–E-15 with acceptance tests. |
+| [scalability/README.md](06-future-enhancements/scalability/README.md) | Proposed | Implementation-spec index and template. Written: E-01 paged reads, E-02 grade-sheet safe save, E-03 remove mock seed, E-04 Dean database functions. |
+| [scalability/HOSTING_TIERS_AND_COST.md](06-future-enhancements/scalability/HOSTING_TIERS_AND_COST.md) | Proposed | Free vs. paid hosting limits and the tier needed per adoption size (prototype / department / institution). |
+| [SECTION_TRANSFER_ENROLLMENTS_2026-10-10.md](06-future-enhancements/SECTION_TRANSFER_ENROLLMENTS_2026-10-10.md) | Proposed | Section transfers keep old class enrollments; proposed record-preserving transfer handling. |
+| [LATE_JOINER_HANDLING_2026-10-10.md](06-future-enhancements/LATE_JOINER_HANDLING_2026-10-10.md) | Proposed | Late joiners: current behavior (audited), gaps, and planned improvements LJ-A–LJ-D. |
 
 ## Archive
 

@@ -1,7 +1,7 @@
 # ASPIRE Thesis (Chapters 1–2) vs. Codebase Audit — Revision 3
 
 **Document audited**: `ASPIRE_Chapters_1-2_Master.docx` (Chapter 1: Project Rationale; Chapter 2: System Development)
-**Codebase state**: HEAD `b977c7d` on branch `ghost`, plus 2026-10-10 working-tree changes and three new migrations: `20261010120000_intervention_followup_and_task_verification.sql` and `20261010130000_profile_contact_and_photo.sql` (both applied 2026-10-10), and the testing fix `20261010140000_followup_requires_task_review.sql` (to apply). The user confirmed these are the **final feature changes**; only fixes from testing follow.
+**Codebase state**: HEAD `b977c7d` on branch `ghost`, plus 2026-10-10 working-tree changes and three new migrations: `20261010120000_intervention_followup_and_task_verification.sql` and `20261010130000_profile_contact_and_photo.sql` (both applied 2026-10-10), and the testing fix `20261010140000_followup_requires_task_review.sql` (applied 2026-10-10). Also `20261010150000_class_join_approval.sql` and `20261010160000_section_enrollment_sync_and_notice.sql` (to apply): class-code joins now require faculty approval, as the paper describes (§E2); block-section students are enrolled immediately on section assignment, and professors receive a roster notice. The user confirmed these are the **final feature changes**; only fixes from testing follow.
 **Date**: 2026-10-10
 **Supersedes**: Revisions 1–2 of this file (same date) and `CHAPTER_1_2_CODEBASE_COMPARISON.md` (2026-08-05, written against an older thesis draft)
 **Revision 3 adds**: the implementation status of §A, §H (evaluation tool updates, now applied), and §I (paper text needed for the new behavior)
@@ -381,6 +381,14 @@ The repository's `AGENTS.md`, which is not part of the thesis, is stale. It desc
 - The evaluation has not started (confirmed 2026-10-10), so nothing needs to be redone. Proceed with the normal Phase 1 expert validation (Instrument Validation Sheet) on the updated wording, then the Phase 3 pilot and Cronbach's alpha.
 - Freeze the instrument wording once code changes stop. Start Phase 1 only after the system is final, so respondents rate the version that gets defended.
 
+### E2. Class-code joins skipped faculty approval
+> **Status (2026-10-10): fixed in code; migration `20261010150000_class_join_approval.sql` to apply.**
+- **Paper:** Faculty Portal → Enrollment Requests, *"Queue for approving or rejecting students who joined by code before they are added to the roster and gradebook"*; Figure 2.3 (*Enrollment Requests → Approve?*); Figure 2.9 process 6.0 (*join requests, decision → approved student → enrollments*).
+- **Code before:** `classRoomService.js` → `submitJoinRequest` enrolled the student immediately and stored the request as approved, so the queue never received code joins.
+- **Fix:** a pending request on join; one-step faculty-only approval that also enrolls; locked "Waiting for approval" cards on the student's My Subjects; a late-join hint for classes with posted milestones. Details: `docs/03-development/implementation-reports/CLASS_JOIN_APPROVAL_2026-10-10.md`.
+- **Paper:** no change required. One optional sentence for the new notifications is listed in §I item 10.
+- **Related fix:** block-section students were only enrolled into existing classes when a professor opened My Class Records. Section assignment now enrolls them immediately (migration `20261010160000`), and professors get a *Class Roster Update* notice with the number of students added (§I item 11).
+
 ---
 
 ## I. Paper Text Required by the 2026-10-10 Code Changes
@@ -396,6 +404,8 @@ These describe behavior added while closing §A. Without them, the paper and the
 7. **ERD Layer 1 (Figure 2.13):** USERS gains `contact_number` and `avatar_path` (photo stored in a private storage bucket).
 8. **Data Privacy (Ch. 1) and the consent form (evaluation tool, item 2 or a new item):** "Profile photos are optional, stored privately, visible only to the account owner, and can be removed at any time."
 9. **Password rules (B5):** First Login and Forgot/Reset wording as given in §B5.
+10. **Enrollment Requests (optional, 2026-10-10):** add *"The instructor is notified of new requests, and the student is notified of the decision."* The request/decision notifications were approved by the owner as a new feature outside the original documented flow.
+11. **Class roster notice (optional, 2026-10-10):** in the Faculty Portal (My Class Records), add *"Faculty are notified of the number of students added to their classes through section enrollment."* Approved by the owner as a new feature.
 
 ---
 

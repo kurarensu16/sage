@@ -2,7 +2,7 @@
 
 **Purpose:** One runbook for all untested updates on the `ghost` branch.
 - **Part A, Grading Workflow Remediation.** Cases carried over from `GRADING_WORKFLOW_REMEDIATION_CHECKLIST.md` §12 (commits up to `b977c7d`).
-- **Part B, 2026-10-10 updates.** Plan acknowledgment, task verification, follow-up snapshot, Intervention Results, baseline freeze, notification preferences, password rules, profile photo and contact number, AI Study Tutor and menu labels, removal of the unlock path. See `THESIS_AUDIT_2026-10-10.md`.
+- **Part B, 2026-10-10 updates.** Plan acknowledgment, task verification, follow-up snapshot (now requiring reviewed tasks), re-evaluation guidance, Intervention Results, baseline freeze, notification preferences, password rules, profile photo and contact number, AI Study Tutor and menu labels, mobile menu and install card, removal of the unlock path, **class-code joins requiring faculty approval (B10a)**, and **block-section enrollment with professor roster notices (B10b)**. See `THESIS_AUDIT_2026-10-10.md` and `docs/03-development/implementation-reports/CLASS_JOIN_APPROVAL_2026-10-10.md`.
 
 **Status:** NOT RUN. Nothing below has been executed yet.
 
@@ -18,6 +18,8 @@
 - [x] Apply `20261010120000_intervention_followup_and_task_verification.sql`. Applied 2026-10-10.
 - [x] Apply `20261010130000_profile_contact_and_photo.sql`. Applied 2026-10-10; it creates the private `avatars` storage bucket and its owner-only policies.
 - [x] Apply `20261010140000_followup_requires_task_review.sql`. Applied 2026-10-10; it redefines `record_intervention_followup` so a follow-up cannot be recorded while a reported task is unreviewed.
+- [ ] Apply `20261010150000_class_join_approval.sql`. It adds `request_class_join`, `resolve_class_join_request`, and `dismiss_class_join_request`, plus tracking columns on `class_join_requests`. Joining by class code then requires faculty approval.
+- [ ] Apply `20261010160000_section_enrollment_sync_and_notice.sql` **after** `20261010150000`. Section assignment enrolls block students immediately; professors get a roster notice with the number of students added. It also back-fills block students missing from their section's active classes (no notices for the back-fill).
 - [x] Confirm the new functions exist (verified 2026-10-10): `acknowledge_student_evaluation`, `verify_intervention_task`, `record_intervention_followup`, `update_own_contact_number`, and `set_own_avatar_path`.
 - [x] Confirm the new columns exist (verified 2026-10-10):
   - `student_risk_evaluations.acknowledged_at`, `followup_recorded_at`, `followup_recorded_by`
@@ -47,12 +49,20 @@
   - two faculty accounts assigned to different classes
   - two Dean accounts from different departments
   - one Admin account
+- [ ] Prepare data for B10a/B10b (class-code joins and section enrollment):
+  - a block section with **at least two active classes taught by different faculty** (EN-01, EN-02)
+  - an **irregular** student account whose home section differs from the class section (EJ-07)
+  - a student with **no** enrollment in the test subject, for code joins (EJ-02 to EJ-09)
+  - a CSV with **5 new student accounts** in the block section (EN-03)
+  - a second faculty account **not** assigned to the class (EJ-10)
+  - one class with a **posted MR** (from Part A posting) for the late-join hint (EJ-12)
+  - the class code of each test class (*My Class Records*)
 - [ ] Use separate browser profiles or private windows per role. Never switch roles in one session.
 - [ ] Capture baseline screenshots or exports before changing grades. For database-sensitive cases, record row values before and after.
 - [ ] Never use the Supabase service-role key for role tests.
 - [ ] Do each workflow through the UI first. Direct API or database checks confirm enforcement only.
 - [ ] Stop a scenario on an unexpected result. Capture the console, network response, timestamp, IDs, and steps.
-- [ ] For Android cases (PR-08), install the current APK build from the same commit.
+- [ ] Android in this run: test the **PWA** in Chrome (⋮ menu → *Install app*, or the browser). **Do not use "Download ASPIRE APK"**: the hosted APK is an older build and will be rebuilt after QA. APK-specific checks (e.g., PR-08 on the APK) are deferred to the APK build.
 
 **Result labels:**
 - `PASS`: UI and stored data match every expected result.
@@ -329,6 +339,36 @@
 - [ ] UL-02 Faculty → Posted Grades has no milestone unlock-request action. SG changes go only through the SG correction request.
 - [ ] UL-03 Admin → Term Management rollover audit: "Pending Dean Grade Override Requests" equals the number of **pending SG correction requests**.
 
+### B10a. Class-code joins require faculty approval
+
+Test with a block-section student and an irregular student (home section different from the class section).
+
+- [ ] EJ-01 Wrong or inactive code: *"Invalid or inactive classroom code…"*. No request or enrollment is created.
+- [ ] EJ-02 Valid code: the student sees *"Request sent to the instructor of <code> (<section>). You'll be added once it's approved."* The class is **not** in the student's subjects, grades, or attendance.
+- [ ] EJ-03 *My Subjects* shows a **locked** card for the request (subject, section, instructor, "Waiting for approval"). The card doesn't open.
+- [ ] EJ-04 Entering the same code again while pending: *"Your request to join … is already waiting for your instructor's approval."*
+- [ ] EJ-05 A student already enrolled in the subject: *"You are already enrolled in …"*. No request is created.
+- [ ] EJ-06 Faculty receives an in-app **New Enrollment Request** notification (no email). Faculty → Enrollment Requests lists the request with the student's name, ID, class, and request date.
+- [ ] EJ-07 **Approve:** the student is added to the roster (with the IRREGULAR badge for the irregular student) and gradebook. The faculty sees a confirmation. The student gets a **Class Registration Success** notification, and the class appears as a normal card on *My Subjects*.
+- [ ] EJ-08 **Reject:** the student isn't enrolled and gets **Enrollment Request Not Approved**. *My Subjects* shows a "Not approved" card with **Dismiss**; dismissing hides it.
+- [ ] EJ-09 After a rejection, entering the code again creates a new pending request (EJ-02 to EJ-03 repeat).
+- [ ] EJ-10 Only the class's assigned faculty can decide: a different faculty account, or the same request decided twice (e.g., two tabs), gets an error, and nothing changes.
+- [ ] EJ-11 Approving a student already enrolled in the subject in **another section** shows an error; the request stays pending.
+- [ ] EJ-12 **Late-join hint:** for a class with a posted MR (or TFR/SG), the request card says the milestone is posted and to enter 0 for missing posted-term work after approving. After approval, saving the grade sheet requires those cells (late-joiner decision record).
+- [ ] EJ-13 Notification preferences: the student's "Class enrollment" and the faculty's "Enrollment requests" device-alert toggles work. These categories offer no email option.
+- [ ] EJ-14 Students enrolled before this change, and old approved requests, are unaffected.
+
+### B10b. Block-section enrollment and roster notices
+
+- [ ] EN-01 Admin creates a student (Manage Users or CSV import) in section BSIT-1A, which has active classes. The student appears **immediately** in every BSIT-1A class roster, grade sheet, and attendance list, without any professor opening My Class Records.
+- [ ] EN-02 Each subject professor of BSIT-1A gets **Class Roster Update**: *"1 student was added to <subject> (BSIT-1A) through section enrollment…"*. No student name; no email.
+- [ ] EN-03 CSV import of 5 students into BSIT-1A within a few minutes: each professor has **one** unread notice per class, reading "5 students were added…", not five notices.
+- [ ] EN-04 Admin creates a **new class** for BSIT-1A (40 students): its professor gets *"<subject> (BSIT-1A) was set up with 40 students from section enrollment."* The count matches the roster and the admin Classrooms page.
+- [ ] EN-05 Approving a class-code join request (EJ-07) does **not** produce a Class Roster Update notice.
+- [ ] EN-06 An admin changes an existing student's section to BSIT-1B: they're enrolled in BSIT-1B's active classes, and BSIT-1B's professors are notified. (Old BSIT-1A enrollments remain; known limitation, see `06-future-enhancements/SECTION_TRANSFER_ENROLLMENTS_2026-10-10.md`.)
+- [ ] EN-07 A student already enrolled in a subject in another section isn't enrolled a second time in that subject.
+- [ ] EN-08 Faculty notification preferences: the "Class enrollment" device-alert toggle covers both enrollment requests and roster updates.
+
 ### B11. Hypothesis 2 controlled verification
 
 **Procedure:** follow the Evaluation Phasing Guide, Phase 4b, using a prepared dataset with hand-calculated expected values.
@@ -391,6 +431,12 @@ These cases depend on row-level access rules. Run them after the user applies RL
 - [ ] Notification preferences persist and are enforced (B6).
 - [ ] Password rules are enforced on all three screens, and reset sign-out works (B7).
 - [ ] Photo and contact number work on web and Android (B8).
+- [ ] A follow-up can't be recorded while a reported task is unreviewed, and student and faculty task counts agree (TV-10, FU-15, FU-16).
+- [ ] Re-evaluation: a closed term shows **Closed**; a later term can be evaluated with a new baseline (FU-11 to FU-14).
+- [ ] Class-code joins create a **pending** request; only the class's assigned faculty can approve or reject; approval enrolls the student in one step; nobody is enrolled without approval (B10a, EJ-01 to EJ-14).
+- [ ] Block-section students are enrolled **immediately** on section assignment, and professors receive one roster notice per class with the correct count, including new classes; approvals send none (B10b, EN-01 to EN-08).
+- [ ] New enrollment notifications are in-app and device alerts only: no email, no student names in faculty notices (EJ-06, EN-02).
+- [ ] Every page is reachable on a phone through **More**, and the install card is device-neutral (LB-07 to LB-09).
 
 **Sign-off:**
 - [ ] Human testers manually verified the deployed frontend. Automated and AI-assisted checks were supplementary only.
@@ -402,15 +448,16 @@ These cases depend on row-level access rules. Run them after the user applies RL
 
 ## Recommended Execution Order
 
-1. Complete §0. Apply and verify both new migrations, then record the preview URL, commit SHA, accounts, QA classes, and baseline values.
+1. Complete §0. Confirm `20261010120000`, `20261010130000`, and `20261010140000` are applied, and **apply `20261010150000` then `20261010160000`**. Then record the preview URL, commit SHA, accounts, QA classes, class codes, and baseline values.
 2. Run the regression smoke test (RG-01) to confirm each role reaches only its portal.
 3. Part A: privacy and NULL/zero (A4, A2), then dynamic COG and posting (A1), then SG correction including SG-09 (A3), then intervention drafts (A5), then audit and AI (A6), then database integrity (A7).
 4. Part B, in this order:
    1. Password rules (B7) and profile (B8)
-   2. Notification preferences (B6) and labels (B9)
+   2. Notification preferences (B6) and labels, mobile menu, and install card (B9, LB-01 to LB-09)
    3. Unlock removal (B10)
-   4. Acknowledgment (B1), verification (B2), follow-up (B3), and Intervention Results (B4)
-   5. Baseline freeze (B5)
+   4. **Section enrollment and roster notices (B10b)**, then **class-code join approval (B10a)**. Run these before B1–B4 so test students are in their classes. Run EJ-12 (late-join hint) once a QA class has a posted MR.
+   5. Acknowledgment (B1), verification (B2), follow-up (B3, including FU-11 to FU-17 re-evaluation and review rules), and Intervention Results (B4)
+   6. Baseline freeze (B5)
 5. Run the Hypothesis 2 controlled verification (B11) with the prepared dataset.
 6. Retest defects on the updated `ghost` preview, complete one clean regression run, and obtain QA lead and product-owner sign-off. Only then merge into `main`.
 7. Later, after the user applies RLS, the AI model setting, and the hosted password policy, run §D.

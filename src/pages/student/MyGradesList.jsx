@@ -43,7 +43,7 @@ export default function MyGradesList() {
       const res = await submitJoinRequest(user.id, joinCodeInput);
       setJoinFeedback({
         type: 'success',
-        message: `Successfully enrolled in ${res.classRecord?.subjects?.code || 'Course'} (${res.classRecord?.sections?.name || 'Section'})! You now have access to this classroom.`
+        message: `${res.message} Track it on My Subjects.`
       });
       setJoinCodeInput('');
       setRefreshTrigger(prev => prev + 1);

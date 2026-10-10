@@ -13,7 +13,8 @@
    - An implementation plan, task list, TODO, or an earlier approval is **not** approval. Even when a plan lists the work, confirm each file before editing it.
    - Silence or auto mode is not approval.
 3. **An approval covers only what was described.** Anything extra you notice gets reported and needs its own approval.
-4. **Record every approved change.** After an approved change is made, create a change record in [`docs/05-operations/agents/feature-updates/`](docs/05-operations/agents/feature-updates/README.md) in the same change: one file per change topic, named `YYYY-MM-DD_short-topic.md`, copied from the template in that folder's `README.md`. Writing the record is part of the approved work and needs no separate approval. Fill in:
+4. **Record every approved change.** After an approved change is made, create a change record in [`docs/05-operations/agents/feature-updates/`](docs/05-operations/agents/feature-updates/README.md) in the same change: one file per change topic, named `YYYY-MM-DD_HHMM_short-topic.md` (24-hour Philippine time, taken from the device clock, e.g., `date +%Y-%m-%d_%H%M`; if two records share a minute, use `HHMM-01`, `HHMM-02` in creation order), copied from the template in that folder's `README.md`. Records then sort first-applied at the top. If you cannot read the clock, ask the developer for the time. Writing the record is part of the approved work and needs no separate approval. Fill in:
+   - **Date:** `YYYY-MM-DD HH:MM (Philippine time)`, matching the file name.
    - **AI tool:** your own tool name (`Claude Code`, `Codex`, `Gemini CLI`, `Cursor`, …) and model if known. A change made without AI is recorded as `Manual`.
    - **Files changed:** every file path, in backticks.
    - **Approved by (device owner):** the output of `git config user.name` and `git config user.email` on this device. If either is empty, ask the developer for their name; never guess.
@@ -33,6 +34,7 @@
   | Implementation reports for finished work | `docs/03-development/implementation-reports/` |
   | Test checklists, QA runbooks, evidence | `docs/04-testing/` |
   | Setup, database reset/seed, deployment, PWA/APK | `docs/05-operations/<topic>/` |
+  | Planned improvements, documented but not built (never the owner's deferred items) | `docs/06-future-enhancements/` |
   | Superseded, completed, or rejected material | `docs/archive/<era-or-kind>/` |
 
 - Name dated docs `TOPIC_YYYY-MM-DD.md`. Do not create `.md` files in the repo root (only `README.md`, `AGENTS.md`, and the one-line `CLAUDE.md`/`GEMINI.md` pointers live there).
@@ -61,7 +63,7 @@
 
 ## Supabase
 - Remote project: `ettnwknyhdhehoclrwwh.supabase.co` (configured in `.env.local`)
-- `supabase/migrations/` holds 50 migration files. Add new ones as `YYYYMMDDHHMMSS_description.sql`. The owner runs them manually in the SQL editor.
+- `supabase/migrations/` holds 52 migration files. Add new ones as `YYYYMMDDHHMMSS_description.sql`. The owner runs them manually in the SQL editor.
 - Edge functions (Deno, `supabase/functions/`):
   - `create-admin-user`
   - `delete-admin-user`

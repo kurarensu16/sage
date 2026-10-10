@@ -13,10 +13,11 @@ export const PREFERENCE_CATEGORIES = Object.freeze({
     { key: 'grades', label: 'Grade postings and corrections', description: 'When an MR, TFR, or SG is posted or a posted grade is corrected.', types: ['grade_posted', 'grade_changed'] },
     { key: 'advising', label: 'Intervention plans and Dean notices', description: 'When an instructor publishes a plan or a Dean sends an academic notice.', types: ['academic_advising', 'academic_notice'] },
     { key: 'risk', label: 'Academic risk and AI insights', description: 'Early-warning alerts and new AI study diagnostics.', types: ['ews_alert', 'ai_recommendation'] },
-    { key: 'enrollment', label: 'Class enrollment', description: 'When you are added to a class.', types: ['class_enrolled'] },
+    { key: 'enrollment', label: 'Class enrollment', description: 'When your instructor approves or declines your request to join a class.', types: ['class_enrolled', 'class_join_declined'] },
     SYSTEM
   ],
   faculty: [
+    { key: 'enrollment', label: 'Class enrollment', description: 'When a student requests to join one of your classes with its code, or students are added to your class through section enrollment.', types: ['class_join_request', 'class_roster_added'] },
     { key: 'corrections', label: 'Grade correction decisions', description: 'When the Dean approves or rejects your SG correction request.', types: ['override_approved', 'override_rejected'] },
     { key: 'dean', label: 'Dean notices on referred cases', description: 'When a Dean adds a recommendation to a case you referred.', types: ['academic_notice'] },
     { key: 'compliance', label: 'Administrative grade adjustments', description: 'When an administrator overrides a grade in your class.', types: ['compliance'] },

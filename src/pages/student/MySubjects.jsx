@@ -13,12 +13,14 @@ import {
   CheckCircle2, 
   MessageSquare,
   FileText,
-  User
+  User,
+  Clock,
+  Lock
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
-import { submitJoinRequest } from '../../lib/classRoomService';
+import { submitJoinRequest, getMyJoinRequests, dismissJoinRequest } from '../../lib/classRoomService';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { TableSkeleton } from '../../components/common/Skeleton';
 
@@ -38,6 +40,31 @@ export default function MySubjects() {
   const [joining, setJoining] = useState(false);
   const [joinFeedback, setJoinFeedback] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Join requests waiting for (or declined by) the instructor: shown as locked cards.
+  const [joinRequests, setJoinRequests] = useState([]);
+  const [dismissingId, setDismissingId] = useState(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    getMyJoinRequests(user.id)
+      .then(rows => { if (!cancelled) setJoinRequests(rows); })
+      .catch(err => console.warn('Could not load join requests:', err));
+    return () => { cancelled = true; };
+  }, [user?.id, refreshTrigger]);
+
+  const handleDismissRequest = async (requestId) => {
+    setDismissingId(requestId);
+    try {
+      await dismissJoinRequest(requestId);
+      setJoinRequests(prev => prev.filter(request => request.request_id !== requestId));
+    } catch (err) {
+      console.warn('Could not dismiss join request:', err);
+    } finally {
+      setDismissingId(null);
+    }
+  };
 
   // Format Term Label helper (consistent with MyGradesList)
   const formatLabel = (sem, sy) => {
@@ -272,7 +299,7 @@ export default function MySubjects() {
       const res = await submitJoinRequest(user.id, joinCodeInput);
       setJoinFeedback({
         type: 'success',
-        message: `Successfully enrolled in ${res.classRecord?.subjects?.code || 'Course'} (${res.classRecord?.sections?.name || 'Section'})! You now have access to this classroom.`
+        message: res.message
       });
       setJoinCodeInput('');
       setRefreshTrigger(prev => prev + 1);
@@ -426,6 +453,74 @@ export default function MySubjects() {
           </div>
         </div>
 
+        {/* Join requests: visible but locked until the instructor decides */}
+        {joinRequests.length > 0 && (
+          <div className="space-y-2">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Join requests</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {joinRequests.map((request) => {
+                const cls = request.class_records || {};
+                const isRejected = request.status === 'rejected';
+                const instructor = cls.faculty ? `Prof. ${cls.faculty.first_name || ''} ${cls.faculty.last_name || ''}`.trim() : 'Course Instructor';
+                const requestedOn = request.requested_at || request.created_at;
+                return (
+                  <div
+                    key={request.request_id}
+                    aria-disabled="true"
+                    className={cn(
+                      "bg-slate-50/80 rounded-2xl border border-dashed shadow-2xs overflow-hidden text-left cursor-not-allowed",
+                      isRejected ? "border-rose-200" : "border-slate-300"
+                    )}
+                  >
+                    <div className="p-4 sm:p-5 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-white text-slate-600 border border-slate-200 font-mono">
+                          {cls.sections?.name || 'Section'}
+                        </span>
+                        {isRejected ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                            <X className="h-3 w-3" /> Not approved
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                            <Clock className="h-3 w-3" /> Waiting for approval
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold font-display text-slate-700 leading-tight flex items-center gap-1.5">
+                          <Lock className="h-3.5 w-3.5 text-slate-400" />
+                          {cls.subjects?.code || 'Class'}
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-1 line-clamp-2">{cls.subjects?.name || ''}</p>
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        {instructor}{requestedOn ? ` · Requested ${new Date(requestedOn).toLocaleDateString()}` : ''}
+                      </p>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        {isRejected
+                          ? 'Your instructor did not approve this request. Check the class code with your instructor, then request again.'
+                          : 'You can open this class once your instructor approves your request.'}
+                      </p>
+                      {isRejected && (
+                        <button
+                          type="button"
+                          onClick={() => handleDismissRequest(request.request_id)}
+                          disabled={dismissingId === request.request_id}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          {dismissingId === request.request_id ? 'Dismissing…' : 'Dismiss'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Course Cards Grid */}
         {filteredSubjects.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center max-w-lg mx-auto space-y-4 shadow-xs">
@@ -566,7 +661,7 @@ export default function MySubjects() {
               </div>
 
               <p className="text-xs text-slate-500 leading-relaxed">
-                Enter the unique 6–8 character classroom join code (e.g. <span className="font-mono font-bold text-slate-700">CS3A-8X92</span>) provided by your professor to enroll in the course.
+                Enter the unique 6–8 character classroom join code (e.g. <span className="font-mono font-bold text-slate-700">CS3A-8X92</span>) provided by your professor. Your instructor approves the request before you are added to the class.
               </p>
 
               <form onSubmit={handleJoinClassSubmit} className="space-y-4">
