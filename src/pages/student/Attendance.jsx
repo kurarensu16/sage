@@ -42,27 +42,33 @@ export default function Attendance() {
 
       if (enrollErr) throw enrollErr;
 
-      // Deduplicate enrolled subjects by subject_id
-      const uniqueSubjectsMap = new Map();
+      // Deduplicate enrollments by subject AND section: a class joined by code
+      // from another section is its own class, not a duplicate of the block one.
+      const uniqueEnrollMap = new Map();
       (enrolls || []).forEach(e => {
-        if (e.subject_id && !uniqueSubjectsMap.has(e.subject_id)) {
-          uniqueSubjectsMap.set(e.subject_id, e);
+        const key = `${e.subject_id}:${e.section_id}`;
+        if (e.subject_id && e.section_id && !uniqueEnrollMap.has(key)) {
+          uniqueEnrollMap.set(key, e);
         }
       });
-      const uniqueEnrolls = Array.from(uniqueSubjectsMap.values());
 
       let classRecords = [];
-      if (uniqueEnrolls.length > 0) {
-        const sectionId = uniqueEnrolls[0].section_id;
-        const subjectIds = uniqueEnrolls.map(e => e.subject_id);
+      if (uniqueEnrollMap.size > 0) {
+        const subjectIds = [...new Set([...uniqueEnrollMap.values()].map(e => e.subject_id))];
+        const sectionIds = [...new Set([...uniqueEnrollMap.values()].map(e => e.section_id))];
         const { data: crData, error: crErr } = await supabase
           .from('class_records')
-          .select('class_record_id, subject_id, faculty:users!faculty_id(first_name, last_name)')
-          .eq('section_id', sectionId)
+          .select('class_record_id, subject_id, section_id, faculty:users!faculty_id(first_name, last_name)')
+          .in('section_id', sectionIds)
           .in('subject_id', subjectIds);
         if (crErr) throw crErr;
         classRecords = crData || [];
       }
+
+      // Each enrollment matched to its own class by subject and section.
+      const uniqueEnrolls = [...uniqueEnrollMap.values()].filter(e => (classRecords || []).some(
+        cr => cr.subject_id === e.subject_id && cr.section_id === e.section_id
+      ));
 
       // 2. Fetch all attendance records for this student from attendance_records table
       const { data: logs, error: logsErr } = await supabase
@@ -75,7 +81,7 @@ export default function Attendance() {
 
       // 3. Map records into enrollments
       const mapped = uniqueEnrolls.map(e => {
-        const cr = (classRecords || []).find(c => c.subject_id === e.subject_id);
+        const cr = (classRecords || []).find(c => c.subject_id === e.subject_id && c.section_id === e.section_id);
         const classLogs = (logs || []).filter(l => l.class_record_id === cr?.class_record_id);
         
         const displayLogs = classLogs;

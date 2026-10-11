@@ -2,10 +2,20 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const BOUNDARY_STATEMENT = 'This guidance is advisory and does not alter your official institutional grade.'
-const MODEL = Deno.env.get('OPENROUTER_MODEL') || 'poolside/laguna-s-2.1:free'
+const PRIMARY_MODEL = Deno.env.get('ADVISOR_MODEL') || Deno.env.get('OPENROUTER_MODEL') || 'poolside/laguna-s-2.1:free'
+const DEFAULT_FALLBACK_MODEL = 'openrouter/free'
+// Same failover statuses as generate-intervention-draft, plus 400: some free
+// fallback models reject the JSON-only response_format option.
+const PROVIDER_FAILOVER_STATUSES = new Set([400, 402, 404, 408, 409, 429, 500, 502, 503, 504])
+const PROVIDER_TIMEOUT_MS = 25_000
 const MAX_BODY_BYTES = 48_000
 const REQUEST_WINDOW_MS = 60_000
 const REQUESTS_PER_WINDOW = 12
+const MAX_ACTIVITIES_PER_SUBJECT = 40
+const GRADE_BASES = ['official', 'partly_posted', 'tentative', 'no_data']
+
+const gradeBasis = (value: unknown) => GRADE_BASES.includes(String(value)) ? String(value) : 'no_data'
+const numberOrNull = (value: unknown) => Number.isFinite(value) ? value as number : null
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -27,6 +37,18 @@ type AdvisorResponse = {
 }
 
 const requestWindows = new Map<string, { count: number; startedAt: number }>()
+
+// Primary model first, then the configured fallbacks (shared with the faculty
+// intervention drafts unless ADVISOR_FALLBACK_MODELS is set).
+function advisorModels() {
+  const configured = Deno.env.get('ADVISOR_FALLBACK_MODELS')
+    || Deno.env.get('OPENROUTER_FALLBACK_MODELS')
+    || DEFAULT_FALLBACK_MODEL
+  return [...new Set([
+    PRIMARY_MODEL,
+    ...configured.split(',').map(model => model.trim()).filter(Boolean)
+  ])]
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -81,6 +103,7 @@ function sanitizeContext(input: any) {
     periodLabel: text(input?.periodLabel, 120),
     officialStanding: {
       gwa: typeof input?.officialStanding?.gwa === 'number' ? input.officialStanding.gwa : null,
+      gwaIsOfficial: Boolean(input?.officialStanding?.gwaIsOfficial),
       standing: text(input?.officialStanding?.standing, 160),
       trajectory: text(input?.officialStanding?.trajectory, 160),
       attendanceRate: Number.isFinite(input?.officialStanding?.attendanceRate) ? input.officialStanding.attendanceRate : null,
@@ -92,6 +115,8 @@ function sanitizeContext(input: any) {
       name: text(input.subject.name, 160),
       instructor: text(input.subject.instructor, 160),
       runningGwa: text(input.subject.runningGwa, 20),
+      gradeBasis: gradeBasis(input.subject.gradeBasis),
+      blankActivityCount: numberOrNull(input.subject.blankActivityCount),
       selectedPeriodName: text(input.subject.selectedPeriodName, 40),
       milestoneStage: text(input.subject.milestoneStage, 80),
       isFinalized: Boolean(input.subject.isFinalized),
@@ -100,7 +125,7 @@ function sanitizeContext(input: any) {
       diagnostics: input.subject.diagnostics || null,
       sharedAcademicFeedback: text(input.subject.sharedAcademicFeedback, 1000),
       activities: Array.isArray(input.subject.activities)
-        ? input.subject.activities.slice(0, 20).map((activity: any) => ({
+        ? input.subject.activities.slice(0, MAX_ACTIVITIES_PER_SUBJECT).map((activity: any) => ({
           title: text(activity?.title, 160),
           description: text(activity?.description, 320),
           topicTag: text(activity?.topicTag, 100),
@@ -123,12 +148,18 @@ function sanitizeContext(input: any) {
         code: text(course?.code, 40),
         name: text(course?.name, 160),
         runningGwa: text(course?.runningGwa, 20),
+        gradeBasis: gradeBasis(course?.gradeBasis),
+        blankActivityCount: numberOrNull(course?.blankActivityCount),
         milestoneStage: text(course?.milestoneStage, 80),
+        isFinalized: Boolean(course?.isFinalized),
+        classStandingAverage: numberOrNull(course?.classStandingAverage),
+        examAverage: numberOrNull(course?.examAverage),
+        characterAverage: numberOrNull(course?.characterAverage),
         gradingFormula: course?.gradingFormula || null,
         periods: course?.periods || null,
         diagnostics: course?.diagnostics || null,
         activities: Array.isArray(course?.activities)
-          ? course.activities.slice(0, 20).map((activity: any) => ({
+          ? course.activities.slice(0, MAX_ACTIVITIES_PER_SUBJECT).map((activity: any) => ({
             title: text(activity?.title, 160),
             term: text(activity?.term, 40),
             score: Number.isFinite(activity?.score) ? activity.score : null,
@@ -194,7 +225,7 @@ function sanitizeInsightContext(input: any) {
     // This allows Ask ASPIRE to reason about which component (CS, Exam, Character) had the
     // biggest mathematical impact on the student's term rating.
     gradingFormula: input?.gradingFormula || null,
-    evidenceBoundary: 'Only faculty-posted official milestone values in this payload may be described as grades.'
+    evidenceBoundary: 'Only faculty-posted milestone values are official grades. A GWA that is not fully finalized is a tentative running GWA from recorded scores and must be called tentative.'
   }
 }
 
@@ -202,7 +233,7 @@ function parseStructuredResponse(content: string): AdvisorResponse {
   const match = content.match(/\{[\s\S]*\}/)
   const normalized = match ? match[0] : content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
   const parsed = JSON.parse(normalized)
-  const message = text(parsed?.message, 1200)
+  const message = text(parsed?.message, 1600)
   const actions = Array.isArray(parsed?.actions)
     ? parsed.actions.map((action: unknown) => text(action, 240)).filter(Boolean).slice(0, 3)
     : []
@@ -240,16 +271,20 @@ Rules:
 11. You are an academic advisor, not a tutor or a student. Do NOT write code, solve assignments, or compose emails.
 12. Return JSON only with exactly this shape:
 {"message":"student-facing explanation","actions":["action"],"consultation_recommended":false,"boundary_statement":"${BOUNDARY_STATEMENT}"}
+13. Running GWA: "runningGwa" and "officialStanding.gwa" are computed by ASPIRE from posted milestones first and, for terms not yet posted, from the scores recorded so far. Quote them, never recalculate them. Unless "gradeBasis" is "official" (or "officialStanding.gwaIsOfficial" is true), call the value a "tentative running GWA", say it is not an official grade, and use "milestoneStage" to say what it is based on. When "blankActivityCount" is above 0, say that many activities have no score yet and may be recorded as zero when the instructor posts grades.
+14. Cite actual evidence. When the student asks how they are doing or about their activities, name the subject, then give specific scores from the context (e.g. "Quiz 2: 10/20 (50%)", class standing, exam, and character averages), weakest first, and end with one practical next step. Do not summarize scores only as counts.
+15. Formatting inside "message": plain text only. Start with a one-sentence answer. When listing several items, conditions, subjects, or steps, put each on its own line starting with "1.", "2.", and so on, or with "- " for sub-items, separated by "\\n". Never use Markdown symbols such as **, #, or tables, and never use emoji.
+16. Insight mode only (Request mode: insight): this text is shown on a small dashboard card, so keep it short and formal. Write exactly this structure in "message": one summary sentence about the student's current standing (call a GWA that is not fully finalized a tentative running GWA), then "\\n\\nNext steps:\\n", then at most 3 numbered steps ("1.", "2.", "3."), each on its own line and under 20 words. Maximum 80 words in total. Put the same steps, shortened, in "actions".
 
 ${weightsStr ? `SUBJECT GRADING WEIGHTS: ${weightsStr}\nApply these specific weights mathematically when explaining grade impact (e.g. a 20/100 on Character at 10% weight is mathematically less impactful than a 30/50 Class Standing at 50% weight).` : ''}
 
 DYCI ACADEMIC POLICIES TO ENFORCE:
 - Grading Scale: 98-100=1.0, 95-97=1.25, 92-94=1.5, 89-91=1.75, 86-88=2.0, 83-85=2.25, 80-82=2.5, 77-79=2.75, 75-76=3.0 (Passing), Below 75=5.0 (Failed).
-- President's List (Honors): ALL four conditions must be met simultaneously: (1) minimum 18 enrolled units for the semester, (2) no individual subject grade below 2.0, (3) no INC grade in any subject, and (4) overall GWA <= 1.75. A student with only 15 units enrolled is NOT eligible regardless of GWA. Tiers: Sapientia (1.0-1.25), Excellentia (1.26-1.5), Virtus (1.51-1.75). When assessing eligibility, explicitly check all four conditions and state which ones pass or fail.
+- President's List (Honors): ALL four conditions must be met simultaneously: (1) minimum 18 enrolled units for the semester, (2) no individual subject grade worse than 2.00 (on DYCI's scale a higher number is a worse grade: 1.00-2.00 passes, 2.25 or higher fails; check each subject separately using its runningGwa), (3) no INC grade in any subject, and (4) overall GWA <= 1.75. A student with only 15 units enrolled is NOT eligible regardless of GWA. Tiers: Sapientia (1.0-1.25), Excellentia (1.26-1.5), Virtus (1.51-1.75). When assessing eligibility, explicitly check all four conditions and state which ones pass or fail.
 - Attendance: 4 absences per subject = Failure Due to Absences (FDA). The FDA threshold is per-subject, not combined across all subjects. Faculty makes the official FDA decision — Ask ASPIRE does not.
 - INC (Incomplete): Issued when a student fails to complete required coursework. An INC disqualifies the student from President's List until it is resolved and replaced with a final grade.
 
-CRITICAL FORMATTING INSTRUCTION: MAXIMUM 100 WORDS. OUTPUT ONLY THE RAW JSON OBJECT FROM RULE 12. NO MARKDOWN, NO REASONING BLOCKS, NO TEXT BEFORE OR AFTER THE { }.
+CRITICAL FORMATTING INSTRUCTION: MAXIMUM 180 WORDS IN "message" (80 WORDS IN INSIGHT MODE, SEE RULE 16). OUTPUT ONLY THE RAW JSON OBJECT FROM RULE 12. LINE BREAKS INSIDE "message" ARE ALLOWED AS DESCRIBED IN RULE 15. NO MARKDOWN, NO REASONING BLOCKS, NO TEXT BEFORE OR AFTER THE { }.
 
 Request mode: ${mode}.`
 }
@@ -297,7 +332,9 @@ Deno.serve(async req => {
         content: text(message?.content, 400)  // cap at 400 chars — chat turns are short
       })).filter((message: ChatMessage) => message.content)
       : []
-    const question = mode === 'chat' ? text(body.question, 600) : 'Explain this official academic milestone and suggest practical next steps.'
+    const question = mode === 'chat'
+      ? text(body.question, 600)
+      : 'Summarize my current academic standing in one sentence and give up to three practical next steps, following rule 16.'
     if (mode === 'chat' && !question) return json({ error: 'Question is required' }, 400)
 
     let weightsStr = ''
@@ -321,49 +358,69 @@ Deno.serve(async req => {
       { role: 'user', content: question }
     ]
 
-    // Attempt with 1 automatic retry on parse failure
+    // Try each model in order (same pattern as generate-intervention-draft):
+    // a provider failure moves to the next model; unusable output retries the
+    // same model once at a lower temperature, then moves on.
     let response: AdvisorResponse | null = null
     let lastError: Error | null = null
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const providerResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${openRouterKey}`,
-            'HTTP-Referer': supabaseUrl,
-            'X-Title': 'ASPIRE Academic Advisor'
-          },
-          body: JSON.stringify({
-            model: MODEL,
-            models: [MODEL, 'meta-llama/llama-3-8b-instruct:free'],
-            messages,
-            temperature: attempt === 0 ? 0.1 : 0.0, // lower temp on retry
-            max_tokens: 600,
-            response_format: { type: 'json_object' }
-          })
-        })
-
-        if (!providerResponse.ok) {
-          lastError = new Error(`Provider HTTP ${providerResponse.status}`)
-          continue
-        }
-        const providerData = await providerResponse.json()
-        const content = text(providerData?.choices?.[0]?.message?.content, 4000)
+    let usedModel = ''
+    const models = advisorModels()
+    modelLoop: for (const model of models) {
+      for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          response = parseStructuredResponse(content)
-          break // success — stop retrying
-        } catch (parseErr) {
-          console.warn(`invoke-advisor parse error on attempt ${attempt + 1}`)
-          throw parseErr
+          const providerResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${openRouterKey}`,
+              'HTTP-Referer': supabaseUrl,
+              'X-Title': 'ASPIRE Academic Advisor'
+            },
+            body: JSON.stringify({
+              model,
+              messages,
+              temperature: attempt === 0 ? 0.1 : 0.0,
+              max_tokens: 600,
+              response_format: { type: 'json_object' }
+            }),
+            signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS)
+          })
+
+          if (!providerResponse.ok) {
+            const providerMessage = text(await providerResponse.text(), 500)
+            lastError = new Error(`Provider HTTP ${providerResponse.status}`)
+            console.warn('invoke-advisor provider_model_failed', {
+              model, status: providerResponse.status, providerMessage
+            })
+            if (PROVIDER_FAILOVER_STATUSES.has(providerResponse.status)) continue modelLoop
+            break modelLoop
+          }
+
+          try {
+            const providerData = await providerResponse.json()
+            const content = text(providerData?.choices?.[0]?.message?.content, 4000)
+            response = parseStructuredResponse(content)
+            usedModel = model
+            break modelLoop
+          } catch (parseErr) {
+            lastError = parseErr instanceof Error ? parseErr : new Error('Invalid provider response')
+            console.warn('invoke-advisor model_output_invalid', {
+              model, attempt: attempt + 1, message: lastError.message
+            })
+          }
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err))
+          console.warn('invoke-advisor provider_connection_failed', { model, message: lastError.message })
+          continue modelLoop
         }
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err))
-        console.warn(`invoke-advisor attempt ${attempt + 1} failed:`, lastError.message)
       }
     }
 
-    if (!response) throw lastError ?? new Error('All attempts failed')
+    if (!response) {
+      console.warn('invoke-advisor all_models_failed', { attemptedModels: models, message: lastError?.message })
+      throw lastError ?? new Error('All models failed')
+    }
+    console.info('invoke-advisor answered', { model: usedModel, mode })
     return json({ response })
   } catch (error) {
     console.error('invoke-advisor failed', error instanceof Error ? error.message : error)

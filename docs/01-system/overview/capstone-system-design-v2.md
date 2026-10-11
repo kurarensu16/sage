@@ -64,7 +64,7 @@ ASPIRE is designed to eliminate manual grade computation, reduce the burden of g
 * Receive notifications when an evaluation window closes, when an evaluation is released by the Dean, or when a milestone unlock/resubmission request is resolved
 
 ### 2.4 Student
-* View committed posted-grade milestones; unposted running calculations are not presented as official grades
+* View committed posted-grade milestones as official grades; before posting, view a tentative running GWA computed from recorded scores (labeled Tentative and replaced by posted milestones)
 * Access every saved activity, quiz, and assignment with full descriptive titles and a Pending, Tentative, or Official state
 * Submit faculty evaluations per subject section within active designated timelines
 * On-time survey completion signs term clearance; missing evaluations lock grade summary visibility and leave clearance unsigned

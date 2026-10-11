@@ -82,6 +82,8 @@ export default function GradeOverride() {
       const mappedGrades = gradesData?.map(g => ({
         id: g.posted_grade_id,
         subjectCode: g.class_records?.subjects?.code || 'N/A',
+        subjectName: g.class_records?.subjects?.name || '',
+        classRecordId: g.class_records?.class_record_id || null,
         section: g.class_records?.sections?.name || 'N/A',
         facultyId: g.class_records?.faculty_id || null,
         gradePeriod: g.grade_period,
@@ -208,13 +210,14 @@ export default function GradeOverride() {
     const remarks = toDbRemark(getRemarks({ gwa: parsedGrade, isComplete: true }));
 
     try {
+      const overrideAt = new Date().toISOString();
       const { error: updateErr } = await supabase
         .from('posted_grades')
         .update({
           effective_grade: parsedGrade,
           remarks: remarks,
           remarks_note: overrideReason.trim(),
-          override_at: new Date().toISOString(),
+          override_at: overrideAt,
           override_by: user?.id,
           is_locked: true
         })
@@ -257,6 +260,9 @@ export default function GradeOverride() {
         facultyId: selectedGrade.facultyId || null,
         studentName: `${selectedStudent.firstName} ${selectedStudent.lastName}`,
         subjectCode: selectedGrade.subjectCode,
+        subjectName: selectedGrade.subjectName,
+        classRecordId: selectedGrade.classRecordId,
+        overrideAt,
         oldGrade: oldGradeVal,
         newGrade: parsedGrade,
         remarks: remarks,

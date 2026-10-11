@@ -87,3 +87,18 @@ export const getRiskTierForScore = (score) => Object.values(RISK_TIERS).find(tie
 export const normalizeAttendanceStatus = (status) => ATTENDANCE.statuses.find(item => item.toLowerCase() === String(status || '').trim().toLowerCase()) || null;
 export function countAttendance(records = []) { const statuses = records.map(record => normalizeAttendanceStatus(record?.status ?? record)).filter(Boolean); const absences = statuses.filter(status => status === 'Absent').length; return { total: statuses.length, absences, attendanceRate: statuses.length ? Math.round(((statuses.length - absences) / statuses.length) * 100) : 100 }; }
 export const getAttendanceFlags = (absences) => { const count = Number(absences) || 0; return { isWarning: count >= ATTENDANCE.warningAbsences, isNearFda: count >= ATTENDANCE.nearFdaAbsences, isFda: count >= ATTENDANCE.fdaAbsences }; };
+// Number of subjects whose own absences reach the FDA threshold (FDA is per subject, never combined).
+export const countFdaSubjects = (attendanceRecords = []) => { const byClass = {}; attendanceRecords.forEach(record => { const key = record?.class_record_id; if (!key) return; (byClass[key] ||= []).push(record); }); return Object.values(byClass).filter(records => getAttendanceFlags(countAttendance(records).absences).isFda).length; };
+
+/**
+ * Student academic verdict shared by the dashboard AI Standing card and the AI Study Tutor.
+ * 'continue' = Safe, 'at_risk' = Struggling, 'recommend_shift' = At Risk.
+ * hasFdaSubject is true when any single subject reaches 4 absences (per subject, not combined).
+ */
+export function computeAcademicVerdict({ gwa = null, hasFdaSubject = false, failingCount = 0 } = {}) {
+  const value = gwa === null || gwa === undefined || gwa === '' ? null : Number(gwa);
+  const hasGwa = value !== null && Number.isFinite(value);
+  if ((hasGwa && value > 3.00) || failingCount > 1) return 'recommend_shift';
+  if ((hasGwa && value > 2.50) || hasFdaSubject || failingCount === 1) return 'at_risk';
+  return 'continue';
+}

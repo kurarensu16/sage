@@ -25,6 +25,18 @@ import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { fetchAcademicTerms, getClassTermState } from '../../lib/termStatus';
 import { TableSkeleton } from '../../components/common/Skeleton';
 
+// True when the enrollment's section belongs to the selected term option.
+// Falls back to the option's section when the section has no term details.
+const normalizeSchoolYear = (value) => String(value || '').replace(/^AY\s*/i, '').trim();
+function isEnrollmentInTerm(enrollment, termOption) {
+  const section = enrollment?.sections;
+  if (section?.semester && section?.school_year && termOption?.semester && termOption?.school_year) {
+    return section.semester === termOption.semester
+      && normalizeSchoolYear(section.school_year) === normalizeSchoolYear(termOption.school_year);
+  }
+  return !termOption?.section_id || enrollment?.section_id === termOption.section_id;
+}
+
 export default function MySubjects() {
   const { user, profile } = useAuth();
 
@@ -197,8 +209,10 @@ export default function MySubjects() {
         const activeOpt = semestersList.find(o => o.label === selectedSemLabel);
         if (!activeOpt) return;
 
-        // 1. Fetch all enrollments for this student
-        let enrollsQuery = supabase
+        // 1. Fetch this student's enrollments for the selected term. Filter by the term,
+        // not only the block section, so a class joined by code from another section
+        // is listed.
+        const { data: allEnrolls, error: enrollErr } = await supabase
           .from('enrollments')
           .select(`
             enrollment_id,
@@ -209,26 +223,44 @@ export default function MySubjects() {
             subjects ( subject_id, code, name, units )
           `)
           .eq('student_id', user.id);
-
-        if (activeOpt.section_id) {
-          enrollsQuery = enrollsQuery.eq('section_id', activeOpt.section_id);
-        }
-
-        const { data: enrolls, error: enrollErr } = await enrollsQuery;
         if (enrollErr) throw enrollErr;
 
-        // Resolve student's active section name
-        const primarySection = enrolls?.[0]?.sections || null;
-        setStudentSection(primarySection);
+        const enrolls = (allEnrolls || []).filter(e => isEnrollmentInTerm(e, activeOpt));
 
-        const subjectIds = enrolls?.map(e => e.subject_id).filter(Boolean) || [];
+        // Block section for this term, never a joined class's section. A student with no
+        // home section is irregular. For a term the current home section is not in, the
+        // block section is the section holding most of the student's classes that term.
+        const homeSectionId = profile?.section_id || null;
+        let blockSectionId = null;
+        if (homeSectionId) {
+          if (enrolls.some(e => e.section_id === homeSectionId)) {
+            blockSectionId = homeSectionId;
+          } else {
+            const countsBySection = enrolls.reduce((counts, e) => {
+              counts[e.section_id] = (counts[e.section_id] || 0) + 1;
+              return counts;
+            }, {});
+            blockSectionId = Object.entries(countsBySection).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+          }
+        }
+        const blockEnrollment = blockSectionId ? enrolls.find(e => e.section_id === blockSectionId) : null;
+        setStudentSection({
+          name: blockEnrollment?.sections?.name || (blockSectionId ? profile?.section_name : null) || null,
+          isIrregular: !homeSectionId,
+          otherSectionCount: blockSectionId
+            ? enrolls.filter(e => e.section_id !== blockSectionId).length
+            : enrolls.length
+        });
+
+        const subjectIds = [...new Set(enrolls.map(e => e.subject_id).filter(Boolean))];
+        const sectionIds = [...new Set(enrolls.map(e => e.section_id).filter(Boolean))];
 
         // 2. Fetch class records, including archived ones: a previous term's subjects stay
         // listed, marked "Grade not yet posted" until the SG is posted, then completed.
         let classRecords = [];
         let terms = [];
         if (subjectIds.length > 0) {
-          let crQuery = supabase
+          const crQuery = supabase
             .from('class_records')
             .select(`
               class_record_id,
@@ -241,14 +273,13 @@ export default function MySubjects() {
               sections ( name ),
               faculty:users!faculty_id ( first_name, last_name )
             `)
-            .in('subject_id', subjectIds);
-
-          if (activeOpt.section_id) {
-            crQuery = crQuery.eq('section_id', activeOpt.section_id);
-          }
+            .in('subject_id', subjectIds)
+            .in('section_id', sectionIds.length > 0 ? sectionIds : ['00000000-0000-0000-0000-000000000000']);
 
           const [{ data: crData }, termRows] = await Promise.all([crQuery, fetchAcademicTerms()]);
-          classRecords = crData || [];
+          // Each enrollment matches its own class by subject AND section.
+          const enrolledPairs = new Set(enrolls.map(e => `${e.subject_id}:${e.section_id}`));
+          classRecords = (crData || []).filter(cr => enrolledPairs.has(`${cr.subject_id}:${cr.section_id}`));
           terms = termRows;
         }
 
@@ -270,7 +301,7 @@ export default function MySubjects() {
             ? `Prof. ${matchingClass.faculty.first_name} ${matchingClass.faculty.last_name}`
             : 'Faculty Instructor';
 
-          const sectionName = e.sections?.name || matchingClass?.sections?.name || primarySection?.name || 'Section';
+          const sectionName = e.sections?.name || matchingClass?.sections?.name || blockEnrollment?.sections?.name || 'Section';
 
           return {
             enrollment_id: e.enrollment_id,
@@ -295,7 +326,7 @@ export default function MySubjects() {
     }
 
     loadSubjectsForSem();
-  }, [user, selectedSemLabel, semestersList, refreshTrigger]);
+  }, [user, profile?.section_id, profile?.section_name, selectedSemLabel, semestersList, refreshTrigger]);
 
   // Join Classroom Submission Handler
   const handleJoinClassSubmit = async (e) => {
@@ -418,9 +449,19 @@ export default function MySubjects() {
             <div className="min-w-0 flex-1">
               <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block truncate">Assigned Section</span>
               <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono mt-1 truncate">
-                {studentSection?.name || profile?.section_name || 'Block Section'}
+                {studentSection?.isIrregular
+                  ? 'Irregular'
+                  : studentSection?.name || profile?.section_name || 'Block Section'}
               </h3>
-              <p className="text-[11px] text-emerald-600 font-semibold mt-0.5 truncate">Regular Academic Standing</p>
+              {/* Enrollment type only (same rule as the faculty "Irregular" badge); academic
+                  standing is shown on the Grade Report and dashboard. */}
+              <p className="text-[11px] text-slate-500 font-semibold mt-0.5 truncate">
+                {studentSection?.isIrregular
+                  ? `Classes joined by code (${studentSection.otherSectionCount})`
+                  : studentSection?.otherSectionCount > 0
+                    ? `Regular · ${studentSection.otherSectionCount} ${studentSection.otherSectionCount === 1 ? 'class' : 'classes'} from another section`
+                    : 'Regular student'}
+              </p>
             </div>
             <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl flex-shrink-0">
               <GraduationCap className="h-5 w-5" />

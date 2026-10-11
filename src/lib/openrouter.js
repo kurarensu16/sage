@@ -21,7 +21,8 @@ async function invokeAdvisor(body) {
   }
 
   return {
-    message: sanitizeMessage(response.message),
+    // Matches the invoke-advisor reply cap so list-style answers are not cut off.
+    message: sanitizeMessage(response.message, 1600),
     actions: Array.isArray(response.actions)
       ? response.actions.map(action => sanitizeMessage(action, 240)).filter(Boolean).slice(0, 3)
       : [],

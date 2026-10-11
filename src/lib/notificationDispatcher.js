@@ -550,6 +550,9 @@ export async function notifyAdminGradeOverride({
   facultyId = null,
   studentName = 'Student',
   subjectCode = '',
+  subjectName = '',
+  classRecordId = null,
+  overrideAt = null,
   oldGrade = 0,
   newGrade = 0,
   remarks = '',
@@ -558,10 +561,26 @@ export async function notifyAdminGradeOverride({
   try {
     const list = [];
     if (studentId) {
+      // grade_changed (not grade_posted) so the email and guardian copy say
+      // "Grade updated" and name the subject, like a faculty correction.
       list.push({
         recipient_id: studentId,
-        type: 'grade_posted',
-        message: `Administrative Grade Update: Your official ${subjectCode} grade was updated to ${Number(newGrade).toFixed(2)} (${remarks}) by ${actorName}.`
+        type: 'grade_changed',
+        severity: 'warning',
+        title: 'Grade Updated',
+        link: '/student/grades',
+        message: `Administrative Grade Update: Your official ${subjectCode} grade was updated to ${Number(newGrade).toFixed(2)} (${remarks}) by ${actorName}.`,
+        payload: {
+          subject_code: subjectCode,
+          subject_name: subjectName || subjectCode,
+          term: 'Semestral Grade',
+          remark: remarks,
+          gwa: Number.isFinite(Number(newGrade)) ? Number(newGrade) : null,
+          student_name: studentName || null,
+          class_record_id: classRecordId,
+          source: 'admin_override'
+        },
+        dedupe_key: `grade_changed:${classRecordId || subjectCode}:semestral_grade:${studentId}:override:${overrideAt || Date.now()}`
       });
     }
     if (facultyId) {

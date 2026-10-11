@@ -98,6 +98,36 @@ export function buildStudentInsightEvidence({
   };
 }
 
+// Bump when the overall insight's text format changes, so saved insights in the
+// old format are regenerated once.
+export const INSIGHT_FORMAT_VERSION = 'insight-format-v2';
+
+/**
+ * Key for the posted milestones behind an overall insight. The overall insight
+ * regenerates automatically only when this key changes (a grade was posted,
+ * reposted, or overridden); new activity scores alone wait for a manual Refresh.
+ */
+export function createPostedMilestoneKey(postedGrades = []) {
+  return createInsightEvidenceFingerprint(postedGrades.map(item => ({
+    classRecordId: item.class_record_id,
+    gradePeriod: item.grade_period,
+    computedGrade: item.computed_grade,
+    effectiveGrade: item.effective_grade,
+    postedAt: item.posted_at,
+  }))).replace('insight-evidence-v1-', 'posted-milestones-v1-');
+}
+
+/**
+ * Whether a saved overall insight should be regenerated automatically:
+ * none saved yet, an older text format, or a different set of posted milestones.
+ */
+export function shouldAutoRegenerateOverallInsight(savedInsight, postedMilestoneKey) {
+  if (!savedInsight?.summary) return true;
+  const basis = savedInsight.basis_snapshot || {};
+  if (basis.formatVersion !== INSIGHT_FORMAT_VERSION) return true;
+  return basis.postedMilestoneKey !== postedMilestoneKey;
+}
+
 export function getFreshInsightText(entry, evidenceFingerprint) {
   if (!entry || !evidenceFingerprint || typeof entry === 'string') return null;
   return entry.evidenceFingerprint === evidenceFingerprint && typeof entry.text === 'string'

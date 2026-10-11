@@ -120,10 +120,10 @@ Student risk evaluations are visible only after official submission/publication 
    * Completing evaluations signs student clearance at end of term.
    * Incomplete evaluations leave clearance unsigned and lock student grade summary visibility.
 3. **Student Grade & Activity Visibility:**
-   * Students see only committed posted-grade milestones as official grades; unposted running grade calculations remain advisory or faculty-facing.
+   * Students see only committed posted-grade milestones as official grades. Before posting, they see a **tentative running GWA** computed from recorded scores, labeled Tentative, with blank activities not counted; posted milestones replace live terms (decision: `docs/02-thesis/decisions/STUDENT_RUNNING_GWA_2026-10-11.md`).
    * Every saved activity is visible with an explicit **Pending**, **Tentative**, or **Official** evidence state. Activity names **must be written in full** (no shortened abbreviations like `Q1`).
 4. **Absence Policy (FDA Remarks):**
-   * 4 absences trigger an **FDA (Failure Due to Absences)** remark as an **advisory recommendation** for faculty review, NOT an automatic hard fail/lockout.
+   * 4 absences in a single subject (counted per subject, never combined) trigger an **FDA (Failure Due to Absences)** remark as an **advisory recommendation** for faculty review, NOT an automatic hard fail/lockout.
 5. **Department Evaluation Metrics & Comparative Ratings:**
    * Displays respondent participation counts per department and comparative instructor score distributions across departments.
 6. **Dynamic Department Grading Flexibility:**

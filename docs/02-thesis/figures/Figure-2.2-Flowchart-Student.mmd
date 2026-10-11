@@ -3,6 +3,8 @@ flowchart TB
 %% Plans appear only after publication and must be acknowledged; faculty verify or return
 %% reported tasks; feature renamed "AI Study Tutor"; Account shows photo/contact/guardian.
 %% Revised 2026-10-10 (evening): joining an outside class by code waits for instructor approval.
+%% Revised 2026-10-11: unposted milestones show a tentative running GWA (posted milestones replace it);
+%% see docs/02-thesis/decisions/STUDENT_RUNNING_GWA_2026-10-11.md.
 
   SEL{"Select module"}
   OUT(["<b>Log out / End</b>"]):::accent
@@ -34,8 +36,8 @@ flowchart TB
     JQ -- "Approved" --> G1
     G1["My Subjects:<br/>select a subject"] --> GB["Score Breakdown:<br/>activity title,<br/>description, score"]
     G1 --> GQ{"Milestone<br/>officially posted?"}
-    GQ -- "Not yet" --> GH["Milestone hidden<br/>from student"]
-    GQ -- "Yes" --> GR["Grade Report:<br/>MR, TFR, SG, GWA"]
+    GQ -- "Not yet" --> GH["Show running GWA<br/>from recorded scores<br/>(labeled Tentative)"]
+    GQ -- "Yes" --> GR["Grade Report:<br/>posted MR, TFR, SG, GWA"]
   end
 
   subgraph TM["<b>Attendance and Warnings Module</b>"]

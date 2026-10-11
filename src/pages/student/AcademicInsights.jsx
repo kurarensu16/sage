@@ -3,7 +3,7 @@ import {
   GWA_TARGET_BENCHMARKS,
   simulateRequiredFinalRating
 } from '../../lib/gradingMath';
-import { computeStudentGwa, countAttendance, getAttendanceFlags, getGwaBand, getHonorTier, HONORS, toGwaOrNull } from '../../lib/academicPolicy';
+import { computeAcademicVerdict, computeStudentGwa, countAttendance, getAttendanceFlags, getGwaBand, getHonorTier, HONORS, toGwaOrNull } from '../../lib/academicPolicy';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
@@ -46,11 +46,15 @@ import {
   findPostedMilestone,
   getCanonicalGradePeriod
 } from '../../lib/gradeMilestones';
-import { isStudentVisibleEvaluation } from '../../lib/evaluationTracking';
+import { isStudentVisibleEvaluation, scoreOrNull } from '../../lib/evaluationTracking';
+import { loadStudentRunningGrades, RUNNING_GRADE_BASIS } from '../../lib/studentRunningGrade';
 import {
   buildStudentInsightEvidence,
   createInsightEvidenceFingerprint,
+  createPostedMilestoneKey,
   getFreshInsightText,
+  INSIGHT_FORMAT_VERSION,
+  shouldAutoRegenerateOverallInsight,
 } from '../../lib/insightFreshness';
 
 const readStoredAiCache = (userId) => {
@@ -61,17 +65,6 @@ const readStoredAiCache = (userId) => {
   } catch {
     return {};
   }
-};
-
-// Helper to compute academic verdict enum ('continue', 'at_risk', 'recommend_shift')
-const computeVerdict = (gwaNum, fdaRisk, absents, failingCount = 0) => {
-  if ((gwaNum !== null && gwaNum > 3.00) || failingCount > 1) {
-    return 'recommend_shift';
-  }
-  if ((gwaNum !== null && gwaNum > 2.50) || fdaRisk || absents >= 4 || failingCount === 1) {
-    return 'at_risk';
-  }
-  return 'continue';
 };
 
 // Helper to generate dynamic academic insights text based on period grade info
@@ -290,12 +283,18 @@ export default function AcademicInsights() {
           const subjectIds = enrollsCheck.map(e => e.subject_id).filter(Boolean);
 
           if (subjectIds.length > 0) {
-            const { data: classRecords } = await supabase
+            // Each enrollment matches its own class by subject AND section, so a
+            // class joined by code from another section is included.
+            const enrolledSectionIds = [...new Set(enrollsCheck.map(e => e.section_id).filter(Boolean))];
+            const enrolledPairs = new Set(enrollsCheck.map(e => `${e.subject_id}:${e.section_id}`));
+            const { data: candidateClassRecords } = await supabase
               .from('class_records')
-              .select('class_record_id, subject_id, faculty_id, faculty:users!faculty_id(first_name, last_name)')
-              .eq('section_id', activeSectionId)
+              .select('class_record_id, subject_id, section_id, faculty_id, faculty:users!faculty_id(first_name, last_name)')
+              .in('section_id', enrolledSectionIds.length > 0 ? enrolledSectionIds : [activeSectionId])
               .in('subject_id', subjectIds)
               .eq('status', 'active');
+            const classRecords = (candidateClassRecords || [])
+              .filter(cr => enrolledPairs.has(`${cr.subject_id}:${cr.section_id}`));
 
             const classRecordIds = classRecords?.map(cr => cr.class_record_id) || [];
 
@@ -367,9 +366,6 @@ export default function AcademicInsights() {
             const activityScoreMap = new Map(
               (activityScores || []).map(item => [item.activity_id, item])
             );
-            const termScoreMap = new Map(
-              (termScores || []).map(item => [`${item.class_record_id}:${item.term}`, item])
-            );
             const gradingColumnMap = new Map(
               (gradingColumns || []).map(item => [`${item.class_record_id}:${item.term}`, item])
             );
@@ -395,7 +391,15 @@ export default function AcademicInsights() {
             const officialMilestonesExist = officialPostedCount > 0;
             setHasOfficialMilestone(officialMilestonesExist);
 
+            // Running grades: posted milestones first, unposted terms live (Tentative).
+            const { bySubject: runningBySubject } = await loadStudentRunningGrades(user.id, classRecordIds)
+              .catch(runningErr => {
+                console.error('Error loading running grades:', runningErr);
+                return { bySubject: {} };
+              });
+
             const runningGwas = [];
+            const postedOnlyGwas = [];
             const allClassStandingAverages = [];
             const allExamAverages = [];
             const allCharacterAverages = [];
@@ -504,21 +508,32 @@ export default function AcademicInsights() {
                   };
                 }
 
-                // Running GWA is strictly derived ONLY from officially posted milestones.
-                // milestoneStage records WHICH posted row backs that number, since different
-                // professors post Prelim/MR/TFR/Semestral Grade on different schedules — a
-                // Prelim-only reading is not as settled as a Semestral Grade one, and the UI
-                // needs to say so rather than presenting every subject's number as equally final.
-                let runningGwaVal = null;
+                // Running GWA comes from the shared running grade: posted milestones
+                // first, unposted terms live from recorded scores (Tentative).
+                // milestoneStage says what backs the number, so the UI never presents
+                // a live reading as equally final as a posted Semestral Grade.
+                const running = runningBySubject[cr.class_record_id] || null;
+                const runningGwaVal = running?.gwa ?? null;
                 let milestoneStage = null;
-                if (semestralGrade.status === 'Posted') { runningGwaVal = parseFloat(semestralGrade.gwa); milestoneStage = 'Semestral Grade'; }
-                else if (tentativeFinalRating.status === 'Posted') { runningGwaVal = parseFloat(tentativeFinalRating.gwa); milestoneStage = 'Tentative Final Rating'; }
-                else if (mr.status === 'Posted') { runningGwaVal = parseFloat(mr.gwa); milestoneStage = 'Midterm Rating'; }
-                else if (prelim.status === 'Posted') { runningGwaVal = parseFloat(prelim.gwa); milestoneStage = 'Prelim'; }
+                if (running?.basis === RUNNING_GRADE_BASIS.OFFICIAL) milestoneStage = 'Semestral Grade';
+                else if (tfrPostedRow && mrPostedRow) milestoneStage = 'posted MR and TFR';
+                else if (tfrPostedRow) milestoneStage = 'posted Tentative Final Rating + live scores';
+                else if (mrPostedRow) milestoneStage = 'posted Midterm Rating + live scores';
+                else if (runningGwaVal !== null) milestoneStage = 'recorded scores (tentative)';
 
                 const courseUnits = Number(subj.units) || 3;
                 if (runningGwaVal !== null && !isNaN(runningGwaVal)) {
                   runningGwas.push(runningGwaVal);
+                }
+
+                // Posted-only GWA (most advanced posted milestone) for the deterministic
+                // advisor, which describes its value as "official".
+                const postedOnlyGwa = semestralGrade.status === 'Posted' ? parseFloat(semestralGrade.gwa)
+                  : tentativeFinalRating.status === 'Posted' ? parseFloat(tentativeFinalRating.gwa)
+                  : mr.status === 'Posted' ? parseFloat(mr.gwa)
+                  : null;
+                if (postedOnlyGwa !== null && !isNaN(postedOnlyGwa)) {
+                  postedOnlyGwas.push(postedOnlyGwa);
                 }
 
                 // Filter activities and latest evaluation for this class record
@@ -560,26 +575,18 @@ export default function AcademicInsights() {
                   ? Math.round((earnedActivityPoints / availableActivityPoints) * 100)
                   : 0;
 
-                const postedTermNames = new Set(
-                  crPosted.map(item => {
-                    const key = getCanonicalGradePeriod(item);
-                    if (key === 'semi_final') return 'Semi-Final';
-                    if (key === 'prelim') return 'Prelim';
-                    if (key === 'midterm') return 'Midterm';
-                    if (key === 'final') return 'Final';
-                    return null;
-                  }).filter(Boolean)
-                );
-                const officialTermScores = [...postedTermNames]
-                  .map(term => termScoreMap.get(`${cr.class_record_id}:${term}`))
-                  .filter(Boolean);
-                const examPercentages = officialTermScores
+                // Exam and character averages use every recorded term score
+                // (tentative until posted), so the AI Study Tutor can cite them early.
+                const recordedTermScores = (termScores || [])
+                  .filter(termScore => termScore.class_record_id === cr.class_record_id);
+                const examPercentages = recordedTermScores
+                  .filter(termScore => scoreOrNull(termScore.exam) !== null)
                   .map(termScore => {
                     const max = Number(gradingColumnMap.get(`${cr.class_record_id}:${termScore.term}`)?.exam_max) || 40;
                     return max > 0 ? (Number(termScore.exam) / max) * 100 : null;
                   })
                   .filter(value => value !== null && Number.isFinite(value));
-                const characterPercentages = officialTermScores
+                const characterPercentages = recordedTermScores
                   .map(termScore => Number(termScore.char_rating))
                   .filter(value => Number.isFinite(value) && value > 0);
                 const courseExamAvg = examPercentages.length > 0
@@ -603,6 +610,8 @@ export default function AcademicInsights() {
                   runningGwa: runningGwaVal !== null ? runningGwaVal.toFixed(2) : '—',
                   milestoneStage,
                   isFinalized: milestoneStage === 'Semestral Grade',
+                  gradeBasis: running?.basis || RUNNING_GRADE_BASIS.NO_DATA,
+                  blankActivityCount: running?.blankActivityCount || 0,
                   activities: subjectActivities,
                   latestEvaluation: latestEval,
                   diagnostics: {
@@ -638,7 +647,7 @@ export default function AcademicInsights() {
             const finalizedSubjectCount = computedSubjectsList.filter(s => s.isFinalized).length;
             const isFullyFinalized = totalSubjectCount > 0 && finalizedSubjectCount === totalSubjectCount;
             const completenessNote = totalSubjectCount > 0
-              ? `Based on ${postedSubjectCount} of ${totalSubjectCount} enrolled subject${totalSubjectCount === 1 ? '' : 's'} currently graded.`
+              ? `Based on ${postedSubjectCount} of ${totalSubjectCount} enrolled subject${totalSubjectCount === 1 ? '' : 's'} with recorded scores; ${finalizedSubjectCount} with a posted Semestral Grade.`
               : null;
 
             // Trajectory and Standing classification
@@ -646,7 +655,8 @@ export default function AcademicInsights() {
             let trajectoryVerdict = 'Awaiting Grade Posting';
             let trajectoryType = 'good'; // 'honors' | 'good' | 'warning' | 'critical'
 
-            if (fdaFlags > 0 || absentAtt >= 4) {
+            // FDA is per subject: only a subject with 4+ absences of its own triggers it.
+            if (fdaFlags > 0) {
               trajectoryVerdict = 'FDA Advisory Risk';
               trajectoryType = 'critical';
             } else if (computedGwa !== null) {
@@ -732,25 +742,32 @@ export default function AcademicInsights() {
               gradingColumns: gradingColumns || [],
               evaluations: studentVisibleRiskEvals,
             }));
+            // To limit AI usage, the saved overall insight is kept until a grade is
+            // posted (or its text format changes); newer activity scores alone wait
+            // for the student to click Refresh.
             const savedEvidenceFingerprint = pregenData?.basis_snapshot?.evidenceFingerprint || null;
-            const savedInsightIsCurrent = Boolean(
-              pregenData?.summary && savedEvidenceFingerprint === evidenceFingerprint
-            );
+            const postedMilestoneKey = createPostedMilestoneKey(posted || []);
+            const savedInsightUsable = Boolean(pregenData?.summary)
+              && !shouldAutoRegenerateOverallInsight(pregenData, postedMilestoneKey);
 
-            if (savedInsightIsCurrent) {
-              updateAiCache('overall', pregenData.summary, evidenceFingerprint);
-            }
+            // Seeding the cache with the current fingerprint keeps automatic
+            // generation from running; clearing it lets generation run.
+            updateAiCache('overall', savedInsightUsable ? pregenData.summary : null, evidenceFingerprint);
 
             const activeInsightData = {
               studentName: `${profile?.first_name || 'Student'} ${profile?.last_name || ''}`.trim(),
               gwa: computedGwa,
               standing: gwaStanding,
+              officialGwa: computeStudentGwa(postedOnlyGwas).gwa,
               totalUnits: computedSubjectsList.reduce((sum, subject) => sum + subject.credits, 0),
               trajectoryVerdict,
               trajectoryType,
-              aiSummary: savedInsightIsCurrent ? pregenData.summary : null,
+              aiSummary: savedInsightUsable ? pregenData.summary : null,
+              insightGeneratedAt: savedInsightUsable ? pregenData.generated_at : null,
+              newScoresSinceInsight: savedInsightUsable && savedEvidenceFingerprint !== evidenceFingerprint,
+              postedMilestoneKey,
               evidenceFingerprint,
-              staleAiInsight: Boolean(pregenData?.summary && !savedInsightIsCurrent),
+              staleAiInsight: Boolean(pregenData?.summary && !savedInsightUsable),
               completeness: {
                 totalSubjectCount,
                 postedSubjectCount,
@@ -781,7 +798,7 @@ export default function AcademicInsights() {
                 ),
                 attendanceRate,
                 absentCount: absentAtt,
-                fdaRisk: fdaFlags > 0 || absentAtt >= 4
+                fdaRisk: fdaFlags > 0
               },
               prioritySubject: prioritySub,
               subjects: computedSubjectsList
@@ -850,9 +867,9 @@ export default function AcademicInsights() {
       absenceCount: studentStats.diagnostics.absentCount,
       byCourse: subjectsList.map(subject => ({ courseCode: subject.code, absenceCount: subject.diagnostics?.absenceCount || 0 }))
     },
-    officialGwa: studentStats.gwa,
+    officialGwa: studentStats.officialGwa ?? null,
     hasOfficialMilestone
-  }), [hasOfficialMilestone, studentStats.diagnostics.absentCount, studentStats.gwa, subjectsList]);
+  }), [hasOfficialMilestone, studentStats.diagnostics.absentCount, studentStats.officialGwa, subjectsList]);
   const advisorTone = {
     critical: 'border-rose-200 bg-rose-50 text-rose-800',
     high: 'border-amber-200 bg-amber-50 text-amber-900',
@@ -863,6 +880,13 @@ export default function AcademicInsights() {
   const currentEvidenceFingerprint = studentStats.evidenceFingerprint;
   const overallAiText = getFreshInsightText(aiCache.overall, currentEvidenceFingerprint)
     || studentStats.aiSummary;
+  // The saved insight carries its real generation time; a freshly generated one
+  // uses the local cache time.
+  const isSavedOverallInsight = Boolean(studentStats.aiSummary) && overallAiText === studentStats.aiSummary;
+  const overallInsightGeneratedAt = isSavedOverallInsight
+    ? studentStats.insightGeneratedAt
+    : aiCache.overall?.generatedAt || null;
+  const showNewScoresNote = isSavedOverallInsight && Boolean(studentStats.newScoresSinceInsight);
   const subjectAiCacheKey = currentSubject
     ? `${currentSubject.code}_${selectedPeriod}`
     : null;
@@ -885,7 +909,10 @@ export default function AcademicInsights() {
     { label: 'Pending activities', value: String(pendingActivityCount) },
     { label: 'Tentative scored activities', value: String(tentativeScoredActivityCount) },
     ...(studentStats.gwa !== null
-      ? [{ label: 'Cumulative GWA', value: Number(studentStats.gwa).toFixed(2) }]
+      ? [{
+          label: studentStats.completeness?.isFullyFinalized ? 'Official GWA' : 'Current running GWA (tentative)',
+          value: Number(studentStats.gwa).toFixed(2)
+        }]
       : []),
     { label: 'Attendance', value: `${studentStats.diagnostics.attendanceRate}% · ${studentStats.diagnostics.absentCount} absence(s)` },
     { label: 'Enrolled courses', value: `${subjectsList.length} course(s) · ${studentStats.totalUnits} units` },
@@ -894,13 +921,18 @@ export default function AcademicInsights() {
           label: 'Priority course',
           value: studentStats.prioritySubject.runningGwa === '—'
             ? `${studentStats.prioritySubject.code} · ${studentStats.prioritySubject.diagnostics?.csAvg || 0}% tentative activity average`
-            : `${studentStats.prioritySubject.code} · ${studentStats.prioritySubject.runningGwa} official GWA (based on ${studentStats.prioritySubject.milestoneStage || 'no official milestone yet'}${studentStats.prioritySubject.isFinalized ? '' : ' — not yet final'})`
+            : `${studentStats.prioritySubject.code} · ${studentStats.prioritySubject.runningGwa} ${studentStats.prioritySubject.isFinalized ? 'official' : 'tentative'} GWA (based on ${studentStats.prioritySubject.milestoneStage || 'no recorded scores yet'}${studentStats.prioritySubject.isFinalized ? '' : ' — not yet final'})`
         }]
       : [])
   ];
   const askAspireEvidence = askAspireSubject
     ? [
-        { label: 'Running course grade', value: askAspireSubject.runningGwa === '—' ? 'Awaiting official grade' : `${askAspireSubject.runningGwa} GWA` },
+        {
+          label: 'Running course grade',
+          value: askAspireSubject.runningGwa === '—'
+            ? 'No recorded scores yet'
+            : `${askAspireSubject.runningGwa} GWA${askAspireSubject.isFinalized ? '' : ' (tentative)'}`
+        },
         ...(askAspireSubject.diagnostics?.scoredActivityCount > 0
           ? [{ label: 'Recorded activities', value: `${askAspireSubject.diagnostics.csAvg}% average` }]
           : []),
@@ -951,6 +983,7 @@ export default function AcademicInsights() {
         : 'Pending and tentative activity evidence',
     officialStanding: {
       gwa: studentStats.gwa,
+      gwaIsOfficial: Boolean(studentStats.completeness?.isFullyFinalized),
       standing: studentStats.standing,
       trajectory: studentStats.trajectoryVerdict,
       attendanceRate: studentStats.diagnostics.attendanceRate,
@@ -963,6 +996,10 @@ export default function AcademicInsights() {
           name: askAspireSubject.name,
           instructor: askAspireSubject.instructor,
           runningGwa: askAspireSubject.runningGwa,
+          gradeBasis: askAspireSubject.gradeBasis,
+          milestoneStage: askAspireSubject.milestoneStage,
+          isFinalized: askAspireSubject.isFinalized,
+          blankActivityCount: askAspireSubject.blankActivityCount,
           selectedPeriodName: selectedPeriod,
           periods: askAspireSubject.periods || null,
           gradingFormula: askAspireSubject.gradingFormula || null,
@@ -988,8 +1025,13 @@ export default function AcademicInsights() {
           code: subject.code,
           name: subject.name,
           runningGwa: subject.runningGwa,
+          gradeBasis: subject.gradeBasis,
+          milestoneStage: subject.milestoneStage,
+          isFinalized: subject.isFinalized,
+          blankActivityCount: subject.blankActivityCount,
           classStandingAverage: subject.diagnostics?.csAvg || null,
           examAverage: subject.diagnostics?.examAvg || null,
+          characterAverage: subject.diagnostics?.charAvg || null,
           activities: (subject.activities || []).map(activity => ({
             title: activity.title || activity.name,
             term: activity.term,
@@ -1043,9 +1085,16 @@ export default function AcademicInsights() {
     examMax: 40
   });
 
-  // Fetch AI guidance automatically ONLY when official Midterm / Final grades exist and cache is empty
+  // Overall guidance can be generated once the student has a running GWA (tentative
+  // or official). Subject/period guidance still waits for a posted milestone because
+  // those period cards show posted values only.
+  const canGenerateGuidance = scope === 'overall'
+    ? (hasOfficialMilestone || studentStats.gwa !== null)
+    : hasOfficialMilestone;
+
+  // Fetch AI guidance automatically when allowed and the cache is empty or stale
   useEffect(() => {
-    if (loading || !user || !hasEnrolledSubjects || !hasOfficialMilestone || !currentEvidenceFingerprint) return;
+    if (loading || !user || !hasEnrolledSubjects || !canGenerateGuidance || !currentEvidenceFingerprint) return;
 
     let cacheKey = '';
     let payload = {};
@@ -1101,7 +1150,7 @@ export default function AcademicInsights() {
 
           // If overall guidance, persist directly into Supabase `student_academic_insights` table
           if (scope === 'overall') {
-            const v = computeVerdict(studentStats.gwa, studentStats.diagnostics?.fdaRisk, studentStats.diagnostics?.absentCount, 0);
+            const v = computeAcademicVerdict({ gwa: studentStats.gwa, hasFdaSubject: Boolean(studentStats.diagnostics?.fdaRisk) });
             await saveInsightToDb(result, v, {
               gwa: studentStats.gwa,
               standing: studentStats.standing,
@@ -1110,8 +1159,10 @@ export default function AcademicInsights() {
               trajectoryType: studentStats.trajectoryType,
               dlEligibility: studentStats.dlEligibility,
               diagnostics: studentStats.diagnostics,
-              hasOfficialMilestone: true,
+              hasOfficialMilestone,
               evidenceFingerprint: currentEvidenceFingerprint,
+              postedMilestoneKey: studentStats.postedMilestoneKey || null,
+              formatVersion: INSIGHT_FORMAT_VERSION,
               generatedAt: new Date().toISOString()
             });
           }
@@ -1124,12 +1175,12 @@ export default function AcademicInsights() {
     }
 
     fetchAiGuidance();
-  }, [scope, selectedSubjectCode, selectedPeriod, loading, user, hasEnrolledSubjects, hasOfficialMilestone, studentStats, subjectsList, currentSubject, currentEvidenceFingerprint, aiCache, saveInsightToDb, updateAiCache]);
+  }, [scope, selectedSubjectCode, selectedPeriod, loading, user, hasEnrolledSubjects, hasOfficialMilestone, canGenerateGuidance, studentStats, subjectsList, currentSubject, currentEvidenceFingerprint, aiCache, saveInsightToDb, updateAiCache]);
 
-  // Handler for explicit on-demand re-generation (only enabled when official grades exist)
+  // Handler for explicit on-demand re-generation (same gate as automatic generation)
   const handleRegenerateCurrentInsight = async (e) => {
     e?.stopPropagation?.();
-    if (!hasOfficialMilestone || !currentEvidenceFingerprint) return;
+    if (!canGenerateGuidance || !currentEvidenceFingerprint) return;
 
     let cacheKey;
     let payload;
@@ -1176,7 +1227,7 @@ export default function AcademicInsights() {
         updateAiCache(cacheKey, result, currentEvidenceFingerprint);
 
         if (scope === 'overall') {
-          const v = computeVerdict(studentStats.gwa, studentStats.diagnostics?.fdaRisk, studentStats.diagnostics?.absentCount, 0);
+          const v = computeAcademicVerdict({ gwa: studentStats.gwa, hasFdaSubject: Boolean(studentStats.diagnostics?.fdaRisk) });
           await saveInsightToDb(result, v, {
             gwa: studentStats.gwa,
             standing: studentStats.standing,
@@ -1185,8 +1236,10 @@ export default function AcademicInsights() {
             trajectoryType: studentStats.trajectoryType,
             dlEligibility: studentStats.dlEligibility,
             diagnostics: studentStats.diagnostics,
-            hasOfficialMilestone: true,
+            hasOfficialMilestone,
             evidenceFingerprint: currentEvidenceFingerprint,
+            postedMilestoneKey: studentStats.postedMilestoneKey || null,
+            formatVersion: INSIGHT_FORMAT_VERSION,
             generatedAt: new Date().toISOString()
           });
         }
@@ -1387,7 +1440,7 @@ export default function AcademicInsights() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {hasOfficialMilestone && (
+                  {canGenerateGuidance && (
                     <button
                       onClick={handleRegenerateCurrentInsight}
                       disabled={aiLoading}
@@ -1477,20 +1530,28 @@ export default function AcademicInsights() {
                 </div>
               </div>
 
-              {hasOfficialMilestone && (aiLoading || overallAiText || studentStats.staleAiInsight) && (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-                  <span className="font-bold text-slate-800">Ask ASPIRE explanation: </span>
-                  {aiLoading && !overallAiText
-                    ? 'Preparing a plain-language explanation of the deterministic evidence...'
-                    : overallAiText || 'The previous explanation is outdated because its academic evidence changed. Refresh to generate a current explanation.'}
+              {canGenerateGuidance && (aiLoading || overallAiText || studentStats.staleAiInsight) && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 space-y-2">
+                  <p className="font-bold text-slate-800">Ask ASPIRE explanation</p>
+                  <p className="whitespace-pre-line leading-relaxed">
+                    {aiLoading && !overallAiText
+                      ? 'Preparing a plain-language explanation of your current standing...'
+                      : overallAiText || 'Your grades changed since the previous explanation. A new one is being prepared; click Refresh if it does not appear.'}
+                  </p>
+                  {overallAiText && !aiLoading && (
+                    <p className="text-[10px] text-slate-400">
+                      {overallInsightGeneratedAt
+                        ? `Generated ${new Date(overallInsightGeneratedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}. `
+                        : ''}
+                      {showNewScoresNote ? 'New scores were recorded after this explanation. ' : ''}
+                      Updates automatically when a grade is posted; click Refresh to include newer scores.
+                    </p>
+                  )}
                 </div>
               )}
 
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Available context</span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
-                  Tentative scored activities: <span className="text-slate-800">{tentativeScoredActivityCount}</span>
-                </span>
                 {overallAdvisorEvidence.slice(0, 4).map(item => (
                   <span key={`${item.label}-${item.value}`} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
                     {item.label}: <span className="text-slate-800">{item.value}</span>

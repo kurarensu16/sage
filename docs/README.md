@@ -48,12 +48,13 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | Document | Status | Notes |
 |---|---|---|
 | [audits/THESIS_AUDIT_2026-10-10.md](02-thesis/audits/THESIS_AUDIT_2026-10-10.md) | Current | Latest code-vs-Chapters 1–2 audit and action checklist. |
-| [figures/](02-thesis/figures/) | Current | Sources for the 2026-10-10 thesis figures, including the evening revision (2.2, 2.3, 2.5, 2.8, 2.9, 2.11, and the rebuilt 2.14 ERD Layer 2) (Mermaid `.mmd`, `make_figure_2_7.py`, `compose_columns.py`). `render-config/` holds the shared grayscale style. |
+| [figures/](02-thesis/figures/) | Current | Sources for the 2026-10-10 thesis figures, including the evening revision (2.2, 2.3, 2.5, 2.8, 2.9, 2.11, and the rebuilt 2.14 ERD Layer 2), plus the 2026-10-11 running-GWA revision of 2.2 and 2.8 (Mermaid `.mmd`, `make_figure_2_7.py`, `compose_columns.py`). `render-config/` holds the shared grayscale style. |
 | [defense/ASPIRE_GRADING_AND_RISK_RULES_DEFENSE_GUIDE.md](02-thesis/defense/ASPIRE_GRADING_AND_RISK_RULES_DEFENSE_GUIDE.md) | Reference | Defense prep on grading and risk rules. |
-| [defense/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md](02-thesis/defense/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md) | Reference | Capstone 1 panel rulings and policy specs. |
+| [defense/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md](02-thesis/defense/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md) | Reference | Capstone 1 panel rulings and policy specs. Rule 2.2.1 (no real-time grades for students) is superseded by the running-GWA decision below. |
 | [decisions/COLLEGE_OFFICE_PORTAL_DISCARD_ANALYSIS.md](02-thesis/decisions/COLLEGE_OFFICE_PORTAL_DISCARD_ANALYSIS.md) | Current | Why the Office portal was dropped (4 portals). |
 | [decisions/ROSTER_IMPORT_VS_USER_MANAGEMENT_ANALYSIS.md](02-thesis/decisions/ROSTER_IMPORT_VS_USER_MANAGEMENT_ANALYSIS.md) | Current | Import Users (CSV/Excel) vs. user management. |
 | [decisions/LATE_JOINER_MISSING_ACTIVITIES_2026-10-10.md](02-thesis/decisions/LATE_JOINER_MISSING_ACTIVITIES_2026-10-10.md) | Current | Late joiners get `0` for missing posted-term work so the risk is visible; corrected after make-up. |
+| [decisions/STUDENT_RUNNING_GWA_2026-10-11.md](02-thesis/decisions/STUDENT_RUNNING_GWA_2026-10-11.md) | Current | Students see a tentative running GWA before posting (posted milestones replace it); live AI Standing, per-subject FDA, AI insight refresh rules. Supersedes panel rule 2.2.1. |
 | [defense/SCALABILITY_DEFENSE_QA_2026-10-10.md](02-thesis/defense/SCALABILITY_DEFENSE_QA_2026-10-10.md) | Current | Panel answers on 1,000-user scale, data handling, caching, and late joiners. |
 
 ## 03 · Development: audits and implementation reports

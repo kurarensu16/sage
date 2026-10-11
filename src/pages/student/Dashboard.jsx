@@ -16,11 +16,12 @@ import { useAuth } from '../../lib/AuthContext';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { DashboardSkeleton } from '../../components/common/Skeleton';
 import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
-import { computeStudentGwa, getGwaBand, resolveOfficialGwa } from '../../lib/academicPolicy';
+import { computeAcademicVerdict, countFdaSubjects, getGwaBand, resolveOfficialGwa } from '../../lib/academicPolicy';
+import { loadStudentRunningGrades, RUNNING_GRADE_BASIS } from '../../lib/studentRunningGrade';
 import { isStudentVisibleEvaluation } from '../../lib/evaluationTracking';
 import {
-  buildStudentInsightEvidence,
-  createInsightEvidenceFingerprint,
+  createPostedMilestoneKey,
+  shouldAutoRegenerateOverallInsight,
 } from '../../lib/insightFreshness';
 
 // Helper to check pending advising tasks
@@ -52,6 +53,32 @@ const checkPendingAdvisingTasks = async (studentId) => {
   }
 };
 
+const NO_INSIGHT_SUMMARY = 'No AI guidance yet. Open the AI Study Tutor to generate it from your recorded scores.';
+
+// computeAcademicVerdict values -> card labels (same mapping the saved insights use).
+const VERDICT_LABELS = {
+  continue: 'Safe',
+  at_risk: 'Struggling',
+  recommend_shift: 'At Risk'
+};
+
+const AI_STANDING_SUBTITLES = {
+  Safe: 'Low risk',
+  Struggling: 'Moderate risk',
+  'At Risk': 'High risk',
+  'No data yet': 'Awaiting recorded scores',
+  Checking: 'Validating evidence'
+};
+
+// Line under the GWA value; the Tentative/Official pill carries the status.
+const getGwaStatusLine = (summary, standing) => {
+  if (!summary || summary.basis === RUNNING_GRADE_BASIS.NO_DATA) return 'No scores recorded yet';
+  if (summary.basis === RUNNING_GRADE_BASIS.OFFICIAL) return standing;
+  if (summary.hasPostedTfr) return 'Awaiting Semestral Grade';
+  if (summary.hasPostedMr) return 'Midterm Rating posted · later terms live';
+  return 'No grades posted yet';
+};
+
 export default function Dashboard() {
   const { user, profile } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -60,10 +87,12 @@ export default function Dashboard() {
   const [enrolledSubjects, setEnrolledSubjects] = useState([]);
   const [currentGwa, setCurrentGwa] = useState('—');
   const [gwaStanding, setGwaStanding] = useState('No grades posted yet');
+  const [gwaSummary, setGwaSummary] = useState(null);
   const [pendingAdvisingCount, setPendingAdvisingCount] = useState(0);
   const [latestAdvisingPlan, setLatestAdvisingPlan] = useState(null);
-  const [insightVerdict, setInsightVerdict] = useState('Normal');
-  const [insightSummary, setInsightSummary] = useState('No academic risk flags detected. Keep up the good work!');
+  const [insightVerdict, setInsightVerdict] = useState('No data yet');
+  const [insightVerdictTentative, setInsightVerdictTentative] = useState(false);
+  const [insightSummary, setInsightSummary] = useState(NO_INSIGHT_SUMMARY);
   const [infoModalType, setInfoModalType] = useState(null); // 'gwa', 'subjects', 'tasks', 'ai'
 
   useEffect(() => {
@@ -78,11 +107,14 @@ export default function Dashboard() {
         setEnrolledSubjects(cached.enrolledSubjects);
         setCurrentGwa(cached.currentGwa);
         setGwaStanding(cached.gwaStanding);
+        setGwaSummary(cached.gwaSummary || null);
         setPendingAdvisingCount(cached.pendingAdvisingCount || 0);
         setLatestAdvisingPlan(cached.latestAdvisingPlan || null);
-        // Cached academic facts may render immediately, but AI text is withheld
-        // until its evidence fingerprint is revalidated against current records.
-        setInsightVerdict('Checking');
+        // Cached academic facts (including the deterministic verdict) may render
+        // immediately, but AI text is withheld until its evidence fingerprint is
+        // revalidated against current records.
+        setInsightVerdict(cached.insightVerdict || 'Checking');
+        setInsightVerdictTentative(Boolean(cached.insightVerdictTentative));
         setInsightSummary('Validating the latest academic evidence...');
         setLoading(false);
       }
@@ -169,84 +201,42 @@ export default function Dashboard() {
 
         setEnrolledSubjects(activeEnrolled);
 
-        // 7. Calculate real-time GWA
-        const validGrades = activeEnrolled.filter(s => s.grade !== null && !isNaN(parseFloat(s.grade)));
-        let resolvedGwa = '—';
-        let resolvedStanding = 'No grades posted yet';
-
-        if (validGrades.length > 0) {
-          const gwaNum = computeStudentGwa(validGrades.map(s => s.grade)).gwa;
-          resolvedGwa = gwaNum.toFixed(2);
-          setCurrentGwa(resolvedGwa);
-
-          resolvedStanding = getGwaBand(gwaNum)?.label || 'Academic warning';
-          setGwaStanding(resolvedStanding);
-        } else {
-          setCurrentGwa('—');
-          setGwaStanding('No grades posted yet');
-        }
+        // 7. Running GWA: posted milestones first, unposted terms live (Tentative)
+        const resolvedGwaSummary = await loadStudentRunningGrades(
+          user.id,
+          activeEnrolled.map(item => item.class_record_id)
+        )
+          .then(result => result.summary)
+          .catch(err => {
+            console.error('Error loading running GWA:', err);
+            return null;
+          });
+        const resolvedGwa = resolvedGwaSummary?.gwa != null ? resolvedGwaSummary.gwa.toFixed(2) : '—';
+        const resolvedStanding = resolvedGwaSummary?.gwa != null
+          ? getGwaBand(resolvedGwaSummary.gwa)?.label || 'Academic warning'
+          : 'No grades posted yet';
+        setCurrentGwa(resolvedGwa);
+        setGwaStanding(resolvedStanding);
+        setGwaSummary(resolvedGwaSummary);
 
         // 8. ASPIRE v3.1: Check Pending Faculty Advising & Action Items
         const { pendingCount: resolvedPendingCount, latestPlan: resolvedLatestPlan } = await checkPendingAdvisingTasks(user.id);
         setPendingAdvisingCount(resolvedPendingCount);
         setLatestAdvisingPlan(resolvedLatestPlan);
 
-        // 9. Academic Insights — reuse generated text only when all evidence still matches.
+        // 9. Academic Insights: the saved AI text is kept until a grade is posted;
+        // attendance feeds the live AI Standing verdict.
         const classRecordIds = activeEnrolled.map(item => item.class_record_id).filter(Boolean);
-        const queryClassRecordIds = classRecordIds.length > 0
-          ? classRecordIds
-          : ['00000000-0000-0000-0000-000000000000'];
         const currentPostedGrades = (posted || []).filter(item => classRecordIds.includes(item.class_record_id));
 
         const [
-          { data: insightActivities },
           { data: insightAttendance },
-          { data: insightTermScores },
-          { data: insightGradingColumns },
-          { data: insightEvaluations },
           { data: insightData },
         ] = await Promise.all([
-          supabase
-            .from('class_activities')
-            .select('*')
-            .in('class_record_id', queryClassRecordIds),
           supabase
             .from('attendance_records')
             .select('*')
             .eq('student_id', user.id),
-          supabase
-            .from('student_term_scores')
-            .select('*')
-            .eq('student_id', user.id)
-            .in('class_record_id', queryClassRecordIds),
-          supabase
-            .from('class_grading_columns')
-            .select('*')
-            .in('class_record_id', queryClassRecordIds),
-          supabase
-            .from('student_risk_evaluations')
-            .select(`
-              evaluation_id,
-              class_record_id,
-              student_id,
-              faculty_id,
-              term,
-              evaluation_context,
-              shared_academic_feedback,
-              advising_plan,
-              baseline_snapshot,
-              followup_snapshot,
-              refer_to_dean,
-              requires_tutoring,
-              status,
-              published_to_student_at,
-              created_at,
-              updated_at
-            `)
-            .eq('student_id', user.id)
-            .in('class_record_id', queryClassRecordIds)
-            .in('status', ['submitted', 'acknowledged_by_student'])
-            .not('published_to_student_at', 'is', null),
           supabase
             .from('student_academic_insights')
             .select('*')
@@ -255,43 +245,30 @@ export default function Dashboard() {
             .limit(1),
         ]);
 
-        const insightActivityIds = (insightActivities || []).map(item => item.activity_id);
-        const { data: insightActivityScores } = insightActivityIds.length > 0
-          ? await supabase
-              .from('student_activity_scores')
-              .select('*')
-              .eq('student_id', user.id)
-              .in('activity_id', insightActivityIds)
-          : { data: [] };
+        // AI Standing: the verdict is the deterministic rule shared with the AI Study
+        // Tutor, computed live from the running GWA and per-subject FDA (no AI call).
+        // Only the explanation text comes from the latest saved AI insight.
+        const currentAttendance = (insightAttendance || [])
+          .filter(record => classRecordIds.includes(record.class_record_id));
+        const hasFdaSubject = countFdaSubjects(currentAttendance) > 0;
+        const resolvedVerdict = resolvedGwaSummary?.gwa == null && !hasFdaSubject
+          ? 'No data yet'
+          : VERDICT_LABELS[computeAcademicVerdict({ gwa: resolvedGwaSummary?.gwa ?? null, hasFdaSubject })];
+        const resolvedVerdictTentative = resolvedVerdict !== 'No data yet' && !resolvedGwaSummary?.isOfficial;
 
-        const visibleInsightEvaluations = (insightEvaluations || []).filter(isStudentVisibleEvaluation);
-        const currentEvidenceFingerprint = createInsightEvidenceFingerprint(buildStudentInsightEvidence({
-          postedGrades: currentPostedGrades,
-          attendance: insightAttendance || [],
-          activities: insightActivities || [],
-          activityScores: insightActivityScores || [],
-          termScores: insightTermScores || [],
-          gradingColumns: insightGradingColumns || [],
-          evaluations: visibleInsightEvaluations,
-        }));
-
-        let resolvedVerdict = 'Normal';
-        let resolvedSummary = 'No academic risk flags detected. Keep up the good work!';
+        // Same rule as the AI Study Tutor: the saved insight stays until a grade is
+        // posted (or its format changes); newer scores alone wait for a manual Refresh.
+        let resolvedSummary = NO_INSIGHT_SUMMARY;
         if (insightData && insightData.length > 0) {
           const latest = insightData[0];
-          const isCurrent = latest.basis_snapshot?.evidenceFingerprint === currentEvidenceFingerprint;
-          resolvedVerdict = isCurrent
-            ? latest.verdict === 'continue' ? 'Safe' : latest.verdict === 'at_risk' ? 'Struggling' : 'At Risk'
-            : 'Update needed';
-          resolvedSummary = isCurrent
+          const isUsable = !shouldAutoRegenerateOverallInsight(latest, createPostedMilestoneKey(currentPostedGrades));
+          resolvedSummary = isUsable
             ? latest.summary
-            : 'Academic evidence changed after the previous explanation. Open the AI Study Tutor to generate a current insight.';
-          setInsightVerdict(resolvedVerdict);
-          setInsightSummary(resolvedSummary);
-        } else {
-          setInsightVerdict('Normal');
-          setInsightSummary('No academic risk flags detected. Keep up the good work!');
+            : 'A grade was posted since your last AI guidance. Open the AI Study Tutor to update it.';
         }
+        setInsightVerdict(resolvedVerdict);
+        setInsightVerdictTentative(resolvedVerdictTentative);
+        setInsightSummary(resolvedSummary);
 
         // Store in cache
         setCachedData(cacheKey, {
@@ -300,9 +277,11 @@ export default function Dashboard() {
           enrolledSubjects: activeEnrolled,
           currentGwa: resolvedGwa,
           gwaStanding: resolvedStanding,
+          gwaSummary: resolvedGwaSummary,
           pendingAdvisingCount: resolvedPendingCount,
           latestAdvisingPlan: resolvedLatestPlan,
           insightVerdict: resolvedVerdict,
+          insightVerdictTentative: resolvedVerdictTentative,
           insightSummary: resolvedSummary
         });
 
@@ -393,13 +372,26 @@ export default function Dashboard() {
           <div className="bg-white p-3 sm:p-5 md:p-6 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all shadow-xs flex items-start justify-between gap-2 sm:gap-3">
             <div className="min-w-0 flex-1">
               <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
-                Current GWA
+                {gwaSummary?.isOfficial ? 'Official GWA' : 'Current Running GWA'}
                 <button onClick={() => setInfoModalType('gwa')} className="text-slate-400 hover:text-sage-600 transition-colors" aria-label="What does this mean?">
                   <Info className="h-3 w-3" />
                 </button>
               </span>
-              <h3 className="text-lg sm:text-2xl md:text-3xl font-extrabold text-slate-900 font-mono mt-0.5 sm:mt-1 truncate">{currentGwa}</h3>
-              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate" title={gwaStanding}>{gwaStanding}</p>
+              <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5 sm:mt-1 min-w-0">
+                <h3 className="text-lg sm:text-2xl md:text-3xl font-extrabold text-slate-900 font-mono truncate">{currentGwa}</h3>
+                {currentGwa !== '—' && (
+                  <span className={`px-1.5 sm:px-2 py-0.5 rounded-full border text-[8px] sm:text-[10px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                    gwaSummary?.isOfficial
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                  }`}>
+                    {gwaSummary?.isOfficial ? 'Official' : 'Tentative'}
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate" title={getGwaStatusLine(gwaSummary, gwaStanding)}>
+                {getGwaStatusLine(gwaSummary, gwaStanding)}
+              </p>
             </div>
             <div className="p-2 sm:p-2.5 md:p-3 bg-sage-50 text-sage-600 rounded-xl flex-shrink-0 mt-0.5">
               <Award className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -459,14 +451,26 @@ export default function Dashboard() {
                   <Info className="h-3 w-3" />
                 </button>
               </span>
-              <h3 className={`text-lg sm:text-2xl md:text-3xl font-extrabold font-mono mt-0.5 sm:mt-1 truncate ${insightVerdict === 'Safe' ? 'text-emerald-600' : insightVerdict === 'At Risk' ? 'text-rose-600' : 'text-amber-600'}`}>
+              {/* Smaller than the other stat values so labels like "Struggling" are not cut off. */}
+              <h3 className={`text-base sm:text-xl md:text-2xl font-extrabold font-mono mt-1 sm:mt-1.5 truncate ${
+                insightVerdict === 'Safe' ? 'text-emerald-600'
+                  : insightVerdict === 'At Risk' ? 'text-rose-600'
+                  : insightVerdict === 'Struggling' ? 'text-amber-600'
+                  : 'text-slate-500'
+              }`} title={insightVerdict}>
                 {insightVerdict}
               </h3>
               <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate">
-                {insightVerdict === 'Safe' ? 'Low risk' : insightVerdict === 'Struggling' ? 'Moderate risk' : 'High risk'}
+                {AI_STANDING_SUBTITLES[insightVerdict] || 'Open AI Study Tutor'}
+                {insightVerdictTentative ? ' · tentative' : ''}
               </p>
             </div>
-            <div className={`p-2 sm:p-2.5 md:p-3 rounded-xl flex-shrink-0 mt-0.5 ${insightVerdict === 'Safe' ? 'bg-emerald-50 text-emerald-600' : insightVerdict === 'At Risk' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
+            <div className={`p-2 sm:p-2.5 md:p-3 rounded-xl flex-shrink-0 mt-0.5 ${
+              insightVerdict === 'Safe' ? 'bg-emerald-50 text-emerald-600'
+                : insightVerdict === 'At Risk' ? 'bg-rose-50 text-rose-600'
+                : insightVerdict === 'Struggling' ? 'bg-amber-50 text-amber-600'
+                : 'bg-slate-50 text-slate-500'
+            }`}>
               <BrainCircuit className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
           </div>
@@ -532,8 +536,11 @@ export default function Dashboard() {
               <div className="flex items-center gap-2">
                 <BrainCircuit className={`h-4 w-4 sm:h-5 sm:w-5 ${insightVerdict === 'Safe' ? 'text-emerald-600' : insightVerdict === 'At Risk' ? 'text-rose-600' : 'text-amber-600'}`} />
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900">Academic Insights</h3>
+                <button onClick={() => setInfoModalType('insights')} className="text-slate-400 hover:text-sage-600 transition-colors" aria-label="How do I update my academic insights?">
+                  <Info className="h-3.5 w-3.5" />
+                </button>
               </div>
-              <p className="text-xs text-slate-650 leading-relaxed font-medium">
+              <p className="text-xs text-slate-650 leading-relaxed font-medium whitespace-pre-line">
                 {insightSummary}
               </p>
               <Link 
@@ -575,10 +582,11 @@ export default function Dashboard() {
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
               <h3 className="font-bold text-slate-800 flex items-center gap-2">
                 {infoModalType === 'ai' ? <BrainCircuit className="h-5 w-5 text-sage-600" /> : <Info className="h-5 w-5 text-sage-600" />}
-                {infoModalType === 'gwa' && 'Current GWA'}
+                {infoModalType === 'gwa' && (gwaSummary?.isOfficial ? 'Official GWA' : 'Current Running GWA (Tentative)')}
                 {infoModalType === 'subjects' && 'Enrolled Subjects'}
                 {infoModalType === 'tasks' && 'Action Tasks'}
                 {infoModalType === 'ai' && 'AI Standing Predictions'}
+                {infoModalType === 'insights' && 'Academic Insights'}
               </h3>
               <button 
                 onClick={() => setInfoModalType(null)}
@@ -588,8 +596,47 @@ export default function Dashboard() {
               </button>
             </div>
             <div className="p-5 space-y-4 text-sm text-slate-600">
-              {infoModalType === 'gwa' && (
-                <p>This is your overall <strong>General Weighted Average</strong> based on currently posted grades. Because some professors post grades earlier than others, this represents a provisional snapshot of your standing and may fluctuate as more grades are finalized.</p>
+              {infoModalType === 'gwa' && (gwaSummary?.isOfficial ? (
+                <p>This is your <strong>Official GWA</strong>: the average of the Semestral Grades your instructors have posted for every enrolled subject this term.</p>
+              ) : (
+                <>
+                  <p>This is your GWA computed live from the scores your instructors have recorded so far, using each subject's official grading template (COG). It is <strong>not an official grade</strong>.</p>
+                  <ul className="list-disc pl-5 space-y-2">
+                    <li><strong>Posted grades come first.</strong> Once a Midterm Rating, Tentative Final Rating, or Semestral Grade is posted, ASPIRE uses that posted grade instead of the live estimate. If your instructor corrects a score after posting, your posted grade updates when they repost.</li>
+                    <li>
+                      <strong>Blank activities are not counted yet.</strong> If an activity still has no score when your instructor posts grades, it may be recorded as zero, which can lower your official grade.
+                      {gwaSummary?.blankActivityCount > 0 && (
+                        <span className="block mt-1 font-semibold text-amber-700">
+                          {gwaSummary.blankActivityCount} {gwaSummary.blankActivityCount === 1 ? 'activity still has' : 'activities still have'} no score.
+                        </span>
+                      )}
+                    </li>
+                    <li>This number changes as new scores are recorded. Use it to see where you stand early and to ask the AI Study Tutor what to improve.</li>
+                  </ul>
+                  <p>When every subject's Semestral Grade is posted, this card shows your <strong>Official GWA</strong>.</p>
+                </>
+              ))}
+              {infoModalType === 'insights' && (
+                <>
+                  <p>This is a short AI explanation of your current standing and what to do next. It is advisory and does not change your grades.</p>
+                  <div>
+                    <p className="font-semibold text-slate-800">When it updates</p>
+                    <ul className="list-disc pl-5 space-y-1 mt-1">
+                      <li>It is created automatically the first time you open the <strong>AI Study Tutor</strong>.</li>
+                      <li>It updates automatically when your instructor <strong>posts a grade</strong> (Midterm Rating, Tentative Final Rating, or Semestral Grade).</li>
+                      <li>New activity scores do <strong>not</strong> update it automatically.</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-800">To update it yourself</p>
+                    <ol className="list-decimal pl-5 space-y-1 mt-1">
+                      <li>Click <strong>View Insights</strong> (or open <strong>AI Study Tutor</strong> in the sidebar).</li>
+                      <li>On the <strong>Today</strong> tab, find <strong>Proactive academic guidance</strong>.</li>
+                      <li>Click <strong>Refresh</strong>.</li>
+                      <li>Return to the dashboard to see the new insight.</li>
+                    </ol>
+                  </div>
+                </>
               )}
               {infoModalType === 'subjects' && (
                 <p>The total number of active subjects and enrolled units you are taking this semester. Only subjects marked as 'Active' or 'Grades Posted' contribute to your GWA.</p>
@@ -599,7 +646,7 @@ export default function Dashboard() {
               )}
               {infoModalType === 'ai' && (
                 <>
-                  <p>The <strong>AI Study Tutor</strong> analyzes your real-time grades, absences, and academic history to predict your trajectory.</p>
+                  <p>Your standing is computed live from your <strong>running GWA</strong> and your <strong>absences in each subject</strong>, using the same rule as the <strong>AI Study Tutor</strong>. It is marked <em>tentative</em> until your Semestral Grades are posted. Open the AI Study Tutor for a written explanation.</p>
                   
                   <div className="space-y-3 mt-4">
                     <div className="bg-emerald-50/50 border border-emerald-100 p-3 rounded-xl flex gap-3">
