@@ -1,6 +1,8 @@
 flowchart TB
 %% ===== Figure 2.5 — Proposed System Flowchart: Admin Portal (updated 2026-10-10) =====
 %% CSV/Excel import for users, subjects, and sections; identity fields admin-managed.
+%% Revised 2026-10-10 (evening): section assignment and classroom provisioning enroll section
+%% students and notify instructors of the count.
 
   SEL{"Select module"}
   OUT(["<b>Log out / End</b>"]):::accent
@@ -28,6 +30,8 @@ flowchart TB
     U1["Manage Users (all four roles):<br/>name, email, ID, department,<br/>section are admin-managed"] --> UQ{"Individual or batch?"}
     UQ -- "Batch" --> UB["Import Users (CSV/Excel):<br/>roles and departments<br/>assigned from file"]
     UQ -- "Individual" --> US["Create single account"]
+    UB --> UE["Student with a section:<br/>enrolled in its active classes;<br/>instructors notified (count)"]
+    US --> UE
   end
 
   subgraph AM["<b>Academic Setup Module</b>"]
@@ -36,7 +40,7 @@ flowchart TB
     A2["Grading Formulas manager"]
     A3["Sections<br/>(CSV/Excel import)"]
     A4["Departments and Programs"]
-    A5["Classrooms provisioning"]
+    A5["Classrooms provisioning"] --> A6["Section students enrolled;<br/>instructor notified (count)"]
     A1 ~~~ A2 ~~~ A3 ~~~ A4 ~~~ A5
   end
 

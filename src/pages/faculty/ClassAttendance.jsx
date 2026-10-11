@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { fetchAcademicTerms, getClassTermState } from '../../lib/termStatus';
 import ConfirmModal from '../../components/ConfirmModal';
 
 export default function ClassAttendance() {
@@ -43,19 +44,29 @@ export default function ClassAttendance() {
           return;
         }
 
-        const { data, error } = await supabase
-          .from('class_records')
-          .select(`
-            class_record_id,
-            term_id,
-            subjects ( subject_id, code, name, units ),
-            sections ( section_id, name )
-          `)
-          .eq('faculty_id', user.id)
-          .eq('status', 'active');
-        
+        const [{ data: classRows, error }, terms] = await Promise.all([
+          supabase
+            .from('class_records')
+            .select(`
+              class_record_id,
+              status,
+              term_id,
+              school_year,
+              semester,
+              subjects ( subject_id, code, name, units ),
+              sections ( section_id, name )
+            `)
+            .eq('faculty_id', user.id)
+            .eq('status', 'active'),
+          fetchAcademicTerms()
+        ]);
+
         if (error) throw error;
-        
+
+        // Attendance is taken only for the active term; previous-term classes waiting for
+        // their SG are closed for new attendance.
+        const data = (classRows || []).filter(c => getClassTermState(terms, c).state === 'current');
+
         if (data && data.length > 0) {
           const mapped = data.map(c => ({
             id: c.class_record_id,

@@ -4,6 +4,7 @@ import { Search, Filter, Loader2, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
+import { SG_SUBMISSION_LABELS, getClassTermState } from '../../lib/termStatus';
 
 export default function GradePostingStatus() {
   const { profile } = useAuth();
@@ -50,19 +51,20 @@ export default function GradePostingStatus() {
   const loadPostingData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch Classrooms with relations
+      // 1. Fetch Classrooms with relations. Archived classes are included so a previous
+      // term's posting record stays visible.
       const { data: classData, error: classErr } = await supabase
         .from('class_records')
         .select(`
           class_record_id,
           status,
+          term_id,
           semester,
           school_year,
           faculty:users!faculty_id(user_id, first_name, last_name, email),
           subject:subjects(subject_id, code, name, units, department_id, departments(name)),
           section:sections(section_id, name)
-        `)
-        .eq('status', 'active');
+        `);
 
       if (classErr) throw classErr;
 
@@ -74,10 +76,24 @@ export default function GradePostingStatus() {
 
       if (deptData) setDepartments(deptData);
 
-      // 3. Fetch posted grades to know which classes have posted grades
-      const { data: postedData } = await supabase
-        .from('posted_grades')
-        .select('class_record_id, grade_period, is_locked');
+      // 3. Fetch posted grades per class, in pages: the API returns at most 1,000 rows
+      // per request, and a cut-off list would show posted classes as pending.
+      const classIds = (classData || []).map(c => c.class_record_id);
+      const postedData = [];
+      for (let i = 0; i < classIds.length; i += 100) {
+        const idChunk = classIds.slice(i, i + 100);
+        for (let from = 0; ; from += 1000) {
+          const { data: page, error: pageErr } = await supabase
+            .from('posted_grades')
+            .select('posted_grade_id, class_record_id, grade_period, is_locked, sg_submission_status')
+            .in('class_record_id', idChunk)
+            .order('posted_grade_id')
+            .range(from, from + 999);
+          if (pageErr) throw pageErr;
+          postedData.push(...(page || []));
+          if (!page || page.length < 1000) break;
+        }
+      }
 
       const postedMap = {};
       (postedData || []).forEach(pg => {
@@ -100,8 +116,9 @@ export default function GradePostingStatus() {
           section: c.section?.name || 'N/A',
           facultyId: c.faculty?.user_id,
           facultyName,
-          semester: c.semester || '2nd',
-          schoolYear: c.school_year || '2025-2026',
+          semester: c.semester || '',
+          schoolYear: c.school_year || '',
+          termId: c.term_id,
           status: c.status
         };
       });
@@ -118,23 +135,52 @@ export default function GradePostingStatus() {
     loadPostingData();
   }, []);
 
-  const getStatusBadge = (classId, milestone) => {
-    const postedList = postedGradesMap[classId] || [];
-    
-    const isPosted = postedList.some(row =>
-      getCanonicalGradePeriod(row) === milestone
-    );
-    
-    if (isPosted) {
+  const getStatusBadge = (cls, milestone) => {
+    const postedList = (postedGradesMap[cls.id] || []).filter(row => getCanonicalGradePeriod(row) === milestone);
+
+    if (postedList.length > 0) {
+      // SG submission label recorded by the database at the first posting.
+      let label = null;
+      if (milestone === GRADE_MILESTONES.SEMESTRAL_GRADE) {
+        const labels = postedList.map(row => row.sg_submission_status).filter(Boolean);
+        label = labels.includes('late_overdue') ? 'late_overdue' : labels.includes('late') ? 'late' : labels[0] || null;
+      }
       return (
-        <div className="flex flex-col items-center gap-1.5 justify-center">
+        <div className="flex flex-col items-center gap-1 justify-center">
           <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
             Posted
           </span>
+          {label && (
+            <span className={`text-[10px] font-semibold ${label === 'on_time' ? 'text-slate-500' : 'text-rose-700'}`}>
+              {SG_SUBMISSION_LABELS[label]}
+            </span>
+          )}
         </div>
       );
     }
-    
+
+    // A previous-term class still waiting for its SG: Pending during the grace period,
+    // then Overdue.
+    if (milestone === GRADE_MILESTONES.SEMESTRAL_GRADE) {
+      const { state, daysLeft } = getClassTermState(termList, {
+        status: cls.status, term_id: cls.termId, school_year: cls.schoolYear, semester: cls.semester
+      });
+      if (state === 'overdue') {
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+            Overdue
+          </span>
+        );
+      }
+      if (state === 'pending') {
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+            Pending · {daysLeft} {daysLeft === 1 ? 'day' : 'days'} left
+          </span>
+        );
+      }
+    }
+
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
         Pending
@@ -230,7 +276,7 @@ export default function GradePostingStatus() {
                 <option value="">All Semesters</option>
                 <option value="1st">1st Semester</option>
                 <option value="2nd">2nd Semester</option>
-                <option value="summer">Summer</option>
+                <option value="Summer">Summer</option>
               </select>
             </div>
 
@@ -242,7 +288,7 @@ export default function GradePostingStatus() {
                 className="block w-full border border-slate-200 px-3 py-2 rounded-lg text-xs bg-white outline-none cursor-pointer"
               >
                 <option value="">All School Years</option>
-                {Array.from(new Set(['2025-2026', '2026-2027', ...termList.map(t => t.school_year)])).map(sy => (
+                {Array.from(new Set(termList.map(t => t.school_year))).map(sy => (
                   <option key={sy} value={sy}>{sy}</option>
                 ))}
               </select>
@@ -274,9 +320,9 @@ export default function GradePostingStatus() {
                     <h4 className="text-xs text-slate-600 truncate">{c.subjectName}</h4>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="flex flex-col items-center"><span className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Midterm</span>{getStatusBadge(c.id, GRADE_MILESTONES.MIDTERM_RATING)}</div>
-                    <div className="flex flex-col items-center"><span className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Final</span>{getStatusBadge(c.id, GRADE_MILESTONES.TENTATIVE_FINAL_RATING)}</div>
-                    <div className="flex flex-col items-center"><span className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Semestral</span>{getStatusBadge(c.id, GRADE_MILESTONES.SEMESTRAL_GRADE)}</div>
+                    <div className="flex flex-col items-center"><span className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Midterm</span>{getStatusBadge(c, GRADE_MILESTONES.MIDTERM_RATING)}</div>
+                    <div className="flex flex-col items-center"><span className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Final</span>{getStatusBadge(c, GRADE_MILESTONES.TENTATIVE_FINAL_RATING)}</div>
+                    <div className="flex flex-col items-center"><span className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Semestral</span>{getStatusBadge(c, GRADE_MILESTONES.SEMESTRAL_GRADE)}</div>
                   </div>
                 </div>
 
@@ -315,7 +361,7 @@ export default function GradePostingStatus() {
               <tbody className="bg-white divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan="4" className="px-6 py-12 text-center text-slate-400 text-sm">
+                    <td colSpan="6" className="px-6 py-12 text-center text-slate-400 text-sm">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <Loader2 className="h-6 w-6 text-sage-600 animate-spin" />
                         <span>Loading class grade posting status from Supabase...</span>
@@ -343,13 +389,13 @@ export default function GradePostingStatus() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {getStatusBadge(c.id, GRADE_MILESTONES.MIDTERM_RATING)}
+                        {getStatusBadge(c, GRADE_MILESTONES.MIDTERM_RATING)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {getStatusBadge(c.id, GRADE_MILESTONES.TENTATIVE_FINAL_RATING)}
+                        {getStatusBadge(c, GRADE_MILESTONES.TENTATIVE_FINAL_RATING)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        {getStatusBadge(c.id, GRADE_MILESTONES.SEMESTRAL_GRADE)}
+                        {getStatusBadge(c, GRADE_MILESTONES.SEMESTRAL_GRADE)}
                       </td>
                     </tr>
                   ))

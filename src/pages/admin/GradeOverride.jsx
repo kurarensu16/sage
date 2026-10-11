@@ -5,7 +5,13 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { notifyAdminGradeOverride } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
-import { getRemarks, toDbRemark, toDisplayRemark } from '../../lib/academicPolicy';
+import { getRemarks, toDbRemark, toDisplayRemark, TRANSMUTATION_LADDER, GRADE_SCALE } from '../../lib/academicPolicy';
+import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
+
+// Official DYCI grade steps (1.00 … 3.00, then 5.00), taken from the grading scale.
+const GRADE_STEPS = Object.freeze(
+  [...new Set([...TRANSMUTATION_LADDER.map(step => step.gwa), GRADE_SCALE.failedValue])].sort((a, b) => a - b)
+);
 
 // Badge color per DB remark value. Only 'passed' reads as success — every other state
 // (failed, FDA, incomplete, dropped) is visually distinct, never collapsed to one "Failed" look.
@@ -22,6 +28,7 @@ export default function GradeOverride() {
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [studentMatches, setStudentMatches] = useState([]);
   const [postedGrades, setPostedGrades] = useState([]);
   const [adminProfile, setAdminProfile] = useState(null);
   
@@ -78,8 +85,10 @@ export default function GradeOverride() {
         section: g.class_records?.sections?.name || 'N/A',
         facultyId: g.class_records?.faculty_id || null,
         gradePeriod: g.grade_period,
-        computedGrade: g.effective_grade !== null ? g.effective_grade : g.computed_grade,
+        isSemestral: getCanonicalGradePeriod(g) === GRADE_MILESTONES.SEMESTRAL_GRADE,
+        computedGrade: Number(g.effective_grade !== null ? g.effective_grade : g.computed_grade),
         remarks: g.remarks,
+        remarksNote: g.remarks_note || '',
         isLocked: g.is_locked
       })) || [];
 
@@ -90,19 +99,46 @@ export default function GradeOverride() {
     }
   };
 
+  const handleSelectStudent = async (match) => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    setSelectedStudent({
+      id: match.user_id,
+      firstName: match.first_name,
+      lastName: match.last_name,
+      middleName: match.middle_name,
+      email: match.email,
+      userNumber: match.user_number || '',
+      section: match.sections?.name || '',
+      department: match.departments?.name || 'No college'
+    });
+    await fetchStudentGrades(match.user_id);
+  };
+
+  // Every match is listed and the admin picks the exact student; nothing is chosen
+  // for them when several students share a name.
   const handleSearchStudent = async () => {
     setErrorMsg('');
     setSuccessMsg('');
     setSelectedStudent(null);
+    setStudentMatches([]);
     setPostedGrades([]);
 
-    if (!searchQuery.trim()) {
+    const term = searchQuery.trim();
+    if (!term) {
       setErrorMsg('Please enter a search query.');
       return;
     }
 
     try {
-      const query = supabase
+      const searchPattern = `%${term.replace(/[,()]/g, ' ')}%`;
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(term);
+      let orFilter = `last_name.ilike.${searchPattern},first_name.ilike.${searchPattern},email.ilike.${searchPattern},user_number.ilike.${searchPattern}`;
+      if (isUUID) {
+        orFilter += `,user_id.eq.${term}`;
+      }
+
+      const { data: matchedUsers, error: userErr } = await supabase
         .from('users')
         .select(`
           user_id,
@@ -110,38 +146,25 @@ export default function GradeOverride() {
           last_name,
           middle_name,
           email,
-          role,
-          status,
-          departments (name)
+          user_number,
+          departments (name),
+          sections (name)
         `)
         .eq('role', 'student')
-        .eq('status', 'active');
-      
-      const searchPattern = `%${searchQuery.trim()}%`;
-      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(searchQuery.trim());
-      let orFilter = `last_name.ilike.${searchPattern},first_name.ilike.${searchPattern},email.ilike.${searchPattern}`;
-      if (isUUID) {
-        orFilter += `,user_id.eq.${searchQuery.trim()}`;
-      }
-      
-      const { data: matchedUsers, error: userErr } = await query.or(orFilter);
+        .eq('status', 'active')
+        .or(orFilter)
+        .order('last_name')
+        .order('first_name')
+        .limit(50);
 
       if (userErr) throw userErr;
 
-      if (matchedUsers && matchedUsers.length > 0) {
-        const match = matchedUsers[0];
-        setSelectedStudent({
-          id: match.user_id,
-          firstName: match.first_name,
-          lastName: match.last_name,
-          middleName: match.middle_name,
-          email: match.email,
-          department: match.departments?.name || 'College of Computer Studies',
-        });
-
-        await fetchStudentGrades(match.user_id);
-      } else {
+      if (!matchedUsers || matchedUsers.length === 0) {
         setErrorMsg('No active student found matching that search query.');
+      } else if (matchedUsers.length === 1) {
+        await handleSelectStudent(matchedUsers[0]);
+      } else {
+        setStudentMatches(matchedUsers);
       }
     } catch (err) {
       console.error('Lookup failed:', err);
@@ -150,8 +173,12 @@ export default function GradeOverride() {
   };
 
   const handleOpenOverride = (grade) => {
+    if (!grade.isSemestral) return;
     setSelectedGrade(grade);
-    setNewGradeVal(grade.computedGrade.toFixed(2));
+    const nearestStep = GRADE_STEPS.reduce((best, step) => (
+      Math.abs(step - grade.computedGrade) < Math.abs(best - grade.computedGrade) ? step : best
+    ), GRADE_STEPS[0]);
+    setNewGradeVal(nearestStep.toFixed(2));
     setOverrideReason('');
     setErrorMsg('');
     setIsOverrideOpen(true);
@@ -164,8 +191,12 @@ export default function GradeOverride() {
 
     const parsedGrade = parseFloat(newGradeVal);
 
-    if (isNaN(parsedGrade) || parsedGrade < 1.00 || parsedGrade > 5.00) {
-      setErrorMsg('Invalid GWA Grade. Must be a decimal between 1.00 (highest) and 5.00 (failing).');
+    if (!selectedGrade?.isSemestral) {
+      setErrorMsg('Only the Semestral Grade (SG) can be overridden. MR and TFR are progress ratings.');
+      return;
+    }
+    if (!GRADE_STEPS.includes(parsedGrade)) {
+      setErrorMsg(`Choose an official DYCI grade: ${GRADE_STEPS.map(step => step.toFixed(2)).join(', ')}.`);
       return;
     }
 
@@ -198,7 +229,9 @@ export default function GradeOverride() {
       const oldGradeVal = selectedGrade.computedGrade;
       const oldRemarksVal = selectedGrade.remarks;
 
-      const logMessage = `Overrode ${selectedStudent.lastName}, ${selectedStudent.firstName}'s ${selectedGrade.gradePeriod} grade in ${selectedGrade.subjectCode} from ${oldGradeVal.toFixed(2)} (${oldRemarksVal}) to ${parsedGrade.toFixed(2)} (${remarks}). Reason: ${overrideReason.trim()}.`;
+      const studentLabel = `${selectedStudent.lastName}, ${selectedStudent.firstName}${selectedStudent.userNumber ? ` (${selectedStudent.userNumber})` : ''}`;
+      const previousNote = selectedGrade.remarksNote ? ` Previous remark note: "${selectedGrade.remarksNote}".` : '';
+      const logMessage = `Overrode ${studentLabel}'s SG in ${selectedGrade.subjectCode} (${selectedGrade.section}) from ${oldGradeVal.toFixed(2)} (${oldRemarksVal}) to ${parsedGrade.toFixed(2)} (${remarks}). Reason: ${overrideReason.trim()}.${previousNote}`;
 
       const { error: logErr } = await supabase
         .from('activity_logs')
@@ -294,6 +327,32 @@ export default function GradeOverride() {
           </div>
         </div>
 
+        {/* Several matches: the admin picks the exact student */}
+        {!selectedStudent && studentMatches.length > 0 && (
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-4 sm:p-6 space-y-3">
+            <p className="text-xs font-bold text-slate-700">
+              {studentMatches.length} students match. Choose the exact student:
+            </p>
+            <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+              {studentMatches.map(match => (
+                <button
+                  key={match.user_id}
+                  type="button"
+                  onClick={() => handleSelectStudent(match)}
+                  className="w-full text-left px-4 py-3 hover:bg-sage-50 transition-colors flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 cursor-pointer"
+                >
+                  <span className="text-sm font-semibold text-slate-900">
+                    {match.last_name}, {match.first_name}{match.middle_name ? ` ${match.middle_name[0]}.` : ''}
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    {match.user_number || 'No ID'} · {match.departments?.name || 'No college'} · {match.sections?.name || 'No section'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Student Grades View */}
         {selectedStudent && (
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden space-y-4 p-4 sm:p-6">
@@ -305,7 +364,10 @@ export default function GradeOverride() {
                 <h4 className="text-sm font-bold font-display text-slate-900 truncate">
                   {selectedStudent.lastName}, {selectedStudent.firstName} {selectedStudent.middleName && selectedStudent.middleName[0] + '.'}
                 </h4>
-                <p className="text-[11px] text-slate-500 font-mono truncate">{selectedStudent.email} — {selectedStudent.department}</p>
+                <p className="text-[11px] text-slate-500 font-mono truncate">
+                  {selectedStudent.userNumber || 'No ID'} · {selectedStudent.email} — {selectedStudent.department}{selectedStudent.section ? ` · ${selectedStudent.section}` : ''}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Only the Semestral Grade (SG) can be overridden; MR and TFR are shown for reference.</p>
               </div>
             </div>
 
@@ -331,12 +393,16 @@ export default function GradeOverride() {
                       </div>
                     </div>
 
-                    <button 
-                      onClick={() => handleOpenOverride(grade)}
-                      className="w-full py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer active:scale-98"
-                    >
-                      <ShieldAlert className="h-3.5 w-3.5" /> Override Grade
-                    </button>
+                    {grade.isSemestral ? (
+                      <button
+                        onClick={() => handleOpenOverride(grade)}
+                        className="w-full py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer active:scale-98"
+                      >
+                        <ShieldAlert className="h-3.5 w-3.5" /> Override SG
+                      </button>
+                    ) : (
+                      <p className="text-center text-[11px] text-slate-400">Progress rating, view only</p>
+                    )}
                   </div>
                 ))
               ) : (
@@ -381,12 +447,16 @@ export default function GradeOverride() {
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button 
-                            onClick={() => handleOpenOverride(grade)}
-                            className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1 shadow-sm"
-                          >
-                            <ShieldAlert className="h-3 w-3" /> Override Grade
-                          </button>
+                          {grade.isSemestral ? (
+                            <button
+                              onClick={() => handleOpenOverride(grade)}
+                              className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1 shadow-sm"
+                            >
+                              <ShieldAlert className="h-3 w-3" /> Override SG
+                            </button>
+                          ) : (
+                            <span className="text-xs text-slate-400">View only</span>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -446,19 +516,26 @@ export default function GradeOverride() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Override Grade Value (1.00 – 5.00)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="1.00"
-                    max="5.00"
+                  <label htmlFor="override-grade" className="text-xs font-bold text-slate-700 uppercase tracking-wide">New SG (official DYCI grade)</label>
+                  <select
+                    id="override-grade"
                     required
                     value={newGradeVal}
                     onChange={(e) => setNewGradeVal(e.target.value)}
-                    className="block w-full px-3.5 py-2.5 border border-slate-200 focus:border-sage-500 rounded-xl text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500"
-                    placeholder="e.g. 1.75"
-                  />
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 focus:border-sage-500 rounded-xl text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500 bg-white"
+                  >
+                    {GRADE_STEPS.map(step => (
+                      <option key={step} value={step.toFixed(2)}>
+                        {step.toFixed(2)}{step === GRADE_SCALE.failedValue ? ' (Failed)' : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+                {selectedGrade.remarksNote && (
+                  <p className="text-[11px] text-slate-500">
+                    Current remark note: “{selectedGrade.remarksNote}”. It is kept in the activity log and replaced by your reason below.
+                  </p>
+                )}
 
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Override Justification Reason</label>

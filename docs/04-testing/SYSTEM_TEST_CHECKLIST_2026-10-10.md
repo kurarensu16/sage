@@ -3,6 +3,8 @@
 **Purpose:** One runbook for all untested updates on the `ghost` branch.
 - **Part A, Grading Workflow Remediation.** Cases carried over from `GRADING_WORKFLOW_REMEDIATION_CHECKLIST.md` §12 (commits up to `b977c7d`).
 - **Part B, 2026-10-10 updates.** Plan acknowledgment, task verification, follow-up snapshot (now requiring reviewed tasks), re-evaluation guidance, Intervention Results, baseline freeze, notification preferences, password rules, profile photo and contact number, AI Study Tutor and menu labels, mobile menu and install card, removal of the unlock path, **class-code joins requiring faculty approval (B10a)**, and **block-section enrollment with professor roster notices (B10b)**. See `THESIS_AUDIT_2026-10-10.md` and `docs/03-development/implementation-reports/CLASS_JOIN_APPROVAL_2026-10-10.md`.
+- **Part B, 2026-10-11 admin setup fixes (B10c–B10e, AS-01 to AS-51).** User form and classroom creation (Batch 1); import validation, delete guards, safe term rollover with the SG grace period and term history (Batch 2); Grade Override, COG saves, Activity Logs, college deans (Batch 3); no duplicate subjects. See `docs/03-development/audits/ADMIN_SETUP_AUDIT_2026-10-11.md`.
+- **Test data:** the 2026-2027 test year (§0.4 below and `docs/05-operations/database/TEST_YEAR_SEED_2026-2027.md`).
 
 **Status:** NOT RUN. Nothing below has been executed yet.
 
@@ -18,8 +20,12 @@
 - [x] Apply `20261010120000_intervention_followup_and_task_verification.sql`. Applied 2026-10-10.
 - [x] Apply `20261010130000_profile_contact_and_photo.sql`. Applied 2026-10-10; it creates the private `avatars` storage bucket and its owner-only policies.
 - [x] Apply `20261010140000_followup_requires_task_review.sql`. Applied 2026-10-10; it redefines `record_intervention_followup` so a follow-up cannot be recorded while a reported task is unreviewed.
-- [ ] Apply `20261010150000_class_join_approval.sql`. It adds `request_class_join`, `resolve_class_join_request`, and `dismiss_class_join_request`, plus tracking columns on `class_join_requests`. Joining by class code then requires faculty approval.
-- [ ] Apply `20261010160000_section_enrollment_sync_and_notice.sql` **after** `20261010150000`. Section assignment enrolls block students immediately; professors get a roster notice with the number of students added. It also back-fills block students missing from their section's active classes (no notices for the back-fill).
+- [x] Apply `20261010150000_class_join_approval.sql`. Applied 2026-10-10. It adds `request_class_join`, `resolve_class_join_request`, and `dismiss_class_join_request`, plus tracking columns on `class_join_requests`. Joining by class code then requires faculty approval.
+- [x] Apply `20261010160000_section_enrollment_sync_and_notice.sql` **after** `20261010150000`. Applied 2026-10-10. Section assignment enrolls block students immediately; professors get a roster notice with the number of students added.
+- [x] Apply `20261011120000_restrict_destructive_deletes.sql`. Applied 2026-10-11 (Batch 2A: deleting a section, subject, or term in use is refused).
+- [x] Apply `20261011130000_term_rollover_grace.sql`. Applied 2026-10-11 (Batch 2B: safe rollover, SG grace period and labels, `term_id`, `get_term_sg_status`).
+- [x] Apply `20261011140000_admin_batch3_atomic_saves.sql`. Applied 2026-10-11; `save_grade_template` and `assign_department_dean` confirmed.
+- [x] Apply `20261011150000_unique_subjects.sql`. Applied 2026-10-11 (no duplicate subject codes, or names within a college).
 - [x] Confirm the new functions exist (verified 2026-10-10): `acknowledge_student_evaluation`, `verify_intervention_task`, `record_intervention_followup`, `update_own_contact_number`, and `set_own_avatar_path`.
 - [x] Confirm the new columns exist (verified 2026-10-10):
   - `student_risk_evaluations.acknowledged_at`, `followup_recorded_at`, `followup_recorded_by`
@@ -41,9 +47,9 @@
 > - Do not merge `ghost` into `main` until every release-blocking case passes, failed cases are fixed and retested, and the QA lead and product owner approve.
 
 **Setup:**
-- [ ] Use a dedicated QA academic term and clearly named QA classes. Never use real student grades.
+- [ ] Use the test year in §0.4 (reset 2026-10-11, seeded 2026-2027). Never use real student grades.
 - [ ] Record the build or commit, Supabase project, browser, tester, and date at the top of the test report.
-- [ ] Prepare one regular-semester class and one summer class. Across the QA classes, cover all five official COG templates.
+- [ ] Prepare one regular-semester class and one summer class. The test year covers three COG templates (General Education Core, Maritime Lecture, Maritime Laboratory); the two Health Sciences templates are not in this run.
 - [ ] Prepare accounts:
   - at least two students
   - two faculty accounts assigned to different classes
@@ -87,6 +93,32 @@
 - [ ] `node scripts/verifyEvaluationTracking.js` passes.
 - [ ] `npm run verify:insights` and `npm run verify:csv` pass.
 - [ ] `npm run build` succeeds on the tested commit.
+
+### 0.4 Test data: the 2026-2027 test year
+
+**Database reset, 2026-10-11 (owner-run):**
+- **Removed:** all 320 old students and their logins, terms, sections, classes and everything under them, enrollments, notifications, and AI insights. Subjects were trimmed to the 10 used by the seed.
+- **Kept:** the admin, deans, and faculty; colleges; programs; COG templates; activity logs.
+
+Seed and step-by-step stages: `docs/05-operations/database/TEST_YEAR_SEED_2026-2027.md`.
+
+| | BSIT (Technology and Engineering College) | BSMarE (College of Maritime Education) |
+|---|---|---|
+| Sections (each term) | BSIT-1A, BSIT-1B (10 students each) | BSMARE-1A, BSMARE-1B (10 students each) |
+| COG | General Education Core | Maritime Lecture, Maritime Laboratory |
+| Faculty | `a.rivera@sage.edu.ph`, `m.cruz@sage.edu.ph` | `r.aquino@sage.edu.ph`, `m.garcia@sage.edu.ph` |
+| Dean | `tech.dean@dyci.edu.ph` | `maritime.dean@dyci.edu.ph` |
+| Students | 20 `@dyci.edu.ph` accounts (see the seed CSV) | 20 `@dyci.edu.ph` accounts |
+
+**Logins:** new students start with `SagePassword123!` and must set a new password at first login (use one shared new password for testing). Existing faculty and dean passwords are unchanged by the reset.
+
+**Which cases to run at each stage of the test year:**
+
+| Stage | Cases |
+|---|---|
+| Setup and 1st semester (classes, users, grading) | AS-02 – AS-26, AS-41 – AS-51; Part A grading cases on the 8 classes |
+| 1st → 2nd rollover (30-day grace; ITP113 BSIT-1B left unposted) | AS-27 – AS-34, AS-36 – AS-40 |
+| 2nd → Summer rollover (0-day grace; BSIT has no Summer section) | AS-31 (BSIT students keep their section), AS-35 |
 
 ---
 
@@ -368,6 +400,72 @@ Test with a block-section student and an irregular student (home section differe
 - [ ] EN-06 An admin changes an existing student's section to BSIT-1B: they're enrolled in BSIT-1B's active classes, and BSIT-1B's professors are notified. (Old BSIT-1A enrollments remain; known limitation, see `06-future-enhancements/SECTION_TRANSFER_ENROLLMENTS_2026-10-10.md`.)
 - [ ] EN-07 A student already enrolled in a subject in another section isn't enrolled a second time in that subject.
 - [ ] EN-08 Faculty notification preferences: the "Class enrollment" device-alert toggle covers both enrollment requests and roster updates.
+
+### B10c. Admin setup fixes, Batch 1 (audit `docs/03-development/audits/ADMIN_SETUP_AUDIT_2026-10-11.md`)
+
+**Before testing:** an active term must exist with sections created for it in Sections (see the audit's §6 and the rollover note in R1).
+
+- [ ] AS-01 **QA bug repro (H1):** Classrooms → Provision Classroom → choose the computing college → Filter by Program **BSIT** → select **BSIT-1A** and a subject → create. The new classroom's section is **BSIT-1A** (check the list and Query 7 in the audit). Repeat with the Year filter, and with changing the subject after filtering.
+- [ ] AS-02 Classrooms modal offers **only active-term sections**. With no sections for the active term, the dropdown says *"No sections for the active term"*, and creating is refused.
+- [ ] AS-03 Classrooms list opens on the **active term**; the term filter labels other terms *(Previous term)* and *All Terms* still works.
+- [ ] AS-04 The Classrooms modal text names the active term and explains automatic section enrollment and code-join approval.
+- [ ] AS-05 Faculty → Create Classrooms offers only **their own college's active-term** sections; never another college's.
+- [ ] AS-06 **User form, college list (C1):** Add User → the College dropdown lists exactly the colleges in the database (incl. *Technology and Engineering College for Humanity* and *Department of General Education*).
+- [ ] AS-07 **New student:** choose college → program (that college's programs only) → year → section (that program and year, **active term** only). Save → the user's college and section are stored (check the user list / database). Saving without a section shows *"Choose a section for this student."*
+- [ ] AS-08 **Edit student:** the form shows the student's **actual** college, program, and section. Changing college or program clears the section until a new one is chosen.
+- [ ] AS-09 Editing a student whose section belongs to a previous term shows it labeled *(term, current)* with a note to choose an active-term section.
+- [ ] AS-10 **Roles (M2):** only Student, Faculty, Dean, Administrator are offered (no Office). Faculty and Dean need a college; Administrator shows no college.
+- [ ] AS-11 **Email locked (M11):** in edit mode the email is read-only with the note that it's the login.
+- [ ] AS-12 **User numbers (M8):** create two students in a row → consecutive, unique numbers (no "duplicate key" error).
+- [ ] AS-13 Assigning a section to a student (create or edit) **auto-enrolls** them in that section's active classes, and those classes' professors get a *Class Roster Update* (EN cases).
+- [ ] AS-14 **Sections form (M9):** Add Section → the *Academic Term* dropdown lists the terms from Term Settings, defaults to the **active term**, and the saved section shows that school year and semester.
+
+### B10d. Admin setup fixes, Batch 2 (data safety; term rollover with SG grace period)
+
+Run migrations `20261011120000_restrict_destructive_deletes.sql` and `20261011130000_term_rollover_grace.sql` first.
+
+**Batch 2A: data safety**
+- [ ] AS-15 **Import, college (H3):** import a faculty row whose college is misspelled → row rejected: *College "…" was not found*. Nothing is guessed.
+- [ ] AS-16 **Import, section required:** import a student row with an empty section → rejected: *Section is required for students*.
+- [ ] AS-17 **Import, section must be active-term and same college:** a student row naming a section of another college, or of a previous term → rejected with the reason. A correct active-term section → accepted, and the year level is taken from the section (BSIT-2A → 2nd Year).
+- [ ] AS-18 **Import, year mismatch:** student row `BSIT-2A` with year level `1st Year` → rejected: *does not match section*.
+- [ ] AS-19 **Import, roles (M7):** a row with role `office` → rejected; valid roles listed as admin, dean, faculty, student. The role tabs and the role filter no longer show Office.
+- [ ] AS-20 **Import, update mode:** an existing student re-imported with *overwrite* on and a new active-term section → their home section changes, and they are enrolled in that section's classes (roster notice to the faculty).
+- [ ] AS-21 **Mobile filters:** on a phone, Manage Users → Filters → the College and Program lists come from the database (same as desktop).
+- [ ] AS-22 **Delete section in use (C2):** delete a section that has classes or students → refused with counts; nothing deleted. A new, unused section → deleted after the confirm.
+- [ ] AS-23 **Delete subject in use (C2):** delete a subject used by a class → refused with counts. An unused subject → deleted.
+- [ ] AS-24 **Delete classroom with work (C2):** a class with any scores, activities, attendance, evaluations, or posted grades → refused with what it has. A brand-new class → deleted after the *Permanently delete* confirm (no "archive" wording).
+- [ ] AS-25 **Database guard:** (SQL editor, read-only check) the foreign keys from classes/enrollments to sections/subjects show delete rule `r` (see the verify query at the end of the migration).
+
+**Batch 2B: term rollover and unposted SGs** (do on test data; a rollover cannot be undone)
+- [ ] AS-26 **term_id saved (R2):** create a section and a class → both rows have `term_id` set (SQL: `select name, term_id from sections order by created_at desc limit 3`).
+- [ ] AS-27 **Pre-check:** Term Settings → Start Next Semester → lists every active-term class whose SG is not posted for all enrolled students (subject, section, instructor, `SG x/y`). No sample/demo classes ever appear.
+- [ ] AS-28 **Reminders:** *Send SG Reminder* → each listed instructor gets one **Grade Submission Reminder** naming their classes; it opens My Class Records.
+- [ ] AS-29 **Next term must exist:** if the next term does not exist, the wizard offers *Create AY … (…)*; after creating it, Term History shows it as *Next / Not started* and it appears in Add Section → Academic Term.
+- [ ] AS-30 **No sections → refused (R1):** with the next term created but no sections, *Next Step* is disabled with a link to Sections. (The database also refuses the rollover.)
+- [ ] AS-31 **Rollover moves students safely (R1):** with next-term sections created (same names for 1st→2nd; next year number for a new school year), roll over → summary shows students moved / kept. Moved students have the next-term section (and +1 year level only in a new school year); a student without a matching section **keeps** their section and year level. Nobody's section becomes empty.
+- [ ] AS-32 **Archive only posted:** after the rollover, classes whose SG was posted for everyone are **archived**; the others stay open. Term History shows the old term as *Ended* with its grace period.
+- [ ] AS-33 **Faculty, Pending:** the instructor of an unposted class sees it under **Past Archives** with *Pending · SG due in N days*; no join code; no attendance link; *Finish Grading & Post SG* opens the score sheet and posting works. The class is not in Attendance.
+- [ ] AS-34 **SG label Late:** post that SG within the grace period → the class becomes **Archived · View only**; the Dean sees *Posted · Late*; students get **New Grade Posted**.
+- [ ] AS-35 **Overdue:** (test with grace 0 days) an unposted previous-term class shows **SG Overdue** to the faculty and **Overdue** on the Dean's Grade Posting Status; posting it later is labelled *Late (overdue)*.
+- [ ] AS-36 **On time:** an SG posted before the rollover shows *Posted · On time* to the Dean.
+- [ ] AS-37 **Archived = view only:** open an archived class's score sheet → banner *archived … view only*; Save, add activity, and MR/TFR posting are refused.
+- [ ] AS-38 **SG correction still works on archived classes:** submit an SG correction for an archived class → Dean approves → the faculty applies and reposts it → the corrected SG is saved, the label stays as first recorded, and the class stays archived.
+- [ ] AS-39 **Student history:** in My Subjects, select the previous term → unposted subjects show *Grade not yet posted*; posted ones show *Completed · Grade posted*. My Grades for that term shows the posted SGs (archived classes are not hidden).
+- [ ] AS-40 **Dean term selector:** Grade Posting Status → choose any school year/semester from Term Settings (Summer works) → classes of that term, archived included, with their labels.
+
+### B10e. Admin setup fixes, Batch 3 (run migration `20261011140000_admin_batch3_atomic_saves.sql` first)
+- [ ] AS-41 **Grade Override, pick the student (H2):** search a common surname → every match is listed with ID number, college, and section; the grades shown are those of the student you click. A unique match opens directly. Searching by ID number works.
+- [ ] AS-42 **Grade Override, SG only (M4):** MR and TFR rows show *View only*; only SG rows have *Override SG*.
+- [ ] AS-43 **Grade Override, DYCI steps (M4):** the new grade is a dropdown of 1.00, 1.25 … 3.00, 5.00; saving 5.00 sets the remark to Failed. The activity log entry names the student's ID, the old and new SG, the reason, and the previous remark note.
+- [ ] AS-44 **COG create (M3):** create a template whose weights total 100% → template and components appear together. Weights totalling 99% → refused, nothing saved.
+- [ ] AS-45 **COG edit (M3):** change weights of an existing template (total 100%) → all saved; the structure (component count and names) cannot change.
+- [ ] AS-46 **COG delete (M3):** delete a template used by subjects → *used by N subjects and can't be deleted*. An unused template → deleted after the confirm.
+- [ ] AS-47 **Activity Logs (M5):** the page loads all entries (more than 1,000 if present); search and filters find older entries; the export includes them.
+- [ ] AS-48 **Classroom log entries (M5):** create and delete a classroom → the logs show action *Classroom Provisioning* / *Classroom Deletion*, the admin's name as actor, and a readable message.
+- [ ] AS-50 **Subjects, no duplicates (migration `20261011150000_unique_subjects.sql`):** add a subject whose name already exists in the same college (e.g. a second "Data Structures and Algorithms" in the Technology college) → refused, naming the existing code. A code already in use (any case) → refused. The same name in a **different** college → allowed.
+- [ ] AS-51 **Subjects, edit:** renaming a subject to another subject's name in the same college → refused with the same message.
+- [ ] AS-49 **Colleges, dean (M10):** edit a college → choose another dean → the old dean is unassigned and the new one assigned. Choose *No Dean* → the college shows *No Dean assigned yet*.
 
 ### B11. Hypothesis 2 controlled verification
 

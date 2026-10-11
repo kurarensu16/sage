@@ -1,10 +1,11 @@
 flowchart LR
 %% ===== Figure 2.9 — Level 1 DFD: Faculty Portal — column B (processes 8.0–13.0), revised 2026-10-10 =====
 %% Two-column layout (see compose_columns.py); adds 11.0 Generate Performance Reports.
+%% Revised 2026-10-10 (evening): one evaluation per subject and term; follow-up after reported tasks are reviewed.
 
   %% ---------- 8.0 ----------
   F8["Faculty"] <-- "observations, plan, referral /<br/>baseline, AI task drafts" --> P8(("8.0<br/>Academic<br/>Intervention Form"))
-  P8 <-- "risk score, published plan,<br/>frozen baseline" --> D16h@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
+  P8 <-- "risk score, published plan,<br/>frozen baseline (one per<br/>subject and term)" --> D16h@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
   P8 -- "private observations" --> D17h@{ shape: lin-rect, label: "D17&nbsp; student_risk_private_notes" }
   P8 <-- "unpublished work" --> D33h@{ shape: lin-rect, label: "D33&nbsp; faculty_intervention_working_drafts" }
   P8 <-- "AI task drafts" --> D32h@{ shape: lin-rect, label: "D32&nbsp; faculty_intervention_drafts" }
@@ -12,7 +13,7 @@ flowchart LR
   P8 <-- "evaluation snapshot / 3 draft tasks" --> AIP["AI Model Provider<br/>(Gemini 2.5 Flash<br/>via OpenRouter)"]
 
   %% ---------- 9.0 ----------
-  F9["Faculty"] <-- "acknowledgment, reported tasks /<br/>verify or return, record follow-up" --> P9(("9.0<br/>Evaluated<br/>Students"))
+  F9["Faculty"] <-- "acknowledgment, reported tasks /<br/>verify or return, record follow-up<br/>after reported tasks are reviewed" --> P9(("9.0<br/>Evaluated<br/>Students"))
   P9 <-- "task verification,<br/>one-time follow-up snapshot" --> D16i@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
   P9 <-- "milestone posted after publication" --> D12i@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
   P9 -- "audit entry" --> D25i@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }

@@ -1,6 +1,7 @@
 flowchart LR
 %% ===== Figure 2.11 — Level 1 DFD: Admin Portal — column A (processes 1.0–6.0), revised 2026-10-10 =====
-%% Two-column layout (see compose_columns.py); content unchanged from the single-column version.
+%% Two-column layout (see compose_columns.py).
+%% Revised 2026-10-10 (evening): user creation/import with a section writes section enrollments.
 
   %% ---------- 1.0 ----------
   E1["Admin"] <-- "credentials / access session" --> P1(("1.0<br/>Authenticate<br/>User"))
@@ -15,11 +16,13 @@ flowchart LR
   E3["Admin"] <-- "account details / account list" --> P3(("3.0<br/>Manage<br/>Users"))
   P3 <-- "create, edit, deactivate;<br/>name, email, ID, department" --> D1c@{ shape: lin-rect, label: "D1&nbsp; users" }
   P3 -- "audit entry" --> D25c@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+  P3 -- "section enrollment" --> D8c@{ shape: lin-rect, label: "D8&nbsp; enrollments" }
 
   %% ---------- 4.0 ----------
   E4["Admin"] <-- "CSV or Excel file / import results" --> P4(("4.0<br/>Import Users<br/>(CSV/Excel)"))
   P4 -- "bulk account creation" --> D1d@{ shape: lin-rect, label: "D1&nbsp; users" }
   P4 -- "audit entry" --> D25d@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+  P4 -- "section enrollment" --> D8d@{ shape: lin-rect, label: "D8&nbsp; enrollments" }
 
   %% ---------- 5.0 ----------
   E5["Admin"] <-- "subject details, CSV/Excel file /<br/>subject catalog" --> P5(("5.0<br/>Maintain<br/>Subjects"))

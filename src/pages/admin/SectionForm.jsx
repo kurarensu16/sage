@@ -46,8 +46,8 @@ export default function SectionForm() {
 
   const [formData, setFormData] = useState({
     name: '',
-    schoolYear: '2025-2026',
-    semester: '2nd',
+    schoolYear: '',
+    semester: '',
     departmentId: '',
     programName: '',
     yearLevel: '1st Year',
@@ -58,6 +58,8 @@ export default function SectionForm() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [allDepartments, setAllDepartments] = useState([]);
+  // School year and semester come from Term Settings (admin setup audit 2026-10-11: M9).
+  const [terms, setTerms] = useState([]);
   const [allPrograms, setAllPrograms] = useState([]);
 
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
@@ -68,9 +70,20 @@ export default function SectionForm() {
       try {
         const { data: depts } = await supabase.from('departments').select('*').order('name');
         const { data: progs } = await supabase.from('programs').select('*').order('name');
+        const { data: termRows } = await supabase
+          .from('academic_terms')
+          .select('term_id, school_year, semester, is_active')
+          .order('school_year', { ascending: false });
         
         if (depts) setAllDepartments(depts);
         if (progs) setAllPrograms(progs);
+        if (termRows) setTerms(termRows);
+
+        // New sections default to the active term.
+        const active = (termRows || []).find(term => term.is_active);
+        if (!sectionId && active) {
+          setFormData(prev => ({ ...prev, schoolYear: active.school_year, semester: active.semester }));
+        }
 
         if (!sectionId && depts && depts.length > 0) {
           setFormData(prev => ({ ...prev, departmentId: depts[0].department_id }));
@@ -377,32 +390,29 @@ export default function SectionForm() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-            {/* School Year */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">School Year <span className="text-rose-500">*</span></label>
+            {/* Academic term (from Term Settings) */}
+            <div className="flex flex-col gap-1.5 md:col-span-2">
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Academic Term <span className="text-rose-500">*</span></label>
               <select
-                value={formData.schoolYear}
-                onChange={(e) => setFormData({...formData, schoolYear: e.target.value})}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer font-mono"
-              >
-                <option value="2024-2025">2024-2025</option>
-                <option value="2025-2026">2025-2026</option>
-                <option value="2026-2027">2026-2027</option>
-              </select>
-            </div>
-
-            {/* Semester */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Semester <span className="text-rose-500">*</span></label>
-              <select
-                value={formData.semester}
-                onChange={(e) => setFormData({...formData, semester: e.target.value})}
+                required
+                value={formData.schoolYear && formData.semester ? `${formData.schoolYear}|${formData.semester}` : ''}
+                onChange={(e) => {
+                  const [schoolYear, semester] = e.target.value.split('|');
+                  setFormData({ ...formData, schoolYear: schoolYear || '', semester: semester || '' });
+                }}
                 className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
               >
-                <option value="1st">1st Semester</option>
-                <option value="2nd">2nd Semester</option>
-                <option value="Summer">Summer</option>
+                <option value="">{terms.length ? '-- Select Term --' : 'No terms yet: create one in Term Settings'}</option>
+                {formData.schoolYear && formData.semester && !terms.some(term => term.school_year === formData.schoolYear && term.semester === formData.semester) && (
+                  <option value={`${formData.schoolYear}|${formData.semester}`}>{formData.schoolYear} · {formData.semester} (not in Term Settings)</option>
+                )}
+                {terms.map(term => (
+                  <option key={term.term_id} value={`${term.school_year}|${term.semester}`}>
+                    {term.school_year} · {term.semester === 'Summer' ? 'Summer' : `${term.semester} Semester`}{term.is_active ? ' (Active term)' : ''}
+                  </option>
+                ))}
               </select>
+              <span className="text-[10px] text-slate-400 mt-0.5">Sections belong to one term. Terms are managed in Term Settings.</span>
             </div>
           </div>
 

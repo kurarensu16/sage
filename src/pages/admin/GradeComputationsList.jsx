@@ -169,25 +169,28 @@ export default function GradeComputationsList() {
     setShowConfirmModal(false);
     setSaving(true);
     try {
-      let computationId;
       const actorName = resolveActorName(profile, user);
 
+      // One database transaction per save (save_grade_template): all weights are
+      // saved, or none are, so a template never ends up not totalling 100%.
+      const { error: saveErr } = await supabase.rpc('save_grade_template', {
+        p_computation_id: editingTemplate ? editingTemplate.computation_id : null,
+        p_name: name.trim(),
+        p_description: description.trim(),
+        p_components: components.map(c => ({
+          component_id: c.component_id || null,
+          name: c.name.trim(),
+          weight: Number(c.weight),
+          max_score: Number(c.max_score),
+          is_multiple: !!c.is_multiple
+        }))
+      });
+      if (saveErr) throw saveErr;
+
       if (editingTemplate) {
-        computationId = editingTemplate.computation_id;
         // Existing templates are structurally immutable. Admin edits update
         // percentages only, preserving component identity and every linked
         // class activity. Structural variants must be created as new templates.
-        const weightUpdates = await Promise.all(
-          components
-            .filter(component => component.component_id)
-            .map(component => supabase
-              .from('grade_computation_components')
-              .update({ weight: component.weight })
-              .eq('component_id', component.component_id)
-              .eq('computation_id', computationId))
-        );
-        const failedWeightUpdate = weightUpdates.find(result => result.error);
-        if (failedWeightUpdate?.error) throw failedWeightUpdate.error;
 
         await logActivity(
           'Grading Template Edit',
@@ -202,31 +205,6 @@ export default function GradeComputationsList() {
         });
         setSuccessMsg('Grading template updated successfully!');
       } else {
-        // Insert new template header
-        const { data: insertedHeader, error: headerErr } = await supabase
-          .from('grade_computations')
-          .insert({ name: name.trim(), description: description.trim() })
-          .select()
-          .single();
-
-        if (headerErr) throw headerErr;
-        computationId = insertedHeader.computation_id;
-
-        // Insert components
-        const componentPayloads = components.map(c => ({
-          computation_id: computationId,
-          name: c.name.trim(),
-          weight: c.weight,
-          max_score: c.max_score,
-          is_multiple: !!c.is_multiple
-        }));
-
-        const { error: compsErr } = await supabase
-          .from('grade_computation_components')
-          .insert(componentPayloads);
-
-        if (compsErr) throw compsErr;
-
         await logActivity(
           'Grading Template Creation',
           `Created grading template: "${name}" (${components.length} components).`,
@@ -255,7 +233,22 @@ export default function GradeComputationsList() {
   };
 
   const handleDeleteTemplate = async (templateId, templateName) => {
-    if (!window.confirm(`Are you sure you want to delete the grading template "${templateName}"? All subjects bound to this template will fallback to default configurations.`)) return;
+    // A template used by subjects cannot be deleted (the database refuses it), so
+    // check first and say so plainly.
+    const { count: subjectCount, error: countErr } = await supabase
+      .from('subjects')
+      .select('subject_id', { count: 'exact', head: true })
+      .eq('computation_id', templateId);
+    if (countErr) {
+      alert('Could not check whether this template is in use: ' + countErr.message);
+      return;
+    }
+    if (subjectCount) {
+      alert(`"${templateName}" is used by ${subjectCount} subject${subjectCount === 1 ? '' : 's'} and can't be deleted. Assign those subjects another template first.`);
+      return;
+    }
+
+    if (!window.confirm(`Delete the grading template "${templateName}"? No subject uses it. This cannot be undone.`)) return;
 
     try {
       const { error } = await supabase

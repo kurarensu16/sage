@@ -15,6 +15,7 @@ Every document in `docs/` is listed here with its status. **Agents and contribut
 | How the system works now | `01-system/<topic>/` | `TOPIC.md` (living doc) |
 | Thesis work: audits, figures, defense, decisions | `02-thesis/<topic>/` | `TOPIC_YYYY-MM-DD.md` |
 | Report on finished implementation work | `03-development/implementation-reports/` | `TOPIC_YYYY-MM-DD.md` |
+| Code audit of a system area, with its fix plan (work in progress) | `03-development/audits/` | `TOPIC_YYYY-MM-DD.md` |
 | Test checklist, QA runbook, evidence | `04-testing/` | `TOPIC_YYYY-MM-DD.md` |
 | Setup, DB reset/seed, deployment, PWA/APK | `05-operations/<topic>/` | `TOPIC.md` |
 | Planned improvements, documented but not built | `06-future-enhancements/` | `TOPIC_YYYY-MM-DD.md` |
@@ -47,7 +48,7 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | Document | Status | Notes |
 |---|---|---|
 | [audits/THESIS_AUDIT_2026-10-10.md](02-thesis/audits/THESIS_AUDIT_2026-10-10.md) | Current | Latest code-vs-Chapters 1–2 audit and action checklist. |
-| [figures/](02-thesis/figures/) | Current | Sources for the 2026-10-10 thesis figures (Mermaid `.mmd`, `make_figure_2_7.py`, `compose_columns.py`). `render-config/` holds the shared grayscale style. |
+| [figures/](02-thesis/figures/) | Current | Sources for the 2026-10-10 thesis figures, including the evening revision (2.2, 2.3, 2.5, 2.8, 2.9, 2.11, and the rebuilt 2.14 ERD Layer 2) (Mermaid `.mmd`, `make_figure_2_7.py`, `compose_columns.py`). `render-config/` holds the shared grayscale style. |
 | [defense/ASPIRE_GRADING_AND_RISK_RULES_DEFENSE_GUIDE.md](02-thesis/defense/ASPIRE_GRADING_AND_RISK_RULES_DEFENSE_GUIDE.md) | Reference | Defense prep on grading and risk rules. |
 | [defense/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md](02-thesis/defense/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md) | Reference | Capstone 1 panel rulings and policy specs. |
 | [decisions/COLLEGE_OFFICE_PORTAL_DISCARD_ANALYSIS.md](02-thesis/decisions/COLLEGE_OFFICE_PORTAL_DISCARD_ANALYSIS.md) | Current | Why the Office portal was dropped (4 portals). |
@@ -55,7 +56,15 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | [decisions/LATE_JOINER_MISSING_ACTIVITIES_2026-10-10.md](02-thesis/decisions/LATE_JOINER_MISSING_ACTIVITIES_2026-10-10.md) | Current | Late joiners get `0` for missing posted-term work so the risk is visible; corrected after make-up. |
 | [defense/SCALABILITY_DEFENSE_QA_2026-10-10.md](02-thesis/defense/SCALABILITY_DEFENSE_QA_2026-10-10.md) | Current | Panel answers on 1,000-user scale, data handling, caching, and late joiners. |
 
-## 03 · Development: implementation reports
+## 03 · Development: audits and implementation reports
+
+### Audits and fix plans (work in progress)
+
+| Document | Status | Notes |
+|---|---|---|
+| [audits/ADMIN_SETUP_AUDIT_2026-10-11.md](03-development/audits/ADMIN_SETUP_AUDIT_2026-10-11.md) | Current (fixes planned) | Admin functions: colleges, programs, sections, terms, users, import, classrooms, COG, Grade Override, Activity Logs. QA bug BSIT-1A → ACT-1A, hard-coded colleges, 320 students without home section, cascading deletes; fix plan in 3 batches plus a data repair. |
+
+### Implementation reports (finished work)
 
 | Document | Status | Notes |
 |---|---|---|
@@ -81,6 +90,7 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | Document | Status | Notes |
 |---|---|---|
 | [database/ASPIRE_DATABASE_RESET_AND_MANUAL_SEEDING.md](05-operations/database/ASPIRE_DATABASE_RESET_AND_MANUAL_SEEDING.md) | Reference | Reset and seed the database. |
+| [database/TEST_YEAR_SEED_2026-2027.md](05-operations/database/TEST_YEAR_SEED_2026-2027.md) | Current | Test-year seed after the 2026-10-11 reset: BSIT and BSMarE, 40 students, sections and classes for 1st, 2nd, and Summer, with the rollover tests. |
 | [database/DEV_HANDOFF_SQL_SETUP_2026-10-03.md](05-operations/database/DEV_HANDOFF_SQL_SETUP_2026-10-03.md) | Reference | SQL setup handoff (2026-10-03). Migrations added since then are in `supabase/migrations/`. |
 | [mobile-pwa/WALKTHROUGH_PWA.md](05-operations/mobile-pwa/WALKTHROUGH_PWA.md) | Reference | PWA install and mobile walkthrough. |
 | [agents/CHANGE_FREEZE_GUIDE.md](05-operations/agents/CHANGE_FREEZE_GUIDE.md) | Current | How the AI-agent change freeze works and how to switch it ON/OFF (`FREEZE:` line in `AGENTS.md` + `.claude/settings.json`). |

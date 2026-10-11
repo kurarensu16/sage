@@ -13,6 +13,7 @@ flowchart LR
   P8 <-- "classroom instances" --> D7h@{ shape: lin-rect, label: "D7&nbsp; class_records" }
   P8 <-- "section" --> D3h@{ shape: lin-rect, label: "D3&nbsp; sections" }
   P8 <-- "subject" --> D5h@{ shape: lin-rect, label: "D5&nbsp; subjects" }
+  P8 -- "section students" --> D8h@{ shape: lin-rect, label: "D8&nbsp; enrollments" }
 
   %% ---------- 9.0 ----------
   E9["Admin"] <-- "term settings / active term" --> P9(("9.0<br/>Configure Term<br/>Settings"))

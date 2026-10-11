@@ -95,8 +95,40 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
     loadSections();
   }, []);
 
+  // A section that is already in use is never deleted: deleting it would remove its
+  // classes, grades, and enrollments, and silently unassign its students.
+  const countRows = async (table, column, id) => {
+    const { count, error } = await supabase.from(table).select('*', { count: 'exact', head: true }).eq(column, id);
+    if (error) throw error;
+    return count || 0;
+  };
+
   const handleDeleteSection = async (id, name) => {
-    if (confirm(`Are you sure you want to delete section "${name}"? This will affect new classroom creations.`)) {
+    let usage;
+    try {
+      const [classes, enrollments, students, history] = await Promise.all([
+        countRows('class_records', 'section_id', id),
+        countRows('enrollments', 'section_id', id),
+        countRows('users', 'section_id', id),
+        countRows('student_term_details', 'section_id', id)
+      ]);
+      usage = { classes, enrollments, students, history };
+    } catch (err) {
+      alert('Could not check whether this section is in use: ' + err.message);
+      return;
+    }
+
+    const reasons = [];
+    if (usage.classes) reasons.push(`${usage.classes} class${usage.classes === 1 ? '' : 'es'}`);
+    if (usage.enrollments) reasons.push(`${usage.enrollments} class enrollment${usage.enrollments === 1 ? '' : 's'}`);
+    if (usage.students) reasons.push(`${usage.students} student${usage.students === 1 ? '' : 's'} assigned to it`);
+    if (usage.history) reasons.push(`${usage.history} term history record${usage.history === 1 ? '' : 's'}`);
+    if (reasons.length > 0) {
+      alert(`Section "${name}" cannot be deleted because it is in use: ${reasons.join(', ')}. Move its students and remove its classes first, or keep the section.`);
+      return;
+    }
+
+    if (confirm(`Delete section "${name}"? It has no classes, enrollments, or students.`)) {
       const { error } = await supabase.from('sections').delete().eq('section_id', id);
       if (error) {
         alert('Failed to delete section: ' + error.message);

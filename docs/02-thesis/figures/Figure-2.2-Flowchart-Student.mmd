@@ -2,6 +2,7 @@ flowchart TB
 %% ===== Figure 2.2 — Proposed System Flowchart: Student Portal (updated 2026-10-10) =====
 %% Plans appear only after publication and must be acknowledged; faculty verify or return
 %% reported tasks; feature renamed "AI Study Tutor"; Account shows photo/contact/guardian.
+%% Revised 2026-10-10 (evening): joining an outside class by code waits for instructor approval.
 
   SEL{"Select module"}
   OUT(["<b>Log out / End</b>"]):::accent
@@ -27,6 +28,10 @@ flowchart TB
 
   subgraph GM["<b>My Grades Module</b>"]
     direction TB
+    J1["Join class by code<br/>(outside block section)"] --> JQ{"Instructor<br/>decision?"}
+    JQ -- "Pending" --> JP["Locked card:<br/>waiting for approval"]
+    JQ -- "Rejected" --> JR["Not-approved card:<br/>dismiss or request again"]
+    JQ -- "Approved" --> G1
     G1["My Subjects:<br/>select a subject"] --> GB["Score Breakdown:<br/>activity title,<br/>description, score"]
     G1 --> GQ{"Milestone<br/>officially posted?"}
     GQ -- "Not yet" --> GH["Milestone hidden<br/>from student"]

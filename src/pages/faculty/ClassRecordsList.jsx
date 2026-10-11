@@ -32,6 +32,7 @@ import { RISK_TIERS } from '../../lib/academicPolicy';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
 import FacultyCreateClassroomModal from './FacultyCreateClassroomModal';
 import { cn } from '../../lib/utils';
+import { fetchAcademicTerms, getClassTermState } from '../../lib/termStatus';
 import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 
 export default function ClassRecordsList() {
@@ -79,22 +80,33 @@ export default function ClassRecordsList() {
     if (!user) return;
     setLoading(true);
     try {
-      const { data: classesData, error: classesError } = await supabase
-        .from('class_records')
-        .select(`
-          class_record_id,
-          status,
-          school_year,
-          semester,
-          subject_id,
-          section_id,
-          subjects ( subject_id, code, name, units, computation_id ),
-          sections ( section_id, name, school_year, semester )
-        `)
-        .eq('faculty_id', user.id)
-        .eq('status', filterType === 'current' ? 'active' : 'archived');
+      const [{ data: allClassesData, error: classesError }, terms] = await Promise.all([
+        supabase
+          .from('class_records')
+          .select(`
+            class_record_id,
+            status,
+            term_id,
+            school_year,
+            semester,
+            subject_id,
+            section_id,
+            subjects ( subject_id, code, name, units, computation_id ),
+            sections ( section_id, name, school_year, semester )
+          `)
+          .eq('faculty_id', user.id),
+        fetchAcademicTerms()
+      ]);
 
       if (classesError) throw classesError;
+
+      // Current Term: open classes of the active term. Past Archives: archived classes and
+      // previous-term classes still waiting for their SG (Pending / Overdue).
+      const classesData = (allClassesData || [])
+        .map(cls => ({ ...cls, termState: getClassTermState(terms, cls) }))
+        .filter(cls => (filterType === 'current'
+          ? cls.termState.state === 'current'
+          : cls.termState.state !== 'current'));
 
       if (!classesData || classesData.length === 0) {
         setClasses([]);
@@ -116,8 +128,10 @@ export default function ClassRecordsList() {
         .select('class_record_id, grade_period, is_locked')
         .in('class_record_id', classIds);
 
-      // Auto-sync regular block section students into enrollments for active classes
-      const sectionIds = Array.from(new Set(classesData.map(c => c.section_id).filter(Boolean)));
+      // Auto-sync regular block section students into enrollments for current-term classes only
+      const sectionIds = filterType === 'current'
+        ? Array.from(new Set(classesData.map(c => c.section_id).filter(Boolean)))
+        : [];
       if (sectionIds.length > 0) {
         try {
           const { data: sectionStudents } = await supabase
@@ -180,7 +194,7 @@ export default function ClassRecordsList() {
       // Load join codes
       const codes = {};
       await Promise.all(
-        classesData.map(async (cls) => {
+        classesData.filter(cls => cls.termState.state === 'current').map(async (cls) => {
           try {
             const code = await getOrCreateJoinCode(
               cls.class_record_id, 
@@ -227,6 +241,8 @@ export default function ClassRecordsList() {
           gradingPeriod,
           semester: cls.semester,
           schoolYear: cls.school_year,
+          termState: cls.termState.state,
+          daysLeft: cls.termState.daysLeft,
           joinCode: codes[cls.class_record_id] || 'Generating...'
         };
       });
@@ -366,7 +382,11 @@ export default function ClassRecordsList() {
             <BookOpen className="h-10 w-10 text-slate-400 mx-auto mb-3" />
             <h3 className="text-base font-bold text-slate-900 font-display">No class records found</h3>
             <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              {searchTerm ? "No classes match your search query." : "No assigned classrooms provisioned by the Academic Administrator for this semester."}
+              {searchTerm
+                ? "No classes match your search query."
+                : filterType === 'past'
+                  ? "No previous-term classes yet. After a term ends, its classes appear here: Pending or Overdue until the SG is posted, then Archived (view only)."
+                  : "No assigned classrooms provisioned by the Academic Administrator for this semester."}
             </p>
           </div>
         ) : (
@@ -390,6 +410,21 @@ export default function ClassRecordsList() {
                       {cls.status === 'Grades Posted' && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           {cls.gradingPeriod} Posted
+                        </span>
+                      )}
+                      {cls.termState === 'pending' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                          Pending · SG due in {cls.daysLeft} {cls.daysLeft === 1 ? 'day' : 'days'}
+                        </span>
+                      )}
+                      {cls.termState === 'overdue' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                          SG Overdue
+                        </span>
+                      )}
+                      {cls.termState === 'archived' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                          Archived · View only
                         </span>
                       )}
                     </div>
@@ -429,14 +464,16 @@ export default function ClassRecordsList() {
                             <span>Preview &amp; Post Grades</span>
                           </Link>
 
-                          <Link
-                            to={`/faculty/classattendance?classId=${cls.id}`}
-                            onClick={() => setActiveMenuId(null)}
-                            className="w-full text-left px-3.5 py-2 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors"
-                          >
-                            <Calendar className="h-4 w-4 text-slate-500 shrink-0" />
-                            <span>Attendance Monitoring</span>
-                          </Link>
+                          {cls.termState === 'current' && (
+                            <Link
+                              to={`/faculty/classattendance?classId=${cls.id}`}
+                              onClick={() => setActiveMenuId(null)}
+                              className="w-full text-left px-3.5 py-2 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors"
+                            >
+                              <Calendar className="h-4 w-4 text-slate-500 shrink-0" />
+                              <span>Attendance Monitoring</span>
+                            </Link>
+                          )}
 
                           <div className="border-t border-slate-100 my-1"></div>
 
@@ -460,7 +497,8 @@ export default function ClassRecordsList() {
                     <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{cls.subjectName}</p>
                   </div>
 
-                  {/* Classroom Join Code Display Bar */}
+                  {/* Classroom Join Code Display Bar (current-term classes only) */}
+                  {cls.termState === 'current' && (
                   <div className="flex items-center justify-between p-2.5 bg-sage-50/70 border border-sage-200/80 rounded-md">
                     <div className="flex items-center gap-1.5">
                       <span className="text-[10px] font-bold text-sage-800 uppercase tracking-wide">Classroom Code:</span>
@@ -484,6 +522,7 @@ export default function ClassRecordsList() {
                       )}
                     </button>
                   </div>
+                  )}
                 </div>
                 
                 {/* Card Body */}
@@ -500,12 +539,21 @@ export default function ClassRecordsList() {
                 
                 {/* Card Actions (Footer) - Streamlined Single Primary Action */}
                 <div className="p-3 bg-slate-50 border-t border-slate-100">
-                  <Link 
-                    to={`/faculty/scoreinput?id=${cls.id}`} 
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold bg-sage-600 hover:bg-sage-700 text-white rounded-md transition-all shadow-xs"
-                  >
-                    <Edit3 className="h-4 w-4" /> Input Scores
-                  </Link>
+                  {cls.termState === 'archived' ? (
+                    <Link
+                      to={`/faculty/postedgradesview?id=${cls.id}`}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md transition-all shadow-xs"
+                    >
+                      <FileText className="h-4 w-4" /> View Posted Grades
+                    </Link>
+                  ) : (
+                    <Link
+                      to={`/faculty/scoreinput?id=${cls.id}`}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold bg-sage-600 hover:bg-sage-700 text-white rounded-md transition-all shadow-xs"
+                    >
+                      <Edit3 className="h-4 w-4" /> {cls.termState === 'current' ? 'Input Scores' : 'Finish Grading & Post SG'}
+                    </Link>
+                  )}
                 </div>
               </div>
             ))}

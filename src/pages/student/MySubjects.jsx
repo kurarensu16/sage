@@ -22,6 +22,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { submitJoinRequest, getMyJoinRequests, dismissJoinRequest } from '../../lib/classRoomService';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
+import { fetchAcademicTerms, getClassTermState } from '../../lib/termStatus';
 import { TableSkeleton } from '../../components/common/Skeleton';
 
 export default function MySubjects() {
@@ -222,8 +223,10 @@ export default function MySubjects() {
 
         const subjectIds = enrolls?.map(e => e.subject_id).filter(Boolean) || [];
 
-        // 2. Fetch active class records
+        // 2. Fetch class records, including archived ones: a previous term's subjects stay
+        // listed, marked "Grade not yet posted" until the SG is posted, then completed.
         let classRecords = [];
+        let terms = [];
         if (subjectIds.length > 0) {
           let crQuery = supabase
             .from('class_records')
@@ -231,18 +234,22 @@ export default function MySubjects() {
               class_record_id,
               subject_id,
               section_id,
+              status,
+              term_id,
+              school_year,
+              semester,
               sections ( name ),
               faculty:users!faculty_id ( first_name, last_name )
             `)
-            .in('subject_id', subjectIds)
-            .eq('status', 'active');
+            .in('subject_id', subjectIds);
 
           if (activeOpt.section_id) {
             crQuery = crQuery.eq('section_id', activeOpt.section_id);
           }
 
-          const { data: crData } = await crQuery;
+          const [{ data: crData }, termRows] = await Promise.all([crQuery, fetchAcademicTerms()]);
           classRecords = crData || [];
+          terms = termRows;
         }
 
         const subMap = {};
@@ -273,7 +280,8 @@ export default function MySubjects() {
             credits: Number(subj?.units) || 3,
             instructor: facultyName,
             sectionName: sectionName || 'Section',
-            status: e.status || 'Enrolled'
+            status: e.status || 'Enrolled',
+            gradeState: matchingClass ? getClassTermState(terms, matchingClass).state : 'current'
           };
         });
 
@@ -577,9 +585,19 @@ export default function MySubjects() {
                       </span>
                     </div>
 
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Enrolled
-                    </span>
+                    {sub.gradeState === 'archived' ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                        Completed · Grade posted
+                      </span>
+                    ) : sub.gradeState === 'pending' || sub.gradeState === 'overdue' ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                        Grade not yet posted
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Enrolled
+                      </span>
+                    )}
                   </div>
 
                   <div>

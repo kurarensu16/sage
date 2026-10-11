@@ -2,6 +2,8 @@ flowchart TB
 %% ===== Figure 2.3 — Proposed System Flowchart: Faculty Portal (updated 2026-10-10) =====
 %% UI labels (Preview & Post Grades, My Class Records, Evaluate Students, Performance Reports);
 %% SG correction proposal and matching repost; task verify/return; one-time follow-up.
+%% Revised 2026-10-10 (evening): follow-up after reported tasks are reviewed; re-evaluation in a later
+%% term; late-enrollee zeros after approval; roster update notices.
 
   SEL{"Select module"}
   OUT(["<b>Log out / End</b>"]):::accent
@@ -46,9 +48,12 @@ flowchart TB
       K1["My Class Records:<br/>rosters and join codes"]
       K2["Create Classrooms<br/>from teaching load"]
       K3["Enrollment Requests"] --> KQ{"Approve?"}
-      KQ -- "No" --> KN["Request rejected"]
-      KQ -- "Yes" --> KY["Added to roster<br/>and gradebook"]
-      K1 ~~~ K2 ~~~ K3
+      KQ -- "No" --> KN["Request rejected;<br/>student notified"]
+      KQ -- "Yes" --> KY["Added to roster<br/>and gradebook;<br/>student notified"]
+      KY --> KL{"Milestone already<br/>posted?"}
+      KL -- "Yes" --> KZ["Enter 0 for missing<br/>posted-term work;<br/>replace after make-up"]
+      K4["Roster update notices:<br/>number of students added"]
+      K1 ~~~ K2 ~~~ K4 ~~~ K3
     end
     subgraph RM["<b>Student Risk Module</b>"]
       direction TB
@@ -58,7 +63,11 @@ flowchart TB
       RS --> RA{"Verify?"}
       RA -- "Yes" --> RV["Task verified"]
       RA -- "No" --> RR["Returned<br/>with a note"]
-      RV --> RF["After next MR / TFR / SG:<br/>record one-time follow-up;<br/>plan closed"]
+      RV --> RT{"All reported<br/>tasks reviewed?"}
+      RT -- "No" --> RW["Review the remaining<br/>reported tasks first"]
+      RT -- "Yes" --> RF["After next MR / TFR / SG:<br/>record one-time follow-up;<br/>plan closed"]
+      RF --> RN{"Still needs<br/>support?"}
+      RN -- "Yes" --> RE["Evaluate again in a<br/>later grading term<br/>(new baseline)"]
     end
   end
 

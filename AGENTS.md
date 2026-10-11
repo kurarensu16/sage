@@ -32,6 +32,7 @@
   | How the system works now (scope, schema, rules, notifications, AI, design, security) | `docs/01-system/<topic>/` |
   | Thesis paper work: audits, figures, defense prep, design decisions | `docs/02-thesis/<topic>/` |
   | Implementation reports for finished work | `docs/03-development/implementation-reports/` |
+  | Code audits of a system area and their fix plans (work in progress) | `docs/03-development/audits/` |
   | Test checklists, QA runbooks, evidence | `docs/04-testing/` |
   | Setup, database reset/seed, deployment, PWA/APK | `docs/05-operations/<topic>/` |
   | Planned improvements, documented but not built (never the owner's deferred items) | `docs/06-future-enhancements/` |

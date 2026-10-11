@@ -404,10 +404,45 @@ These describe behavior added while closing §A. Without them, the paper and the
 7. **ERD Layer 1 (Figure 2.13):** USERS gains `contact_number` and `avatar_path` (photo stored in a private storage bucket).
 8. **Data Privacy (Ch. 1) and the consent form (evaluation tool, item 2 or a new item):** "Profile photos are optional, stored privately, visible only to the account owner, and can be removed at any time."
 9. **Password rules (B5):** First Login and Forgot/Reset wording as given in §B5.
-10. **Enrollment Requests (optional, 2026-10-10):** add *"The instructor is notified of new requests, and the student is notified of the decision."* The request/decision notifications were approved by the owner as a new feature outside the original documented flow.
-11. **Class roster notice (optional, 2026-10-10):** in the Faculty Portal (My Class Records), add *"Faculty are notified of the number of students added to their classes through section enrollment."* Approved by the owner as a new feature.
+10. **Enrollment Requests (applied 2026-10-10 PM, §J):** add *"The instructor is notified of new requests, and the student is notified of the decision."* The request/decision notifications were approved by the owner as a new feature outside the original documented flow.
+11. **Class roster notice (applied 2026-10-10 PM, §J):** in the Faculty Portal (My Class Records), add *"Faculty are notified of the number of students added to their classes through section enrollment."* Approved by the owner as a new feature.
 
 ---
+
+## J. Second paper update (2026-10-10, evening): applied
+
+> **Status: done.** New files only; earlier files untouched:
+> - `ASPIRE_Chapters_1-2_Master_TRACKED_2026-10-10_v2.docx`: 21 text edits and 7 figure swaps as tracked changes (author "Claude (Thesis update 2026-10-10 PM)"), built on the first UPDATED copy.
+> - `ASPIRE_Chapters_1-2_Master_UPDATED_2026-10-10_v2.docx`: clean copy, all changes accepted.
+> - Both pass document validation, and the original `…_UPDATED_2026-10-10.docx` is unchanged.
+
+**Mismatches fixed (paper now matches the system):**
+1. **Evaluated Students:** follow-up only once every reported task is verified or returned.
+2. **My Subjects:** joining an outside class by code; locked card until approval; dismiss or resend after rejection.
+3. **Figure 2.8 (Student DFD):** new process 10.0 Join Class by Code (D35 → D36); the text now says "ten processes".
+4. **Manage Users / Classrooms:** section assignment and classroom provisioning enroll section students.
+5. **Figure 2.11 (Admin DFD), Figure 2.5 (Admin flowchart):** section-enrollment flows to D8 enrollments; instructors notified of the count.
+6. **Notification Settings:** student "class enrollment decisions"; faculty "enrollment requests, class roster updates".
+
+**System behavior now described:**
+
+7. **Re-evaluation:** one evaluation per subject and term; closed after follow-up; a later term gets a new baseline (Evaluate Students; Figures 2.3 and 2.9).
+8. **Late enrollees:** zero for missing posted-term work, replaced after make-up (Log Class Scores; Figure 2.3).
+9. **Enrollment Requests:** request and decision notifications (§I item 10).
+10. **My Class Records:** roster-count notifications (§I item 11).
+11. **Delimitation:** the prototype was developed and evaluated with synthetic data on free hosting tiers; institution-wide deployment needs paid tiers and the documented scalability enhancements.
+
+**Also changed:**
+- *"Irregular students are labeled in each class"* (Log Class Scores).
+- Email scope clarified: *"by email for grade postings and Dean referrals"*.
+- **Figure 2.14 (ERD Layer 2)** rebuilt with the same entities and relationships; the USERS–CLASS_JOIN_REQUESTS link reads *"submits / decided by (faculty)"*. Its text adds *"Each request records when it was made and decided, and which instructor decided it."*
+- Figure texts 2.2, 2.3, 2.5, 2.8, 2.9, 2.11, and 2.14 updated.
+
+**Figure sources:** `docs/02-thesis/figures/`:
+- revised: 2.2, 2.3, 2.5, 2.8, 2.9-B, 2.11-A, 2.11-B
+- new: `Figure-2.14-ERD-Layer2.mmd`
+
+**Unchanged by owner rule:** RLS, the Gemini 2.5 Flash model, and the hosted password policy.
 
 ## Action Checklist
 

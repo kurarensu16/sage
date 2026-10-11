@@ -207,7 +207,8 @@ export default function MyGradesList() {
         const { data: enrolls } = await enrollsQuery;
         const subjectIds = enrolls?.map(e => e.subject_id) || [];
         
-        // 2. Fetch class records
+        // 2. Fetch class records, archived ones included: a previous term's posted grades
+        // stay in the student's history for that term.
         let crQuery = supabase
           .from('class_records')
           .select(`
@@ -216,8 +217,7 @@ export default function MyGradesList() {
             section_id,
             faculty:users!faculty_id ( first_name, last_name )
           `)
-          .in('subject_id', subjectIds)
-          .eq('status', 'active');
+          .in('subject_id', subjectIds);
 
         if (activeOpt.section_id) {
           crQuery = crQuery.eq('section_id', activeOpt.section_id);
