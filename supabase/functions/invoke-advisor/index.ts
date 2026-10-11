@@ -8,6 +8,12 @@ const DEFAULT_FALLBACK_MODEL = 'openrouter/free'
 // fallback models reject the JSON-only response_format option.
 const PROVIDER_FAILOVER_STATUSES = new Set([400, 402, 404, 408, 409, 429, 500, 502, 503, 504])
 const PROVIDER_TIMEOUT_MS = 25_000
+// Whole request budget across all models, well under the edge function limit,
+// so a student is not left waiting while several free models are tried.
+const TOTAL_TIME_BUDGET_MS = 60_000
+// Room for free models that "think" before answering; the reply itself stays
+// capped at 180 words by the prompt. Billing counts tokens used, not this cap.
+const MAX_PROVIDER_TOKENS = 1500
 const MAX_BODY_BYTES = 48_000
 const REQUEST_WINDOW_MS = 60_000
 const REQUESTS_PER_WINDOW = 12
@@ -233,7 +239,7 @@ function parseStructuredResponse(content: string): AdvisorResponse {
   const match = content.match(/\{[\s\S]*\}/)
   const normalized = match ? match[0] : content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
   const parsed = JSON.parse(normalized)
-  const message = text(parsed?.message, 1600)
+  const message = normalizeMessageLayout(text(parsed?.message, 1600))
   const actions = Array.isArray(parsed?.actions)
     ? parsed.actions.map((action: unknown) => text(action, 240)).filter(Boolean).slice(0, 3)
     : []
@@ -249,6 +255,20 @@ function parseStructuredResponse(content: string): AdvisorResponse {
     consultation_recommended: Boolean(parsed?.consultation_recommended),
     boundary_statement: BOUNDARY_STATEMENT
   }
+}
+
+// Safety net for models that number points inline ("...: (1) units ... (2) floor"
+// or "... first. 2. Aim ..."): put each numbered point on its own line. Only
+// applies to single-paragraph replies with at least two numbered points, so
+// prose and decimals such as "3.00" or "1.75" are left untouched.
+function normalizeMessageLayout(message: string) {
+  if (!message || message.includes('\n')) return message
+  const markers = message.match(/(?:^|[\s:;.!?])\(?[1-9][.)](?=\s)/g) || []
+  if (markers.length < 2) return message
+  return message
+    .replace(/\s*\(([1-9])\)\s+/g, '\n$1. ')
+    .replace(/([:;.!?])\s+([1-9])\.\s+/g, '$1\n$2. ')
+    .replace(/^\n/, '')
 }
 
 function systemPrompt(mode: string, weightsStr?: string) {
@@ -273,7 +293,7 @@ Rules:
 {"message":"student-facing explanation","actions":["action"],"consultation_recommended":false,"boundary_statement":"${BOUNDARY_STATEMENT}"}
 13. Running GWA: "runningGwa" and "officialStanding.gwa" are computed by ASPIRE from posted milestones first and, for terms not yet posted, from the scores recorded so far. Quote them, never recalculate them. Unless "gradeBasis" is "official" (or "officialStanding.gwaIsOfficial" is true), call the value a "tentative running GWA", say it is not an official grade, and use "milestoneStage" to say what it is based on. When "blankActivityCount" is above 0, say that many activities have no score yet and may be recorded as zero when the instructor posts grades.
 14. Cite actual evidence. When the student asks how they are doing or about their activities, name the subject, then give specific scores from the context (e.g. "Quiz 2: 10/20 (50%)", class standing, exam, and character averages), weakest first, and end with one practical next step. Do not summarize scores only as counts.
-15. Formatting inside "message": plain text only. Start with a one-sentence answer. When listing several items, conditions, subjects, or steps, put each on its own line starting with "1.", "2.", and so on, or with "- " for sub-items, separated by "\\n". Never use Markdown symbols such as **, #, or tables, and never use emoji.
+15. Formatting inside "message" is MANDATORY. Plain text only: never use Markdown symbols such as **, #, or tables, and never use emoji. If the whole answer fits in one or two sentences, write just those sentences. Otherwise ALWAYS use this layout: one summary sentence, a blank line, then numbered points ("1.", "2.", "3.") each on its own line, with "- " for sub-points; lines are separated by "\\n". Never write a paragraph longer than two sentences. Example "message" value: "You are passing ITC113 so far, but two topics need work.\\n\\n1. Running grade: 3.00 GWA (tentative)\\n2. Weakest scores: Computer Networks 10/20 (50%) and Operating Systems 10/20 (50%)\\n3. Final Practical Activity: 70/100 (70%)\\n4. Next step: review networking and operating systems notes before the next activity."
 16. Insight mode only (Request mode: insight): this text is shown on a small dashboard card, so keep it short and formal. Write exactly this structure in "message": one summary sentence about the student's current standing (call a GWA that is not fully finalized a tentative running GWA), then "\\n\\nNext steps:\\n", then at most 3 numbered steps ("1.", "2.", "3."), each on its own line and under 20 words. Maximum 80 words in total. Put the same steps, shortened, in "actions".
 
 ${weightsStr ? `SUBJECT GRADING WEIGHTS: ${weightsStr}\nApply these specific weights mathematically when explaining grade impact (e.g. a 20/100 on Character at 10% weight is mathematically less impactful than a 30/50 Class Standing at 50% weight).` : ''}
@@ -359,14 +379,21 @@ Deno.serve(async req => {
     ]
 
     // Try each model in order (same pattern as generate-intervention-draft):
-    // a provider failure moves to the next model; unusable output retries the
-    // same model once at a lower temperature, then moves on.
+    // a provider failure or a cut-off reply moves to the next model; other
+    // unusable output retries the same model once at a lower temperature.
+    // The whole loop stops after TOTAL_TIME_BUDGET_MS.
     let response: AdvisorResponse | null = null
     let lastError: Error | null = null
     let usedModel = ''
     const models = advisorModels()
+    const startedAt = Date.now()
     modelLoop: for (const model of models) {
       for (let attempt = 0; attempt < 2; attempt++) {
+        const remainingMs = TOTAL_TIME_BUDGET_MS - (Date.now() - startedAt)
+        if (remainingMs < 3_000) {
+          console.warn('invoke-advisor time_budget_exceeded', { model, elapsedMs: Date.now() - startedAt })
+          break modelLoop
+        }
         try {
           const providerResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -380,10 +407,10 @@ Deno.serve(async req => {
               model,
               messages,
               temperature: attempt === 0 ? 0.1 : 0.0,
-              max_tokens: 600,
+              max_tokens: MAX_PROVIDER_TOKENS,
               response_format: { type: 'json_object' }
             }),
-            signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS)
+            signal: AbortSignal.timeout(Math.min(PROVIDER_TIMEOUT_MS, remainingMs))
           })
 
           if (!providerResponse.ok) {
@@ -396,8 +423,16 @@ Deno.serve(async req => {
             break modelLoop
           }
 
+          const providerData = await providerResponse.json()
+          // A reply cut off at the token cap will not parse; retrying the same
+          // model rarely helps, so move straight to the next one.
+          if (providerData?.choices?.[0]?.finish_reason === 'length') {
+            lastError = new Error('Provider reply was cut off at the token limit')
+            console.warn('invoke-advisor model_output_truncated', { model, attempt: attempt + 1 })
+            continue modelLoop
+          }
+
           try {
-            const providerData = await providerResponse.json()
             const content = text(providerData?.choices?.[0]?.message?.content, 4000)
             response = parseStructuredResponse(content)
             usedModel = model
