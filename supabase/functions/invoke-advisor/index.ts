@@ -11,7 +11,7 @@ const PROVIDER_TIMEOUT_MS = 25_000
 // Whole request budget across all models, well under the edge function limit,
 // so a student is not left waiting while several free models are tried.
 const TOTAL_TIME_BUDGET_MS = 60_000
-// Room for free models that "think" before answering; the reply itself stays
+// Room for the JSON envelope and complete visible replies; the message stays
 // capped at 180 words by the prompt. Billing counts tokens used, not this cap.
 const MAX_PROVIDER_TOKENS = 1500
 const MAX_BODY_BYTES = 48_000
@@ -300,7 +300,7 @@ ${weightsStr ? `SUBJECT GRADING WEIGHTS: ${weightsStr}\nApply these specific wei
 
 DYCI ACADEMIC POLICIES TO ENFORCE:
 - Grading Scale: 98-100=1.0, 95-97=1.25, 92-94=1.5, 89-91=1.75, 86-88=2.0, 83-85=2.25, 80-82=2.5, 77-79=2.75, 75-76=3.0 (Passing), Below 75=5.0 (Failed).
-- President's List (Honors): ALL four conditions must be met simultaneously: (1) minimum 18 enrolled units for the semester, (2) no individual subject grade worse than 2.00 (on DYCI's scale a higher number is a worse grade: 1.00-2.00 passes, 2.25 or higher fails; check each subject separately using its runningGwa), (3) no INC grade in any subject, and (4) overall GWA <= 1.75. A student with only 15 units enrolled is NOT eligible regardless of GWA. Tiers: Sapientia (1.0-1.25), Excellentia (1.26-1.5), Virtus (1.51-1.75). When assessing eligibility, explicitly check all four conditions and state which ones pass or fail.
+- President's List (Honors): ALL four conditions must be met simultaneously: (1) minimum 18 enrolled units for the semester, (2) no individual subject grade worse than 2.00 (on DYCI's scale a higher number is a worse grade: 1.00-2.00 passes, 2.25 or higher fails; check each subject separately using its runningGwa), (3) no INC grade in any subject, and (4) overall GWA <= 1.75 (maximum allowed GWA: 1.75; numerically lower grades are better). Never describe 1.75 as a minimum GWA. In eligibility checklists, label this condition "GWA ceiling: 1.75" or "maximum GWA: 1.75"; the minimum applies to the 18-unit requirement. A student with only 15 units enrolled is NOT eligible regardless of GWA. Tiers: Sapientia (1.0-1.25), Excellentia (1.26-1.5), Virtus (1.51-1.75). When assessing eligibility, explicitly check all four conditions and state which ones pass or fail.
 - Attendance: 4 absences per subject = Failure Due to Absences (FDA). The FDA threshold is per-subject, not combined across all subjects. Faculty makes the official FDA decision — Ask ASPIRE does not.
 - INC (Incomplete): Issued when a student fails to complete required coursework. An INC disqualifies the student from President's List until it is resolved and replaced with a final grade.
 
@@ -408,6 +408,7 @@ Deno.serve(async req => {
               messages,
               temperature: attempt === 0 ? 0.1 : 0.0,
               max_tokens: MAX_PROVIDER_TOKENS,
+              reasoning: { enabled: false },
               response_format: { type: 'json_object' }
             }),
             signal: AbortSignal.timeout(Math.min(PROVIDER_TIMEOUT_MS, remainingMs))
