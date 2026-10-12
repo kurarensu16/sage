@@ -2,6 +2,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { useLocation, Link } from 'react-router-dom';
 import { Search, Bell, PanelLeft } from 'lucide-react';
 import SageLogo from './SageLogo';
+import UserAvatar from './UserAvatar';
 
 export default function Topbar({ toggleSidebar }) {
   const location = useLocation();
@@ -121,9 +122,11 @@ export default function Topbar({ toggleSidebar }) {
           title="Account Settings"
           className="flex items-center gap-2.5 group select-none cursor-pointer"
         >
-          <div className={`w-8 h-8 rounded-full border font-bold text-xs flex items-center justify-center font-mono ${currentMeta.avatarBg} group-hover:ring-2 group-hover:ring-sage-400 transition-all`}>
-            {initials}
-          </div>
+          <UserAvatar
+            path={profile?.avatar_path}
+            initials={initials}
+            className={`w-8 h-8 border font-bold text-xs font-mono ${currentMeta.avatarBg} group-hover:ring-2 group-hover:ring-sage-400 transition-all`}
+          />
           
           <div className="hidden lg:block text-left">
             <h4 className="text-xs font-bold text-slate-800 leading-tight group-hover:text-slate-900">

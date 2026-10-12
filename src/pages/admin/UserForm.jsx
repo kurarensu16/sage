@@ -1,30 +1,47 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { ChevronRight, Save, User } from 'lucide-react';
-import { DYCI_ACADEMIC_PROGRAMS, getProgramFromSectionName, PROGRAM_ABBREVIATIONS } from '../../lib/constants';
+import { PROGRAM_ABBREVIATIONS } from '../../lib/constants';
 import { supabase } from '../../lib/supabase';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { useAuth } from '../../lib/AuthContext';
 import { showLocalNotification } from '../../lib/notificationService';
 import { notifyAdminActivity } from '../../lib/notificationDispatcher';
 
+// Colleges, programs, terms, and sections all come from the database and are saved by ID
+// (admin setup audit 2026-10-11: C1, M1, M2, M8, M11).
+const ROLES = [
+  { value: 'student', label: 'Student' },
+  { value: 'faculty', label: 'Faculty' },
+  { value: 'dean', label: 'Dean' },
+  { value: 'admin', label: 'Administrator' }
+];
+const NUMBER_PREFIX = { student: '', faculty: 'FAC-', dean: 'DN-', admin: 'ADM-' };
+const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+const DEFAULT_PASSWORD = 'SagePassword123!';
 
+const yearDigitOf = (yearLevel) => (yearLevel || '').charAt(0);
+const termLabel = (sec) => `${sec.school_year} · ${sec.semester}`;
+const programAbbreviation = (program) => (program ? PROGRAM_ABBREVIATIONS[program.name] || '' : '');
 
-const matchSectionToProgram = (sec, programName) => {
-  const programAbbr = PROGRAM_ABBREVIATIONS[programName] || '';
-  return programAbbr 
-    ? (sec.name.toUpperCase().startsWith(programAbbr.toUpperCase() + '-') || sec.name.toUpperCase().startsWith(programAbbr.toUpperCase())) 
-    : true;
-};
+// Section names follow "<PROGRAM ABBREVIATION>-<year digit><suffix>", e.g. BSIT-1A.
+function sectionMatchesProgram(section, abbreviation) {
+  if (!abbreviation) return true;
+  const name = (section.name || '').toUpperCase();
+  const prefix = `${abbreviation.toUpperCase()}-`;
+  return name.startsWith(prefix) && /^\d/.test(name.slice(prefix.length));
+}
 
-const getYearDigit = (yl) => {
-  if (yl === '1st Year') return '1';
-  if (yl === '2nd Year') return '2';
-  if (yl === '3rd Year') return '3';
-  if (yl === '4th Year') return '4';
-  return '';
-};
+function sectionYearDigit(section) {
+  return (section.name || '').match(/-(\d)/)?.[1] || '';
+}
+
+function isActiveTermSection(section, activeTerm) {
+  return Boolean(activeTerm)
+    && section.school_year === activeTerm.school_year
+    && section.semester === activeTerm.semester;
+}
 
 export default function UserForm() {
   const navigate = useNavigate();
@@ -32,6 +49,7 @@ export default function UserForm() {
   const { user, profile } = useAuth();
   const params = new URLSearchParams(location.search);
   const userId = params.get('id');
+  const isEditMode = Boolean(userId);
 
   const [formData, setFormData] = useState({
     lastName: '',
@@ -39,177 +57,219 @@ export default function UserForm() {
     middleName: '',
     email: '',
     role: 'student',
-    department: 'College of Computer Studies',
-    program: 'Bachelor of Science in Information Technology',
-    section: '',
+    departmentId: '',
+    programId: '',
     yearLevel: '1st Year',
+    sectionId: '',
     status: 'active'
   });
-  
+  const [userNumber, setUserNumber] = useState('');
+  const [departments, setDepartments] = useState([]);
+  const [programs, setPrograms] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [activeTerm, setActiveTerm] = useState(null);
+  const [lookupsReady, setLookupsReady] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [allSections, setAllSections] = useState([]);
+  const [saving, setSaving] = useState(false);
 
-  // Fetch sections from database
+  // Reference data from the database.
   useEffect(() => {
-    async function loadSections() {
+    let cancelled = false;
+    async function loadLookups() {
       try {
-        const { data, error } = await supabase
-          .from('sections')
-          .select(`
-            section_id,
-            name,
-            departments ( name )
-          `);
-        if (error) throw error;
-        if (data) {
-          const mapped = data.map(s => {
-            let deptName = s.departments?.name || '';
-            if (deptName === 'College of IT' || deptName === 'College of CS') {
-              deptName = 'College of Computer Studies';
-            }
-            return {
-              id: s.section_id,
-              name: s.name,
-              program: s.program || getProgramFromSectionName(s.name) || 'Bachelor of Science in Information Technology',
-              department: deptName
-            };
-          });
-          setAllSections(mapped);
-        }
+        const [deptRes, progRes, termRes, secRes] = await Promise.all([
+          supabase.from('departments').select('department_id, name').order('name'),
+          supabase.from('programs').select('program_id, name, department_id').order('name'),
+          supabase.from('academic_terms').select('term_id, school_year, semester, is_active').eq('is_active', true).maybeSingle(),
+          supabase.from('sections').select('section_id, name, department_id, school_year, semester').order('name')
+        ]);
+        const failed = [deptRes, progRes, termRes, secRes].find(res => res.error);
+        if (failed) throw failed.error;
+        if (cancelled) return;
+        setDepartments(deptRes.data || []);
+        setPrograms(progRes.data || []);
+        setActiveTerm(termRes.data || null);
+        setSections(secRes.data || []);
+        setLookupsReady(true);
       } catch (err) {
-        console.error('Error fetching sections:', err);
+        console.error('Failed to load colleges, programs, terms, or sections:', err);
+        if (!cancelled) setErrorMsg('Could not load colleges, programs, terms, or sections. Refresh the page and try again.');
       }
     }
-    loadSections();
+    loadLookups();
+    return () => { cancelled = true; };
   }, []);
 
-  const availableSections = allSections.filter(sec => {
-    const matchesDept = sec.department === formData.department;
-    const matchesProg = matchSectionToProgram(sec, formData.program);
-    const yearDigit = getYearDigit(formData.yearLevel);
-    const matchesYear = yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true;
-    return matchesDept && matchesProg && matchesYear;
-  });
-
-  // Fetch user data if in edit mode
+  // Existing user (edit mode). Runs after the reference data so the program can be derived.
   useEffect(() => {
+    if (!isEditMode || !lookupsReady) return;
+    let cancelled = false;
     async function fetchUserData() {
-      if (!userId) return;
-      setIsEditMode(true);
       try {
         const { data: existingUser, error } = await supabase
           .from('users')
-          .select(`
-            *,
-            departments ( name ),
-            sections ( name )
-          `)
+          .select('user_id, first_name, last_name, middle_name, email, role, department_id, section_id, year_level, status, user_number')
           .eq('user_id', userId)
           .single();
-
         if (error) throw error;
+        if (cancelled) return;
 
-        if (existingUser) {
-          let dept = existingUser.departments?.name || 'College of Computer Studies';
-          if (dept === 'College of IT' || dept === 'College of CS') {
-            dept = 'College of Computer Studies';
-          }
-          
-          setFormData({
-            lastName: existingUser.last_name || '',
-            firstName: existingUser.first_name || '',
-            middleName: existingUser.middle_name || '',
-            email: existingUser.email || '',
-            role: existingUser.role || 'student',
-            department: dept,
-            program: existingUser.program || getProgramFromSectionName(existingUser.sections?.name) || 'Bachelor of Science in Information Technology',
-            section: existingUser.sections?.name || (existingUser.role === 'student' ? 'Irregular' : ''),
-            yearLevel: existingUser.year_level || '1st Year',
-            status: existingUser.status || 'active'
-          });
-        } else {
-          setErrorMsg('User not found in database.');
-        }
+        const homeSection = sections.find(sec => sec.section_id === existingUser.section_id) || null;
+        const collegeId = existingUser.department_id || homeSection?.department_id || '';
+        const program = homeSection
+          ? programs.find(p => p.department_id === collegeId && sectionMatchesProgram(homeSection, programAbbreviation(p)) && programAbbreviation(p))
+          : null;
+
+        setUserNumber(existingUser.user_number || '');
+        setFormData({
+          lastName: existingUser.last_name || '',
+          firstName: existingUser.first_name || '',
+          middleName: existingUser.middle_name || '',
+          email: existingUser.email || '',
+          role: ROLES.some(r => r.value === existingUser.role) ? existingUser.role : 'student',
+          departmentId: collegeId,
+          programId: program?.program_id || '',
+          yearLevel: existingUser.year_level && YEAR_LEVELS.includes(existingUser.year_level) ? existingUser.year_level : '1st Year',
+          sectionId: existingUser.section_id || '',
+          status: existingUser.status || 'active'
+        });
       } catch (err) {
         console.error('Failed to load user:', err);
-        setErrorMsg('Failed to load user from database: ' + err.message);
+        if (!cancelled) setErrorMsg('Failed to load user from database: ' + err.message);
       }
     }
     fetchUserData();
-  }, [userId]);
+    return () => { cancelled = true; };
+  }, [isEditMode, lookupsReady, userId, sections, programs]);
+
+  const collegePrograms = useMemo(
+    () => programs.filter(p => p.department_id === formData.departmentId),
+    [programs, formData.departmentId]
+  );
+  const selectedProgram = programs.find(p => p.program_id === formData.programId) || null;
+
+  // Sections offered: active term, this college, this program, this year level.
+  const sectionOptions = useMemo(() => {
+    const abbreviation = programAbbreviation(selectedProgram);
+    const yearDigit = yearDigitOf(formData.yearLevel);
+    return sections.filter(sec =>
+      isActiveTermSection(sec, activeTerm)
+      && sec.department_id === formData.departmentId
+      && sectionMatchesProgram(sec, abbreviation)
+      && (!yearDigit || sectionYearDigit(sec) === yearDigit)
+    );
+  }, [sections, activeTerm, formData.departmentId, selectedProgram, formData.yearLevel]);
+
+  // A saved section that is no longer offered (e.g. a previous term) stays visible, clearly labeled.
+  const savedSectionOutsideOptions = formData.sectionId && !sectionOptions.some(sec => sec.section_id === formData.sectionId)
+    ? sections.find(sec => sec.section_id === formData.sectionId) || null
+    : null;
+
+  // Whenever college, program, or year changes, drop a selection that is no longer offered
+  // instead of silently keeping a value the admin can't see.
+  const updateField = (changes) => {
+    setFormData(prev => {
+      const next = { ...prev, ...changes };
+      if ('departmentId' in changes && changes.departmentId !== prev.departmentId) {
+        next.programId = '';
+        next.sectionId = '';
+      }
+      if (('programId' in changes && changes.programId !== prev.programId)
+        || ('yearLevel' in changes && changes.yearLevel !== prev.yearLevel)) {
+        next.sectionId = '';
+      }
+      if ('role' in changes && changes.role !== 'student') {
+        next.programId = '';
+        next.sectionId = '';
+      }
+      if ('role' in changes && changes.role === 'admin') {
+        next.departmentId = '';
+      }
+      return next;
+    });
+  };
+
+  // Next unused number for the role and year (numbers are unique in the database).
+  const nextUserNumber = async (role) => {
+    const prefix = `${NUMBER_PREFIX[role] ?? ''}${new Date().getFullYear()}-`;
+    const { data, error } = await supabase
+      .from('users')
+      .select('user_number')
+      .like('user_number', `${prefix}%`)
+      .order('user_number', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    const last = data?.[0]?.user_number?.slice(prefix.length) || '0';
+    const nextSeq = (parseInt(last, 10) || 0) + 1;
+    return `${prefix}${String(nextSeq).padStart(5, '0')}`;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
-    // Form Validations
     if (!formData.lastName.trim() || !formData.firstName.trim() || !formData.email.trim()) {
       setErrorMsg('Please fill in all required fields.');
       return;
     }
-
-    if (formData.role === 'student' && !formData.section) {
-      setErrorMsg('Please assign a section to the student.');
-      return;
-    }
-
-    // Verify email structure
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email.trim())) {
       setErrorMsg('Please enter a valid email address.');
       return;
     }
-
-    try {
-      // 1. Resolve department_id
-      const { data: deptData, error: deptErr } = await supabase
-        .from('departments')
-        .select('department_id')
-        .eq('name', formData.department)
-        .maybeSingle();
-
-      if (deptErr) throw deptErr;
-      const departmentId = deptData?.department_id || null;
-
-      // 2. Resolve section_id
-      let sectionId = null;
-      if (formData.role === 'student' && formData.section && formData.section !== 'Irregular') {
-        const { data: secData, error: secErr } = await supabase
-          .from('sections')
-          .select('section_id')
-          .eq('name', formData.section)
-          .maybeSingle();
-        if (secErr) throw secErr;
-        sectionId = secData?.section_id || null;
+    if (!ROLES.some(r => r.value === formData.role)) {
+      setErrorMsg('Choose a valid role.');
+      return;
+    }
+    if (formData.role !== 'admin' && !formData.departmentId) {
+      setErrorMsg('Choose a college.');
+      return;
+    }
+    if (formData.role === 'student') {
+      if (!activeTerm) {
+        setErrorMsg('No active term is set. Activate a term in Term Settings before assigning students to sections.');
+        return;
       }
+      if (!formData.programId) {
+        setErrorMsg('Choose a degree program.');
+        return;
+      }
+      if (!formData.sectionId) {
+        setErrorMsg('Choose a section for this student.');
+        return;
+      }
+    }
 
-      const userPayload = {
-        first_name: formData.firstName.trim(),
-        last_name: formData.lastName.trim(),
-        middle_name: formData.middleName.trim(),
-        email: formData.email.toLowerCase().trim(),
-        role: formData.role,
-        password_hash: 'managed_by_supabase_auth',
-        department_id: departmentId,
-        section_id: sectionId,
-        year_level: formData.role === 'student' ? formData.yearLevel : null,
-        status: formData.status
-      };
+    const isStudent = formData.role === 'student';
+    const departmentId = formData.role === 'admin' ? null : formData.departmentId;
+    const sectionId = isStudent ? formData.sectionId : null;
+    const yearLevel = isStudent ? formData.yearLevel : null;
 
+    setSaving(true);
+    try {
       if (isEditMode) {
-        // Fire native notification IMMEDIATELY before DB call — mimics test trigger behaviour
-        await showLocalNotification({
-          title: 'User Profile Updated',
-          body: `👤 Successfully updated ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName}.`
-        });
+        // Email is not sent: changing it here would not change the login email.
+        const userPayload = {
+          first_name: formData.firstName.trim(),
+          last_name: formData.lastName.trim(),
+          middle_name: formData.middleName.trim(),
+          role: formData.role,
+          department_id: departmentId,
+          section_id: sectionId,
+          year_level: yearLevel,
+          status: formData.status
+        };
 
         const { error } = await supabase
           .from('users')
           .update(userPayload)
           .eq('user_id', userId);
-        
         if (error) throw error;
+
+        await showLocalNotification({
+          title: 'User Profile Updated',
+          body: `Updated ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName}.`
+        });
 
         const actorName = resolveActorName(profile, user);
         await logActivity(
@@ -217,58 +277,44 @@ export default function UserForm() {
           `Updated user details for ${formData.lastName}, ${formData.firstName} (${formData.email})`,
           actorName
         );
-
         await notifyAdminActivity({
           type: 'security',
           message: `Security Notice: User details for ${formData.lastName}, ${formData.firstName} (${formData.email}) were updated by ${actorName}.`,
           actorName
         });
       } else {
-        // Generate user number
-        const prefix = formData.role === 'student' ? '' : formData.role === 'admin' ? 'ADM-' : formData.role === 'faculty' ? 'FAC-' : formData.role === 'office' ? 'OFC-' : 'DN-';
-        const year = new Date().getFullYear();
-        
-        // Fetch count to get sequence number
-        const { count } = await supabase
-          .from('users')
-          .select('user_id', { count: 'exact', head: true })
-          .eq('role', formData.role);
-
-        const nextSeq = String((count || 0) + 1).padStart(5, '0');
-        const userNumber = `${prefix}${year}-${nextSeq}`;
-        
-        // Fire native notification IMMEDIATELY before the Edge Function invoke call
-        await showLocalNotification({
-          title: 'New User Registered',
-          body: `👤 Successfully created ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName}.`
-        });
+        const newUserNumber = await nextUserNumber(formData.role);
 
         const { data: invokeData, error: invokeErr } = await supabase.functions.invoke('create-admin-user', {
           body: {
             email: formData.email.trim().toLowerCase(),
-            password: 'SagePassword123!',
+            password: DEFAULT_PASSWORD,
             firstName: formData.firstName.trim(),
             lastName: formData.lastName.trim(),
             middleName: formData.middleName.trim(),
             role: formData.role,
-            departmentId: departmentId,
-            yearLevel: formData.role === 'student' ? formData.yearLevel : null,
-            sectionId: sectionId,
-            userNumber: userNumber
+            departmentId,
+            yearLevel,
+            sectionId,
+            userNumber: newUserNumber
           }
         });
-
         if (invokeErr || invokeData?.error) {
           throw new Error(invokeErr?.message || invokeData?.error || 'Failed to register authentication account.');
         }
 
-        // Set user number client-side fallback
+        // Client-side fallback in case the function did not store the number.
         if (invokeData?.user?.id) {
           await supabase
             .from('users')
-            .update({ user_number: userNumber })
+            .update({ user_number: newUserNumber })
             .eq('user_id', invokeData.user.id);
         }
+
+        await showLocalNotification({
+          title: 'New User Registered',
+          body: `Created ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName}.`
+        });
 
         const actorName = resolveActorName(profile, user);
         await logActivity(
@@ -276,7 +322,6 @@ export default function UserForm() {
           `Created new ${formData.role} account: ${formData.lastName}, ${formData.firstName} (${formData.email})`,
           actorName
         );
-
         await notifyAdminActivity({
           type: 'user_signup',
           message: `Security Notice: Created new ${formData.role.toUpperCase()} account for ${formData.firstName} ${formData.lastName} (${formData.email}) by ${actorName}.`,
@@ -288,18 +333,24 @@ export default function UserForm() {
     } catch (err) {
       console.error('Error saving user:', err);
       setErrorMsg('Failed to save user: ' + err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
+  const selectClass = 'block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed';
+  const inputClass = 'block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500';
+  const labelClass = 'text-xs font-bold text-slate-700 uppercase tracking-wide';
+
   return (
     <>
-      <PageHeader 
-        title={isEditMode ? "Edit User Account" : "Register New User"} 
-        breadcrumb="Admin Portal" 
+      <PageHeader
+        title={isEditMode ? 'Edit User Account' : 'Register New User'}
+        breadcrumb="Admin Portal"
       />
 
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 max-w-2xl mx-auto w-full space-y-4 sm:space-y-6">
-        
+
         {/* Navigation Breadcrumb */}
         <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-500">
           <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/admin/userlist')}>
@@ -307,12 +358,12 @@ export default function UserForm() {
           </span>
           <ChevronRight className="h-3 w-3" />
           <span className="font-medium text-slate-900">
-            {isEditMode ? "Edit Account" : "Register User"}
+            {isEditMode ? 'Edit Account' : 'Register User'}
           </span>
         </div>
 
         {errorMsg && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3.5 sm:p-4 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2">
+          <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-700 p-3.5 sm:p-4 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2">
             <span>{errorMsg}</span>
           </div>
         )}
@@ -329,128 +380,72 @@ export default function UserForm() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
-            {/* First Name */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">First Name <span className="text-rose-500">*</span></label>
-              <input 
-                type="text" 
-                required
-                value={formData.firstName}
-                onChange={(e) => setFormData({...formData, firstName: e.target.value})}
-                className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500"
-                placeholder="e.g. Amanda"
-              />
+              <label className={labelClass}>First Name <span className="text-rose-500">*</span></label>
+              <input type="text" required value={formData.firstName} onChange={(e) => updateField({ firstName: e.target.value })} className={inputClass} placeholder="e.g. Amanda" />
             </div>
-
-            {/* Middle Name */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Middle Name</label>
-              <input 
-                type="text" 
-                value={formData.middleName}
-                onChange={(e) => setFormData({...formData, middleName: e.target.value})}
-                className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500"
-                placeholder="e.g. Santos"
-              />
+              <label className={labelClass}>Middle Name</label>
+              <input type="text" value={formData.middleName} onChange={(e) => updateField({ middleName: e.target.value })} className={inputClass} placeholder="e.g. Santos" />
             </div>
-
-            {/* Last Name */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Last Name <span className="text-rose-500">*</span></label>
-              <input 
-                type="text" 
-                required
-                value={formData.lastName}
-                onChange={(e) => setFormData({...formData, lastName: e.target.value})}
-                className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500"
-                placeholder="e.g. Rivera"
-              />
+              <label className={labelClass}>Last Name <span className="text-rose-500">*</span></label>
+              <input type="text" required value={formData.lastName} onChange={(e) => updateField({ lastName: e.target.value })} className={inputClass} placeholder="e.g. Rivera" />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-            {/* Email */}
+            {/* Email: locked after creation (changing it here would not change the login email). */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Email Address <span className="text-rose-500">*</span></label>
-              <input 
-                type="email" 
+              <label className={labelClass}>Email Address <span className="text-rose-500">*</span></label>
+              <input
+                type="email"
                 required
+                readOnly={isEditMode}
                 value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
-                className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500"
+                onChange={(e) => updateField({ email: e.target.value })}
+                className={`${inputClass} font-mono ${isEditMode ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`}
                 placeholder="e.g. user@sage.edu.ph"
               />
+              {isEditMode && (
+                <span className="text-[10px] text-slate-400 mt-0.5">The email is the account's login and can't be changed here.</span>
+              )}
             </div>
 
-            {/* Role */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Portal Role</label>
-              <select
-                value={formData.role}
-                onChange={(e) => {
-                  const nextRole = e.target.value;
-                  const yearDigit = getYearDigit(formData.yearLevel || '1st Year');
-                  const filteredSecs = allSections.filter(
-                    sec => sec.department === formData.department && 
-                           matchSectionToProgram(sec, formData.program) &&
-                           (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
-                  );
-                  setFormData({
-                    ...formData,
-                    role: nextRole,
-                    section: nextRole === 'student' && filteredSecs.length > 0 ? filteredSecs[0].name : ''
-                  });
-                }}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
-              >
-                <option value="student">Student</option>
-                <option value="faculty">Faculty</option>
-                <option value="office">Office</option>
-                <option value="dean">Dean</option>
-                <option value="admin">Administrator</option>
+              <label className={labelClass}>Portal Role</label>
+              <select value={formData.role} onChange={(e) => updateField({ role: e.target.value })} className={selectClass}>
+                {ROLES.map(role => <option key={role.value} value={role.value}>{role.label}</option>)}
               </select>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-            {/* Department */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">College / School <span className="text-rose-500">*</span></label>
-              <select
-                value={formData.department}
-                onChange={(e) => {
-                  const selectedCollege = e.target.value;
-                  const defaultProgram = DYCI_ACADEMIC_PROGRAMS[selectedCollege]?.[0] || '';
-                  const yearDigit = getYearDigit(formData.yearLevel || '1st Year');
-                  const filteredSecs = allSections.filter(
-                    sec => sec.department === selectedCollege && 
-                           matchSectionToProgram(sec, defaultProgram) &&
-                           (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
-                  );
-                  setFormData({
-                    ...formData,
-                    department: selectedCollege,
-                    program: defaultProgram,
-                    section: filteredSecs.length > 0 ? filteredSecs[0].name : ''
-                  });
-                }}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
-              >
-                {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
-                  <option key={college} value={college}>{college}</option>
-                ))}
-              </select>
-            </div>
+            {formData.role !== 'admin' && (
+              <div className="flex flex-col gap-1.5">
+                <label className={labelClass}>College / School <span className="text-rose-500">*</span></label>
+                <select
+                  value={formData.departmentId}
+                  onChange={(e) => updateField({ departmentId: e.target.value })}
+                  disabled={!lookupsReady}
+                  className={selectClass}
+                >
+                  <option value="">-- Select College --</option>
+                  {departments.map(dept => (
+                    <option key={dept.department_id} value={dept.department_id}>{dept.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-            {/* Status Checkbox */}
             <div className="flex flex-col gap-1.5 justify-center">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">Account Active Status</label>
+              <label className={`${labelClass} mb-1`}>Account Active Status</label>
               <div className="flex items-center gap-2.5">
-                <input 
+                <input
                   type="checkbox"
                   id="status-toggle"
                   checked={formData.status === 'active'}
-                  onChange={(e) => setFormData({...formData, status: e.target.checked ? 'active' : 'inactive'})}
+                  onChange={(e) => updateField({ status: e.target.checked ? 'active' : 'inactive' })}
                   className="w-4 h-4 text-sage-600 border-slate-200 rounded focus:ring-sage-500 outline-none cursor-pointer"
                 />
                 <label htmlFor="status-toggle" className="text-xs sm:text-sm font-medium text-slate-700 cursor-pointer select-none">
@@ -460,115 +455,96 @@ export default function UserForm() {
             </div>
           </div>
 
-          {!isEditMode && (
+          {!isEditMode ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Default Password</label>
-                <input 
-                  type="text" 
-                  readOnly
-                  value="SagePassword123!"
-                  className="block w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-500 font-mono outline-none cursor-not-allowed"
-                />
-                <span className="text-[10px] text-slate-400 mt-0.5">Temporary password assigned automatically.</span>
+                <label className={labelClass}>Default Password</label>
+                <input type="text" readOnly value={DEFAULT_PASSWORD} className="block w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-500 font-mono outline-none cursor-not-allowed" />
+                <span className="text-[10px] text-slate-400 mt-0.5">Temporary password; the user must change it at first login.</span>
               </div>
             </div>
+          ) : userNumber && (
+            <p className="text-xs text-slate-500">ID number: <span className="font-mono font-semibold text-slate-700">{userNumber}</span></p>
           )}
 
-          {/* Dynamic Degree Program & Section Selection for Student/Faculty */}
-          {['student', 'faculty'].includes(formData.role) && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 pt-2 border-t border-slate-100">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Degree Program <span className="text-rose-500">*</span></label>
-                <select
-                  value={formData.program}
-                  onChange={(e) => {
-                    const nextProg = e.target.value;
-                    const yearDigit = getYearDigit(formData.yearLevel || '1st Year');
-                    const filteredSecs = allSections.filter(
-                      sec => sec.department === formData.department && 
-                             matchSectionToProgram(sec, nextProg) &&
-                             (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
-                    );
-                    setFormData({
-                      ...formData,
-                      program: nextProg,
-                      section: filteredSecs.length > 0 ? filteredSecs[0].name : ''
-                    });
-                  }}
-                  className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer truncate"
-                >
-                  {(DYCI_ACADEMIC_PROGRAMS[formData.department] || []).map(prog => (
-                    <option key={prog} value={prog}>{prog}</option>
-                  ))}
-                </select>
+          {/* Students: program, year level, and an active-term section are required. */}
+          {formData.role === 'student' && (
+            <div className="space-y-3 pt-2 border-t border-slate-100">
+              <p className="text-[11px] text-slate-500">
+                {activeTerm
+                  ? <>Sections shown are for the active term: <strong className="text-slate-700">{activeTerm.school_year} · {activeTerm.semester}</strong>.</>
+                  : <strong className="text-rose-600">No active term is set. Activate a term in Term Settings first.</strong>}
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelClass}>Degree Program <span className="text-rose-500">*</span></label>
+                  <select
+                    value={formData.programId}
+                    onChange={(e) => updateField({ programId: e.target.value })}
+                    disabled={!formData.departmentId}
+                    className={`${selectClass} truncate`}
+                  >
+                    <option value="">{formData.departmentId ? '-- Select Program --' : 'Choose a college first'}</option>
+                    {collegePrograms.map(prog => (
+                      <option key={prog.program_id} value={prog.program_id}>{prog.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelClass}>Year Level</label>
+                  <select value={formData.yearLevel} onChange={(e) => updateField({ yearLevel: e.target.value })} className={selectClass}>
+                    {YEAR_LEVELS.map(level => <option key={level} value={level}>{level}</option>)}
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className={labelClass}>Assigned Section <span className="text-rose-500">*</span></label>
+                  <select
+                    value={formData.sectionId}
+                    onChange={(e) => updateField({ sectionId: e.target.value })}
+                    disabled={!formData.programId}
+                    className={selectClass}
+                  >
+                    <option value="">
+                      {!formData.programId ? 'Choose a program first' : sectionOptions.length ? '-- Select Section --' : 'No sections for this program and year'}
+                    </option>
+                    {savedSectionOutsideOptions && (
+                      <option value={savedSectionOutsideOptions.section_id}>
+                        {savedSectionOutsideOptions.name} ({termLabel(savedSectionOutsideOptions)}, current)
+                      </option>
+                    )}
+                    {sectionOptions.map(sec => (
+                      <option key={sec.section_id} value={sec.section_id}>{sec.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-
-              {formData.role === 'student' && (
-                <>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Year Level</label>
-                    <select
-                      value={formData.yearLevel}
-                      onChange={(e) => {
-                        const nextYear = e.target.value;
-                        const yearDigit = getYearDigit(nextYear);
-                        const filteredSecs = allSections.filter(
-                          sec => sec.department === formData.department && 
-                                 matchSectionToProgram(sec, formData.program) &&
-                                 (yearDigit ? (sec.name.includes(`-${yearDigit}`) || sec.name.includes(yearDigit)) : true)
-                        );
-                        setFormData({
-                          ...formData,
-                          yearLevel: nextYear,
-                          section: filteredSecs.length > 0 ? filteredSecs[0].name : ''
-                        });
-                      }}
-                      className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
-                    >
-                      <option value="1st Year">1st Year</option>
-                      <option value="2nd Year">2nd Year</option>
-                      <option value="3rd Year">3rd Year</option>
-                      <option value="4th Year">4th Year</option>
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Assigned Section <span className="text-rose-500">*</span></label>
-                    <select
-                      value={formData.section}
-                      onChange={(e) => setFormData({...formData, section: e.target.value})}
-                      className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
-                    >
-                      <option value="">-- Select Section --</option>
-                      <option value="Irregular">Irregular Student</option>
-                      {formData.section && formData.section !== 'Irregular' && !availableSections.some(sec => sec.name === formData.section) && (
-                        <option value={formData.section}>{formData.section}</option>
-                      )}
-                      {availableSections.map(sec => (
-                        <option key={sec.id} value={sec.name}>{sec.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                </>
+              {savedSectionOutsideOptions && (
+                <p className="text-[11px] text-amber-700">
+                  This student's current section ({savedSectionOutsideOptions.name}, {termLabel(savedSectionOutsideOptions)}) is not an active-term section for the selected program and year. Choose an active-term section to move them.
+                </p>
+              )}
+              {formData.programId && !sectionOptions.length && (
+                <p className="text-[11px] text-slate-500">Create the section for this program, year, and term in Sections first.</p>
               )}
             </div>
           )}
 
-          {/* Form Actions */}
           <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-2.5 sm:gap-3">
-            <button 
-              type="button" 
+            <button
+              type="button"
               onClick={() => navigate('/admin/userlist')}
               className="w-full sm:w-auto px-4 py-2.5 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs sm:text-sm font-medium transition-colors cursor-pointer text-center"
             >
               Cancel
             </button>
-            <button 
-              type="submit" 
-              className="w-full sm:w-auto px-5 py-2.5 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+            <button
+              type="submit"
+              disabled={saving || !lookupsReady}
+              className="w-full sm:w-auto px-5 py-2.5 bg-sage-600 hover:bg-sage-700 disabled:opacity-60 text-white rounded-xl text-xs sm:text-sm font-medium transition-colors flex items-center justify-center gap-2 shadow-xs cursor-pointer"
             >
-              <Save className="h-4 w-4" /> {isEditMode ? "Save Changes" : "Register User"}
+              <Save className="h-4 w-4" /> {saving ? 'Saving…' : isEditMode ? 'Save Changes' : 'Register User'}
             </button>
           </div>
         </form>

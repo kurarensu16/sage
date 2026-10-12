@@ -4,7 +4,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Search, Plus, Edit2, Power, CheckCircle, AlertCircle, Upload, X, Check, FileSpreadsheet, MoreVertical, Archive, RotateCcw, FileText, Eye, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, SlidersHorizontal, Table, HelpCircle, FileCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import * as XLSX from 'xlsx';
-import { DYCI_ACADEMIC_PROGRAMS, getProgramFromSectionName, PROGRAM_ABBREVIATIONS } from '../../lib/constants';
+import { getProgramFromSectionName } from '../../lib/constants';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
@@ -105,6 +105,7 @@ export default function UserList() {
 
   const [departments, setDepartments] = useState([]);
   const [dbSections, setDbSections] = useState([]);
+  const [activeTerm, setActiveTerm] = useState(null);
 
   // Overhaul custom states
   const [showArchived, setShowArchived] = useState(false);
@@ -176,8 +177,18 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       if (secs) setDbSections(secs.map(s => ({
         id: s.section_id,
         name: s.name,
-        department: depts?.find(d => d.department_id === s.department_id)?.name || ''
+        departmentId: s.department_id,
+        department: depts?.find(d => d.department_id === s.department_id)?.name || '',
+        schoolYear: s.school_year,
+        semester: s.semester
       })));
+
+      const { data: term } = await supabase
+        .from('academic_terms')
+        .select('term_id, school_year, semester')
+        .eq('is_active', true)
+        .maybeSingle();
+      setActiveTerm(term || null);
 
     } catch (err) {
       console.error('Failed to load users:', err);
@@ -768,7 +779,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       dean: users.filter(u => u.role === 'dean').length,
       faculty: users.filter(u => u.role === 'faculty').length,
       student: users.filter(u => u.role === 'student').length,
-      office: users.filter(u => u.role === 'office').length,
     };
 
     for (let i = startIndex; i < lines.length; i++) {
@@ -787,6 +797,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       let [lastName, firstName, middleName, email, role, department, program, section, yearLevel, userNumber] = parts.map(p => p?.trim() || '');
 
       let finalUserNumber = userNumber;
+      let departmentId = null;
+      let sectionId = null;
       if (importStatus !== 'error') {
         // Backwards compatibility for 6 columns
         if (parts.length === 6) {
@@ -811,31 +823,56 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           }
         }
 
-        // Automatically derive Year Level and assign first matching active section if student lacks section/yearLevel
-        if (role.toLowerCase() === 'student') {
-          if (!yearLevel) {
-            if (section) {
-              if (section.includes('1')) yearLevel = '1st Year';
-              else if (section.includes('2')) yearLevel = '2nd Year';
-              else if (section.includes('3')) yearLevel = '3rd Year';
-              else if (section.includes('4')) yearLevel = '4th Year';
-            }
-            if (!yearLevel) {
-              yearLevel = '1st Year'; // Default fallback
-            }
-          }
-
-          if (!section) {
-            const matchesDigit = yearLevel.charAt(0); // '1', '2', '3', '4'
-            const matchedSec = dbSections.find(
-              s => s.department === department && 
-                   (s.name.includes(`-${matchesDigit}`) || s.name.includes(matchesDigit))
-            );
-            section = matchedSec ? matchedSec.name : '';
+        // College and section are matched to the database by exact name, never guessed.
+        const normalizedRole = role.toLowerCase();
+        const validRoles = ['admin', 'dean', 'faculty', 'student'];
+        if (!validRoles.includes(normalizedRole)) {
+          importStatus = 'error';
+          importMessage = `Invalid role: "${role}". Valid values: admin, dean, faculty, student`;
+        } else if (normalizedRole !== 'admin') {
+          const deptMatch = departments.find(d => d.name.toLowerCase() === department.toLowerCase());
+          if (!department) {
+            importStatus = 'error';
+            importMessage = 'College is required for students, faculty, and deans.';
+          } else if (!deptMatch) {
+            importStatus = 'error';
+            importMessage = `College "${department}" was not found. Use the exact college name from Colleges.`;
+          } else {
+            departmentId = deptMatch.department_id;
+            department = deptMatch.name;
           }
         }
 
-        if (!email.includes('@')) {
+        if (importStatus !== 'error' && normalizedRole === 'student') {
+          const sectionMatch = dbSections.find(s => s.name.toLowerCase() === section.toLowerCase()
+            && s.departmentId === departmentId
+            && activeTerm
+            && s.schoolYear === activeTerm.school_year
+            && s.semester === activeTerm.semester);
+          const yearDigit = (section.match(/-(\d)/) || [])[1];
+          const sectionYear = yearDigit ? `${yearDigit}${{ 1: 'st', 2: 'nd', 3: 'rd' }[yearDigit] || 'th'} Year` : '';
+          if (!activeTerm) {
+            importStatus = 'error';
+            importMessage = 'No active term is set. Set the active term in Term Settings before importing students.';
+          } else if (!section) {
+            importStatus = 'error';
+            importMessage = 'Section is required for students.';
+          } else if (!sectionMatch) {
+            importStatus = 'error';
+            importMessage = `Section "${section}" was not found in ${department} for the active term (${activeTerm.school_year} ${activeTerm.semester}).`;
+          } else if (yearLevel && sectionYear && yearLevel !== sectionYear) {
+            importStatus = 'error';
+            importMessage = `Year level "${yearLevel}" does not match section "${sectionMatch.name}" (${sectionYear}).`;
+          } else {
+            sectionId = sectionMatch.id;
+            section = sectionMatch.name;
+            yearLevel = yearLevel || sectionYear;
+          }
+        }
+
+        if (importStatus === 'error') {
+          // Keep the first reason shown for this row.
+        } else if (!email.includes('@')) {
           importStatus = 'error';
           importMessage = `Invalid email format: ${email}`;
         } else if (list.some(u => u.email.toLowerCase() === email.toLowerCase())) {
@@ -849,19 +886,11 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           }
         }
 
-        if (importStatus !== 'error') {
-          const validRoles = ['admin', 'dean', 'faculty', 'student', 'office'];
-          if (!validRoles.includes(role.toLowerCase())) {
-            importStatus = 'error';
-            importMessage = `Invalid role: "${role}". Valid values: admin, dean, faculty, student, office`;
-          }
-        }
-
         // Handle user number generation or validation
         if (importStatus !== 'error') {
           finalUserNumber = userNumber;
           if (!finalUserNumber) {
-            const prefix = role.toLowerCase() === 'student' ? '' : role.toLowerCase() === 'admin' ? 'ADM-' : role.toLowerCase() === 'faculty' ? 'FAC-' : role.toLowerCase() === 'office' ? 'OFC-' : 'DN-';
+            const prefix = role.toLowerCase() === 'student' ? '' : role.toLowerCase() === 'admin' ? 'ADM-' : role.toLowerCase() === 'faculty' ? 'FAC-' : 'DN-';
             const year = new Date().getFullYear();
             let generated = '';
             do {
@@ -878,7 +907,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 importMessage = `Invalid Student Number format: "${finalUserNumber}". Must be YYYY-XXXXX.`;
               }
             } else {
-              const employeeIdRegex = /^((ADM|FAC|DN|OFC)-)?\d{4}-\d{5}$/;
+              const employeeIdRegex = /^((ADM|FAC|DN)-)?\d{4}-\d{5}$/;
               if (!employeeIdRegex.test(finalUserNumber)) {
                 importStatus = 'error';
                 importMessage = `Invalid Employee ID format: "${finalUserNumber}". Must be YYYY-XXXXX or with prefix like ADM-YYYY-XXXXX.`;
@@ -905,8 +934,10 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         email,
         role: role.toLowerCase(),
         department,
+        departmentId,
         program,
         section,
+        sectionId,
         yearLevel,
         status: 'active',
         userNumber: finalUserNumber,
@@ -948,13 +979,16 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
         setImportProgress(`Processing row ${i + 1} of ${parsedUsers.length}: ${u.firstName} ${u.lastName}...`);
 
-        const deptObj = departments.find(d => d.name === u.department);
-        if (!deptObj) {
-          failed.push({ ...u, importMessage: `Department "${u.department}" not found.` });
+        // IDs were matched and checked when the file was parsed; nothing is looked up by name here.
+        if (u.role !== 'admin' && !u.departmentId) {
+          failed.push({ ...u, importMessage: `College "${u.department}" not found.` });
+          continue;
+        }
+        if (u.role === 'student' && !u.sectionId) {
+          failed.push({ ...u, importMessage: 'A section in the active term is required for students.' });
           continue;
         }
 
-        const secObj = dbSections.find(s => s.name === u.section);
         const existingUserObj = users.find(oldU => oldU.email.toLowerCase() === u.email.toLowerCase());
 
         if (existingUserObj) {
@@ -967,9 +1001,9 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
               last_name: u.lastName.trim(),
               middle_name: u.middleName.trim(),
               role: u.role,
-              department_id: deptObj.department_id,
+              department_id: u.role === 'admin' ? null : u.departmentId,
               year_level: u.role === 'student' ? u.yearLevel : null,
-              section_id: u.role === 'student' ? (secObj?.id || null) : null,
+              section_id: u.role === 'student' ? u.sectionId : null,
               user_number: u.userNumber
             })
             .eq('user_id', existingUserObj.id);
@@ -989,9 +1023,9 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
               lastName: u.lastName.trim(),
               middleName: u.middleName.trim(),
               role: u.role,
-              departmentId: deptObj.department_id,
+              departmentId: u.role === 'admin' ? null : u.departmentId,
               yearLevel: u.role === 'student' ? u.yearLevel : null,
-              sectionId: u.role === 'student' ? (secObj?.id || null) : null,
+              sectionId: u.role === 'student' ? u.sectionId : null,
               userNumber: u.userNumber
             }
           });
@@ -1202,7 +1236,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
             { id: 'student', label: 'Students', count: roleCounts.student },
             { id: 'faculty', label: 'Faculty', count: roleCounts.faculty },
             { id: 'dean', label: 'Deans', count: roleCounts.dean },
-            { id: 'office', label: 'Office', count: roleCounts.office },
             { id: 'admin', label: 'Admins', count: roleCounts.admin },
           ].map(tab => {
             const isSelected = roleFilter === tab.id;
@@ -1339,7 +1372,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
               <option value="admin">Admin</option>
               <option value="dean">Dean</option>
               <option value="faculty">Faculty</option>
-              <option value="office">Office</option>
               <option value="student">Student</option>
             </select>
           </div>
@@ -1965,8 +1997,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium text-slate-800 outline-none focus:ring-1 focus:ring-sage-500"
                 >
                   <option value="">All Colleges</option>
-                  {Object.keys(DYCI_ACADEMIC_PROGRAMS).map(college => (
-                    <option key={college} value={college}>{college}</option>
+                  {departments.map(dept => (
+                    <option key={dept.department_id} value={dept.name}>{dept.name}</option>
                   ))}
                 </select>
               </div>
@@ -1983,9 +2015,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium text-slate-800 outline-none focus:ring-1 focus:ring-sage-500"
                 >
                   <option value="">All Programs</option>
-                  {Array.from(new Set(
-                    deptFilter ? (DYCI_ACADEMIC_PROGRAMS[deptFilter] || []) : Object.values(DYCI_ACADEMIC_PROGRAMS).flat()
-                  )).map(prog => (
+                  {uniquePrograms.map(prog => (
                     <option key={prog} value={prog}>{prog}</option>
                   ))}
                 </select>

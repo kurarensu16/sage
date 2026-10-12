@@ -120,7 +120,7 @@ export default function AskAspirePanel({ open, context, onClose, onRequestConsul
                 <div className="flex items-center gap-2">
                   <h2 id="ask-aspire-title" className="font-display text-lg font-extrabold">Ask ASPIRE</h2>
                   <span className="rounded-full border border-sage-700 bg-sage-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-sage-200">
-                    Academic advisor
+                    AI Study Tutor
                   </span>
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-sage-200">
@@ -158,7 +158,7 @@ export default function AskAspirePanel({ open, context, onClose, onRequestConsul
               >
                 <div className={message.role === 'user'
                   ? 'max-w-[85%] rounded-2xl rounded-br-md bg-sage-700 px-4 py-3 text-sm leading-relaxed text-white'
-                  : 'max-w-[92%] rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 text-sm leading-relaxed text-slate-700 shadow-xs'
+                  : 'max-w-[92%] whitespace-pre-line rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 text-sm leading-relaxed text-slate-700 shadow-xs'
                 }>
                   {message.content}
                 </div>

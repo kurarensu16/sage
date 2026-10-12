@@ -4,7 +4,8 @@ import { Lock, Eye, EyeOff, AlertCircle, ArrowRight, LogOut, CheckCircle } from 
 import { useAuth } from '../../lib/AuthContext';
 import { supabase } from '../../lib/supabase';
 import SageLogo from '../../components/layout/SageLogo';
-import { cn } from '../../lib/utils';
+import PasswordRequirements from '../../components/auth/PasswordRequirements';
+import { checkPassword, PASSWORD_POLICY_MESSAGE } from '../../lib/passwordPolicy';
 
 export default function ForceChangePassword() {
   const navigate = useNavigate();
@@ -29,29 +30,13 @@ export default function ForceChangePassword() {
     }
   }, [user, profile, loading, navigate]);
 
-  const getPasswordStrength = () => {
-    if (!newPassword) return null;
-    let score = 0;
-    if (newPassword.length >= 6) score += 1;
-    if (newPassword.length >= 10) score += 1;
-    if (/[A-Z]/.test(newPassword)) score += 1;
-    if (/[0-9]/.test(newPassword)) score += 1;
-    if (/[^A-Za-z0-9]/.test(newPassword)) score += 1;
-
-    if (score <= 2) return { label: 'Weak', color: 'bg-rose-500', width: 'w-1/3' };
-    if (score <= 4) return { label: 'Medium', color: 'bg-amber-500', width: 'w-2/3' };
-    return { label: 'Strong', color: 'bg-emerald-500', width: 'w-full' };
-  };
-
-  const pwdStrength = getPasswordStrength();
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
     setSubmitting(true);
 
-    if (newPassword.length < 6) {
-      setErrorMsg('Password must be at least 6 characters long.');
+    if (!checkPassword(newPassword).valid) {
+      setErrorMsg(PASSWORD_POLICY_MESSAGE);
       setSubmitting(false);
       return;
     }
@@ -178,18 +163,7 @@ export default function ForceChangePassword() {
                   </button>
                 </div>
 
-                {/* Password strength visualizer */}
-                {pwdStrength && (
-                  <div className="mt-1 space-y-1">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="text-slate-400 font-medium">Strength:</span>
-                      <span className="font-semibold text-slate-700">{pwdStrength.label}</span>
-                    </div>
-                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                      <div className={cn("h-full transition-all duration-300", pwdStrength.color, pwdStrength.width)}></div>
-                    </div>
-                  </div>
-                )}
+                <PasswordRequirements value={newPassword} />
               </div>
 
               {/* Confirm Password field */}

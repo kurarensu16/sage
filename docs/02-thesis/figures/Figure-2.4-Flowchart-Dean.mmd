@@ -1,0 +1,66 @@
+flowchart TB
+%% ===== Figure 2.4 — Proposed System Flowchart: Dean Portal (updated 2026-10-10) =====
+%% Approval authorizes the faculty's exact SG proposal (faculty reposts); Intervention Results
+%% shows verified completion, acknowledgment, and follow-up-due flags.
+
+  SEL{"Select module"}
+  OUT(["<b>Log out / End</b>"]):::accent
+
+  subgraph LOGIN["<b>Authentication</b>"]
+    direction LR
+    START(["<b>Start</b>"]):::accent --> CRED[/"Enter credentials"/] --> VALID{"Valid credentials?"}
+    VALID -- "No" --> ERR["Show login error"]
+    ERR -.-> CRED
+    VALID -- "Yes" --> FIRST{"First login?"}
+    FIRST -- "Yes" --> CHG["Change temporary password"] --> DASH["<b>Dashboard</b>"]:::accent
+    FIRST -- "No" --> DASH
+  end
+
+  LOGIN --> SEL
+  SEL -- "Log out" --> OUT
+
+  SEL -- "Grades" --> GM
+  SEL -- "Student Risk" --> RM
+  SEL -- "Reports" --> PM
+  SEL -- "Account" --> NM
+
+  subgraph GM["<b>Grades Module</b>"]
+    direction TB
+    G1["Grade Submission<br/>Status grid"]
+    G2["Grade Distribution<br/>analytics"]
+    G3["Grade Corrections queue:<br/>proposed SG, remark,<br/>evidence"] --> GQ{"Approve or reject?"}
+    GQ -- "Reject" --> GR["SG stays locked,<br/>logged to audit trail"]
+    GQ -- "Approve" --> GA["Faculty reposts the<br/>approved SG; correction<br/>history recorded"]
+    G1 ~~~ G2 ~~~ G3
+  end
+
+  subgraph RM["<b>Student Risk Module</b>"]
+    direction TB
+    R1["Risk and Honors<br/>Overview"] --> R1a["Honors-Risk tab"]
+    R1 --> R1b["At-Risk tab:<br/>Moderate / High / Critical,<br/>evaluation status"]
+    R2["Escalated Cases:<br/>review referral,<br/>add recommendation"] --> RQ{"Disposition"}
+    RQ --> RD["Resolved with note<br/>(preserved as<br/>auditable record)"]
+    R3["Intervention Results"] --> R3a["Compare baseline vs<br/>recorded follow-up"]
+    R3a --> R3b["GWA change, risk-level<br/>transition, verified task<br/>completion, acknowledgment"]
+    R3 --> R3c["Flag cases whose<br/>follow-up is due"]
+    R1 ~~~ R2 ~~~ R3
+  end
+
+  subgraph PM["<b>Reports Module</b>"]
+    direction TB
+    P1["Generate Reports:<br/>select report type"] --> P2["Export or print"]
+  end
+
+  subgraph NM["<b>Account Module</b>"]
+    direction TB
+    N1["My Profile: photo,<br/>contact number"]
+    N2["Change Password"]
+    N3["Notification Preferences"]
+    N1 ~~~ N2 ~~~ N3
+  end
+
+
+  classDef accent fill:#5B21B6,stroke:#5B21B6,color:#FFFFFF;
+
+  GM ~~~ PM
+  RM ~~~ NM

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { Calendar, RefreshCw, AlertTriangle, CheckCircle, ShieldAlert, Database, ArrowRight, Check, X, ClipboardList } from 'lucide-react';
+import { Calendar, RefreshCw, AlertTriangle, CheckCircle, ShieldAlert, Database, ArrowRight, Check, X, ClipboardList, Plus, Layers } from 'lucide-react';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { dispatchNotifications, notifyAdminActivity, notifyTermActivated } from '../../lib/notificationDispatcher';
@@ -10,12 +11,15 @@ import SuccessModal from '../../components/SuccessModal';
 import ErrorModal from '../../components/ErrorModal';
 import ConfirmModal from '../../components/ConfirmModal';
 
+const DEFAULT_GRACE_DAYS = 30;
+
+const formatDate = (value) => (value ? new Date(value).toLocaleDateString() : '—');
+
 export default function TermManagement() {
-  const { user, userProfile } = useAuth();
+  const { user, profile } = useAuth();
   const [terms, setTerms] = useState([]);
   const [errorMsg, setErrorMsg] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
-  
+
   // Success, Error & Confirm Modals
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
   const [successModalMessage, setSuccessModalMessage] = useState('');
@@ -23,48 +27,48 @@ export default function TermManagement() {
   const [errorModalMessage, setErrorModalMessage] = useState('');
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [confirmModalConfig, setConfirmModalConfig] = useState({ title: '', message: '', onConfirm: null });
-  
+
   // Rollover wizard state
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [nextSemester, setNextSemester] = useState({ schoolYear: '', semester: '' });
-  const [wizardStep, setWizardStep] = useState(1); // 1: Audit, 2: Confirm, 3: Success
+  const [wizardStep, setWizardStep] = useState(1); // 1: Check, 2: Confirm, 3: Done
   const [auditResults, setAuditResults] = useState(null);
+  const [nextTermInfo, setNextTermInfo] = useState({ loading: false, term: null, sectionCount: 0 });
+  const [graceDays, setGraceDays] = useState(DEFAULT_GRACE_DAYS);
   const [confirmInput, setConfirmInput] = useState('');
+  const [isWorking, setIsWorking] = useState(false);
+  const [rolloverSummary, setRolloverSummary] = useState(null);
 
-  // Load term registries from Supabase with local fallback
+  const showError = (message) => {
+    setErrorModalMessage(message);
+    setIsErrorModalOpen(true);
+  };
+
+  // Terms come only from the database; no cached or sample terms are ever shown.
   const loadTerms = async () => {
     try {
       const { data, error } = await supabase
         .from('academic_terms')
         .select('*')
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
-      
-      const formatted = (data || []).map(t => ({
+
+      setTerms((data || []).map(t => ({
         id: t.term_id,
         schoolYear: t.school_year,
         semester: t.semester,
         isActive: t.is_active,
         isEvaluationOpen: t.is_evaluation_open,
+        graceDays: t.sg_grace_days ?? DEFAULT_GRACE_DAYS,
+        endedAt: t.ended_at || null,
         created_at: t.created_at
-      }));
-      
-      setTerms(formatted);
-      localStorage.setItem('sage_cached_terms', JSON.stringify(formatted));
+      })));
+      setErrorMsg('');
     } catch (err) {
-      console.warn('Database error loading terms. Using local fallback cache:', err);
-      const cached = localStorage.getItem('sage_cached_terms');
-      if (cached) {
-        setTerms(JSON.parse(cached));
-      } else {
-        const defaultTerms = [
-          { id: 't1', schoolYear: '2025-2026', semester: '2nd', isActive: true, isEvaluationOpen: false, created_at: new Date().toISOString() },
-          { id: 't2', schoolYear: '2025-2026', semester: '1st', isActive: false, isEvaluationOpen: false, created_at: new Date(Date.now() - 86400000 * 100).toISOString() }
-        ];
-        setTerms(defaultTerms);
-        localStorage.setItem('sage_cached_terms', JSON.stringify(defaultTerms));
-      }
+      console.error('Failed to load academic terms:', err);
+      setTerms([]);
+      setErrorMsg('Could not load the academic terms: ' + err.message);
     }
   };
 
@@ -74,239 +78,193 @@ export default function TermManagement() {
 
   const activeTerm = terms.find(t => t.isActive) || null;
 
-  // Calculate succeeding semester automatically based on strict sequence:
-  // 1st Semester -> 2nd Semester -> Summer -> 1st Semester of next year
+  // Succeeding term: 1st Semester -> 2nd Semester -> Summer -> 1st Semester of next year
   const calculateNextTerm = (currentTerm) => {
-    if (!currentTerm) {
-      return { schoolYear: '2025-2026', semester: '2nd' };
-    }
     const { schoolYear, semester } = currentTerm;
-    let nextSem;
-    let nextSy = schoolYear;
-
-    if (semester === '1st') {
-      nextSem = '2nd';
-    } else if (semester === '2nd') {
-      nextSem = 'Summer';
-    } else if (semester === 'Summer') {
-      nextSem = '1st';
-      // Increment school year, e.g., '2025-2026' -> '2026-2027'
-      const parts = schoolYear.split('-');
-      if (parts.length === 2) {
-        const y1 = parseInt(parts[0], 10) + 1;
-        const y2 = parseInt(parts[1], 10) + 1;
-        nextSy = `${y1}-${y2}`;
-      } else {
-        nextSy = '2026-2027'; // Fallback
-      }
-    } else {
-      nextSem = '1st';
-      nextSy = '2026-2027';
-    }
-
-    return { schoolYear: nextSy, semester: nextSem };
+    const parts = (schoolYear || '').split('-');
+    const nextSy = parts.length === 2 ? `${parseInt(parts[0], 10) + 1}-${parseInt(parts[1], 10) + 1}` : schoolYear;
+    if (semester === '1st') return { schoolYear, semester: '2nd' };
+    if (semester === '2nd') return { schoolYear, semester: 'Summer' };
+    return { schoolYear: nextSy, semester: '1st' };
   };
+
+  // The next term must exist and have sections before the rollover: students are moved
+  // into those sections, and nobody is left without one.
+  const loadNextTermInfo = useCallback(async (target) => {
+    if (!target?.schoolYear || !target?.semester) return;
+    setNextTermInfo({ loading: true, term: null, sectionCount: 0 });
+    try {
+      const { data: term, error: termErr } = await supabase
+        .from('academic_terms')
+        .select('term_id, school_year, semester')
+        .eq('school_year', target.schoolYear)
+        .eq('semester', target.semester)
+        .maybeSingle();
+      if (termErr) throw termErr;
+
+      const { count, error: secErr } = await supabase
+        .from('sections')
+        .select('section_id', { count: 'exact', head: true })
+        .eq('school_year', target.schoolYear)
+        .eq('semester', target.semester);
+      if (secErr) throw secErr;
+
+      setNextTermInfo({ loading: false, term: term || null, sectionCount: count || 0 });
+    } catch (err) {
+      console.error('Failed to check the next term:', err);
+      setNextTermInfo({ loading: false, term: null, sectionCount: 0, error: err.message });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isWizardOpen && wizardStep === 1) loadNextTermInfo(nextSemester);
+  }, [isWizardOpen, wizardStep, nextSemester, loadNextTermInfo]);
 
   const startRolloverWizard = async () => {
     if (!activeTerm) {
-      setErrorModalMessage('Cannot initiate rollover wizard without an active term.');
-      setIsErrorModalOpen(true);
+      showError('Cannot start the next term without an active term.');
       return;
     }
-    
-    setErrorMsg('');
-    setSuccessMsg('');
+
     setWizardStep(1);
     setConfirmInput('');
-    
-    // Automatically calculate the succeeding term
-    const computedNext = calculateNextTerm(activeTerm);
-    setNextSemester(computedNext);
-    
+    setRolloverSummary(null);
+    setGraceDays(activeTerm.graceDays || DEFAULT_GRACE_DAYS);
+    setNextSemester(calculateNextTerm(activeTerm));
+
     try {
-      // 1. Fetch total active classes for the current term
-      const { data: totalClasses, error: classErr } = await supabase
-        .from('class_records')
-        .select(`
-          class_record_id,
-          status,
-          faculty_id,
-          subjects ( code ),
-          sections ( name )
-        `)
-        .eq('term_id', activeTerm.id)
-        .eq('status', 'active');
-      
-      if (classErr) throw classErr;
+      // Every class of the active term (matched by school year and semester), with how
+      // many enrolled students already have a posted SG.
+      const { data: classStatus, error: statusErr } = await supabase.rpc('get_term_sg_status', {
+        p_school_year: activeTerm.schoolYear,
+        p_semester: activeTerm.semester
+      });
+      if (statusErr) throw statusErr;
 
-      // 2. Fetch posted grades to see if there are missing final submissions
-      const { data: postedGrades, error: gradeErr } = await supabase
-        .from('posted_grades')
-        .select('class_record_id, is_locked')
-        .in('grade_period', ['semestral_grade', 'final']);
-
-      if (gradeErr) throw gradeErr;
-
-      const lockedClassIds = new Set((postedGrades || []).filter(g => g.is_locked).map(g => g.class_record_id));
-      
-      const unposted = (totalClasses || [])
-        .filter(c => !lockedClassIds.has(c.class_record_id))
+      const openClasses = (classStatus || []).filter(c => c.class_status === 'active');
+      const unposted = openClasses
+        .filter(c => c.enrolled_count > 0 && c.sg_posted_count < c.enrolled_count)
         .map(c => ({
           id: c.class_record_id,
-          code: c.subjects?.code || 'N/A',
-          section: c.sections?.name || 'N/A',
+          code: c.subject_code || 'N/A',
+          section: c.section_name || 'N/A',
           facultyId: c.faculty_id,
-          instructor: 'Assigned Faculty',
-          milestone: 'Finals (Draft)'
+          instructor: c.faculty_name || 'Unassigned',
+          progress: `SG ${c.sg_posted_count}/${c.enrolled_count}`
         }));
 
-      // 3. Query unlock requests
-      const { count: pendingUnlocks, error: unlockErr } = await supabase
-        .from('unlock_requests')
+      const { count: pendingCorrections, error: correctionErr } = await supabase
+        .from('remark_override_requests')
         .select('request_id', { count: 'exact', head: true })
         .eq('status', 'pending');
+      if (correctionErr) throw correctionErr;
 
       setAuditResults({
         unpostedClasses: unposted,
-        pendingUnlocks: unlockErr ? 0 : (pendingUnlocks || 0),
-        totalActiveClasses: (totalClasses || []).length
+        pendingCorrections: pendingCorrections || 0,
+        totalActiveClasses: openClasses.length
       });
 
       setIsWizardOpen(true);
     } catch (err) {
-      console.warn('Audit fetch failed, using offline fallback check:', err);
-      // Fallback checklist
-      const mockUnposted = [
-        { id: 'cls-mock-01', code: 'CS301', section: 'BSCS-3A', facultyId: null, instructor: 'Faculty member', milestone: 'Finals (Draft)' }
-      ];
-      setAuditResults({
-        unpostedClasses: mockUnposted,
-        pendingUnlocks: 1,
-        totalActiveClasses: 4
-      });
-      setIsWizardOpen(true);
+      console.error('Pre-rollover check failed:', err);
+      showError('The pre-rollover check could not be completed, so the next term cannot be started yet: ' + err.message);
     }
   };
 
-  const handleSendReminders = async () => {
-    if (!auditResults || !auditResults.unpostedClasses || auditResults.unpostedClasses.length === 0) return;
-    
-    const isOfflineDemo = auditResults.unpostedClasses.some(c => c.id && c.id.toString().startsWith('cls-mock'));
-    if (isOfflineDemo) {
-      setConfirmModalConfig({
-        title: 'Send Reminders?',
-        message: 'Are you sure you want to send grade posting reminders to pending faculty members in offline demo mode?',
-        onConfirm: () => {
-          setIsConfirmModalOpen(false);
-          setSuccessModalMessage('[Offline Demo Mode]\n\nSent a grade posting reminder alert to all pending faculty members successfully.');
-          setIsSuccessModalOpen(true);
-        }
-      });
-      setIsConfirmModalOpen(true);
+  const handleCreateNextTerm = async () => {
+    setIsWorking(true);
+    try {
+      const { error } = await supabase
+        .from('academic_terms')
+        .insert({ school_year: nextSemester.schoolYear, semester: nextSemester.semester, is_active: false });
+      if (error) throw error;
+      await logActivity(
+        'Term Created',
+        `Created AY ${nextSemester.schoolYear} (${nextSemester.semester}) as the next term (not active yet).`,
+        resolveActorName(profile, user)
+      );
+      await loadTerms();
+      await loadNextTermInfo(nextSemester);
+    } catch (err) {
+      showError('Failed to create the next term: ' + err.message);
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
+  const handleSendReminders = () => {
+    const pending = auditResults?.unpostedClasses || [];
+    const byFaculty = pending.reduce((acc, cls) => {
+      if (!cls.facultyId) return acc;
+      (acc[cls.facultyId] ||= []).push(cls);
+      return acc;
+    }, {});
+    const facultyIds = Object.keys(byFaculty);
+    if (facultyIds.length === 0) {
+      showError('No reminders could be sent because the classes without a posted SG have no assigned faculty.');
       return;
     }
 
-    try {
-      const uniqueFacultyIds = [...new Set(auditResults.unpostedClasses.map(c => c.facultyId).filter(Boolean))];
-      if (uniqueFacultyIds.length === 0) {
-        setErrorModalMessage('No reminders could be sent because the unsubmitted classes do not have assigned faculty members in the database.');
-        setIsErrorModalOpen(true);
-        return;
-      }
-
-      setConfirmModalConfig({
-        title: 'Send Reminders?',
-        message: `Are you sure you want to send grade posting reminders to the ${uniqueFacultyIds.length} pending faculty members?`,
-        onConfirm: async () => {
-          setIsConfirmModalOpen(false);
-          try {
-            const inserts = uniqueFacultyIds.map(facultyId => ({
-              recipient_id: facultyId,
-              message: `Academic term rollover warning: Please lock and submit final grades for your active classes (AY ${activeTerm?.schoolYear || ''}).`,
-              type: 'system',
-              title: 'Grade Submission Reminder',
-              severity: 'warning'
-            }));
-
-            await dispatchNotifications(inserts);
-
-            setSuccessModalMessage(`Reminders sent successfully! Dispatched notifications to ${uniqueFacultyIds.length} faculty members.`);
-            setIsSuccessModalOpen(true);
-          } catch (err) {
-            console.error('Failed to send reminders:', err);
-            setErrorModalMessage('Failed to send reminders: ' + err.message);
-            setIsErrorModalOpen(true);
-          }
+    setConfirmModalConfig({
+      title: 'Send Reminders?',
+      message: `Send an SG reminder to the ${facultyIds.length} instructor${facultyIds.length === 1 ? '' : 's'} with classes that have no posted SG yet?`,
+      onConfirm: async () => {
+        setIsConfirmModalOpen(false);
+        try {
+          await dispatchNotifications(facultyIds.map(facultyId => ({
+            recipient_id: facultyId,
+            type: 'term_rollover_reminder',
+            severity: 'warning',
+            link: '/faculty/classrecordslist',
+            message: `Please post the Semestral Grade (SG) for ${byFaculty[facultyId].map(c => `${c.code} (${c.section})`).join(', ')} before AY ${activeTerm.schoolYear} ${activeTerm.semester} ends. After the term ends, an unposted SG is recorded as late.`
+          })));
+          setSuccessModalMessage(`Reminders sent to ${facultyIds.length} instructor${facultyIds.length === 1 ? '' : 's'}.`);
+          setIsSuccessModalOpen(true);
+        } catch (err) {
+          console.error('Failed to send reminders:', err);
+          showError('Failed to send reminders: ' + err.message);
         }
-      });
-      setIsConfirmModalOpen(true);
-    } catch (err) {
-      console.error('Failed to prepare reminders:', err);
-      setErrorModalMessage('Failed to prepare reminders: ' + err.message);
-      setIsErrorModalOpen(true);
-    }
+      }
+    });
+    setIsConfirmModalOpen(true);
   };
 
   const handleExecuteRollover = async () => {
     if (confirmInput !== 'CONFIRM') {
-      setErrorModalMessage('Please type "CONFIRM" exactly to change the semester.');
-      setIsErrorModalOpen(true);
+      showError('Please type "CONFIRM" exactly to start the next term.');
+      return;
+    }
+    const days = Number(graceDays);
+    if (!Number.isInteger(days) || days < 0 || days > 180) {
+      showError('The grace period must be a whole number of days from 0 to 180.');
+      return;
+    }
+    if (!nextTermInfo.term || nextTermInfo.sectionCount === 0) {
+      showError('Create the next term and its sections first.');
       return;
     }
 
+    setIsWorking(true);
     try {
       const targetSy = nextSemester.schoolYear;
       const targetSem = nextSemester.semester;
 
-      // 1. Check if next term already exists in Supabase
-      const { data: existingTerm, error: checkErr } = await supabase
-        .from('academic_terms')
-        .select('term_id')
-        .eq('school_year', targetSy)
-        .eq('semester', targetSem)
-        .maybeSingle();
-
-      if (checkErr) throw checkErr;
-
-      let newTermId = '';
-
-      if (existingTerm) {
-        newTermId = existingTerm.term_id;
-      } else {
-        // Create new term (inactive at first)
-        const { data: newTerm, error: createErr } = await supabase
-          .from('academic_terms')
-          .insert({
-            school_year: targetSy,
-            semester: targetSem,
-            is_active: false
-          })
-          .select('term_id')
-          .single();
-
-        if (createErr) throw createErr;
-        newTermId = newTerm.term_id;
-      }
-
-      // 2. Call the database function perform_semester_transition(old_term_uuid, new_term_uuid)
-      const { error: transitionErr } = await supabase
-        .rpc('perform_semester_transition', {
-          old_term_uuid: activeTerm.id,
-          new_term_uuid: newTermId
-        });
-
+      const { data: summary, error: transitionErr } = await supabase.rpc('perform_semester_transition', {
+        old_term_uuid: activeTerm.id,
+        new_term_uuid: nextTermInfo.term.term_id,
+        p_grace_days: days
+      });
       if (transitionErr) throw transitionErr;
 
-      // 3. Write transition records to the activity_logs table
-      const actorName = resolveActorName(userProfile, user);
-      await supabase.from('activity_logs').insert({
-        action: 'Semester Transition',
-        details: `Transitioned academic term from AY ${activeTerm.schoolYear} (${activeTerm.semester} Sem) to AY ${targetSy} (${targetSem} Sem).`,
-        actor: actorName
-      });
-
-      // Write to audit log helper if present
-      await logActivity('Semester Transition', `Transitioned academic term from AY ${activeTerm.schoolYear} (${activeTerm.semester} Sem) to AY ${targetSy} (${targetSem} Sem). All old classrooms archived.`, actorName);
+      const actorName = resolveActorName(profile, user);
+      await logActivity(
+        'Semester Transition',
+        `Started AY ${targetSy} (${targetSem}) after AY ${activeTerm.schoolYear} (${activeTerm.semester}). ` +
+          `Students moved: ${summary?.students_moved ?? 0}; kept in their section: ${summary?.students_kept ?? 0}. ` +
+          `Classes archived: ${summary?.classes_archived ?? 0}; open until SG is posted: ${summary?.classes_pending_sg ?? 0} (grace ${days} days).`,
+        actorName
+      );
 
       await notifyAdminActivity({
         type: 'system',
@@ -314,7 +272,6 @@ export default function TermManagement() {
         actorName
       });
 
-      // Notify all active Faculty and Deans of the term activation
       await notifyTermActivated({
         termName: `${targetSem} Semester`,
         schoolYear: targetSy,
@@ -322,57 +279,31 @@ export default function TermManagement() {
         actorName
       });
 
+      setRolloverSummary(summary || {});
       setWizardStep(3);
     } catch (err) {
-      console.warn('Failed to run transition transaction on database. Executing in local cache only:', err);
-      
-      // Local fallback logic
-      const targetSy = nextSemester.schoolYear;
-      const targetSem = nextSemester.semester;
-      
-      const newTerms = terms.map(t => {
-        if (t.isActive) {
-          return { ...t, isActive: false };
-        }
-        return t;
-      });
-      
-      newTerms.unshift({
-        id: 'mock-new-term-' + Date.now(),
-        schoolYear: targetSy,
-        semester: targetSem,
-        isActive: true,
-        isEvaluationOpen: false,
-        created_at: new Date().toISOString()
-      });
-      
-      setTerms(newTerms);
-      localStorage.setItem('sage_cached_terms', JSON.stringify(newTerms));
-      
-      // Save logs
-      const actorName = resolveActorName(userProfile, user);
-      logActivity('Semester Transition', `[Offline Fallback] Transitioned academic term to AY ${targetSy} (${targetSem} Sem).`, actorName);
-      
-      setWizardStep(3);
-      setSuccessModalMessage('Database transaction skipped. Transitioned successfully in local offline state.');
-      setIsSuccessModalOpen(true);
+      console.error('Semester transition failed:', err);
+      showError('The next term was not started. Nothing was changed. ' + err.message);
+    } finally {
+      setIsWorking(false);
     }
   };
 
+  const nextTermReady = Boolean(nextTermInfo.term) && nextTermInfo.sectionCount > 0;
 
   return (
     <>
       <PageHeader title="School Term & Semester Transition" breadcrumb="Admin Portal" />
 
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
-        
+
         {/* Info Box */}
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-3 shadow-sm">
           <Database className="h-5 w-5 text-sage-600 mt-0.5 flex-shrink-0" />
           <div>
             <h4 className="font-bold text-sm text-slate-900 font-display">Central Academic Term Registry</h4>
             <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-              SAGE utilizes a centralized state manager for school semesters. Transitions strictly follow the academic progression: <strong>1st Semester &rarr; 2nd Semester &rarr; Summer</strong>, followed by auto-incrementing to the next School Year.
+              Transitions follow the academic progression: <strong>1st Semester &rarr; 2nd Semester &rarr; Summer</strong>, then the next School Year. Before starting the next term, create it here and add its sections in Sections. Classes without a posted SG stay open after the rollover for the grace period, and are then marked overdue.
             </p>
           </div>
         </div>
@@ -421,9 +352,10 @@ export default function TermManagement() {
                 <div className="text-xs font-bold text-amber-750 mt-0.5">Audit Checklist Enabled</div>
               </div>
             </div>
-            <button 
+            <button
               onClick={startRolloverWizard}
-              className="mt-4 w-full py-2 px-4 text-xs font-bold bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer hover:shadow"
+              disabled={!activeTerm}
+              className="mt-4 w-full py-2 px-4 text-xs font-bold bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer hover:shadow"
             >
               <RefreshCw className="h-3.5 w-3.5" /> Start Next Semester
             </button>
@@ -433,12 +365,6 @@ export default function TermManagement() {
         {errorMsg && (
           <div className="bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-lg text-xs font-bold flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-rose-650" /> {errorMsg}
-          </div>
-        )}
-
-        {successMsg && (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 p-4 rounded-lg text-xs font-bold flex items-center gap-2">
-            <CheckCircle className="h-4 w-4 text-emerald-650" /> {successMsg}
           </div>
         )}
 
@@ -455,7 +381,7 @@ export default function TermManagement() {
                   AY {t.schoolYear} — {t.semester} Sem
                 </h4>
                 <p className="text-[11px] text-slate-400 font-mono">
-                  Created {new Date(t.created_at).toLocaleDateString()}
+                  {t.endedAt ? `Ended ${formatDate(t.endedAt)} · SG grace ${t.graceDays} days` : `Created ${formatDate(t.created_at)}`}
                 </p>
               </div>
 
@@ -464,9 +390,13 @@ export default function TermManagement() {
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                     Active Term
                   </span>
-                ) : (
+                ) : t.endedAt ? (
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                    Archived
+                    Ended
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                    Next / Not started
                   </span>
                 )}
               </div>
@@ -481,12 +411,14 @@ export default function TermManagement() {
               <Calendar className="h-4 w-4 text-sage-600" /> Academic Term History
             </h3>
           </div>
-          
+
           <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
             <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-bold">
               <tr>
                 <th className="px-6 py-3">Academic Period</th>
                 <th className="px-6 py-3">Created Date</th>
+                <th className="px-6 py-3">Ended</th>
+                <th className="px-6 py-3">SG Grace Period</th>
                 <th className="px-6 py-3 text-center">Status</th>
               </tr>
             </thead>
@@ -497,16 +429,26 @@ export default function TermManagement() {
                     AY {t.schoolYear} — {t.semester} Sem
                   </td>
                   <td className="px-6 py-4 text-slate-500">
-                    {new Date(t.created_at).toLocaleDateString()}
+                    {formatDate(t.created_at)}
+                  </td>
+                  <td className="px-6 py-4 text-slate-500">
+                    {formatDate(t.endedAt)}
+                  </td>
+                  <td className="px-6 py-4 text-slate-500 font-mono">
+                    {t.endedAt ? `${t.graceDays} days` : '—'}
                   </td>
                   <td className="px-6 py-4 text-center">
                     {t.isActive ? (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
                         Active System Term
                       </span>
-                    ) : (
+                    ) : t.endedAt ? (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-555 border border-slate-200">
-                        Archived Sem
+                        Ended
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                        Next / Not started
                       </span>
                     )}
                   </td>
@@ -521,7 +463,7 @@ export default function TermManagement() {
       {isWizardOpen && (
         <div className="fixed inset-0 z-55 bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center sm:p-4">
           <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 max-w-xl w-full shadow-2xl flex flex-col overflow-hidden max-h-[90vh] animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
-            
+
             {/* Mobile grab handle */}
             <div className="sm:hidden pt-3 pb-1 flex justify-center">
               <div className="w-10 h-1.25 bg-slate-300 rounded-full" />
@@ -532,7 +474,7 @@ export default function TermManagement() {
               <h3 className="text-sm sm:text-base font-bold font-display text-slate-900 flex items-center gap-2">
                 <RefreshCw className="h-4 w-4 sm:h-5 sm:w-5 text-sage-600" /> New Semester Setup Assistant
               </h3>
-              <button 
+              <button
                 onClick={() => setIsWizardOpen(false)}
                 className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-900 transition-colors cursor-pointer"
               >
@@ -540,31 +482,28 @@ export default function TermManagement() {
               </button>
             </div>
 
-            {/* Step 1: Pre-Rollover Audit Checklist */}
+            {/* Step 1: Pre-Rollover Check */}
             {wizardStep === 1 && activeTerm && (
-              <div className="p-6 space-y-4">
+              <div className="p-6 space-y-4 overflow-y-auto">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-bold text-slate-800">Step 1: Check Grading Status</h4>
-                  <div className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">Active Term: AY {activeTerm.schoolYear}</div>
+                  <div className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">Active Term: AY {activeTerm.schoolYear} · {activeTerm.semester}</div>
                 </div>
-                <p className="text-xs text-slate-500">
-                  Scanning classrooms for academic standing. All classrooms from the current term must be finalized to prevent grade conflicts.
-                </p>
 
                 <div className="border border-slate-200 rounded-lg p-4 bg-slate-50 space-y-3">
                   <div className="flex items-center justify-between text-xs font-bold border-b border-slate-200 pb-2">
                     <span className="text-slate-600">Metric Checked</span>
                     <span>Result</span>
                   </div>
-                  
+
                   <div className="flex items-center justify-between text-xs font-medium">
-                    <span className="text-slate-500">Total Active Classrooms Analyzed:</span>
+                    <span className="text-slate-500">Open classes in the active term:</span>
                     <span className="font-mono text-slate-800 font-bold">{auditResults?.totalActiveClasses} Classes</span>
                   </div>
 
                   <div className="flex items-center justify-between text-xs font-medium">
-                    <span className="text-slate-500">Pending Dean Grade Override Requests:</span>
-                    <span className="font-mono text-slate-800 font-bold">{auditResults?.pendingUnlocks} Requests</span>
+                    <span className="text-slate-500">SG correction requests waiting for the Dean:</span>
+                    <span className="font-mono text-slate-800 font-bold">{auditResults?.pendingCorrections} Requests</span>
                   </div>
                 </div>
 
@@ -573,18 +512,18 @@ export default function TermManagement() {
                     <div className="flex items-start gap-2 text-xs font-bold text-amber-900">
                       <AlertTriangle className="h-4.5 w-4.5 text-amber-600 flex-shrink-0" />
                       <div>
-                        <span>Warning: Pending Grades Found</span>
+                        <span>{auditResults.unpostedClasses.length} class{auditResults.unpostedClasses.length === 1 ? '' : 'es'} without a posted SG</span>
                         <p className="font-normal text-[11px] text-slate-650 mt-1">
-                          The following class registers have unsubmitted/draft grades. If you proceed with this transition, these will be archived and flagged as <strong>"Late Submissions"</strong> on the Dean's dashboard.
+                          These classes stay open after the rollover so their instructors can post the SG. An SG posted within the grace period is recorded as <strong>Late</strong>; after it, as <strong>Late (overdue)</strong>, and the Dean sees the class as Overdue. No grade is posted for the instructor.
                         </p>
                       </div>
                     </div>
-                    
-                    <div className="max-h-24 overflow-y-auto border-t border-amber-200/60 pt-2 text-[10px] space-y-1 font-mono text-slate-700">
-                      {auditResults.unpostedClasses.map((cls, idx) => (
-                        <div key={idx} className="flex justify-between">
-                          <span>{cls.code} - {cls.section}</span>
-                          <span className="font-bold text-amber-700">{cls.milestone}</span>
+
+                    <div className="max-h-32 overflow-y-auto border-t border-amber-200/60 pt-2 text-[10px] space-y-1 font-mono text-slate-700">
+                      {auditResults.unpostedClasses.map((cls) => (
+                        <div key={cls.id} className="flex justify-between gap-2">
+                          <span className="truncate">{cls.code} - {cls.section} · {cls.instructor}</span>
+                          <span className="font-bold text-amber-700 shrink-0">{cls.progress}</span>
                         </div>
                       ))}
                     </div>
@@ -594,23 +533,23 @@ export default function TermManagement() {
                         onClick={handleSendReminders}
                         className="px-2.5 py-1 text-[10px] font-bold text-amber-900 hover:text-white bg-amber-100 hover:bg-amber-600 rounded border border-amber-300 transition-colors"
                       >
-                        Send Reminder to All Pending Faculty
+                        Send SG Reminder to These Instructors
                       </button>
                     </div>
                   </div>
                 ) : (
                   <div className="bg-emerald-50 border border-emerald-250 p-3 rounded-lg flex items-center gap-2 text-xs font-bold text-emerald-800">
                     <CheckCircle className="h-5 w-5 text-emerald-650" />
-                    Checklist Passed: All classroom records are locked and finalized.
+                    Every class with enrolled students has its SG posted.
                   </div>
                 )}
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Target Destination Semester</label>
-                  
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Next Term</label>
+
                   {activeTerm.semester === '2nd' ? (
                     <div className="space-y-2">
-                      <label 
+                      <label
                         onClick={() => setNextSemester({ schoolYear: activeTerm.schoolYear, semester: 'Summer' })}
                         className={cn(
                           "p-3 rounded-lg border flex items-center justify-between cursor-pointer transition-all text-xs",
@@ -620,12 +559,12 @@ export default function TermManagement() {
                         )}
                       >
                         <div className="flex items-center gap-2">
-                          <input 
-                            type="radio" 
-                            name="targetSemChoice" 
-                            checked={nextSemester.semester === 'Summer'} 
+                          <input
+                            type="radio"
+                            name="targetSemChoice"
+                            checked={nextSemester.semester === 'Summer'}
                             onChange={() => setNextSemester({ schoolYear: activeTerm.schoolYear, semester: 'Summer' })}
-                            className="text-sage-600 focus:ring-sage-500" 
+                            className="text-sage-600 focus:ring-sage-500"
                           />
                           <span>AY {activeTerm.schoolYear} &mdash; Summer Term (Mid-Year / OJT / Remedials)</span>
                         </div>
@@ -633,11 +572,10 @@ export default function TermManagement() {
                       </label>
 
                       {(() => {
-                        const parts = (activeTerm.schoolYear || '2025-2026').split('-');
-                        const nextSyStr = parts.length === 2 ? `${parseInt(parts[0], 10) + 1}-${parseInt(parts[1], 10) + 1}` : '2026-2027';
+                        const nextSy = calculateNextTerm({ schoolYear: activeTerm.schoolYear, semester: 'Summer' }).schoolYear;
                         return (
-                          <label 
-                            onClick={() => setNextSemester({ schoolYear: nextSyStr, semester: '1st' })}
+                          <label
+                            onClick={() => setNextSemester({ schoolYear: nextSy, semester: '1st' })}
                             className={cn(
                               "p-3 rounded-lg border flex items-center justify-between cursor-pointer transition-all text-xs",
                               nextSemester.semester === '1st'
@@ -646,14 +584,14 @@ export default function TermManagement() {
                             )}
                           >
                             <div className="flex items-center gap-2">
-                              <input 
-                                type="radio" 
-                                name="targetSemChoice" 
-                                checked={nextSemester.semester === '1st'} 
-                                onChange={() => setNextSemester({ schoolYear: nextSyStr, semester: '1st' })}
-                                className="text-sage-600 focus:ring-sage-500" 
+                              <input
+                                type="radio"
+                                name="targetSemChoice"
+                                checked={nextSemester.semester === '1st'}
+                                onChange={() => setNextSemester({ schoolYear: nextSy, semester: '1st' })}
+                                className="text-sage-600 focus:ring-sage-500"
                               />
-                              <span>AY {nextSyStr} &mdash; 1st Semester (New School Year & Cohort Promotion)</span>
+                              <span>AY {nextSy} &mdash; 1st Semester (New School Year)</span>
                             </div>
                             <span className="text-[10px] text-emerald-700 font-mono font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">+1 Year Level</span>
                           </label>
@@ -666,18 +604,49 @@ export default function TermManagement() {
                       <span className="text-[10px] font-bold text-sage-650 bg-sage-50 px-2 py-0.5 rounded border border-sage-200 uppercase tracking-wider font-mono">Auto-Calculated</span>
                     </div>
                   )}
+
+                  {/* Next term readiness: the term and its sections must exist first */}
+                  {nextTermInfo.loading ? (
+                    <div className="text-[11px] text-slate-500">Checking the next term…</div>
+                  ) : nextTermInfo.error ? (
+                    <div className="text-[11px] text-rose-700">Could not check the next term: {nextTermInfo.error}</div>
+                  ) : !nextTermInfo.term ? (
+                    <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg text-[11px] text-blue-900 space-y-2">
+                      <p>AY {nextSemester.schoolYear} ({nextSemester.semester}) does not exist yet. Create it first (it stays inactive), then add its sections in Sections.</p>
+                      <button
+                        onClick={handleCreateNextTerm}
+                        disabled={isWorking}
+                        className="px-2.5 py-1 text-[11px] font-bold bg-white hover:bg-blue-100 text-blue-800 border border-blue-300 rounded flex items-center gap-1 disabled:opacity-50"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Create AY {nextSemester.schoolYear} ({nextSemester.semester})
+                      </button>
+                    </div>
+                  ) : nextTermInfo.sectionCount === 0 ? (
+                    <div className="bg-rose-50 border border-rose-200 p-3 rounded-lg text-[11px] text-rose-900 space-y-2">
+                      <p>The next term has <strong>no sections</strong> yet. Students are moved into next-term sections during the rollover, so create them first (Sections → Add Section → Academic Term: AY {nextSemester.schoolYear} {nextSemester.semester}).</p>
+                      <Link to="/admin/sectionlist" className="inline-flex items-center gap-1 font-bold text-rose-800 underline">
+                        <Layers className="h-3.5 w-3.5" /> Go to Sections
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-lg text-[11px] text-emerald-900 flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-emerald-650 shrink-0" />
+                      <span>The next term exists with <strong className="font-mono">{nextTermInfo.sectionCount}</strong> section{nextTermInfo.sectionCount === 1 ? '' : 's'}.</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
-                  <button 
+                  <button
                     onClick={() => setIsWizardOpen(false)}
                     className="px-4 py-2 border border-slate-200 text-slate-755 hover:bg-slate-100 rounded-lg text-sm font-medium transition-all"
                   >
                     Cancel
                   </button>
-                  <button 
+                  <button
                     onClick={() => setWizardStep(2)}
-                    className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 shadow-sm"
+                    disabled={!nextTermReady}
+                    className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 shadow-sm"
                   >
                     Next Step <ArrowRight className="h-4 w-4" />
                   </button>
@@ -687,29 +656,45 @@ export default function TermManagement() {
 
             {/* Step 2: Confirmation */}
             {wizardStep === 2 && activeTerm && (
-              <div className="p-6 space-y-4">
+              <div className="p-6 space-y-4 overflow-y-auto">
                 <h4 className="text-sm font-bold text-slate-800">Step 2: Confirm Semester Transition</h4>
-                
+
                 <div className="bg-rose-50 border border-rose-255 p-4 rounded-lg text-xs space-y-2">
                   <div className="font-bold text-rose-900 flex items-center gap-1.5">
-                    <ShieldAlert className="h-4.5 w-4.5 text-rose-650" /> Critical Warnings
+                    <ShieldAlert className="h-4.5 w-4.5 text-rose-650" /> What will happen
                   </div>
                   <ul className="list-disc pl-4 space-y-1 text-slate-655 leading-relaxed text-[11px]">
-                    <li>All currently active classrooms in <strong>AY {activeTerm.schoolYear} ({activeTerm.semester} Sem)</strong> will be set to <strong>Archived</strong>.</li>
-                    {nextSemester.semester === '1st' && (
-                      <li className="font-bold text-rose-700">Students will be promoted to their next corresponding year levels (e.g. 1st Year &rarr; 2nd Year).</li>
-                    )}
-                    <li>Faculty can still submit outstanding grades for the archived semester, but they will be dynamically flagged as "Late Submissions".</li>
+                    <li>AY {nextSemester.schoolYear} ({nextSemester.semester}) becomes the active term.</li>
+                    <li>Each student moves to the matching section of the next term in the same college{nextSemester.semester === '1st' ? ' (next year number, e.g. BSIT-1A → BSIT-2A, and the year level goes up by one)' : ' (same section name)'}. A student with no matching section keeps the current section and year level.</li>
+                    <li>Classes of AY {activeTerm.schoolYear} ({activeTerm.semester}) whose SG is posted are <strong>archived</strong> (view only).</li>
+                    <li>Classes without a posted SG stay open until the instructor posts it: <strong>Pending</strong> during the grace period, then <strong>Overdue</strong>.</li>
                     <li>This semester transition cannot be undone.</li>
                   </ul>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="grace-days" className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                    SG grace period (days)
+                  </label>
+                  <input
+                    id="grace-days"
+                    type="number"
+                    min={0}
+                    max={180}
+                    step={1}
+                    value={graceDays}
+                    onChange={(e) => setGraceDays(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="block w-32 px-3 py-2 border border-slate-200 focus:border-sage-500 rounded-lg text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500"
+                  />
+                  <p className="text-[11px] text-slate-500">After this many days, an SG still not posted for AY {activeTerm.schoolYear} ({activeTerm.semester}) is shown as Overdue.</p>
                 </div>
 
                 <div className="flex flex-col gap-2">
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
                     Type <code className="font-mono text-rose-700 bg-rose-50 px-1 py-0.5 rounded border border-rose-200">CONFIRM</code> to authorize
                   </label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={confirmInput}
                     onChange={(e) => setConfirmInput(e.target.value)}
                     className="block w-full px-3.5 py-2.5 border border-slate-200 focus:border-rose-500 rounded-lg text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-rose-500"
@@ -718,39 +703,47 @@ export default function TermManagement() {
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
-                  <button 
+                  <button
                     onClick={() => setWizardStep(1)}
                     className="px-4 py-2 border border-slate-200 text-slate-755 hover:bg-slate-100 rounded-lg text-sm font-medium transition-all"
                   >
                     Back
                   </button>
-                  <button 
+                  <button
                     onClick={handleExecuteRollover}
-                    disabled={confirmInput !== 'CONFIRM'}
+                    disabled={confirmInput !== 'CONFIRM' || isWorking}
                     className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-250 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 shadow-sm"
                   >
-                    <Check className="h-4 w-4" /> Confirm & Start Next Semester
+                    <Check className="h-4 w-4" /> {isWorking ? 'Starting…' : 'Confirm & Start Next Semester'}
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Step 3: Success Screen */}
+            {/* Step 3: Done */}
             {wizardStep === 3 && (
               <div className="p-8 text-center space-y-4">
-                <div className="w-12 h-12 bg-emerald-50 border border-emerald-200 rounded-full flex items-center justify-center mx-auto text-emerald-650 animate-bounce">
+                <div className="w-12 h-12 bg-emerald-50 border border-emerald-200 rounded-full flex items-center justify-center mx-auto text-emerald-650">
                   <Check className="h-6 w-6" />
                 </div>
-                
+
                 <div>
                   <h3 className="text-base font-bold text-slate-900 font-display">Semester Transition Completed</h3>
-                  <p className="text-xs text-slate-550 mt-1 leading-relaxed max-w-sm mx-auto">
-                    The active system term has transitioned. Old classes have been archived, and student registries are updated.
-                  </p>
+                  <ul className="text-xs text-slate-600 mt-2 leading-relaxed max-w-sm mx-auto text-left list-disc pl-5 space-y-0.5">
+                    <li>Students moved to next-term sections: <strong className="font-mono">{rolloverSummary?.students_moved ?? 0}</strong></li>
+                    <li>Students kept in their section (no matching section): <strong className="font-mono">{rolloverSummary?.students_kept ?? 0}</strong></li>
+                    <li>Classes archived (SG posted): <strong className="font-mono">{rolloverSummary?.classes_archived ?? 0}</strong></li>
+                    <li>Classes open until their SG is posted: <strong className="font-mono">{rolloverSummary?.classes_pending_sg ?? 0}</strong> (grace {rolloverSummary?.grace_days ?? graceDays} days)</li>
+                  </ul>
+                  {(rolloverSummary?.students_kept ?? 0) > 0 && (
+                    <p className="text-[11px] text-amber-700 mt-2 max-w-sm mx-auto">
+                      Students kept in their section need a next-term section: assign them in Manage Users or with the import (update mode).
+                    </p>
+                  )}
                 </div>
 
                 <div className="pt-4 max-w-xs mx-auto">
-                  <button 
+                  <button
                     onClick={() => {
                       setIsWizardOpen(false);
                       loadTerms();

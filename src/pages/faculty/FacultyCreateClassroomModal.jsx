@@ -152,12 +152,14 @@ export default function FacultyCreateClassroomModal({ isOpen, onClose, onSuccess
 
   // Filter sections based on department, program abbreviation, and year level
   const filteredSections = useMemo(() => {
-    let list = sections;
+    // Classrooms are created for the active term only (admin setup audit 2026-10-11: H4).
+    let list = activeTerm
+      ? sections.filter(sec => sec.school_year === activeTerm.school_year && sec.semester === activeTerm.semester)
+      : [];
 
-    // 1. Department Scope
+    // 1. Department Scope: only the instructor's own college (no fallback to other colleges).
     if (profile?.department_id) {
-      const deptSecs = list.filter(sec => sec.department_id === profile.department_id);
-      if (deptSecs.length > 0) list = deptSecs;
+      list = list.filter(sec => sec.department_id === profile.department_id);
     }
 
     // 2. Program Abbreviation Filter (e.g. "ACT", "BSCS", "BSIT", "BSME")
@@ -188,7 +190,7 @@ export default function FacultyCreateClassroomModal({ isOpen, onClose, onSuccess
     }
 
     return list;
-  }, [sections, profile, activeProgramAbbr, selectedYearFilter]);
+  }, [sections, activeTerm, profile, activeProgramAbbr, selectedYearFilter]);
 
   // Filter subjects based on department, program, and year level filters
   const filteredSubjects = useMemo(() => {
@@ -508,7 +510,7 @@ export default function FacultyCreateClassroomModal({ isOpen, onClose, onSuccess
                         onChange={e => handleEntryChange(entry.id, 'sectionId', e.target.value)}
                         className="w-full border border-slate-200 px-3 py-2 rounded-lg text-xs bg-white outline-none focus:border-sage-600 font-medium font-mono"
                       >
-                        <option value="" disabled>Select Block Section</option>
+                        <option value="" disabled>{filteredSections.length ? 'Select Block Section' : 'No sections for the active term'}</option>
                         {filteredSections.map(sec => (
                           <option key={sec.section_id} value={sec.section_id}>
                             {sec.name}

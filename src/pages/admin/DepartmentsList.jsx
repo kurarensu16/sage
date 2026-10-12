@@ -128,24 +128,13 @@ export default function DepartmentsList() {
 
         if (deptErr) throw deptErr;
 
-        // 2. Update deans relations
-        // If a new dean was selected, update their department_id. Remove department_id from other deans of this department.
-        if (selectedDeanId) {
-          // Reset other deans in this department
-          await supabase
-            .from('users')
-            .update({ department_id: null })
-            .eq('role', 'dean')
-            .eq('department_id', targetDeptId);
-
-          // Link new dean
-          const { error: deanErr } = await supabase
-            .from('users')
-            .update({ department_id: targetDeptId })
-            .eq('user_id', selectedDeanId);
-
-          if (deanErr) throw deanErr;
-        }
+        // 2. Dean: one database transaction unassigns the previous dean and links the
+        // chosen one. "No Dean" (empty) unassigns the current dean.
+        const { error: deanErr } = await supabase.rpc('assign_department_dean', {
+          p_department_id: targetDeptId,
+          p_dean_id: selectedDeanId || null
+        });
+        if (deanErr) throw deanErr;
 
         await logActivity(
           'Department Update',
@@ -172,10 +161,10 @@ export default function DepartmentsList() {
 
         // Link Dean if selected
         if (selectedDeanId) {
-          const { error: deanErr } = await supabase
-            .from('users')
-            .update({ department_id: targetDeptId })
-            .eq('user_id', selectedDeanId);
+          const { error: deanErr } = await supabase.rpc('assign_department_dean', {
+            p_department_id: targetDeptId,
+            p_dean_id: selectedDeanId
+          });
 
           if (deanErr) throw deanErr;
         }

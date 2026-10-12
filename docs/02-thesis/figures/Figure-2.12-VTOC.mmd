@@ -1,0 +1,72 @@
+flowchart TB
+%% ===== Figure 2.12 — ASPIRE Visual Table of Contents (VTOC) — updated 2026-10-10 =====
+%% Labels follow the live sidebar: AI Study Tutor, Preview & Post Grades, My Class Records,
+%% Evaluate / Evaluated Students, Performance Reports, Import Users (CSV/Excel),
+%% Sections and Departments & Programs as separate screens.
+
+  ROOT["<b>0.0&nbsp;&nbsp;ASPIRE</b><br/>Academic Support and Performance Advising<br/>with Intervention, Risk, and Evaluation"]
+
+  ROOT --- A
+  ROOT --- S
+  ROOT --- F
+  ROOT --- D
+  ROOT --- M
+
+  subgraph A["<b>1.0&nbsp;&nbsp;Shared / Authentication</b>"]
+    direction TB
+    A1["<b>1.1&nbsp;&nbsp;Role-Based Login</b>"]
+    A2["<b>1.2&nbsp;&nbsp;First Login / Change Password</b>"]
+    A3["<b>1.3&nbsp;&nbsp;Forgot and Reset Password</b>"]
+    A1 ~~~ A2 ~~~ A3
+  end
+
+  subgraph S["<b>2.0&nbsp;&nbsp;Student Portal</b>"]
+    direction TB
+    S1["<b>2.1&nbsp;&nbsp;Dashboard</b>"]
+    S2["<b>2.2&nbsp;&nbsp;My Grades</b><br/>2.2.1&nbsp; My Subjects<br/>2.2.2&nbsp; Grade Report<br/>2.2.3&nbsp; Score Breakdown"]
+    S3["<b>2.3&nbsp;&nbsp;My Attendance</b><br/>2.3.1&nbsp; Attendance and Warnings"]
+    S4["<b>2.4&nbsp;&nbsp;Academic Support</b><br/>2.4.1&nbsp; Advisories and Study Plans<br/>2.4.2&nbsp; AI Study Tutor"]
+    S5["<b>2.5&nbsp;&nbsp;Consultations</b><br/>2.5.1&nbsp; Request a Consultation"]
+    S6["<b>2.6&nbsp;&nbsp;Account</b><br/>2.6.1&nbsp; Profile, Password, Notifications"]
+    S1 ~~~ S2 ~~~ S3 ~~~ S4 ~~~ S5 ~~~ S6
+  end
+
+  subgraph F["<b>3.0&nbsp;&nbsp;Faculty Portal</b>"]
+    direction TB
+    F1["<b>3.1&nbsp;&nbsp;Dashboard</b>"]
+    F2["<b>3.2&nbsp;&nbsp;Grades</b><br/>3.2.1&nbsp; Log Class Scores<br/>3.2.2&nbsp; Preview & Post Grades"]
+    F3["<b>3.3&nbsp;&nbsp;Classes</b><br/>3.3.1&nbsp; My Class Records<br/>3.3.2&nbsp; Create Classrooms<br/>3.3.3&nbsp; Enrollment Requests"]
+    F4["<b>3.4&nbsp;&nbsp;Student Risk</b><br/>3.4.1&nbsp; Evaluate Students<br/>3.4.2&nbsp; Evaluated Students"]
+    F5["<b>3.5&nbsp;&nbsp;Attendance</b><br/>3.5.1&nbsp; Attendance Monitoring"]
+    F6["<b>3.6&nbsp;&nbsp;Performance Reports</b><br/>3.6.1&nbsp; Class Performance<br/>3.6.2&nbsp; Performance Comparison"]
+    F7["<b>3.7&nbsp;&nbsp;Consultations</b><br/>3.7.1&nbsp; Consultation Requests"]
+    F8["<b>3.8&nbsp;&nbsp;Account</b><br/>3.8.1&nbsp; Profile, Password, Notifications"]
+    F1 ~~~ F2 ~~~ F3 ~~~ F4 ~~~ F5 ~~~ F6 ~~~ F7 ~~~ F8
+  end
+
+  subgraph D["<b>4.0&nbsp;&nbsp;Dean Portal</b>"]
+    direction TB
+    D1["<b>4.1&nbsp;&nbsp;Dashboard</b>"]
+    D2["<b>4.2&nbsp;&nbsp;Grades</b><br/>4.2.1&nbsp; Grade Submission Status<br/>4.2.2&nbsp; Grade Corrections<br/>4.2.3&nbsp; Grade Distribution"]
+    D3["<b>4.3&nbsp;&nbsp;Student Risk</b><br/>4.3.1&nbsp; Risk and Honors Overview<br/>4.3.2&nbsp; Escalated Cases<br/>4.3.3&nbsp; Intervention Results"]
+    D4["<b>4.4&nbsp;&nbsp;Reports</b><br/>4.4.1&nbsp; Generate Reports"]
+    D5["<b>4.5&nbsp;&nbsp;Account</b><br/>4.5.1&nbsp; Profile, Password, Notifications"]
+    D1 ~~~ D2 ~~~ D3 ~~~ D4 ~~~ D5
+  end
+
+  subgraph M["<b>5.0&nbsp;&nbsp;Admin Portal</b>"]
+    direction TB
+    M1["<b>5.1&nbsp;&nbsp;Dashboard</b>"]
+    M2["<b>5.2&nbsp;&nbsp;User Accounts</b><br/>5.2.1&nbsp; Manage Users<br/>5.2.2&nbsp; Import Users (CSV/Excel)"]
+    M3["<b>5.3&nbsp;&nbsp;Academic Setup</b><br/>5.3.1&nbsp; Subjects<br/>5.3.2&nbsp; Grading Formulas<br/>5.3.3&nbsp; Sections<br/>5.3.4&nbsp; Departments and Programs<br/>5.3.5&nbsp; Classrooms"]
+    M4["<b>5.4&nbsp;&nbsp;System</b><br/>5.4.1&nbsp; Activity Logs<br/>5.4.2&nbsp; Term Settings<br/>5.4.3&nbsp; Grade Override"]
+    M5["<b>5.5&nbsp;&nbsp;Account</b><br/>5.5.1&nbsp; Profile, Password, Notifications"]
+    M1 ~~~ M2 ~~~ M3 ~~~ M4 ~~~ M5
+  end
+
+  %% ================= STYLING =================
+  classDef root   fill:#D4D4D4,stroke:#9A9A9A,stroke-width:1.2px,color:#000000;
+  classDef module fill:#EFEFEF,stroke:#BBBBBB,stroke-width:1px,color:#000000;
+
+  class ROOT root;
+  class A1,A2,A3,S1,S2,S3,S4,S5,S6,F1,F2,F3,F4,F5,F6,F7,F8,D1,D2,D3,D4,D5,M1,M2,M3,M4,M5 module;

@@ -21,7 +21,8 @@ async function invokeAdvisor(body) {
   }
 
   return {
-    message: sanitizeMessage(response.message),
+    // Matches the invoke-advisor reply cap so list-style answers are not cut off.
+    message: sanitizeMessage(response.message, 1600),
     actions: Array.isArray(response.actions)
       ? response.actions.map(action => sanitizeMessage(action, 240)).filter(Boolean).slice(0, 3)
       : [],
@@ -44,8 +45,10 @@ export async function getAiAcademicInsight(promptPayload) {
     });
     return result.message;
   } catch (error) {
-    console.warn('Ask ASPIRE insight generation failed; using deterministic fallback.', error);
-    return getDeterministicFallback(promptPayload, 'insight');
+    // Return nothing so no placeholder is saved as the student's insight; with no
+    // saved insight, the AI Study Tutor tries again automatically on the next visit.
+    console.warn('Ask ASPIRE insight generation failed; nothing saved, will retry on next visit.', error);
+    return null;
   }
 }
 
@@ -59,18 +62,17 @@ export function getBoundedAdvisorResponse(question, context) {
   return null;
 }
 
-function getDeterministicFallback(context, mode = 'chat') {
-  if (mode === 'chat') {
-    return 'I am currently unable to process complex requests. Please check your official grades directly or try again later.';
-  }
-
-  const advisor = context?.deterministicAdvisor;
-  if (!advisor) {
-    return 'Ask ASPIRE is temporarily unavailable. The available course records do not provide enough information to confirm that.';
-  }
-
-  const firstAction = advisor.actions?.[0]?.description;
-  return [advisor.summary, firstAction].filter(Boolean).join(' ') || advisor.headline;
+// Chat fallback: answer from the same student-visible evidence shown in the panel,
+// so the student still gets real records while the AI models are busy.
+function getDeterministicFallback(context) {
+  const evidence = (Array.isArray(context?.evidence) ? context.evidence : [])
+    .filter(item => item?.label && item?.value)
+    .slice(0, 4);
+  const intro = 'Ask ASPIRE\'s AI is busy right now, so here is a summary of your records:';
+  const outro = 'Please try your question again in a minute for a full explanation.';
+  return evidence.length > 0
+    ? `${intro}\n\n${evidence.map((item, index) => `${index + 1}. ${item.label}: ${item.value}`).join('\n')}\n\n${outro}`
+    : `Ask ASPIRE's AI is busy right now. ${outro}`;
 }
 
 export async function getAskAspireResponse({ question, context, history = [] }) {
@@ -92,6 +94,6 @@ export async function getAskAspireResponse({ question, context, history = [] }) 
     return result.message;
   } catch (error) {
     console.warn('Ask ASPIRE server response failed; using deterministic fallback.', error);
-    return getDeterministicFallback(context, 'chat');
+    return getDeterministicFallback(context);
   }
 }

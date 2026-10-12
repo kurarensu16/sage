@@ -80,7 +80,7 @@ export default function Notifications() {
             iconColor = 'text-amber-600 bg-amber-50 border-amber-200';
           } else if (n.type === 'ai_recommendation') {
             type = 'ai';
-            title = 'AI Counseling Verdict Ready';
+            title = 'AI Study Tutor Insight Ready';
             icon = BrainCircuit;
             iconColor = 'text-purple-600 bg-purple-50 border-purple-200';
           } else if (n.type === 'class_enrolled') {
@@ -88,6 +88,11 @@ export default function Notifications() {
             title = 'Class Registration Success';
             icon = Info;
             iconColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
+          } else if (n.type === 'class_join_declined') {
+            type = 'system';
+            title = 'Enrollment Request Not Approved';
+            icon = Info;
+            iconColor = 'text-rose-600 bg-rose-50 border-rose-200';
           } else if (n.type === 'ews_alert') {
             type = 'grade';
             title = 'Early Warning System Alert';

@@ -5,6 +5,11 @@ import { supabase } from '../../lib/supabase';
 import { usePwaInstall } from '../../lib/usePwaInstall';
 import PageHeader from '../../components/layout/PageHeader';
 import SmartInstallModal from '../../components/layout/SmartInstallModal';
+import NotificationPreferences from '../../components/settings/NotificationPreferences';
+import PasswordRequirements from '../../components/auth/PasswordRequirements';
+import ProfilePhotoAndContact from '../../components/settings/ProfilePhotoAndContact';
+import UserAvatar from '../../components/layout/UserAvatar';
+import { checkPassword, PASSWORD_POLICY_MESSAGE } from '../../lib/passwordPolicy';
 import { 
   User, 
   Lock, 
@@ -15,11 +20,6 @@ import {
   Eye, 
   EyeOff, 
   AlertCircle,
-  Mail,
-  Volume2,
-  Bell,
-  BrainCircuit,
-  Award,
   Shield,
   LogOut,
   Download,
@@ -35,7 +35,7 @@ export default function Settings() {
   const path = location.pathname;
   const role = path.split('/')[1] || 'faculty';
 
-  const { profile, user, signOut } = useAuth();
+  const { profile, user, signOut, refreshProfile } = useAuth();
   const { 
     platform, 
     isInstalled, 
@@ -210,32 +210,6 @@ export default function Settings() {
     confirmPassword: ''
   });
 
-  // Helper for preferences
-  const getInitialPreferences = (currentRole) => {
-    const base = {
-      emailAlerts: true,
-      systemSounds: false,
-      ewsNotifications: true,
-      gradeAlerts: true,
-      evalAlerts: true,
-      backupReminder: true,
-      autoSync: true,
-      syncFrequency: 'daily'
-    };
-    if (currentRole === 'admin') {
-      return { ...base, emailAlerts: true, autoSync: true, backupReminder: true };
-    } else if (currentRole === 'office') {
-      return { ...base, emailAlerts: true, autoSync: true, backupReminder: true };
-    } else if (currentRole === 'dean') {
-      return { ...base, emailAlerts: true, evalAlerts: true };
-    } else if (currentRole === 'faculty') {
-      return { ...base, emailAlerts: true, ewsNotifications: true, evalAlerts: true };
-    } else {
-      return { ...base, emailAlerts: true, ewsNotifications: true, gradeAlerts: true };
-    }
-  };
-
-  const [preferences, setPreferences] = useState(() => getInitialPreferences(role));
 
   // Handle changing password
   const handleSavePassword = async (e) => {
@@ -247,8 +221,8 @@ export default function Settings() {
       setSaveError('Current password is required.');
       return;
     }
-    if (passwordData.newPassword.length < 6) {
-      setSaveError('New password must be at least 6 characters long.');
+    if (!checkPassword(passwordData.newPassword).valid) {
+      setSaveError(PASSWORD_POLICY_MESSAGE);
       return;
     }
     if (passwordData.newPassword !== passwordData.confirmPassword) {
@@ -298,29 +272,14 @@ export default function Settings() {
     }
   };
 
+  const profileInitials = profileData.name.split(' ').map(n => n[0]).filter(Boolean).slice(-2).join('');
+
   const dbConnectionDetails = {
     url: 'https://ettnwknyhdhehoclrwwh.supabase.co',
     status: 'Connected',
     engine: 'PostgreSQL 15 (Supabase Cloud)',
     rlsStatus: 'Inactive (Disabled for dev phase)'
   };
-
-  const getPasswordStrength = () => {
-    const pwd = passwordData.newPassword;
-    if (!pwd) return null;
-    let score = 0;
-    if (pwd.length >= 6) score += 1;
-    if (pwd.length >= 10) score += 1;
-    if (/[A-Z]/.test(pwd)) score += 1;
-    if (/[0-9]/.test(pwd)) score += 1;
-    if (/[^A-Za-z0-9]/.test(pwd)) score += 1;
-
-    if (score <= 2) return { label: 'Weak', color: 'bg-rose-500', width: 'w-1/3' };
-    if (score <= 4) return { label: 'Medium', color: 'bg-amber-500', width: 'w-2/3' };
-    return { label: 'Strong', color: 'bg-emerald-500', width: 'w-full' };
-  };
-
-  const pwdStrength = getPasswordStrength();
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
@@ -329,24 +288,6 @@ export default function Settings() {
     ...(role === 'admin' ? [{ id: 'database', label: 'Database', icon: Database }] : [])
   ];
 
-  // Helper toggle switch renderer (iOS Native Mobile App Style)
-  const renderToggleSwitch = (value, onChange) => (
-    <button
-      type="button"
-      onClick={() => onChange(!value)}
-      className={cn(
-        "w-11 h-6 rounded-full p-0.5 transition-colors duration-200 ease-in-out cursor-pointer flex-shrink-0 relative focus:outline-none",
-        value ? "bg-sage-600" : "bg-slate-300"
-      )}
-    >
-      <span 
-        className={cn(
-          "block w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-200 ease-in-out",
-          value ? "translate-x-5" : "translate-x-0"
-        )} 
-      />
-    </button>
-  );
 
   return (
     <>
@@ -371,9 +312,11 @@ export default function Settings() {
 
         {/* Mobile App Style Profile Banner Header */}
         <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-6 shadow-sm flex items-center gap-4">
-          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-sage-800 text-white font-bold font-display text-lg sm:text-xl flex items-center justify-center flex-shrink-0 shadow-md">
-            {profileData.name.split(' ').map(n => n[0]).filter(Boolean).slice(-2).join('')}
-          </div>
+          <UserAvatar
+            path={profile?.avatar_path}
+            initials={profileInitials}
+            className="w-14 h-14 sm:w-16 sm:h-16 bg-sage-800 text-white font-bold font-display text-lg sm:text-xl shadow-md"
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h2 className="text-base sm:text-xl font-bold font-display text-slate-900 truncate">
@@ -419,7 +362,7 @@ export default function Settings() {
             <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-6 shadow-sm space-y-5">
               <div>
                 <h3 className="text-base font-bold text-slate-900 font-display">Profile Information</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Academic account and institutional registration data.</p>
+                <p className="text-xs text-slate-500 mt-0.5">Name, email, ID number, and department are maintained by the administrator. You can update your photo and contact number.</p>
               </div>
 
               <div className="space-y-3.5">
@@ -447,6 +390,15 @@ export default function Settings() {
                   <span className="text-sm font-bold text-slate-800 block">{profileData.department}</span>
                   <span className="text-xs text-slate-500 block">{profileData.college}</span>
                 </div>
+
+                {user?.id && (
+                  <ProfilePhotoAndContact
+                    userId={user.id}
+                    profile={profile}
+                    initials={profileInitials}
+                    onUpdated={refreshProfile}
+                  />
+                )}
 
                 {role === 'student' && guardianInfo && (
                   <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/70">
@@ -596,17 +548,7 @@ export default function Settings() {
                     </button>
                   </div>
 
-                  {pwdStrength && (
-                    <div className="mt-2 space-y-1">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-slate-400 font-medium">Strength:</span>
-                        <span className="font-semibold text-slate-700">{pwdStrength.label}</span>
-                      </div>
-                      <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                        <div className={cn("h-full transition-all duration-300", pwdStrength.color, pwdStrength.width)}></div>
-                      </div>
-                    </div>
-                  )}
+                  <PasswordRequirements value={passwordData.newPassword} />
                 </div>
 
                 <div>
@@ -643,106 +585,8 @@ export default function Settings() {
           )}
 
           {/* PREFERENCES PANEL */}
-          {activeTab === 'preferences' && (
-            <div className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-6 shadow-sm space-y-5">
-              <div>
-                <h3 className="text-base font-bold text-slate-900 font-display">Notifications & Preferences</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Customize alerts and interaction settings.</p>
-              </div>
-
-              <div className="space-y-3">
-                
-                {/* Email Digests */}
-                <div className="p-3.5 rounded-xl border border-slate-200/70 bg-slate-50/40 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-xl bg-sage-100 text-sage-700 flex items-center justify-center flex-shrink-0">
-                      <Mail className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">Email Digests</h4>
-                      <p className="text-[11px] text-slate-500 line-clamp-1">Receive system summary emails.</p>
-                    </div>
-                  </div>
-                  {renderToggleSwitch(preferences.emailAlerts, (val) => setPreferences({ ...preferences, emailAlerts: val }))}
-                </div>
-
-                {/* Sound Effects */}
-                <div className="p-3.5 rounded-xl border border-slate-200/70 bg-slate-50/40 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center flex-shrink-0">
-                      <Volume2 className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">System Sound Effects</h4>
-                      <p className="text-[11px] text-slate-500 line-clamp-1">Play sounds on action confirmation.</p>
-                    </div>
-                  </div>
-                  {renderToggleSwitch(preferences.systemSounds, (val) => setPreferences({ ...preferences, systemSounds: val }))}
-                </div>
-
-                {/* Role Specific Toggles */}
-                {role === 'student' && (
-                  <>
-                    <div className="p-3.5 rounded-xl border border-slate-200/70 bg-slate-50/40 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
-                          <Award className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">Grade Posting Alerts</h4>
-                          <p className="text-[11px] text-slate-500 line-clamp-1">Alert when new grades are posted.</p>
-                        </div>
-                      </div>
-                      {renderToggleSwitch(preferences.gradeAlerts, (val) => setPreferences({ ...preferences, gradeAlerts: val }))}
-                    </div>
-
-                    <div className="p-3.5 rounded-xl border border-slate-200/70 bg-slate-50/40 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center flex-shrink-0">
-                          <BrainCircuit className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">AI Counseling Insights</h4>
-                          <p className="text-[11px] text-slate-500 line-clamp-1">Alert when new risk verdicts generate.</p>
-                        </div>
-                      </div>
-                      {renderToggleSwitch(preferences.ewsNotifications, (val) => setPreferences({ ...preferences, ewsNotifications: val }))}
-                    </div>
-                  </>
-                )}
-
-                {role === 'faculty' && (
-                  <>
-                    <div className="p-3.5 rounded-xl border border-slate-200/70 bg-slate-50/40 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">
-                          <Bell className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">At-Risk Student Alerts</h4>
-                          <p className="text-[11px] text-slate-500 line-clamp-1">Flag students below 75% average.</p>
-                        </div>
-                      </div>
-                      {renderToggleSwitch(preferences.ewsNotifications, (val) => setPreferences({ ...preferences, ewsNotifications: val }))}
-                    </div>
-
-                    <div className="p-3.5 rounded-xl border border-slate-200/70 bg-slate-50/40 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0">
-                          <Sliders className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">Evaluation Release Alerts</h4>
-                          <p className="text-[11px] text-slate-500 line-clamp-1">Notify when Deans release ratings.</p>
-                        </div>
-                      </div>
-                      {renderToggleSwitch(preferences.evalAlerts, (val) => setPreferences({ ...preferences, evalAlerts: val }))}
-                    </div>
-                  </>
-                )}
-
-              </div>
-            </div>
+          {activeTab === 'preferences' && user?.id && (
+            <NotificationPreferences userId={user.id} role={role} />
           )}
 
           {/* DATABASE PANEL (ADMIN ONLY) */}
@@ -780,37 +624,24 @@ export default function Settings() {
         <div className="lg:hidden pt-2 space-y-3">
           {/* Download Mobile App (Rendered if not in standalone mode) */}
           {!isInstalled && (
-            <div className="bg-white rounded-2xl border border-emerald-200/80 p-4 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
+            <div className="bg-white rounded-2xl border border-sage-200 p-4 shadow-sm space-y-3">
+              <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 font-display">Install SAGE Mobile</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Direct client installation for your device.</p>
+                  <h3 className="text-sm font-bold text-slate-900 font-display">Install ASPIRE App</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Available for Android, iPhone, and desktop. Choose your device in the next step.</p>
                 </div>
-                <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  {platform === 'android' ? 'Android APK' : platform === 'ios' ? 'Safari PWA' : 'Desktop App'}
+                <span className="shrink-0 text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-sage-50 text-sage-800 border border-sage-200">
+                  {platform === 'android' ? 'Detected: Android' : platform === 'ios' ? 'Detected: iPhone' : 'Detected: Desktop'}
                 </span>
               </div>
 
               <button
                 type="button"
                 onClick={promptInstall}
-                className={cn(
-                  "w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold text-xs sm:text-sm border transition-all cursor-pointer shadow-xs",
-                  platform === 'android' 
-                    ? "bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white border-transparent"
-                    : platform === 'ios'
-                    ? "bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white border-transparent"
-                    : "bg-sage-700 hover:bg-sage-800 active:scale-[0.99] text-white border-transparent"
-                )}
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-semibold text-xs sm:text-sm border border-transparent bg-sage-700 hover:bg-sage-800 active:scale-[0.99] text-white transition-all cursor-pointer shadow-xs"
               >
                 <Download className="h-4 w-4" />
-                <span>
-                  {platform === 'android' 
-                    ? 'Download Android App (.APK)' 
-                    : platform === 'ios' 
-                    ? 'Add to Home Screen (iOS Safari)' 
-                    : 'Install SAGE Desktop App'}
-                </span>
+                <span>Install ASPIRE App</span>
               </button>
             </div>
           )}
@@ -828,7 +659,7 @@ export default function Settings() {
               className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 active:bg-rose-200 text-rose-700 font-semibold text-xs sm:text-sm border border-rose-200 transition-colors cursor-pointer"
             >
               <LogOut className="h-4 w-4 text-rose-600 flex-shrink-0" />
-              <span>Sign Out of SAGE</span>
+              <span>Sign Out of ASPIRE</span>
             </button>
           </div>
         </div>

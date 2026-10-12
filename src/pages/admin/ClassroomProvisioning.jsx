@@ -119,6 +119,8 @@ export default function ClassroomProvisioning() {
         setActiveTerm(active);
         setSelectedSchoolYear(active.school_year);
         setSelectedSemester(active.semester);
+        // The list opens on the active term; earlier terms stay available as previous terms.
+        setTermFilter(prev => prev || `${active.school_year} ${active.semester}`);
       }
 
       // 2. Fetch Class Records with joins
@@ -218,6 +220,12 @@ export default function ClassroomProvisioning() {
     setIsModalOpen(true);
   };
 
+  // Classrooms are created for the active term only, so only active-term sections are offered
+  // (admin setup audit 2026-10-11: H1, H4).
+  const termSections = useMemo(() => (activeTerm
+    ? sections.filter(sec => sec.school_year === activeTerm.school_year && sec.semester === activeTerm.semester)
+    : []), [sections, activeTerm]);
+
   // Determine if selected department is a service department without dedicated sections (e.g., General Education)
   const isCrossDept = selectedDeptId
     ? sections.filter(sec => sec.department_id === selectedDeptId).length === 0
@@ -316,8 +324,8 @@ export default function ClassroomProvisioning() {
 
   const modalFilteredSections = useMemo(() => {
     let list = targetDeptIdForSections
-      ? sections.filter(s => s.department_id === targetDeptIdForSections)
-      : sections;
+      ? termSections.filter(s => s.department_id === targetDeptIdForSections)
+      : termSections;
 
     if (activeProgramAbbr) {
       const progAbbrUpper = activeProgramAbbr.toUpperCase();
@@ -342,10 +350,12 @@ export default function ClassroomProvisioning() {
     }
 
     return list;
-  }, [sections, targetDeptIdForSections, activeProgramAbbr, selectedYearFilter]);
+  }, [termSections, targetDeptIdForSections, activeProgramAbbr, selectedYearFilter]);
 
-  const matchedFaculty = selectedDeptId ? facultyUsers.filter(f => f.department_id === selectedDeptId) : facultyUsers;
-  const modalFilteredFaculty = matchedFaculty.length > 0 ? matchedFaculty : facultyUsers;
+  const modalFilteredFaculty = useMemo(() => {
+    const matchedFaculty = selectedDeptId ? facultyUsers.filter(f => f.department_id === selectedDeptId) : facultyUsers;
+    return matchedFaculty.length > 0 ? matchedFaculty : facultyUsers;
+  }, [facultyUsers, selectedDeptId]);
 
   // Auto-select first matching target college when General Education or service dept is picked
   useEffect(() => {
@@ -354,22 +364,32 @@ export default function ClassroomProvisioning() {
     }
   }, [selectedDeptId, isCrossDept, collegeDeptsWithSections, selectedTargetDeptId]);
 
-  // Auto-select first matching option when department or target college changes
+  // Keep every selection inside the options actually shown. Previously the selection was taken
+  // from the unfiltered college list, so after the Program/Year filters the screen showed one
+  // section (e.g. BSIT-1A) while another (ACT-1A) was submitted (QA bug, audit H1).
   useEffect(() => {
-    const filteredSubs = selectedDeptId ? subjects.filter(s => s.department_id === selectedDeptId) : subjects;
-    const filteredSecs = targetDeptIdForSections ? sections.filter(s => s.department_id === targetDeptIdForSections) : sections;
-    const deptFacs = selectedDeptId ? facultyUsers.filter(f => f.department_id === selectedDeptId) : facultyUsers;
-    const filteredFacs = deptFacs.length > 0 ? deptFacs : facultyUsers;
-
-    setSelectedSubjectId(filteredSubs.length > 0 ? filteredSubs[0].subject_id : (subjects[0]?.subject_id || ''));
-    setSelectedSectionId(filteredSecs.length > 0 ? filteredSecs[0].section_id : (sections[0]?.section_id || ''));
-    setSelectedFacultyId(filteredFacs.length > 0 ? filteredFacs[0].user_id : (facultyUsers[0]?.user_id || ''));
-  }, [selectedDeptId, targetDeptIdForSections, subjects, sections, facultyUsers]);
+    setSelectedSubjectId(prev => (modalFilteredSubjects.some(s => s.subject_id === prev) ? prev : (modalFilteredSubjects[0]?.subject_id || '')));
+  }, [modalFilteredSubjects]);
+  useEffect(() => {
+    setSelectedSectionId(prev => (modalFilteredSections.some(s => s.section_id === prev) ? prev : (modalFilteredSections[0]?.section_id || '')));
+  }, [modalFilteredSections]);
+  useEffect(() => {
+    setSelectedFacultyId(prev => (modalFilteredFaculty.some(f => f.user_id === prev) ? prev : (modalFilteredFaculty[0]?.user_id || '')));
+  }, [modalFilteredFaculty]);
 
   const handleProvisionSubmit = async (e) => {
     e.preventDefault();
+    if (!activeTerm) {
+      setModalError('No active term is set. Activate a term in Term Settings first.');
+      return;
+    }
     if (!selectedSubjectId || !selectedSectionId || !selectedFacultyId) {
       setModalError('Please select Subject, Section, and Faculty.');
+      return;
+    }
+    // Final guard: submit only what is visible in the dropdowns.
+    if (!modalFilteredSections.some(s => s.section_id === selectedSectionId) || !modalFilteredSubjects.some(s => s.subject_id === selectedSubjectId)) {
+      setModalError('The selected section or subject is not in the current list. Re-select them and try again.');
       return;
     }
 
@@ -386,9 +406,9 @@ export default function ClassroomProvisioning() {
       });
 
       await logActivity(
-        resolveActorName(user, profile),
-        'Classroom Provisioned',
-        `Provisioned ${result.subject?.code} for ${result.section?.name} (Join Code: ${result.join_code})`
+        'Classroom Provisioning',
+        `Provisioned ${result.subject?.code} for ${result.section?.name} (Join Code: ${result.join_code})`,
+        resolveActorName(profile, user)
       );
 
       setSuccessBanner({
@@ -413,8 +433,36 @@ export default function ClassroomProvisioning() {
       return;
     }
 
+    // Only a class with no recorded work may be deleted. Deleting removes the class
+    // and everything recorded under it, so a class in use is refused.
+    const workTables = [
+      ['posted_grades', 'posted grades'],
+      ['student_term_scores', 'term scores'],
+      ['student_component_scores', 'component scores'],
+      ['class_activities', 'activities'],
+      ['attendance_records', 'attendance records'],
+      ['student_risk_evaluations', 'risk evaluations']
+    ];
+    try {
+      const results = await Promise.all(workTables.map(([table]) => (
+        supabase.from(table).select('*', { count: 'exact', head: true }).eq('class_record_id', cls.id)
+      )));
+      const failed = results.find(result => result.error);
+      if (failed) throw failed.error;
+      const inUse = workTables
+        .map(([, label], index) => (results[index].count ? `${results[index].count} ${label}` : null))
+        .filter(Boolean);
+      if (inUse.length > 0) {
+        alert(`Classroom ${cls.subjectCode} (${cls.sectionName}) cannot be deleted because it already has ${inUse.join(', ')}. Classes with recorded work are kept for the grade history.`);
+        return;
+      }
+    } catch (err) {
+      alert('Could not check whether this classroom has recorded work: ' + err.message);
+      return;
+    }
+
     const confirmDelete = window.confirm(
-      `Are you sure you want to delete classroom ${cls.subjectCode} (${cls.sectionName})? This will archive the classroom and invalidate code ${cls.joinCode}.`
+      `Permanently delete classroom ${cls.subjectCode} (${cls.sectionName})? Its join code ${cls.joinCode} stops working. This cannot be undone.`
     );
     if (!confirmDelete) return;
 
@@ -427,9 +475,9 @@ export default function ClassroomProvisioning() {
       if (delErr) throw delErr;
 
       await logActivity(
-        resolveActorName(user, profile),
-        'Classroom Deleted',
-        `Deleted classroom ${cls.subjectCode} (${cls.sectionName})`
+        'Classroom Deletion',
+        `Deleted classroom ${cls.subjectCode} (${cls.sectionName}); it had no recorded work.`,
+        resolveActorName(profile, user)
       );
 
       setClassrooms(prev => prev.filter(c => c.id !== cls.id));
@@ -449,7 +497,7 @@ export default function ClassroomProvisioning() {
       c.joinCode.toLowerCase().includes(searchLower);
 
     const matchesDept = !deptFilter || c.departmentName === deptFilter;
-    const matchesTerm = !termFilter || `${c.schoolYear} ${c.semester}`.includes(termFilter);
+    const matchesTerm = !termFilter || `${c.schoolYear} ${c.semester}` === termFilter;
 
     return matchesSearch && matchesDept && matchesTerm;
   });
@@ -569,7 +617,7 @@ export default function ClassroomProvisioning() {
                 <option value="">All Terms</option>
                 {academicTerms.map(t => (
                   <option key={t.term_id} value={`${t.school_year} ${t.semester}`}>
-                    {t.school_year} • {t.semester} {t.is_active ? '(Active)' : ''}
+                    {t.school_year} • {t.semester} {t.is_active ? '(Active term)' : '(Previous term)'}
                   </option>
                 ))}
               </select>
@@ -726,7 +774,7 @@ export default function ClassroomProvisioning() {
               )}
 
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-600 leading-relaxed">
-                Provisioning creates the official class record with <strong>0 initial students</strong> and auto-generates a unique <strong>Classroom Code</strong>. Students will self-enroll using this code on Day 1.
+                Provisioning creates the class for the active term (<strong>{activeTerm ? `${activeTerm.school_year} · ${activeTerm.semester}` : 'no active term set'}</strong>). Students whose home section is the selected section are <strong>enrolled automatically</strong>. Irregular students join with the <strong>Classroom Code</strong> and are added after the instructor approves their request.
               </div>
 
               {/* Department Selector */}
@@ -854,10 +902,14 @@ export default function ClassroomProvisioning() {
                   onChange={e => setSelectedSectionId(e.target.value)}
                   className="w-full border border-slate-200 px-3 py-2 rounded-lg text-xs bg-white outline-none cursor-pointer focus:border-sage-600 font-medium font-mono"
                 >
+                  {modalFilteredSections.length === 0 && <option value="">No sections for the active term</option>}
                   {modalFilteredSections.map(sec => (
                     <option key={sec.section_id} value={sec.section_id}>{sec.name}</option>
                   ))}
                 </select>
+                {modalFilteredSections.length === 0 && (
+                  <p className="text-[11px] text-amber-700">No sections exist for this college and filter in the active term. Create them in Sections first.</p>
+                )}
               </div>
 
               {/* Faculty Selector */}

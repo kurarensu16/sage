@@ -1,0 +1,17 @@
+#!/bin/sh
+# Change freeze commit check (docs/05-operations/agents/CHANGE_FREEZE_GUIDE.md §6.1).
+# Blocks a commit when a code file changed since the freeze baseline has no
+# change record in docs/05-operations/agents/feature-updates/.
+# Passes automatically when AGENTS.md says FREEZE: OFF.
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "Freeze check skipped: Node.js is not installed." >&2
+  exit 0
+fi
+
+if ! node scripts/freezeAudit.js; then
+  echo "" >&2
+  echo "Commit blocked: add a change record in docs/05-operations/agents/feature-updates/" >&2
+  echo "(copy the template in its README.md), or undo the unrecorded change." >&2
+  exit 1
+fi

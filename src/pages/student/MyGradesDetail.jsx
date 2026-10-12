@@ -11,7 +11,6 @@ import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import {
-  calculateSemestralGrade,
   calculateStoredTermRating,
   getTransmutedGrade,
   resolveGradingFormula
@@ -20,9 +19,11 @@ import { DetailSkeleton } from '../../components/common/Skeleton';
 import {
   GRADE_MILESTONES,
   findPostedMilestone,
-  getCanonicalGradePeriod
+  getCanonicalGradePeriod,
+  isTermCoveredByPostedMilestone
 } from '../../lib/gradeMilestones';
 import { scoreOrNull } from '../../lib/evaluationTracking';
+import { loadStudentRunningGrades } from '../../lib/studentRunningGrade';
 
 export default function MyGradesDetail() {
   const navigate = useNavigate();
@@ -46,11 +47,12 @@ export default function MyGradesDetail() {
   });
 
   const [finalCalculations, setFinalCalculations] = useState({
-    mr: 0,
-    tfr: 0,
-    sg: 0,
+    mr: null,
+    tfr: null,
+    sg: null,
     finalGwa: '—',
-    remarks: '—'
+    remarks: 'Pending',
+    isOfficial: false
   });
 
   useEffect(() => {
@@ -204,6 +206,7 @@ export default function MyGradesDetail() {
         const postedMr = findPostedMilestone(posted, GRADE_MILESTONES.MIDTERM_RATING);
         const postedTfr = findPostedMilestone(posted, GRADE_MILESTONES.TENTATIVE_FINAL_RATING);
         const postedSg = findPostedMilestone(posted, GRADE_MILESTONES.SEMESTRAL_GRADE);
+        const postedLocks = (posted || []).flatMap(row => [row.grade_period, ...(row.locked_milestones || [])]);
 
         const gradingSnapshot = crInfo?.grading_formula_snapshot
           || posted?.find(row => row.grading_formula_snapshot)?.grading_formula_snapshot
@@ -251,15 +254,22 @@ export default function MyGradesDetail() {
             || (['Prelim', 'Midterm'].includes(term) ? postedMr : postedTfr)
             || null;
           
-          const finalRating = isPosted 
-            ? parseFloat(postedRow.computed_grade) 
-            : null;
+          // Posted: the milestone row. Covered: this term is part of a posted
+          // milestone (e.g. Prelim inside a posted MR). Otherwise the live rating
+          // from recorded scores, shown as Tentative.
+          const isCovered = !isPosted && isTermCoveredByPostedMilestone(term, postedLocks);
+          const liveRating = calculation.ok && calculation.hasData ? calculation.rating : null;
+          const finalRating = isPosted
+            ? parseFloat(postedRow.computed_grade)
+            : liveRating;
 
-          const finalGrade = finalRating !== null 
-            ? (postedRow.effective_grade !== null ? Number(postedRow.effective_grade).toFixed(2) : getTransmutedGrade(finalRating).toFixed(2))
-            : '—';
-          
-          const status = isPosted ? 'Posted' : 'Pending';
+          const finalGrade = finalRating === null
+            ? '—'
+            : isPosted && postedRow.effective_grade !== null
+              ? Number(postedRow.effective_grade).toFixed(2)
+              : getTransmutedGrade(finalRating).toFixed(2);
+
+          const status = isPosted ? 'Posted' : isCovered ? 'Covered' : finalRating !== null ? 'Tentative' : 'Pending';
 
           // Build the displayed breakdown from the same resolved formula used when posting.
           const multipleComponents = gradingFormula.ok
@@ -337,7 +347,7 @@ export default function MyGradesDetail() {
             rating: finalRating,
             grade: finalGrade,
             status,
-            overallPct: finalRating !== null ? (calculation.rawRating ?? 0) : 0,
+            overallPct: finalRating !== null ? (calculation.rawRating ?? null) : null,
             components,
             missingScores
           };
@@ -345,39 +355,34 @@ export default function MyGradesDetail() {
 
         setTermData(newTermData);
 
-        // Final Calculations (MR, TFR, SG, GWA, Remarks)
-        const calculatedFallback = calculateSemestralGrade({
-          prelim: newTermData['Prelim']?.rating,
-          midterm: newTermData['Midterm']?.rating,
-          semiFinal: newTermData['Semi-Final']?.rating,
-          final: newTermData['Final']?.rating,
-          isSummer
-        });
-        const sgValue = postedSg ? Number(postedSg.computed_grade) : calculatedFallback.sg;
-        const calcResult = {
-          mr: postedMr ? Number(postedMr.computed_grade) : calculatedFallback.mr,
-          tfr: postedTfr ? Number(postedTfr.computed_grade) : calculatedFallback.tfr,
-          sg: sgValue,
-          gwa: postedSg?.effective_grade !== null && postedSg?.effective_grade !== undefined
-            ? Number(postedSg.effective_grade).toFixed(2)
-            : (sgValue !== null ? getTransmutedGrade(sgValue).toFixed(2) : '—'),
-          remarks: sgValue !== null
-            ? (getTransmutedGrade(sgValue) <= 3 ? 'Passed' : 'Failed')
-            : '—'
-        };
+        // Semestral Summary: the shared running grade (posted milestones first,
+        // unposted terms live), the same value the dashboard and Grade Report show.
+        const { bySubject } = await loadStudentRunningGrades(user.id, [targetClassRecordId])
+          .catch(runningErr => {
+            console.error('Error loading running grade:', runningErr);
+            return { bySubject: {} };
+          });
+        const running = bySubject[targetClassRecordId] || null;
 
-        let remarks = calcResult.remarks;
-        if (postedSg?.remarks) {
-          const finalPosted = postedSg;
-          remarks = finalPosted.remarks.charAt(0).toUpperCase() + finalPosted.remarks.slice(1);
+        let remarks = 'Pending';
+        if (postedSg) {
+          remarks = postedSg.remarks
+            ? postedSg.remarks.charAt(0).toUpperCase() + postedSg.remarks.slice(1)
+            : (running?.gwa !== null && running?.gwa <= 3 ? 'Passed' : 'Failed');
+        } else if (running?.gwa != null) {
+          remarks = 'Tentative';
         }
 
         setFinalCalculations({
-          mr: calcResult.mr,
-          tfr: calcResult.tfr,
-          sg: calcResult.sg,
-          finalGwa: calcResult.gwa,
-          remarks
+          mr: running?.mr ?? null,
+          tfr: running?.tfr ?? null,
+          sg: running?.sg ?? null,
+          finalGwa: running?.gwa != null ? running.gwa.toFixed(2) : '—',
+          remarks,
+          isOfficial: Boolean(running?.isOfficial),
+          mrIsPosted: Boolean(postedMr),
+          tfrIsPosted: Boolean(postedTfr),
+          blankActivityCount: running?.blankActivityCount || 0
         });
 
         // Determine latest active term tab (has posted grades or entered draft scores)
@@ -476,10 +481,14 @@ export default function MyGradesDetail() {
 
           <div className="flex items-baseline gap-1 bg-slate-50 border border-slate-200 p-4 rounded-xl text-center md:text-right w-fit">
             <div className="text-left md:text-right">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Running GWA Grade</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                {activeTab} Period Grade{activeData.status === 'Tentative' ? ' (Tentative)' : ''}
+              </span>
               <div className="mt-1 flex items-baseline gap-1 justify-center md:justify-end">
-                <span className="text-3xl font-extrabold font-mono text-slate-950">{activeData.grade}</span>
-                <span className="text-xs text-slate-400 font-medium">{activeTab}</span>
+                <span className={cn(
+                  "text-3xl font-extrabold font-mono",
+                  activeData.status === 'Tentative' ? 'text-amber-700' : 'text-slate-950'
+                )}>{activeData.grade}</span>
               </div>
             </div>
           </div>
@@ -610,8 +619,14 @@ export default function MyGradesDetail() {
 
             {/* Total Footer row */}
             <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-between items-center text-xs font-bold">
-              <span className="text-slate-500">Period Score Sum Total</span>
-              <span className="font-mono text-sm text-slate-950 font-extrabold">{activeData.overallPct.toFixed(2)}%</span>
+              <span className="text-slate-500">
+                Period Score Sum Total{activeData.status === 'Tentative' ? ' (Tentative)' : ''}
+              </span>
+              {activeData.overallPct !== null && activeData.overallPct !== undefined ? (
+                <span className="font-mono text-sm text-slate-950 font-extrabold">{activeData.overallPct.toFixed(2)}%</span>
+              ) : (
+                <span className="text-sm text-slate-400 font-semibold">Pending</span>
+              )}
             </div>
           </div>
 
@@ -627,18 +642,41 @@ export default function MyGradesDetail() {
                   {activeData.grade}
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-slate-900">{parseFloat(activeData.grade) <= 3.00 ? 'Passed' : 'At-Risk'}</h4>
-                  <p className="text-[10px] text-slate-450">Computed grade for period</p>
+                  <h4 className="text-sm font-bold text-slate-900">
+                    {activeData.grade === '—'
+                      ? 'Awaiting scores'
+                      : parseFloat(activeData.grade) <= 3.00
+                        ? (activeData.status === 'Tentative' ? 'Passing so far' : 'Passed')
+                        : (activeData.status === 'Tentative' ? 'Below passing so far' : 'At-Risk')}
+                  </h4>
+                  <p className="text-[10px] text-slate-450">
+                    {activeData.status === 'Tentative' ? 'Live grade from recorded scores' : 'Computed grade for period'}
+                  </p>
                 </div>
               </div>
 
-              {activeData.status === 'Posted' ? (
+              {activeData.status === 'Posted' && (
                 <div className="bg-emerald-50 text-emerald-800 text-[10px] font-bold p-3 rounded-lg border border-emerald-100 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Officially Verified & Posted
                 </div>
-              ) : (
-                <div className="bg-amber-50 text-amber-800 text-[10px] font-bold p-3 rounded-lg border border-amber-100 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-amber-500"></span> Tentative Score
+              )}
+              {activeData.status === 'Covered' && (
+                <div className="bg-emerald-50 text-emerald-800 text-[10px] font-bold p-3 rounded-lg border border-emerald-100 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  Included in the posted {['Prelim', 'Midterm'].includes(activeTab) ? 'Midterm Rating' : 'Tentative Final Rating'}
+                </div>
+              )}
+              {activeData.status === 'Tentative' && (
+                <div className="bg-amber-50 text-amber-800 text-[10px] font-bold p-3 rounded-lg border border-amber-100 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span> Tentative: not yet posted
+                  </div>
+                  <p className="font-medium text-amber-700">Blank activities are not counted yet and may be recorded as zero when your instructor posts grades.</p>
+                </div>
+              )}
+              {activeData.status === 'Pending' && (
+                <div className="bg-slate-50 text-slate-600 text-[10px] font-bold p-3 rounded-lg border border-slate-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-slate-400"></span> No scores recorded for this period yet
                 </div>
               )}
             </div>
@@ -663,35 +701,69 @@ export default function MyGradesDetail() {
                 <h3 className="text-xs font-bold text-slate-705 uppercase tracking-wide">Semestral Summary</h3>
                 <span className={cn(
                   "px-2 py-0.5 rounded-full text-[9px] font-bold border font-sans",
-                  finalCalculations.remarks === 'Passed' 
-                    ? "bg-emerald-50 text-emerald-705 border-emerald-200" 
-                    : "bg-rose-50 text-rose-705 border-rose-200"
+                  finalCalculations.remarks === 'Passed'
+                    ? "bg-emerald-50 text-emerald-705 border-emerald-200"
+                    : finalCalculations.remarks === 'Tentative'
+                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                      : finalCalculations.remarks === 'Pending'
+                        ? "bg-slate-50 text-slate-500 border-slate-200"
+                        : "bg-rose-50 text-rose-705 border-rose-200"
                 )}>
                   {finalCalculations.remarks}
                 </span>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-3 text-center">
                 <div className="bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
                   <span className="text-[9px] text-slate-400 block uppercase tracking-wide">Midterm Rating</span>
                   <span className="text-sm font-bold font-mono text-slate-800">{finalCalculations.mr !== null ? `${finalCalculations.mr}%` : '—'}</span>
+                  {finalCalculations.mr !== null && (
+                    <span className={cn(
+                      "block text-[8px] font-bold uppercase tracking-wide",
+                      finalCalculations.mrIsPosted ? 'text-emerald-600' : 'text-amber-600'
+                    )}>
+                      {finalCalculations.mrIsPosted ? 'Posted' : 'Tentative'}
+                    </span>
+                  )}
                 </div>
                 <div className="bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
                   <span className="text-[9px] text-slate-400 block uppercase tracking-wide">Final Rating</span>
                   <span className="text-sm font-bold font-mono text-slate-800">{finalCalculations.tfr !== null ? `${finalCalculations.tfr}%` : '—'}</span>
+                  {finalCalculations.tfr !== null && (
+                    <span className={cn(
+                      "block text-[8px] font-bold uppercase tracking-wide",
+                      finalCalculations.tfrIsPosted ? 'text-emerald-600' : 'text-amber-600'
+                    )}>
+                      {finalCalculations.tfrIsPosted ? 'Posted' : 'Tentative'}
+                    </span>
+                  )}
                 </div>
               </div>
 
               <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
                 <div>
-                  <span className="text-[9px] text-slate-450 block uppercase tracking-wide">Semestral GWA</span>
-                  <span className="text-2xl font-black font-mono text-sage-600 mt-1 block">{finalCalculations.finalGwa}</span>
+                  <span className="text-[9px] text-slate-450 block uppercase tracking-wide">
+                    {finalCalculations.isOfficial ? 'Semestral GWA' : 'Running GWA (Tentative)'}
+                  </span>
+                  <span className={cn(
+                    "text-2xl font-black font-mono mt-1 block",
+                    finalCalculations.isOfficial ? 'text-sage-600' : 'text-amber-700'
+                  )}>{finalCalculations.finalGwa}</span>
                 </div>
                 <div className="text-right">
                   <span className="text-[9px] text-slate-450 block uppercase tracking-wide">Calculated Rating</span>
                   <span className="text-sm font-bold font-mono text-slate-750 mt-1 block">{finalCalculations.sg !== null ? `${finalCalculations.sg}%` : '—'}</span>
                 </div>
               </div>
+
+              {!finalCalculations.isOfficial && finalCalculations.finalGwa !== '—' && (
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Not an official grade. Posted ratings are used once available; blank activities are not counted yet.
+                  {finalCalculations.blankActivityCount > 0 && (
+                    <strong className="font-semibold text-amber-700"> {finalCalculations.blankActivityCount} {finalCalculations.blankActivityCount === 1 ? 'activity still has' : 'activities still have'} no score.</strong>
+                  )}
+                </p>
+              )}
             </div>
 
           </div>

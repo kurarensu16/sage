@@ -25,7 +25,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { notifyUnlockRequested, notifyOverrideRequested } from '../../lib/notificationDispatcher';
+import { notifyOverrideRequested } from '../../lib/notificationDispatcher';
 import { triggerExcelExport } from '../../lib/excelExport';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
@@ -63,7 +63,6 @@ export default function PostedGradesView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lockedMilestones, setLockedMilestones] = useState([]);
-  const [unlockRequests, setUnlockRequests] = useState([]);
   const [viewMode, setViewMode] = useState('All');
   
   const isSummer = classInfo?.semester === 'Summer';
@@ -668,24 +667,6 @@ export default function PostedGradesView() {
         if (correctionError) throw correctionError;
         setActiveCorrectionRequests(correctionRows || []);
 
-        // 6. Fetch unlock requests from database
-        const { data: dbReqs } = await supabase
-          .from('unlock_requests')
-          .select('milestone, status')
-          .eq('class_record_id', classRecordId);
-
-        // Fetch unlock requests from localStorage (to merge/sync)
-        const localReqs = JSON.parse(localStorage.getItem(`unlock_requests_${classRecordId}`) || '[]');
-        const pendingSet = new Set(localReqs);
-        (dbReqs || []).forEach(r => {
-          if (r.status === 'pending') {
-            pendingSet.add(r.milestone);
-          } else {
-            pendingSet.delete(r.milestone);
-          }
-        });
-        setUnlockRequests(Array.from(pendingSet));
-
         // 7. Initialize local draft caches
         studentList.forEach(stud => {
           const STORAGE_KEY = `sage_scores_${classRecordId}_${stud.id}`;
@@ -756,54 +737,6 @@ export default function PostedGradesView() {
     loadPostedGradesData();
   }, [classRecordId, user]);
 
-  const handleRequestUnlock = async (milestone) => {
-    if (!classRecordId) return;
-
-    try {
-      // 1. Database: Insert to unlock_requests
-      const { error } = await supabase
-        .from('unlock_requests')
-        .insert({
-          class_record_id: classRecordId,
-          milestone: milestone,
-          requested_by: user.id,
-          status: 'pending'
-        });
-
-      if (error) throw error;
-
-      // 2. LocalStorage: Dual-write for Dean UI compatibility
-      const localReqs = JSON.parse(localStorage.getItem(`unlock_requests_${classRecordId}`) || '[]');
-      if (!localReqs.includes(milestone)) {
-        localReqs.push(milestone);
-        localStorage.setItem(`unlock_requests_${classRecordId}`, JSON.stringify(localReqs));
-      }
-
-      // Update state
-      setUnlockRequests(prev => [...prev, milestone]);
-
-      // 3. Log audit activity
-      const actorName = resolveActorName(profile, user);
-      await logActivity(
-        'Unlock Request',
-        `Requested unlock of ${milestone} milestone for subject ${classInfo?.subjects?.code}`,
-        actorName
-      );
-
-      // Dispatch notification to Dean
-      await notifyUnlockRequested({
-        facultyName: actorName,
-        subjectName: `${classInfo?.subjects?.code || 'Subject'} (${classInfo?.sections?.name || 'Section'})`,
-        milestone: milestone
-      });
-
-      setPopupTitle('Unlock Requested');
-      setPopupDesc(`Request to unlock ${milestone} has been sent to the Dean. Modifying scores will be enabled once approved.`);
-      setShowPopup(true);
-    } catch (err) {
-      console.error('Error requesting milestone unlock:', err);
-    }
-  };
 
   const prepareCorrectionRequest = (student) => {
     if (!student) return;

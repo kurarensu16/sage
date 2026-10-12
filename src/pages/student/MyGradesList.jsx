@@ -1,5 +1,6 @@
 import { getTransmutedGrade } from '../../lib/gradingMath';
-import { computeStudentGwa, getGwaBand } from '../../lib/academicPolicy';
+import { getGwaBand } from '../../lib/academicPolicy';
+import { loadStudentRunningGrades } from '../../lib/studentRunningGrade';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
@@ -15,6 +16,29 @@ import { logActivity, resolveActorName } from '../../lib/auditLog';
 
 // ASPIRE v3.1: Transparent Official Milestone Ledger (No clearance locks)
 
+// True when the enrollment's section belongs to the selected term option.
+// Falls back to the option's section when the section has no term details.
+const normalizeSchoolYear = (value) => String(value || '').replace(/^AY\s*/i, '').trim();
+function isEnrollmentInTerm(enrollment, termOption) {
+  const section = enrollment?.sections;
+  if (section?.semester && section?.school_year && termOption?.semester && termOption?.school_year) {
+    return section.semester === termOption.semester
+      && normalizeSchoolYear(section.school_year) === normalizeSchoolYear(termOption.school_year);
+  }
+  return !termOption?.section_id || enrollment?.section_id === termOption.section_id;
+}
+
+// A posted milestone shows as official; an unposted one shows the live value marked Tentative.
+function MilestoneValue({ value, isPosted }) {
+  if (value === '—') return <span className="text-slate-350">—</span>;
+  if (isPosted) return <span className="font-bold text-slate-800">{value}</span>;
+  return (
+    <span className="inline-flex flex-col items-center leading-tight">
+      <span className="font-bold text-amber-700">{value}</span>
+      <span className="text-[8px] font-sans font-bold uppercase tracking-wide text-amber-600">Tentative</span>
+    </span>
+  );
+}
 
 export default function MyGradesList() {
   const { user, profile } = useAuth();
@@ -26,6 +50,7 @@ export default function MyGradesList() {
   const [officialStanding, setOfficialStanding] = useState('No grades posted yet');
   const [tentativeGwa, setTentativeGwa] = useState(null);
   const [tentativeStanding, setTentativeStanding] = useState('No grades posted yet');
+  const [runningSummary, setRunningSummary] = useState(null);
 
   // Classroom Join Code State
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
@@ -43,7 +68,7 @@ export default function MyGradesList() {
       const res = await submitJoinRequest(user.id, joinCodeInput);
       setJoinFeedback({
         type: 'success',
-        message: `Successfully enrolled in ${res.classRecord?.subjects?.code || 'Course'} (${res.classRecord?.sections?.name || 'Section'})! You now have access to this classroom.`
+        message: `${res.message} Track it on My Subjects.`
       });
       setJoinCodeInput('');
       setRefreshTrigger(prev => prev + 1);
@@ -180,6 +205,7 @@ export default function MyGradesList() {
         setOfficialStanding(cached.officialStanding || 'No grades posted yet');
         setTentativeGwa(cached.tentativeGwa ?? null);
         setTentativeStanding(cached.tentativeStanding || 'No grades posted yet');
+        setRunningSummary(cached.runningSummary || null);
         setLoading(false);
       } else {
         setLoading(true);
@@ -189,8 +215,9 @@ export default function MyGradesList() {
         const activeOpt = semestersList.find(o => o.label === selectedSemLabel);
         if (!activeOpt) return;
 
-        // 1. Fetch enrollments for the selected semester
-        let enrollsQuery = supabase
+        // 1. Fetch enrollments for the selected term. Filter by the term, not only the
+        // block section, so a class joined by code from another section is included.
+        const { data: allEnrolls } = await supabase
           .from('enrollments')
           .select(`
             subject_id,
@@ -200,54 +227,40 @@ export default function MyGradesList() {
           `)
           .eq('student_id', user.id);
 
-        if (activeOpt.section_id) {
-          enrollsQuery = enrollsQuery.eq('section_id', activeOpt.section_id);
-        }
+        const enrolls = (allEnrolls || []).filter(e => isEnrollmentInTerm(e, activeOpt));
+        const subjectIds = [...new Set(enrolls.map(e => e.subject_id).filter(Boolean))];
+        const sectionIds = [...new Set(enrolls.map(e => e.section_id).filter(Boolean))];
 
-        const { data: enrolls } = await enrollsQuery;
-        const subjectIds = enrolls?.map(e => e.subject_id) || [];
-        
-        // 2. Fetch class records
-        let crQuery = supabase
-          .from('class_records')
-          .select(`
-            class_record_id,
-            subject_id,
-            section_id,
-            faculty:users!faculty_id ( first_name, last_name )
-          `)
-          .in('subject_id', subjectIds)
-          .eq('status', 'active');
-
-        if (activeOpt.section_id) {
-          crQuery = crQuery.eq('section_id', activeOpt.section_id);
-        }
-
-        const { data: classRecords } = await crQuery;
+        // 2. Fetch class records, archived ones included: a previous term's posted grades
+        // stay in the student's history for that term. Each enrollment matches its own
+        // class by subject AND section (other sections of the same subject are excluded).
+        const { data: candidateClassRecords } = subjectIds.length > 0 && sectionIds.length > 0
+          ? await supabase
+              .from('class_records')
+              .select(`
+                class_record_id,
+                subject_id,
+                section_id,
+                faculty:users!faculty_id ( first_name, last_name )
+              `)
+              .in('subject_id', subjectIds)
+              .in('section_id', sectionIds)
+          : { data: [] };
+        const enrolledPairs = new Set(enrolls.map(e => `${e.subject_id}:${e.section_id}`));
+        const classRecords = (candidateClassRecords || [])
+          .filter(cr => enrolledPairs.has(`${cr.subject_id}:${cr.section_id}`));
 
         const classRecordIds = classRecords?.map(cr => cr.class_record_id) || [];
 
-        // 3. Fetch posted grades
+        // 3. Fetch posted grades (official milestones and remarks)
         const { data: posted } = await supabase
           .from('posted_grades')
           .select('*')
           .eq('student_id', user.id)
           .in('class_record_id', classRecordIds);
 
-        // 4. Fetch draft scores
-        const { data: drafts } = await supabase
-          .from('student_term_scores')
-          .select('*')
-          .eq('student_id', user.id)
-          .in('class_record_id', classRecordIds);
-
-        // 5. Fetch class grading columns (max scores)
-        const { data: gradingCols, error: colsErr } = await supabase
-          .from('class_grading_columns')
-          .select('*')
-          .in('class_record_id', classRecordIds);
-
-        if (colsErr) throw colsErr;
+        // 4. Running grades: posted milestones first, unposted terms live (Tentative)
+        const { bySubject: runningBySubject, summary } = await loadStudentRunningGrades(user.id, classRecordIds);
 
         // Map data structures
         const subMap = {};
@@ -263,143 +276,32 @@ export default function MyGradesList() {
           postedMap[p.class_record_id].push(p);
         });
 
-        const draftsMap = {};
-        drafts?.forEach(d => {
-          if (!draftsMap[d.class_record_id]) draftsMap[d.class_record_id] = {};
-          draftsMap[d.class_record_id][d.term] = d;
-        });
-
-        const colsMap = {};
-        gradingCols?.forEach(c => {
-          if (!colsMap[c.class_record_id]) colsMap[c.class_record_id] = {};
-          colsMap[c.class_record_id][c.term] = {
-            act1: c.act1_max,
-            act2: c.act2_max,
-            act3: c.act3_max,
-            act4: c.act4_max,
-            act5: c.act5_max,
-            act6: c.act6_max,
-            exam: c.exam_max
-          };
-        });
-
-        // Plain mean (C11), not credit-weighted — see the fix below where this is
-        // consumed. "Sum of all GWA per subject, divided by the number of subjects";
-        // units are an 18-unit honors-eligibility gate elsewhere, never a weight here.
-        const officialGwas = [];
-        const tentativeGwas = [];
+        const postedGwaText = (row) => (row.effective_grade !== null
+          ? Number(row.effective_grade).toFixed(2)
+          : getTransmutedGrade(parseFloat(row.computed_grade)).toFixed(2));
+        const ratingGwaText = (rating) => (rating === null || rating === undefined
+          ? '—'
+          : getTransmutedGrade(rating).toFixed(2));
 
         const mappedGrades = (classRecords || [])
           .filter(cr => subMap[cr.subject_id])
           .map(cr => {
             const subj = subMap[cr.subject_id];
-
             const crPosted = postedMap[cr.class_record_id] || [];
-            const crDrafts = draftsMap[cr.class_record_id] || {};
-            const crCols = colsMap[cr.class_record_id] || {};
+            const running = runningBySubject[cr.class_record_id] || null;
 
-            const getTermRating = (termName) => {
-              const dbTermKey = termName.toLowerCase().replace('-', '_');
-              const postedRow = crPosted.find(p => p.grade_period === dbTermKey || p.grade_period === termName.toLowerCase());
-              if (postedRow) {
-                return parseFloat(postedRow.computed_grade);
-              }
-              return null;
-            };
-
-            const prelimRating = getTermRating('Prelim');
-            const midtermRating = getTermRating('Midterm');
-            const semifinalRating = getTermRating('Semi-Final');
-            const finalRating = getTermRating('Final');
-
-            // 1. Midterm Rating (MR) = ROUND((Prelim + Midterm) / 2)
             const mrPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.MIDTERM_RATING);
-            let mrGwa = '—';
-            let mrRating = null;
-            if (mrPostedRow) {
-              mrRating = parseFloat(mrPostedRow.computed_grade);
-              mrGwa = mrPostedRow.effective_grade !== null 
-                ? Number(mrPostedRow.effective_grade).toFixed(2) 
-                : getTransmutedGrade(mrRating).toFixed(2);
-            } else if (prelimRating !== null && midtermRating !== null) {
-              mrRating = Math.round((prelimRating + midtermRating) / 2);
-              mrGwa = getTransmutedGrade(mrRating).toFixed(2);
-            }
-
-            // 2. Tentative Final Rating (TFR) = ROUND((Semi-Final + Final) / 2)
             const tfrPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.TENTATIVE_FINAL_RATING);
-            let tfrGwa = '—';
-            let tfrRating = null;
-            if (tfrPostedRow) {
-              tfrRating = parseFloat(tfrPostedRow.computed_grade);
-              tfrGwa = tfrPostedRow.effective_grade !== null 
-                ? Number(tfrPostedRow.effective_grade).toFixed(2) 
-                : getTransmutedGrade(tfrRating).toFixed(2);
-            } else if (semifinalRating !== null && finalRating !== null) {
-              tfrRating = Math.round((semifinalRating + finalRating) / 2);
-              tfrGwa = getTransmutedGrade(tfrRating).toFixed(2);
-            }
-
-            // 3. Semestral Grade (SG) = ROUND((MR + TFR) / 2)
             const sgPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.SEMESTRAL_GRADE);
-            let sgGwa = '—';
-            let sgRating = null;
-            if (sgPostedRow) {
-              sgRating = parseFloat(sgPostedRow.computed_grade);
-              sgGwa = sgPostedRow.effective_grade !== null 
-                ? Number(sgPostedRow.effective_grade).toFixed(2) 
-                : getTransmutedGrade(sgRating).toFixed(2);
-            } else if (mrRating !== null && tfrRating !== null) {
-              sgRating = Math.round((mrRating + tfrRating) / 2);
-              sgGwa = getTransmutedGrade(sgRating).toFixed(2);
-            }
 
-            // Official Grade & Latest Period
-            let officialGrade = '—';
-            let officialLatestPeriod = '—';
+            // Posted values only (print slip); screen values fall back to the live rating.
+            const mrPostedGwa = mrPostedRow ? postedGwaText(mrPostedRow) : '—';
+            const tfrPostedGwa = tfrPostedRow ? postedGwaText(tfrPostedRow) : '—';
+            const sgPostedGwa = sgPostedRow ? postedGwaText(sgPostedRow) : '—';
 
-            if (sgGwa !== '—') {
-              officialGrade = sgGwa;
-              officialLatestPeriod = 'Semestral Grade (SG)';
-            } else {
-              const postedTermsOrder = ['Final', 'Semi-Final', 'Midterm', 'Prelim'];
-              for (const t of postedTermsOrder) {
-                const dbTermKey = t.toLowerCase().replace('-', '_');
-                const postRow = crPosted.find(p => p.grade_period === dbTermKey);
-                if (postRow) {
-                  officialGrade = postRow.effective_grade !== null 
-                    ? Number(postRow.effective_grade).toFixed(2) 
-                    : getTransmutedGrade(parseFloat(postRow.computed_grade)).toFixed(2);
-                  officialLatestPeriod = t;
-                  break;
-                }
-              }
-            }
-
-            // Official Remarks
-            let remarks = 'Ongoing';
-            if (sgGwa !== '—') {
-              const numSg = parseFloat(sgGwa);
-              remarks = numSg <= 3.00 ? 'Passed' : 'Failed';
-            } else if (finalRating !== null) {
-              const numFinal = parseFloat(getTransmutedGrade(finalRating).toFixed(2));
-              remarks = numFinal <= 3.00 ? 'Passed' : 'Failed';
-            }
-
-            if (officialGrade !== '—') {
-              const numGrade = parseFloat(officialGrade);
-              if (!isNaN(numGrade)) {
-                officialGwas.push(numGrade);
-              }
-            }
-
-            const bestGwaStr = sgGwa !== '—' ? sgGwa : tfrGwa !== '—' ? tfrGwa : mrGwa !== '—' ? mrGwa : officialGrade;
-            if (bestGwaStr !== '—') {
-              const numGrade = parseFloat(bestGwaStr);
-              if (!isNaN(numGrade)) {
-                tentativeGwas.push(numGrade);
-              }
-            }
+            const remarks = sgPostedRow
+              ? (parseFloat(sgPostedGwa) <= 3.00 ? 'Passed' : 'Failed')
+              : 'Ongoing';
 
             return {
               class_record_id: cr.class_record_id,
@@ -407,25 +309,22 @@ export default function MyGradesList() {
               name: subj.name,
               credits: subj.units,
               instructor: cr.faculty ? `Prof. ${cr.faculty.first_name} ${cr.faculty.last_name}` : 'TBA',
-              mrGwa,
-              mrRating,
-              tfrGwa,
-              tfrRating,
-              sgGwa,
-              sgRating,
-              remarks,
-              officialLatestPeriod,
-              officialGrade
+              mrGwa: mrPostedRow ? mrPostedGwa : ratingGwaText(running?.mr),
+              mrIsPosted: Boolean(mrPostedRow),
+              tfrGwa: tfrPostedRow ? tfrPostedGwa : ratingGwaText(running?.tfr),
+              tfrIsPosted: Boolean(tfrPostedRow),
+              sgGwa: sgPostedRow ? sgPostedGwa : ratingGwaText(running?.sg),
+              sgIsPosted: Boolean(sgPostedRow),
+              mrPostedGwa,
+              tfrPostedGwa,
+              sgPostedGwa,
+              runningGwa: running?.gwa != null ? running.gwa.toFixed(2) : '—',
+              isOfficial: Boolean(running?.isOfficial),
+              remarks
             };
           });
 
         setGrades(mappedGrades);
-
-        const offGwa = computeStudentGwa(officialGwas).gwa;
-        const tentGwa = computeStudentGwa(tentativeGwas).gwa;
-
-        setOfficialGwa(offGwa);
-        setTentativeGwa(tentGwa);
 
         // Routed through the canonical GWA_BANDS ladder instead of a raw 1.45
         // literal. Sapientia/Excellentia both read as "Excellent" and
@@ -440,6 +339,14 @@ export default function MyGradesList() {
           return 'Academic warning';
         };
 
+        // Official only when every subject's SG is posted; otherwise Tentative.
+        const offGwa = summary.isOfficial ? summary.gwa : null;
+        const tentGwa = summary.isOfficial ? null : summary.gwa;
+
+        setOfficialGwa(offGwa);
+        setTentativeGwa(tentGwa);
+        setRunningSummary(summary);
+
         const standing = getStanding(offGwa);
         setOfficialStanding(standing);
 
@@ -451,7 +358,8 @@ export default function MyGradesList() {
           officialGwa: offGwa,
           officialStanding: standing,
           tentativeGwa: tentGwa,
-          tentativeStanding: tentStanding
+          tentativeStanding: tentStanding,
+          runningSummary: summary
         });
 
       } catch (err) {
@@ -555,10 +463,10 @@ export default function MyGradesList() {
                 <td className="p-2 font-mono font-bold border border-slate-300">{item.code}</td>
                 <td className="p-2 border border-slate-300">{item.name}</td>
                 <td className="p-2 text-center font-mono border border-slate-300">{item.credits.toFixed(1)}</td>
-                <td className="p-2 text-center font-mono border border-slate-300">{item.mrGwa}</td>
-                <td className="p-2 text-center font-mono border border-slate-300">{item.tfrGwa}</td>
-                <td className="p-2 text-center font-mono border border-slate-300">{item.sgGwa}</td>
-                <td className="p-2 text-center font-mono font-bold border border-slate-300">{item.officialGrade}</td>
+                <td className="p-2 text-center font-mono border border-slate-300">{item.mrPostedGwa}</td>
+                <td className="p-2 text-center font-mono border border-slate-300">{item.tfrPostedGwa}</td>
+                <td className="p-2 text-center font-mono border border-slate-300">{item.sgPostedGwa}</td>
+                <td className="p-2 text-center font-mono font-bold border border-slate-300">{item.sgPostedGwa}</td>
                 <td className="p-2 text-center font-semibold uppercase text-[10px] border border-slate-300">
                   {item.remarks}
                 </td>
@@ -613,10 +521,10 @@ export default function MyGradesList() {
             </div>
             <div>
               <h4 className="font-bold text-xs sm:text-sm text-slate-900 font-display">
-                Official Academic Milestone Ledger
+                Academic Milestone Ledger
               </h4>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Displays official Midterm Rating (MR), Tentative Final Rating (TFR), and Semestral Grade (SG) milestones.
+                Posted Midterm Rating (MR), Tentative Final Rating (TFR), and Semestral Grade (SG) are official. Values marked Tentative are computed live from recorded scores until your instructor posts them.
               </p>
             </div>
           </div>
@@ -632,7 +540,7 @@ export default function MyGradesList() {
         <div className="bg-emerald-50/40 border border-emerald-100/90 rounded-2xl p-5 sm:p-6 shadow-sm flex items-center justify-between">
           <div className="space-y-1 text-left">
             <span className="text-[10px] sm:text-xs font-bold text-emerald-800 uppercase tracking-wider block">
-              {officialGwa !== null ? 'Official Cumulative GWA' : 'Tentative Cumulative GWA'}
+              {officialGwa !== null ? 'Official Cumulative GWA' : 'Current Running GWA (Tentative)'}
             </span>
             <div className="text-3xl sm:text-4xl font-extrabold font-mono text-emerald-950">
               {officialGwa !== null ? officialGwa.toFixed(2) : (tentativeGwa !== null ? tentativeGwa.toFixed(2) : '—')}
@@ -640,6 +548,14 @@ export default function MyGradesList() {
             <p className="text-xs sm:text-sm text-emerald-700 font-medium">
               {officialGwa !== null ? 'Official Academic Standing:' : 'Tentative Academic Standing:'} <strong className="font-bold">{officialGwa !== null ? officialStanding : tentativeStanding}</strong>
             </p>
+            {officialGwa === null && tentativeGwa !== null && (
+              <p className="text-[11px] text-emerald-800/80 max-w-xl leading-relaxed">
+                Not an official grade. Posted grades come first; blank activities are not counted yet and may be recorded as zero at posting.
+                {runningSummary?.blankActivityCount > 0 && (
+                  <strong className="font-semibold"> {runningSummary.blankActivityCount} {runningSummary.blankActivityCount === 1 ? 'activity still has' : 'activities still have'} no score.</strong>
+                )}
+              </p>
+            )}
           </div>
           <div className="p-3.5 sm:p-4 bg-emerald-100 text-emerald-700 rounded-2xl shadow-sm flex-shrink-0">
             <Award className="h-6 w-6 sm:h-8 sm:w-8" />
@@ -649,7 +565,7 @@ export default function MyGradesList() {
         {/* MOBILE VIEW (<= 768px): Single Official Course Cards List */}
         <div className="block md:hidden space-y-3">
           {grades.map((item) => {
-            const hasGrade = item.officialGrade !== '—';
+            const hasGrade = item.runningGwa !== '—';
 
             return (
               <div 
@@ -671,13 +587,17 @@ export default function MyGradesList() {
                   {/* Grade Badge */}
                   <div className={cn(
                     "flex flex-col items-end justify-center px-3 py-1.5 rounded-xl border flex-shrink-0 min-w-[64px] text-right",
-                    hasGrade ? "bg-emerald-50 border-emerald-200 text-emerald-900" : "bg-slate-50 border-slate-200 text-slate-400"
+                    !hasGrade
+                      ? "bg-slate-50 border-slate-200 text-slate-400"
+                      : item.isOfficial
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                        : "bg-amber-50 border-amber-200 text-amber-900"
                   )}>
                     <span className="text-[9px] font-bold uppercase tracking-wider block opacity-70">
-                      GWA
+                      {hasGrade && !item.isOfficial ? 'Tentative GWA' : 'GWA'}
                     </span>
                     <span className="font-mono text-base font-extrabold block">
-                      {item.officialGrade}
+                      {item.runningGwa}
                     </span>
                   </div>
                 </div>
@@ -686,15 +606,15 @@ export default function MyGradesList() {
                 <div className="grid grid-cols-3 gap-2 py-2 border-y border-slate-100 text-center text-xs">
                   <div className="bg-slate-50 rounded-lg p-1.5">
                     <span className="text-[9px] font-bold text-slate-400 uppercase block">Midterm (MR)</span>
-                    <span className="font-mono font-bold text-slate-800">{item.mrGwa}</span>
+                    <span className="font-mono"><MilestoneValue value={item.mrGwa} isPosted={item.mrIsPosted} /></span>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-1.5">
                     <span className="text-[9px] font-bold text-slate-400 uppercase block">Tent. Final (TFR)</span>
-                    <span className="font-mono font-bold text-slate-800">{item.tfrGwa}</span>
+                    <span className="font-mono"><MilestoneValue value={item.tfrGwa} isPosted={item.tfrIsPosted} /></span>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-1.5">
                     <span className="text-[9px] font-bold text-slate-400 uppercase block">Sem. Grade (SG)</span>
-                    <span className="font-mono font-bold text-slate-800">{item.sgGwa}</span>
+                    <span className="font-mono"><MilestoneValue value={item.sgGwa} isPosted={item.sgIsPosted} /></span>
                   </div>
                 </div>
 
@@ -735,7 +655,7 @@ export default function MyGradesList() {
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-5 w-5 text-emerald-600" />
                 <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider font-display text-left">
-                  Official Academic Grades Ledger
+                  Academic Grades Ledger
                 </h3>
               </div>
               <span className="text-xs text-slate-500 font-semibold font-mono">
@@ -752,7 +672,7 @@ export default function MyGradesList() {
                     <th className="px-3 py-3.5 text-center font-medium">Midterm (MR)</th>
                     <th className="px-3 py-3.5 text-center font-medium">Tentative Final (TFR)</th>
                     <th className="px-3 py-3.5 text-center font-medium">Semestral Grade (SG)</th>
-                    <th className="px-4 py-3.5 text-center font-medium">Transmuted GWA</th>
+                    <th className="px-4 py-3.5 text-center font-medium">Running GWA</th>
                     <th className="px-3 py-3.5 text-center font-medium">Remarks</th>
                     <th className="px-6 py-3.5 text-right font-medium">Action</th>
                   </tr>
@@ -767,33 +687,24 @@ export default function MyGradesList() {
                       <td className="px-4 py-4 text-slate-600 font-medium">{item.instructor}</td>
                       <td className="px-3 py-4 text-center font-mono text-slate-650">{item.credits.toFixed(1)}</td>
                       <td className="px-3 py-4 text-center font-mono text-slate-700">
-                        {item.mrGwa !== '—' ? (
-                          <span className="font-bold text-slate-800">{item.mrGwa}</span>
-                        ) : (
-                          <span className="text-slate-350">—</span>
-                        )}
+                        <MilestoneValue value={item.mrGwa} isPosted={item.mrIsPosted} />
                       </td>
                       <td className="px-3 py-4 text-center font-mono text-slate-700">
-                        {item.tfrGwa !== '—' ? (
-                          <span className="font-bold text-slate-800">{item.tfrGwa}</span>
-                        ) : (
-                          <span className="text-slate-350">—</span>
-                        )}
+                        <MilestoneValue value={item.tfrGwa} isPosted={item.tfrIsPosted} />
                       </td>
                       <td className="px-3 py-4 text-center font-mono text-slate-700">
-                        {item.sgGwa !== '—' ? (
-                          <span className="font-bold text-slate-800">{item.sgGwa}</span>
-                        ) : (
-                          <span className="text-slate-350">—</span>
-                        )}
+                        <MilestoneValue value={item.sgGwa} isPosted={item.sgIsPosted} />
                       </td>
                       <td className="px-4 py-4 text-center">
                         <span className={cn(
                           "font-mono text-base font-extrabold",
-                          item.officialGrade === '—' ? 'text-slate-350' : 'text-emerald-700'
+                          item.runningGwa === '—' ? 'text-slate-350' : item.isOfficial ? 'text-emerald-700' : 'text-amber-700'
                         )}>
-                          {item.officialGrade}
+                          {item.runningGwa}
                         </span>
+                        {item.runningGwa !== '—' && !item.isOfficial && (
+                          <span className="block text-[8px] font-bold uppercase tracking-wide text-amber-600">Tentative</span>
+                        )}
                       </td>
                       <td className="px-3 py-4 text-center">
                         <span className={cn(

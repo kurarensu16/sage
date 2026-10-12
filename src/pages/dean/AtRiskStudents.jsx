@@ -11,13 +11,14 @@ import { useAuth } from '../../lib/AuthContext';
 import { dispatchNotifications } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import { resolveGradingFormula } from '../../lib/gradingMath';
-import { computeStudentGwa, HONORS, resolveOfficialGwa } from '../../lib/academicPolicy';
+import { computeStudentGwa, getRiskDisplay, HONORS, resolveOfficialGwa } from '../../lib/academicPolicy';
 import {
-  calculateInterventionOutcome,
   computeTentativeGrade,
   computeUnifiedRisk
 } from '../../lib/riskEngine';
 import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
+import { getFollowupMilestoneMap } from '../../lib/evaluationService';
+import { FOLLOWUP_MILESTONE_LABELS, isAcknowledged, summarizeInterventionOutcome } from '../../lib/evaluationTracking';
 import { cn } from '../../lib/utils';
 
 function SeverityBadge({ severity, score }) {
@@ -64,6 +65,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
   const [students, setStudents] = useState([]);
   const [sections, setSections] = useState([]);
   const [rawEvaluations, setRawEvaluations] = useState([]);
+  const [followupMilestones, setFollowupMilestones] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [alertSentMap, setAlertSentMap] = useState({});
@@ -397,7 +399,11 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
           .order('created_at', { ascending: false });
 
         if (evalErr) throw evalErr;
-        if (!cancelled) setRawEvaluations(evalRecords || []);
+        const milestoneMap = await getFollowupMilestoneMap(evalRecords || []);
+        if (!cancelled) {
+          setRawEvaluations(evalRecords || []);
+          setFollowupMilestones(milestoneMap);
+        }
 
         const evalByStudent = {};
         (evalRecords || []).forEach(ev => {
@@ -621,39 +627,36 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
 
   // Outcomes Tracker Items (evaluations with baseline snapshot)
   const outcomesList = rawEvaluations
-    .filter(ev => ev.baseline_snapshot && Object.keys(ev.baseline_snapshot).length > 0)
+    .filter(ev => ev.published_to_student_at && ev.baseline_snapshot && Object.keys(ev.baseline_snapshot).length > 0)
     .map(ev => {
       const studentMatch = students.find(s => s.id === ev.student_id);
-      const bSnapshot = ev.baseline_snapshot || {};
-      const fSnapshot = ev.followup_snapshot || null;
-      const outcomeCalc = fSnapshot ? calculateInterventionOutcome(bSnapshot, fSnapshot) : null;
-
-      let recoveryStatus = 'Active Intervention';
-      if (fSnapshot) {
-        const bGwa = parseFloat(bSnapshot.gwa || 3.0);
-        const fGwa = parseFloat(fSnapshot.gwa || 3.0);
-        if (fGwa < bGwa) recoveryStatus = 'Recovered / GWA Improved';
-        else if (fGwa === bGwa) recoveryStatus = 'Stabilized';
-        else recoveryStatus = 'Needs Continued Escalation';
-      } else if (ev.refer_to_dean) {
-        recoveryStatus = 'Escalated to Dean';
-      }
+      const milestone = followupMilestones[ev.evaluation_id] || null;
+      const summary = summarizeInterventionOutcome(ev, milestone);
+      const gwaText = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+        ? Number(value).toFixed(2) : '—';
+      const riskText = (level, score) => level ? `${getRiskDisplay(level).label} (${score ?? '—'})` : '—';
+      const gwaChange = summary.outcome?.gwaChange;
 
       return {
         evaluation_id: ev.evaluation_id,
-        studentName: studentMatch ? `${studentMatch.firstName} ${studentMatch.lastName}` : 'Student',
-        studentEmail: studentMatch?.email || '—',
+        studentName: studentMatch ? `${studentMatch.firstName} ${studentMatch.lastName}`
+          : ev.student ? `${ev.student.first_name} ${ev.student.last_name}` : 'Student',
+        studentEmail: studentMatch?.email || ev.student?.email || '—',
         section: ev.class_record?.sections?.name || studentMatch?.section || '—',
         subjectCode: ev.class_record?.subjects?.code || 'General',
         context: ev.evaluation_context === 'pl_retention' ? "Legacy President's Lister Retention" : ev.evaluation_context === 'passing_recovery' ? 'Legacy Passing Recovery' : 'Academic Intervention',
-        baselineGwa: bSnapshot.gwa ? Number(bSnapshot.gwa).toFixed(2) : '—',
-        baselineScore: bSnapshot.risk_score || ev.risk_score || 0,
-        followupGwa: fSnapshot?.gwa ? Number(fSnapshot.gwa).toFixed(2) : (studentMatch?.runningGwa ? studentMatch.runningGwa.toFixed(2) : 'Pending'),
-        followupScore: fSnapshot?.risk_score ?? (studentMatch?.riskScore ?? '—'),
-        recoveryStatus,
-        outcomeCalc,
-        facultyName: ev.faculty ? `${ev.faculty.first_name} ${ev.faculty.last_name}` : 'Faculty',
-        tasks: Array.isArray(ev.advising_plan) ? ev.advising_plan : []
+        baselineGwa: gwaText(summary.baseline.gwa),
+        baselineRisk: riskText(summary.baseline.risk_level || ev.risk_level, summary.baseline.risk_score ?? ev.risk_score),
+        followupGwa: summary.followup ? gwaText(summary.followup.gwa) : summary.followupDue ? 'Due' : 'Not yet',
+        followupRisk: summary.followup ? riskText(summary.followup.risk_level, summary.followup.risk_score) : '—',
+        followupPoint: summary.followup
+          ? FOLLOWUP_MILESTONE_LABELS[summary.followup.milestone] || summary.followup.milestone
+          : milestone ? `${FOLLOWUP_MILESTONE_LABELS[milestone.grade_period]} posted` : '',
+        gwaChange: gwaChange === null || gwaChange === undefined ? '—' : `${gwaChange > 0 ? '+' : ''}${gwaChange.toFixed(2)}`,
+        tasksVerified: `${summary.tasks.verified}/${summary.tasks.total}${summary.completionRate !== null ? ` (${summary.completionRate}%)` : ''}`,
+        acknowledgment: isAcknowledged(ev) ? `Acknowledged ${new Date(ev.acknowledged_at).toLocaleDateString()}` : 'Not acknowledged',
+        recoveryStatus: summary.status,
+        facultyName: ev.faculty ? `${ev.faculty.first_name} ${ev.faculty.last_name}` : 'Faculty'
       };
     });
 
@@ -1236,7 +1239,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                 <div>
                   <span className="font-bold block">Intervention Outcomes &amp; Baseline Recovery Tracker</span>
                   <p className="text-emerald-800/90 text-[11px] mt-0.5">
-                    Compares initial baseline evaluation snapshots against follow-up term milestones to quantitatively audit intervention efficacy.
+                    Compares each frozen baseline with the follow-up the faculty records after the next posted milestone. GWA change is follow-up minus baseline (negative is better). Task completion counts faculty-verified tasks only.
                   </p>
                 </div>
               </div>
@@ -1253,9 +1256,11 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                       <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Student</th>
                       <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Section</th>
                       <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Scope / Course</th>
-                      <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Baseline GWA</th>
-                      <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Follow-up GWA</th>
-                      <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Intervention Status</th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Baseline</th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Follow-up</th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">GWA Change</th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Verified Tasks</th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Risk Transition</th>
                       <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Faculty Lead</th>
                     </tr>
                   </thead>
@@ -1271,6 +1276,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                               <div>
                                 <p className="text-sm font-semibold text-slate-900">{row.studentName}</p>
                                 <p className="text-[10px] text-slate-400 font-mono">{row.studentEmail}</p>
+                                <p className="text-[10px] text-slate-500">{row.acknowledgment}</p>
                               </div>
                             </div>
                           </td>
@@ -1288,26 +1294,37 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                             </div>
                           </td>
 
-                          <td className="px-6 py-4 whitespace-nowrap text-center font-mono text-xs text-slate-600">
-                            {row.baselineGwa}
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-xs text-slate-600">
+                            <span className="block">{row.baselineRisk}</span>
+                            <span className="block font-mono">GWA {row.baselineGwa}</span>
                           </td>
 
-                          <td className="px-6 py-4 whitespace-nowrap text-center font-mono font-bold text-xs text-slate-900">
-                            {row.followupGwa}
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-xs text-slate-900">
+                            <span className="block font-semibold">{row.followupRisk}</span>
+                            <span className="block font-mono">GWA {row.followupGwa}</span>
+                            {row.followupPoint && <span className="block text-[10px] text-slate-400">{row.followupPoint}</span>}
+                          </td>
+
+                          <td className="px-6 py-4 whitespace-nowrap text-center font-mono text-xs text-slate-700">
+                            {row.gwaChange}
+                          </td>
+
+                          <td className="px-6 py-4 whitespace-nowrap text-center font-mono text-xs text-slate-700">
+                            {row.tasksVerified}
                           </td>
 
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <span className={cn(
                               "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold",
-                              row.recoveryStatus.includes('Recovered') || row.recoveryStatus.includes('Improved')
+                              row.recoveryStatus === 'Improved'
                                 ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                : row.recoveryStatus.includes('Escalated')
+                                : row.recoveryStatus === 'Worsened' || row.recoveryStatus === 'Escalated to Dean'
                                 ? "bg-rose-50 text-rose-700 border border-rose-200"
                                 : "bg-amber-50 text-amber-700 border border-amber-200"
                             )}>
-                              {row.recoveryStatus.includes('Recovered') ? (
+                              {row.recoveryStatus === 'Improved' ? (
                                 <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                              ) : row.recoveryStatus.includes('Escalated') ? (
+                              ) : row.recoveryStatus === 'Worsened' || row.recoveryStatus === 'Escalated to Dean' ? (
                                 <AlertOctagon className="h-3 w-3 text-rose-500" />
                               ) : (
                                 <Clock className="h-3 w-3 text-amber-500" />
@@ -1323,7 +1340,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan="7" className="px-6 py-12 text-center">
+                        <td colSpan="9" className="px-6 py-12 text-center">
                           <TrendingUp className="h-8 w-8 text-slate-300 mx-auto mb-2" />
                           <p className="text-sm text-slate-500 font-medium">No baseline snapshots recorded yet for this college.</p>
                         </td>

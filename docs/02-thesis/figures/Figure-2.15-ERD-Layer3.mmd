@@ -1,0 +1,20 @@
+erDiagram
+%% ===== Figure 2.15 — ERD Layer 3: Grading Engine (updated 2026-10-10) =====
+%% Removes UNLOCK_REQUESTS (no longer used); adds STUDENT_COMPONENT_SCORES, STUDENT_TERM_SCORES,
+%% CLASS_GRADING_COLUMNS, GRADE_CORRECTION_HISTORY, and the posted-grade link of SG proposals.
+    SUBJECTS }o--|| GRADE_COMPUTATIONS : "uses template"
+    GRADE_COMPUTATIONS ||--o{ GRADE_COMPUTATION_COMPONENTS : "defines"
+    CLASS_RECORDS ||--o{ CLASS_ACTIVITIES : "contains"
+    CLASS_ACTIVITIES ||--o{ STUDENT_ACTIVITY_SCORES : "scored by"
+    USERS ||--o{ STUDENT_ACTIVITY_SCORES : "student score"
+    CLASS_RECORDS ||--o{ CLASS_GRADING_COLUMNS : "fixed-slot layout"
+    CLASS_RECORDS ||--o{ STUDENT_TERM_SCORES : "term scores"
+    USERS ||--o{ STUDENT_TERM_SCORES : "student"
+    GRADE_COMPUTATION_COMPONENTS ||--o{ STUDENT_COMPONENT_SCORES : "component"
+    CLASS_RECORDS ||--o{ STUDENT_COMPONENT_SCORES : "per class"
+    CLASS_RECORDS ||--o{ POSTED_GRADES : "grades for"
+    USERS ||--o{ POSTED_GRADES : "student grade"
+    POSTED_GRADES ||--o{ REMARK_OVERRIDE_REQUESTS : "SG correction proposal"
+    USERS ||--o{ REMARK_OVERRIDE_REQUESTS : "requested by / decided by"
+    REMARK_OVERRIDE_REQUESTS ||--o| GRADE_CORRECTION_HISTORY : "applied as"
+    POSTED_GRADES ||--o{ GRADE_CORRECTION_HISTORY : "corrected in"

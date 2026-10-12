@@ -1,0 +1,42 @@
+flowchart LR
+%% ===== Figure 2.9 — Level 1 DFD: Faculty Portal — column A (processes 1.0–7.0), revised 2026-10-10 =====
+%% Two-column layout (see compose_columns.py); adds 6.0 Manage Classes; numbered in menu order.
+
+  %% ---------- 1.0 ----------
+  F1["Faculty"] <-- "credentials / access session" --> P1(("1.0<br/>Authenticate<br/>User"))
+  P1 <-- "account record" --> D1@{ shape: lin-rect, label: "D1&nbsp; users" }
+
+  %% ---------- 2.0 ----------
+  F2["Faculty"] <-- "class, risk and<br/>consultation summary" --> P2(("2.0<br/>Load<br/>Dashboard"))
+  P2 <-- "handled sections" --> D7b@{ shape: lin-rect, label: "D7&nbsp; class_records" }
+  P2 <-- "risk distribution" --> D16b@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
+  P2 <-- "pending requests" --> D23b@{ shape: lin-rect, label: "D23&nbsp; student_consultation_requests" }
+
+  %% ---------- 3.0 ----------
+  F3["Faculty"] <-- "activity metadata and raw scores /<br/>locked and active columns" --> P3(("3.0<br/>Log Class<br/>Scores"))
+  P3 <-- "title, description, max score" --> D10c@{ shape: lin-rect, label: "D10&nbsp; class_activities" }
+  P3 <-- "per-student scores" --> D11c@{ shape: lin-rect, label: "D11&nbsp; student_activity_scores" }
+
+  %% ---------- 4.0 ----------
+  F4["Faculty"] <-- "MR / TFR / SG preview /<br/>post command" --> P4(("4.0<br/>Preview & Post<br/>Grades"))
+  P4 <-- "COG template weights" --> D6d@{ shape: lin-rect, label: "D6&nbsp; grade_computations" }
+  P4 <-- "official milestones" --> D12d@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+
+  %% ---------- 5.0 ----------
+  F5["Faculty"] <-- "proposed SG, remark, evidence /<br/>request status" --> P5(("5.0<br/>Request SG<br/>Correction"))
+  P5 <-- "correction proposal, decision" --> D14e@{ shape: lin-rect, label: "D14&nbsp; remark_override_requests" }
+  P5 -- "matching SG repost" --> D12e@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P5 -- "applied correction" --> D34e@{ shape: lin-rect, label: "D34&nbsp; grade_correction_history" }
+
+  %% ---------- 6.0 ----------
+  F6["Faculty"] <-- "new classrooms, approvals /<br/>class records, join codes,<br/>enrollment requests" --> P6(("6.0<br/>Manage<br/>Classes"))
+  P6 <-- "classroom instances" --> D7f@{ shape: lin-rect, label: "D7&nbsp; class_records" }
+  P6 <-- "join codes" --> D35f@{ shape: lin-rect, label: "D35&nbsp; class_room_join_codes" }
+  P6 <-- "join requests, decision" --> D36f@{ shape: lin-rect, label: "D36&nbsp; class_join_requests" }
+  P6 -- "approved student" --> D8f@{ shape: lin-rect, label: "D8&nbsp; enrollments" }
+
+  %% ---------- 7.0 ----------
+  F7["Faculty"] <-- "risk-sorted roster and<br/>factor breakdown" --> P7(("7.0<br/>Evaluate<br/>Students"))
+  P7 <-- "recorded zeros" --> D11g@{ shape: lin-rect, label: "D11&nbsp; student_activity_scores" }
+  P7 <-- "running GWA" --> D12g@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P7 <-- "absence counts" --> D15g@{ shape: lin-rect, label: "D15&nbsp; attendance_records" }

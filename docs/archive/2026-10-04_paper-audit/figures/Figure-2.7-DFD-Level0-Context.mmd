@@ -1,0 +1,25 @@
+flowchart LR
+%% ===== Figure 2.7 — Level 0 DFD (ASPIRE Context Diagram) — CORRECTED =====
+%% ASPIRE sits at the centre; external entities surround it (senders left, receivers right).
+%% "CSV imports" relabelled to the spreadsheet import actually implemented.
+
+  %% ---------- entities feeding the system (left) ----------
+  STU["<b>Student</b>"]
+  FAC["<b>Faculty</b>"]
+  AIP["<b>AI Model Provider</b><br/>(Gemini 2.5 Flash<br/>via OpenRouter)"]
+
+  %% ---------- the system (centre) ----------
+  SYS((("<b>0</b><br/><b>ASPIRE</b><br/><b>System</b>"))):::accent
+
+  %% ---------- entities served by the system (right) ----------
+  DEAN["<b>College Dean</b>"]
+  ADM["<b>Admin</b>"]
+
+  STU <-- "credentials, consultation requests,<br/>task completions&nbsp; /&nbsp; posted grades,<br/>AI diagnostics, validated study plans" --> SYS
+  FAC <-- "scores with activity metadata, attendance,<br/>HITL evaluations, correction requests&nbsp; /&nbsp;<br/>grade previews, risk-sorted rosters" --> SYS
+  AIP <-- "structured JSON diagnostic&nbsp; /&nbsp;<br/>metadata-grounded prompt" --> SYS
+
+  SYS <-- "correction requests, escalated cases,<br/>Risk and Honors Matrix, intervention<br/>results, reports&nbsp; /&nbsp; correction decisions,<br/>case dispositions, report parameters" --> DEAN
+  SYS <-- "system metrics, activity logs&nbsp; /&nbsp; user accounts<br/>and spreadsheet imports, academic setup,<br/>term settings, grade overrides" --> ADM
+
+  classDef accent fill:#1E3A8A,stroke:#1E3A8A,color:#FFFFFF;

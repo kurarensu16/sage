@@ -76,70 +76,61 @@ export async function getOrCreateJoinCode(classRecordId, subjectCode = 'CLS', se
 /**
  * Submits a join request from a student using a classroom join code (Instant Enrollment).
  */
-export async function submitJoinRequest(studentId, joinCode) {
+/**
+ * Student requests to join a class by code. Creates a PENDING request for the
+ * class's faculty to approve (request_class_join); the student is not enrolled
+ * until approved. The faculty receives an in-app notification.
+ */
+export async function submitJoinRequest(_studentId, joinCode) {
   const cleanCode = (joinCode || '').trim().toUpperCase();
   if (!cleanCode) throw new Error('Please enter a valid join code.');
 
-  // Find class record by join code
-  const { data: codeRow, error: codeErr } = await supabase
-    .from('class_room_join_codes')
-    .select('class_record_id, is_active, class_records ( class_record_id, subject_id, section_id, subjects ( code, name ), sections ( name ) )')
-    .eq('join_code', cleanCode)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('request_class_join', { p_join_code: cleanCode });
+  if (error) throw new Error(error.message || 'Failed to send the join request.');
 
-  if (codeErr || !codeRow || !codeRow.is_active) {
-    throw new Error('Invalid or inactive classroom code. Please check with your instructor.');
-  }
-
-  const classRecordId = codeRow.class_record_id;
-  const subjectId = codeRow.class_records?.subject_id;
-  const sectionId = codeRow.class_records?.section_id;
-
-  // Check if student is already enrolled in this subject
-  const { data: existingEnrollment } = await supabase
-    .from('enrollments')
-    .select('enrollment_id')
-    .eq('student_id', studentId)
-    .eq('subject_id', subjectId)
-    .maybeSingle();
-
-  if (existingEnrollment) {
-    throw new Error(`You are already enrolled in ${codeRow.class_records?.subjects?.code || 'this subject'}.`);
-  }
-
-  // 1. Direct Enrollment: Insert into enrollments table
-  if (subjectId && sectionId) {
-    const { error: enrollErr } = await supabase
-      .from('enrollments')
-      .insert({
-        student_id: studentId,
-        subject_id: subjectId,
-        section_id: sectionId,
-        status: 'active'
-      });
-
-    if (enrollErr) {
-      console.warn('Direct enrollment insert notice:', enrollErr.message);
-    }
-  }
-
-  // 2. Also record in class_join_requests as approved for audit history
-  await supabase
-    .from('class_join_requests')
-    .upsert({
-      class_record_id: classRecordId,
-      student_id: studentId,
-      status: 'approved'
-    }, { onConflict: 'class_record_id,student_id' });
-
+  const subjectCode = data?.subject_code || 'Class';
+  const sectionName = data?.section_name || 'Section';
   return {
     success: true,
-    classRecord: codeRow.class_records,
-    subjectCode: codeRow.class_records?.subjects?.code || 'Class',
-    subjectName: codeRow.class_records?.subjects?.name || 'Subject',
-    sectionName: codeRow.class_records?.sections?.name || 'Section',
-    message: `Successfully enrolled in ${codeRow.class_records?.subjects?.code || 'Class'} (${codeRow.class_records?.sections?.name || 'Section'})!`
+    pending: true,
+    requestId: data?.request_id,
+    classRecordId: data?.class_record_id,
+    subjectCode,
+    subjectName: data?.subject_name || 'Subject',
+    sectionName,
+    message: `Request sent to the instructor of ${subjectCode} (${sectionName}). You'll be added once it's approved.`
   };
+}
+
+/**
+ * The student's own join requests that are still waiting or were rejected and not
+ * yet dismissed — shown as locked cards on My Subjects.
+ */
+export async function getMyJoinRequests(studentId) {
+  if (!studentId) return [];
+  const { data, error } = await supabase
+    .from('class_join_requests')
+    .select(`
+      request_id, status, requested_at, created_at, decided_at,
+      class_records (
+        class_record_id,
+        subjects ( code, name, credits ),
+        sections ( name ),
+        faculty:users!faculty_id ( first_name, last_name )
+      )
+    `)
+    .eq('student_id', studentId)
+    .in('status', ['pending', 'rejected'])
+    .is('student_dismissed_at', null)
+    .order('requested_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+/** Hides one of the student's rejected request cards. */
+export async function dismissJoinRequest(requestId) {
+  const { error } = await supabase.rpc('dismiss_class_join_request', { p_request_id: requestId });
+  if (error) throw new Error(error.message || 'Could not dismiss the request.');
 }
 
 /**
@@ -325,6 +316,7 @@ export async function getPendingJoinRequests(classRecordId) {
         student_id,
         status,
         created_at,
+        requested_at,
         users:student_id (
           user_id,
           first_name,
@@ -336,7 +328,7 @@ export async function getPendingJoinRequests(classRecordId) {
       `)
       .eq('class_record_id', classRecordId)
       .eq('status', 'pending')
-      .order('created_at', { ascending: false });
+      .order('requested_at', { ascending: false });
 
     if (error) {
       console.warn('Could not fetch class_join_requests:', error.message);
@@ -350,51 +342,17 @@ export async function getPendingJoinRequests(classRecordId) {
 }
 
 /**
- * Approves or rejects a join request.
+ * Approves or rejects a join request in one database transaction
+ * (resolve_class_join_request): only the class's assigned faculty may decide,
+ * approval also enrolls the student, and the student is notified in-app.
  */
-export async function resolveJoinRequest(requestId, classRecordId, studentId, newStatus) {
-  try {
-    const { error: updErr } = await supabase
-      .from('class_join_requests')
-      .update({ status: newStatus })
-      .eq('request_id', requestId);
-
-    if (updErr) throw updErr;
-
-    // If approved, ensure student is added to enrollments
-    if (newStatus === 'approved') {
-      const { data: cls } = await supabase
-        .from('class_records')
-        .select('subject_id, section_id')
-        .eq('class_record_id', classRecordId)
-        .single();
-
-      if (cls) {
-        const { data: existingEnc } = await supabase
-          .from('enrollments')
-          .select('enrollment_id')
-          .eq('student_id', studentId)
-          .eq('subject_id', cls.subject_id)
-          .maybeSingle();
-
-        if (!existingEnc) {
-          await supabase
-            .from('enrollments')
-            .insert({
-              student_id: studentId,
-              subject_id: cls.subject_id,
-              section_id: cls.section_id,
-              status: 'active'
-            });
-        }
-      }
-    }
-
-    return true;
-  } catch (err) {
-    console.error('Failed to resolve join request:', err);
-    throw err;
-  }
+export async function resolveJoinRequest(requestId, _classRecordId, _studentId, newStatus) {
+  const { data, error } = await supabase.rpc('resolve_class_join_request', {
+    p_request_id: requestId,
+    p_decision: newStatus
+  });
+  if (error) throw new Error(error.message || 'Could not update the enrollment request.');
+  return data;
 }
 
 /**

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "ask": [
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "NotebookEdit",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git reset:*)",
+      "Bash(git checkout:*)",
+      "Bash(npm install:*)",
+      "Bash(npx supabase:*)",
+      "Bash(supabase:*)"
+    ],
+    "disableBypassPermissionsMode": "disable"
+  }
+}

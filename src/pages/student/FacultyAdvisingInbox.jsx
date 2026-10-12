@@ -17,13 +17,14 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { cn } from '../../lib/utils';
-import { isStudentVisibleEvaluation } from '../../lib/evaluationTracking';
+import { countTaskProgress, isAcknowledged, isStudentVisibleEvaluation, taskVerification } from '../../lib/evaluationTracking';
 
 export default function FacultyAdvisingInbox() {
   const { user } = useAuth();
   const [evaluations, setEvaluations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
+  const [acknowledgingId, setAcknowledgingId] = useState(null);
 
   const fetchEvaluations = useCallback(async () => {
     if (!user) return;
@@ -41,7 +42,9 @@ export default function FacultyAdvisingInbox() {
           shared_academic_feedback,
           advising_plan,
           baseline_snapshot,
+          followup_snapshot,
           status,
+          acknowledged_at,
           published_to_student_at,
           created_at,
           updated_at,
@@ -75,9 +78,26 @@ export default function FacultyAdvisingInbox() {
     fetchEvaluations();
   }, [fetchEvaluations]);
 
+  const handleAcknowledge = async (evaluationId) => {
+    setAcknowledgingId(evaluationId);
+    try {
+      const { data, error } = await supabase
+        .rpc('acknowledge_student_evaluation', { p_evaluation_id: evaluationId })
+        .single();
+      if (error) throw error;
+      setEvaluations(prev => prev.map(e => e.evaluation_id === evaluationId
+        ? { ...e, status: data.status, acknowledged_at: data.acknowledged_at } : e));
+    } catch (err) {
+      console.error('Failed to acknowledge plan:', err);
+      alert(err.message || 'Failed to acknowledge this plan. Please try again.');
+    } finally {
+      setAcknowledgingId(null);
+    }
+  };
+
   // Toggle checklist task completion
-  const handleToggleTask = async (evaluationId, taskId, currentStatus, isDraft) => {
-    if (isDraft) return;
+  const handleToggleTask = async (evaluationId, taskId, currentStatus, isLocked) => {
+    if (isLocked) return;
     setUpdatingTaskId(taskId);
     try {
       const targetEval = evaluations.find(e => e.evaluation_id === evaluationId);
@@ -96,7 +116,7 @@ export default function FacultyAdvisingInbox() {
       setEvaluations(prev => prev.map(e => e.evaluation_id === evaluationId ? { ...e, advising_plan: updatedPlan } : e));
     } catch (err) {
       console.error('Failed to update task status:', err);
-      alert('Failed to update task status. Please try again.');
+      alert(err.message || 'Failed to update task status. Please try again.');
     } finally {
       setUpdatingTaskId(null);
     }
@@ -146,9 +166,11 @@ export default function FacultyAdvisingInbox() {
           <div className="space-y-4">
             {evaluations.map((ev) => {
               const tasks = ev.advising_plan || [];
-              const completedCount = tasks.filter(t => t.completed).length;
-              const totalCount = tasks.length;
-              const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+              const { reported: completedCount, verified: verifiedCount, total: totalCount } = countTaskProgress(tasks);
+              const isClosed = Boolean(ev.followup_snapshot);
+              const acknowledged = isAcknowledged(ev);
+              // Progress counts instructor-verified tasks, matching the faculty view and the Dean's results.
+              const progressPct = totalCount > 0 ? Math.round((verifiedCount / totalCount) * 100) : 0;
               const planDeadline = tasks.map(task => task.due_date).filter(Boolean).sort().at(-1) || null;
               const isRecovery = ev.evaluation_context === 'passing_recovery';
               const isLegacyRetention = ev.evaluation_context === 'pl_retention';
@@ -212,7 +234,7 @@ export default function FacultyAdvisingInbox() {
                       )}
 
                       <span className="px-2 py-1 rounded-md text-xs font-mono font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                        {isDraft ? 'Draft' : `${progressPct}% Completed`}
+                        {isDraft ? 'Draft' : `${verifiedCount}/${totalCount} verified`}
                       </span>
                     </div>
                   </div>
@@ -233,6 +255,31 @@ export default function FacultyAdvisingInbox() {
                       </div>
                     )}
 
+                    {!isDraft && !isClosed && (
+                      acknowledged ? (
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>You acknowledged this plan on {new Date(ev.acknowledged_at).toLocaleDateString()}.</span>
+                        </div>
+                      ) : (
+                        <div className="p-3.5 bg-sage-50 border border-sage-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-sage-900">
+                          <div>
+                            <span className="font-bold block">Please acknowledge this plan</span>
+                            <span className="text-[11px] text-sage-700">Read your instructor&apos;s guidance and tasks below, then confirm you have received them. Your instructor will see when you acknowledged it. You can report task progress after acknowledging.</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleAcknowledge(ev.evaluation_id)}
+                            disabled={acknowledgingId === ev.evaluation_id}
+                            className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-sage-600 hover:bg-sage-700 rounded-md shadow-xs transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>{acknowledgingId === ev.evaluation_id ? 'Saving…' : 'Acknowledge plan'}</span>
+                          </button>
+                        </div>
+                      )
+                    )}
+
                     {/* Only explicitly shared feedback is student-visible. */}
                     {ev.shared_academic_feedback && (
                       <div className="p-3.5 bg-slate-50 border-l-2 border-sage-500 rounded-r-md text-xs text-slate-800 space-y-1">
@@ -249,10 +296,10 @@ export default function FacultyAdvisingInbox() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                          Assigned Catch-Up Milestones ({completedCount}/{totalCount})
+                          Assigned Catch-Up Milestones ({completedCount}/{totalCount} reported · {verifiedCount} verified)
                         </span>
                         <span className="text-[11px] text-slate-400">
-                          {isDraft ? 'Actionable once published by professor' : 'Check off items as you complete them'}
+                          {isDraft ? 'Actionable once published by professor' : isClosed ? 'Plan closed after your instructor recorded the follow-up' : !acknowledged ? 'Acknowledge the plan to start reporting progress' : 'Check off items as you complete them; your instructor verifies each one'}
                         </span>
                       </div>
 
@@ -276,22 +323,26 @@ export default function FacultyAdvisingInbox() {
 
                       {/* Tasks List */}
                       <div className="space-y-2 pt-1">
-                        {tasks.map((task) => (
-                          <div 
+                        {tasks.map((task) => {
+                          const verification = taskVerification(task);
+                          const isLocked = isDraft || isClosed || !acknowledged || verification === 'verified';
+                          return (
+                          <div
                             key={task.task_id}
                             className={cn(
                               "flex items-start gap-3 p-3 rounded-md border transition-all",
-                              isDraft 
-                                ? "bg-slate-50/70 border-slate-200 text-slate-500 cursor-not-allowed opacity-75" 
-                                : task.completed 
-                                  ? "bg-emerald-50/40 border-emerald-200 text-slate-600 cursor-pointer" 
+                              isLocked && !task.completed
+                                ? "bg-slate-50/70 border-slate-200 text-slate-500 cursor-not-allowed opacity-75"
+                                : task.completed
+                                  ? cn("bg-emerald-50/40 border-emerald-200 text-slate-600", isLocked ? "cursor-default" : "cursor-pointer")
                                   : "bg-white border-slate-200 text-slate-800 hover:border-slate-300 cursor-pointer"
                             )}
-                            onClick={() => !isDraft && handleToggleTask(ev.evaluation_id, task.task_id, task.completed, isDraft)}
+                            onClick={() => !isLocked && handleToggleTask(ev.evaluation_id, task.task_id, task.completed, isLocked)}
                           >
                             <button
                               type="button"
-                              disabled={isDraft || updatingTaskId === task.task_id}
+                              disabled={isLocked || updatingTaskId === task.task_id}
+                              aria-label={task.completed ? 'Mark task as not done' : 'Report task as done'}
                               className="mt-0.5 text-sage-600 hover:text-sage-700 disabled:opacity-50"
                             >
                               {task.completed ? (
@@ -307,12 +358,18 @@ export default function FacultyAdvisingInbox() {
                               </span>
                               {task.completed && task.completed_at && (
                                 <div className="text-[10px] font-mono text-slate-400 mt-0.5 flex items-center gap-1">
-                                  <span className="text-emerald-600 font-semibold">Completed on {new Date(task.completed_at).toLocaleDateString()}</span>
+                                  <span className="text-emerald-600 font-semibold">Reported done on {new Date(task.completed_at).toLocaleDateString()}</span>
                                 </div>
                               )}
+                              <div className="text-[10px] mt-0.5 font-semibold text-slate-500">
+                                {verification === 'verified' && <span className="text-emerald-700">Verified by your instructor</span>}
+                                {verification === 'reported' && <span>{isClosed ? 'Not verified before the plan closed' : 'Awaiting instructor verification'}</span>}
+                                {verification === 'returned' && <span className="text-amber-700">Returned by your instructor: {task.return_note}</span>}
+                              </div>
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -325,7 +382,7 @@ export default function FacultyAdvisingInbox() {
                         to="/student/academic-insights"
                         className="inline-flex items-center gap-1 font-semibold text-sage-600 hover:text-sage-700"
                       >
-                        <span>Open Study Tutor</span>
+                        <span>Open AI Study Tutor</span>
                         <ArrowRight className="w-3.5 h-3.5" />
                       </Link>
                     </div>

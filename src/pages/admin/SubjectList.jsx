@@ -62,8 +62,34 @@ CS202,Object Oriented Programming,3,College of Computer Studies`;
     loadSubjects();
   }, []);
 
+  // A subject that is already in use is never deleted: deleting it would remove its
+  // classes, grades, and enrollments.
   const handleDeleteSubject = async (id, code, name) => {
-    if (confirm(`Are you sure you want to delete subject "${code} - ${name}"? This will affect new classroom creations.`)) {
+    let classes;
+    let enrollments;
+    try {
+      const [classResult, enrollmentResult] = await Promise.all([
+        supabase.from('class_records').select('*', { count: 'exact', head: true }).eq('subject_id', id),
+        supabase.from('enrollments').select('*', { count: 'exact', head: true }).eq('subject_id', id)
+      ]);
+      if (classResult.error) throw classResult.error;
+      if (enrollmentResult.error) throw enrollmentResult.error;
+      classes = classResult.count || 0;
+      enrollments = enrollmentResult.count || 0;
+    } catch (err) {
+      alert('Could not check whether this subject is in use: ' + err.message);
+      return;
+    }
+
+    if (classes || enrollments) {
+      const reasons = [];
+      if (classes) reasons.push(`${classes} class${classes === 1 ? '' : 'es'}`);
+      if (enrollments) reasons.push(`${enrollments} class enrollment${enrollments === 1 ? '' : 's'}`);
+      alert(`Subject "${code} - ${name}" cannot be deleted because it is in use: ${reasons.join(', ')}. Keep the subject, or remove its classes first.`);
+      return;
+    }
+
+    if (confirm(`Delete subject "${code} - ${name}"? It has no classes or enrollments.`)) {
       const { error } = await supabase.from('subjects').delete().eq('subject_id', id);
       if (error) {
         alert('Failed to delete subject: ' + error.message);

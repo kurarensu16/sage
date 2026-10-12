@@ -1,0 +1,16 @@
+erDiagram
+%% ===== Figure 2.14 — ERD Layer 2: Enrollment & Classroom Setup (rebuilt 2026-10-10) =====
+%% Rebuilt from the original figure with the same entities and relationships. Change: the
+%% USERS–CLASS_JOIN_REQUESTS link now reads "submits / decided by (faculty)", since each request
+%% records the instructor who approved or rejected it (decided_by, migration 20261010150000).
+    USERS ||--o{ ENROLLMENTS : "enrolls as student"
+    SECTIONS ||--o{ ENROLLMENTS : "contains"
+    SUBJECTS ||--o{ ENROLLMENTS : "covers"
+    USERS ||--o{ CLASS_RECORDS : "teaches (faculty)"
+    SECTIONS ||--o{ CLASS_RECORDS : "scheduled for"
+    SUBJECTS ||--o{ CLASS_RECORDS : "offered as"
+    USERS ||--o{ CLASS_FACULTY_LOG : "assigned / replaced by"
+    CLASS_RECORDS ||--o{ CLASS_FACULTY_LOG : "reassignment history"
+    USERS ||--o{ CLASS_JOIN_REQUESTS : "submits / decided by (faculty)"
+    CLASS_RECORDS ||--o{ CLASS_JOIN_REQUESTS : "receives"
+    CLASS_RECORDS ||--o{ CLASS_ROOM_JOIN_CODES : "generates"

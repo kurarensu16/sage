@@ -236,13 +236,35 @@ export default function SubjectForm() {
         computation_id: formData.computationId
       };
 
+      // Refuse duplicates (the database also enforces this): the same code anywhere,
+      // or the same subject name twice in one college, ignoring case and spaces.
+      const { data: sameCollege, error: dupErr } = await supabase
+        .from('subjects')
+        .select('subject_id, code, name, department_id');
+      if (dupErr) throw dupErr;
+      const others = (sameCollege || []).filter(s => s.subject_id !== subjectId);
+      const codeKey = payload.code.replace(/\s+/g, '');
+      const nameKey = payload.name.toLowerCase().replace(/\s+/g, ' ');
+      const codeTaken = others.find(s => (s.code || '').toUpperCase().replace(/\s+/g, '') === codeKey);
+      if (codeTaken) {
+        throw new Error(`Subject code "${payload.code}" is already used by "${codeTaken.name}".`);
+      }
+      const nameTaken = others.find(s => s.department_id === payload.department_id
+        && (s.name || '').trim().toLowerCase().replace(/\s+/g, ' ') === nameKey);
+      if (nameTaken) {
+        throw new Error(`"${payload.name}" already exists in this college as ${nameTaken.code}. Edit that subject instead of adding it again.`);
+      }
+
       if (isEditMode) {
         const { error } = await supabase
           .from('subjects')
           .update(payload)
           .eq('subject_id', subjectId);
-        
-        if (error) throw error;
+
+        if (error) {
+          if (error.code === '23505') throw new Error('This subject code, or this subject name in the same college, is already registered.');
+          throw error;
+        }
 
         const actorName = resolveActorName(profile, user);
         await logActivity(
@@ -262,7 +284,7 @@ export default function SubjectForm() {
           .insert(payload);
         
         if (error) {
-           if (error.code === '23505') throw new Error(`Subject code "${formData.code}" is already registered.`);
+           if (error.code === '23505') throw new Error('This subject code, or this subject name in the same college, is already registered.');
            throw error;
         }
 

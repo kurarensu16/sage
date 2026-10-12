@@ -94,13 +94,23 @@ export default function AuditLog() {
     setErrorMsg('');
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('activity_logs')
-        .select('*')
-        .order('timestamp', { ascending: false });
+      // The API returns at most 1,000 rows per request, so read every page; search,
+      // filters, and the CSV export then cover all entries, not only the newest 1,000.
+      const PAGE_SIZE = 1000;
+      const allLogs = [];
+      for (let from = 0; ; from += PAGE_SIZE) {
+        const { data, error } = await supabase
+          .from('activity_logs')
+          .select('*')
+          .order('timestamp', { ascending: false })
+          .order('log_id', { ascending: false })
+          .range(from, from + PAGE_SIZE - 1);
 
-      if (error) throw error;
-      setLogs(data || []);
+        if (error) throw error;
+        allLogs.push(...(data || []));
+        if (!data || data.length < PAGE_SIZE) break;
+      }
+      setLogs(allLogs);
     } catch (err) {
       console.error('Failed to load activity logs:', err);
       setErrorMsg('Failed to load system audit logs: ' + err.message);

@@ -42,7 +42,8 @@ const content = {
     ['How points are formed', 'Current GWA contributes up to 60 points, attendance up to 50, recorded zero scores up to 15, and a declining term trajectory up to 10. The final score is capped at 100.'],
     ['Pending versus recorded zero', 'A saved activity without a score is pending and adds no zero-score points. A numerical 0 is a recorded tentative result and can increase risk.'],
     ['Tentative standing', 'The displayed grade uses the scores currently available and may change when pending scores are recorded or grades are officially posted.'],
-    ['Needs evaluation', 'Counts Moderate, High, or Critical students who do not yet have an evaluation for the selected subject and grading term.']
+    ['Needs evaluation', 'Counts Moderate, High, or Critical students who do not yet have an evaluation for the selected subject and grading term.'],
+    ['Re-evaluation', 'Each student has one evaluation per subject and grading term. Use Review / edit to update it until its follow-up is recorded. After that the term shows Closed; if the student still needs support, select a later grading term and evaluate again with a new baseline.']
   ],
   evaluationHistory: [
     ['At evaluation', 'The risk level, points, and baseline GWA captured when the faculty submitted that subject-and-term evaluation. This historical snapshot does not change afterward.'],
@@ -52,7 +53,9 @@ const content = {
     ['Critical · 75–100 points', 'The recorded evaluation identified severe or combined concerns requiring prompt intervention.'],
     ['Current subject standing', 'The latest available grade for the same class. It can differ from the frozen baseline as new scores are recorded.'],
     ['Tentative', 'The current standing is still based on incomplete or not-yet-final grade data. It does not change the historical risk badge.'],
-    ['Reported tasks', 'Shows how many intervention tasks the student marked complete. Student reporting is not the same as faculty verification.'],
+    ['Tasks', 'Students report a task as done; it counts as complete only after you verify it. Returning a task sends it back to the student with your note. Verification never changes a grade.'],
+    ['Follow-up', 'After the next MR, TFR, or SG is posted, record the follow-up to freeze the current standing beside the baseline. Recording closes the plan and feeds the Dean\'s Intervention Results.'],
+    ['Re-evaluation', 'Before the follow-up is recorded, update the same evaluation from Evaluate Students; its baseline stays fixed, and the student must acknowledge again if tasks or guidance change. Once the follow-up is recorded, that subject-and-term case is closed. If the student still needs support, evaluate again in a later grading term; the new evaluation starts from a new baseline and this record stays as history.'],
     ['Referral status', 'Shows whether the case currently has an active Dean referral. Authored history remains read-only when the faculty no longer owns the class.']
   ]
 };

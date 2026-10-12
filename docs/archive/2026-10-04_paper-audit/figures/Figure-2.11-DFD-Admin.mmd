@@ -1,0 +1,57 @@
+flowchart LR
+%% ===== Figure 2.11 — Level 1 DFD: Admin Portal (REDRAWN to match 2.8-2.10) =====
+%% Layout: External entity (left) -> Process (middle) -> Data stores (right)
+
+  %% ---------- 1.0 ----------
+  E1["Admin"] <-- "credentials / access session" --> P1(("1.0<br/>Authenticate<br/>User"))
+  P1 <-- "account record" --> D1@{ shape: lin-rect, label: "D1&nbsp; users" }
+
+  %% ---------- 2.0 ----------
+  E2["Admin"] <-- "user counts, system metrics" --> P2(("2.0<br/>Load Admin<br/>Dashboard"))
+  P2 <-- "recent transactions" --> D25b@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+  P2 <-- "active term" --> D4b@{ shape: lin-rect, label: "D4&nbsp; academic_terms" }
+
+  %% ---------- 3.0 ----------
+  E3["Admin"] <-- "account details / account list" --> P3(("3.0<br/>Manage<br/>Users"))
+  P3 <-- "create, edit, deactivate" --> D1c@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P3 -- "audit entry" --> D25c@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+
+  %% ---------- 4.0 ----------
+  E4["Admin"] <-- "spreadsheet file / import results" --> P4(("4.0<br/>Import Users<br/>(Spreadsheet)"))
+  P4 -- "bulk account creation" --> D1d@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P4 -- "audit entry" --> D25d@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+
+  %% ---------- 5.0 ----------
+  E5["Admin"] <-- "subject details / subject catalog" --> P5(("5.0<br/>Maintain<br/>Subjects"))
+  P5 <-- "course codes, units" --> D5e@{ shape: lin-rect, label: "D5&nbsp; subjects" }
+  P5 <-- "bound COG template" --> D6e@{ shape: lin-rect, label: "D6&nbsp; grade_computations" }
+
+  %% ---------- 6.0 ----------
+  E6["Admin"] <-- "template weights / formula list" --> P6(("6.0<br/>Manage Grading<br/>Formulas"))
+  P6 <-- "templates" --> D6f@{ shape: lin-rect, label: "D6&nbsp; grade_computations" }
+  P6 <-- "component weights" --> D27f@{ shape: lin-rect, label: "D27&nbsp; grade_computation_components" }
+
+  %% ---------- 7.0 ----------
+  E7["Admin"] <-- "structure data / directory" --> P7(("7.0<br/>Manage Academic<br/>Structure"))
+  P7 <-- "colleges" --> D2g@{ shape: lin-rect, label: "D2&nbsp; departments" }
+  P7 <-- "programs" --> D26g@{ shape: lin-rect, label: "D26&nbsp; programs" }
+  P7 <-- "section shells" --> D3g@{ shape: lin-rect, label: "D3&nbsp; sections" }
+
+  %% ---------- 8.0 ----------
+  E8["Admin"] <-- "classroom assignments / classroom list" --> P8(("8.0<br/>Provision<br/>Classrooms"))
+  P8 <-- "classroom instances" --> D7h@{ shape: lin-rect, label: "D7&nbsp; class_records" }
+  P8 <-- "section" --> D3h@{ shape: lin-rect, label: "D3&nbsp; sections" }
+  P8 <-- "subject" --> D5h@{ shape: lin-rect, label: "D5&nbsp; subjects" }
+
+  %% ---------- 9.0 ----------
+  E9["Admin"] <-- "term settings / active term" --> P9(("9.0<br/>Configure Term<br/>Settings"))
+  P9 <-- "school year, semester" --> D4i@{ shape: lin-rect, label: "D4&nbsp; academic_terms" }
+
+  %% ---------- 10.0 ----------
+  E10["Admin"] <-- "authorized correction / override result" --> P10(("10.0<br/>Apply Grade<br/>Override"))
+  P10 -- "corrected milestone" --> D12j@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P10 -- "audit entry" --> D25j@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+
+  %% ---------- 11.0 ----------
+  E11["Admin"] <-- "filters / audit entries" --> P11(("11.0<br/>View Activity<br/>Logs"))
+  P11 <-- "immutable ledger" --> D25k@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }

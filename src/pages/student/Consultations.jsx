@@ -26,7 +26,7 @@ export default function Consultations() {
   
   const [isConsultModalOpen, setIsConsultModalOpen] = useState(false);
   const [consultForm, setConsultForm] = useState({
-    subjectCode: '',
+    classRecordId: '',
     category: 'Grade Clarification',
     schedule: '',
     message: ''
@@ -44,25 +44,35 @@ export default function Consultations() {
           .select('subject_id, section_id, subjects(subject_id, code, name)')
           .eq('student_id', user.id);
         
-        const subjectIds = enrolls?.map(e => e.subject_id) || [];
-        
-        const { data: crs } = await supabase
-          .from('class_records')
-          .select('class_record_id, subject_id, faculty_id, faculty:users!faculty_id(first_name, last_name, email)')
-          .in('subject_id', subjectIds)
-          .eq('status', 'active');
-          
-        const mappedSubjects = crs?.map(cr => {
-          const subj = enrolls?.find(e => e.subject_id === cr.subject_id)?.subjects;
+        const subjectIds = [...new Set((enrolls || []).map(e => e.subject_id).filter(Boolean))];
+        const sectionIds = [...new Set((enrolls || []).map(e => e.section_id).filter(Boolean))];
+
+        const { data: crs } = subjectIds.length > 0 && sectionIds.length > 0
+          ? await supabase
+              .from('class_records')
+              .select('class_record_id, subject_id, section_id, faculty_id, sections(name), faculty:users!faculty_id(first_name, last_name, email)')
+              .in('subject_id', subjectIds)
+              .in('section_id', sectionIds)
+              .eq('status', 'active')
+          : { data: [] };
+
+        // Only the student's own classes: each enrollment matches one class by
+        // subject AND section (other sections of the same subject are excluded).
+        const enrolledPairs = new Set((enrolls || []).map(e => `${e.subject_id}:${e.section_id}`));
+        const ownClasses = (crs || []).filter(cr => enrolledPairs.has(`${cr.subject_id}:${cr.section_id}`));
+
+        const mappedSubjects = ownClasses.map(cr => {
+          const subj = enrolls?.find(e => e.subject_id === cr.subject_id && e.section_id === cr.section_id)?.subjects;
           return {
             class_record_id: cr.class_record_id,
             faculty_id: cr.faculty_id,
             code: subj?.code || 'Unknown',
             name: subj?.name || 'Unknown',
+            section: cr.sections?.name || '',
             instructor: cr.faculty ? `Prof. ${cr.faculty.first_name} ${cr.faculty.last_name}` : 'TBA'
           };
-        }) || [];
-        
+        });
+
         setSubjectsList(mappedSubjects);
       } catch (err) {
         console.error('Error fetching subjects:', err);
@@ -118,12 +128,12 @@ export default function Consultations() {
 
   const handleSubmitConsultation = async (e) => {
     e.preventDefault();
-    if (!user || !consultForm.subjectCode || !consultForm.message.trim() || !consultForm.schedule.trim()) return;
+    if (!user || !consultForm.classRecordId || !consultForm.message.trim() || !consultForm.schedule.trim()) return;
     setSubmittingConsult(true);
     setConsultFeedback(null);
 
     try {
-      const selectedSub = subjectsList.find(s => s.code === consultForm.subjectCode);
+      const selectedSub = subjectsList.find(s => s.class_record_id === consultForm.classRecordId);
       if (!selectedSub) {
         throw new Error("Invalid subject selection.");
       }
@@ -170,7 +180,7 @@ export default function Consultations() {
       }
 
       setConsultFeedback({ type: 'success', message: 'Consultation request sent successfully.' });
-      setConsultForm({ subjectCode: subjectsList[0]?.code || '', category: 'Grade Clarification', schedule: '', message: '' });
+      setConsultForm({ classRecordId: subjectsList[0]?.class_record_id || '', category: 'Grade Clarification', schedule: '', message: '' });
       setTimeout(() => {
         setIsConsultModalOpen(false);
         setConsultFeedback(null);
@@ -215,7 +225,7 @@ export default function Consultations() {
         <button
           onClick={() => {
             setConsultForm({
-              subjectCode: subjectsList[0]?.code || '',
+              classRecordId: subjectsList[0]?.class_record_id || '',
               category: 'Grade Clarification',
               schedule: '',
               message: ''
@@ -307,7 +317,7 @@ export default function Consultations() {
                 <button
                   onClick={() => {
                     setConsultForm({
-                      subjectCode: subjectsList[0]?.code || '',
+                      classRecordId: subjectsList[0]?.class_record_id || '',
                       category: 'Grade Clarification',
                       schedule: '',
                       message: ''
@@ -450,15 +460,19 @@ export default function Consultations() {
                 </label>
                 <select
                   required
-                  value={consultForm.subjectCode}
-                  onChange={(e) => setConsultForm(prev => ({ ...prev, subjectCode: e.target.value }))}
+                  value={consultForm.classRecordId}
+                  onChange={(e) => setConsultForm(prev => ({ ...prev, classRecordId: e.target.value }))}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-medium text-slate-900 focus:outline-none focus:border-sage-600"
                 >
-                  {subjectsList.map((s) => (
-                    <option key={s.code} value={s.code}>
-                      {s.code} - {s.name} ({s.instructor})
-                    </option>
-                  ))}
+                  {subjectsList.map((s) => {
+                    // Name the section only when the same subject is listed more than once.
+                    const repeated = subjectsList.filter(other => other.code === s.code).length > 1;
+                    return (
+                      <option key={s.class_record_id} value={s.class_record_id}>
+                        {s.code} - {s.name} ({repeated && s.section ? `${s.section} · ` : ''}{s.instructor})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
