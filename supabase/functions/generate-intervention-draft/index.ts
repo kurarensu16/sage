@@ -368,6 +368,7 @@ Deno.serve(async request => {
             headers: { Authorization: `Bearer ${openRouterKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
               model, temperature: attempt === 0 ? 0.2 : 0,
+              reasoning: { enabled: false },
               messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: JSON.stringify(snapshot) }

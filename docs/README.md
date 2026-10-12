@@ -96,6 +96,8 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | [mobile-pwa/WALKTHROUGH_PWA.md](05-operations/mobile-pwa/WALKTHROUGH_PWA.md) | Reference | PWA install and mobile walkthrough. |
 | [agents/CHANGE_FREEZE_GUIDE.md](05-operations/agents/CHANGE_FREEZE_GUIDE.md) | Current | How the AI-agent change freeze works and how to switch it ON/OFF (`FREEZE:` line in `AGENTS.md` + `.claude/settings.json`). |
 | [agents/feature-updates/](05-operations/agents/feature-updates/README.md) | Current | One change record per change made while the freeze is ON (AI tool, device owner, type, migration, files, reason, how to verify). Template in its README. Checked by `npm run audit:freeze`. |
+| [Free AI fallback setup and reasoning fix](05-operations/agents/feature-updates/2026-10-12_0910_free-ai-fallback-reasoning.md) | Current: hosted fallbacks verified | Tested fallback lists for Ask ASPIRE and faculty drafts, reasoning configuration, manual Supabase deployment steps, and a [record time correction](05-operations/agents/feature-updates/2026-10-12_0913_free-ai-fallback-record-time-correction.md). Live student tests and supplied function logs confirmed Apodex and Dots answered after primary-model failures. |
+| [President's List GWA wording fix](05-operations/agents/feature-updates/2026-10-12_0952_presidents-list-gwa-wording.md) | Current: redeployment confirmed by developer | Labels 1.75 as the maximum allowed GWA; prompt verification and redeployment steps. |
 
 ## 06 · Future enhancements: documented, not built
 
