@@ -15,6 +15,16 @@
   --font-display: "Sora", sans-serif;
   --font-sans: "DM Sans", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
+
+  /* Smallest readable type in the interface. 10px is the floor: text below it
+     (7-9px) was unreadable on phones and high-DPI screens. The floor is 10px rather
+     than something larger because 10-11px is by far the most common size in dense
+     tables and badges, so a bigger floor would make the smallest class larger than
+     the text around it. Use these tokens instead of arbitrary text-[Npx] values. */
+  --text-micro: 0.625rem;
+  --text-micro--line-height: 1.4;
+  --text-tiny: 0.6875rem;
+  --text-tiny--line-height: 1.45;
 }
 
 @layer base {

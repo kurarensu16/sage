@@ -368,7 +368,7 @@ export default function DepartmentsList() {
 
                     {/* Assigned Dean Box */}
                     <div className="pt-2.5 border-t border-slate-100">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                      <span className="text-micro font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
                         Academic Leadership
                       </span>
                       {hasDean && primaryDean ? (
@@ -464,7 +464,7 @@ export default function DepartmentsList() {
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. College of Computer Studies"
+                    placeholder="Full college or school name"
                     className="block w-full px-3.5 py-2.5 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500 shadow-2xs"
                   />
                 </div>

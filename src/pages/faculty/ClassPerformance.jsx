@@ -585,7 +585,7 @@ export default function ClassPerformance() {
                   {viewMode === 'grid' && dataset.activities.map(act => (
                     <th key={act.activity_id} className="py-3 px-4 text-center min-w-[120px]">
                       <div className="font-bold truncate max-w-[140px]" title={act.title}>{act.title}</div>
-                      <div className="text-[9px] text-slate-400 normal-case font-mono">Max: {act.max_score || 100} pts</div>
+                      <div className="text-micro text-slate-400 normal-case font-mono">Max: {act.max_score || 100} pts</div>
                     </th>
                   ))}
 
@@ -631,7 +631,7 @@ export default function ClassPerformance() {
                           <div className="flex flex-col items-end">
                             <span>{student.officialGwa.toFixed(2)}</span>
                             {student.isTentative && (
-                              <span className="text-[9px] font-sans font-semibold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded mt-0.5" title="Live draft from Score Sheet. Not yet officially posted to the Dean.">
+                              <span className="text-micro font-sans font-semibold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded mt-0.5" title="Live draft from Score Sheet. Not yet officially posted to the Dean.">
                                 Tentative
                               </span>
                             )}

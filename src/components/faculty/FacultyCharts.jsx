@@ -265,7 +265,7 @@ export function FacultyPerformanceTrajectoryChart({ trajectoryData = [] }) {
             <span className="font-mono font-bold text-xs text-white">
               {points[hoveredIdx].val}
             </span>
-            <span className="text-[9px] text-slate-400">
+            <span className="text-micro text-slate-400">
               {activeMetric === 'avgRating' ? 'Average Term Rating' : activeMetric === 'passRate' ? 'Class Passing Percentage' : 'Class Exam Average'}
             </span>
           </div>

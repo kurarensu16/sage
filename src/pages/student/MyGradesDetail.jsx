@@ -577,7 +577,7 @@ export default function MyGradesDetail() {
                                       >
                                         <div className="flex flex-col">
                                           <span className="text-xs font-bold text-slate-800 font-sans hover:text-sage-700">{act.name}</span>
-                                          <span className="text-[9px] text-slate-400 font-medium uppercase tracking-wide mt-0.5">
+                                          <span className="text-micro text-slate-400 font-medium uppercase tracking-wide mt-0.5">
                                             {act.description ? 'Click to view description' : `${item.name} item`}
                                           </span>
                                         </div>
@@ -589,7 +589,7 @@ export default function MyGradesDetail() {
                                           </span>
                                           {act.obtained !== null && (
                                             <span className={cn(
-                                              'rounded-full border px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide',
+                                              'rounded-full border px-2 py-0.5 text-micro font-bold uppercase tracking-wide',
                                               act.scoreStatus === 'official_context'
                                                 ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                                                 : act.isRecordedZero
@@ -646,8 +646,8 @@ export default function MyGradesDetail() {
                     {activeData.grade === '—'
                       ? 'Awaiting scores'
                       : parseFloat(activeData.grade) <= 3.00
-                        ? (activeData.status === 'Tentative' ? 'Passing so far' : 'Passed')
-                        : (activeData.status === 'Tentative' ? 'Below passing so far' : 'At-Risk')}
+                        ? (activeData.status !== 'Posted' ? 'Passing so far' : 'Passed')
+                        : (activeData.status !== 'Posted' ? 'Below passing so far' : 'At-Risk')}
                   </h4>
                   <p className="text-[10px] text-slate-450">
                     {activeData.status === 'Tentative' ? 'Live grade from recorded scores' : 'Computed grade for period'}
@@ -700,7 +700,7 @@ export default function MyGradesDetail() {
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold text-slate-705 uppercase tracking-wide">Semestral Summary</h3>
                 <span className={cn(
-                  "px-2 py-0.5 rounded-full text-[9px] font-bold border font-sans",
+                  "px-2 py-0.5 rounded-full text-micro font-bold border font-sans",
                   finalCalculations.remarks === 'Passed'
                     ? "bg-emerald-50 text-emerald-705 border-emerald-200"
                     : finalCalculations.remarks === 'Tentative'
@@ -715,11 +715,11 @@ export default function MyGradesDetail() {
 
               <div className="grid grid-cols-2 gap-3 text-center">
                 <div className="bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
-                  <span className="text-[9px] text-slate-400 block uppercase tracking-wide">Midterm Rating</span>
+                  <span className="text-micro text-slate-400 block uppercase tracking-wide">Midterm Rating</span>
                   <span className="text-sm font-bold font-mono text-slate-800">{finalCalculations.mr !== null ? `${finalCalculations.mr}%` : '—'}</span>
                   {finalCalculations.mr !== null && (
                     <span className={cn(
-                      "block text-[8px] font-bold uppercase tracking-wide",
+                      "block text-micro font-bold uppercase tracking-wide",
                       finalCalculations.mrIsPosted ? 'text-emerald-600' : 'text-amber-600'
                     )}>
                       {finalCalculations.mrIsPosted ? 'Posted' : 'Tentative'}
@@ -727,11 +727,11 @@ export default function MyGradesDetail() {
                   )}
                 </div>
                 <div className="bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
-                  <span className="text-[9px] text-slate-400 block uppercase tracking-wide">Final Rating</span>
+                  <span className="text-micro text-slate-400 block uppercase tracking-wide">Final Rating</span>
                   <span className="text-sm font-bold font-mono text-slate-800">{finalCalculations.tfr !== null ? `${finalCalculations.tfr}%` : '—'}</span>
                   {finalCalculations.tfr !== null && (
                     <span className={cn(
-                      "block text-[8px] font-bold uppercase tracking-wide",
+                      "block text-micro font-bold uppercase tracking-wide",
                       finalCalculations.tfrIsPosted ? 'text-emerald-600' : 'text-amber-600'
                     )}>
                       {finalCalculations.tfrIsPosted ? 'Posted' : 'Tentative'}
@@ -742,7 +742,7 @@ export default function MyGradesDetail() {
 
               <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
                 <div>
-                  <span className="text-[9px] text-slate-450 block uppercase tracking-wide">
+                  <span className="text-micro text-slate-450 block uppercase tracking-wide">
                     {finalCalculations.isOfficial ? 'Semestral GWA' : 'Running GWA (Tentative)'}
                   </span>
                   <span className={cn(
@@ -751,7 +751,7 @@ export default function MyGradesDetail() {
                   )}>{finalCalculations.finalGwa}</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-[9px] text-slate-450 block uppercase tracking-wide">Calculated Rating</span>
+                  <span className="text-micro text-slate-450 block uppercase tracking-wide">Calculated Rating</span>
                   <span className="text-sm font-bold font-mono text-slate-750 mt-1 block">{finalCalculations.sg !== null ? `${finalCalculations.sg}%` : '—'}</span>
                 </div>
               </div>

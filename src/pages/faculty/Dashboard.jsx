@@ -6,7 +6,6 @@ import {
   Users, 
   AlertCircle, 
   ChevronRight, 
-  CheckSquare, 
   FileText,
   Target,
   ArrowRight,
@@ -50,13 +49,12 @@ export default function Dashboard() {
   });
   const [recentEvaluations, setRecentEvaluations] = useState([]);
   const [urgentTasks, setUrgentTasks] = useState([]);
-  const [activities, setActivities] = useState([]);
 
   // Consultation Resolution Module states
   const [consultationRequests, setConsultationRequests] = useState([]);
   const [consultationFilter, setConsultationFilter] = useState('all'); // 'all' | 'pending' | 'scheduled' | 'completed' | 'declined'
   const [selectedConsultation, setSelectedConsultation] = useState(null);
-  const [resolutionStatus, setResolutionStatus] = useState('scheduled');
+  const [resolutionStatus, setResolutionStatus] = useState('completed');
   const [facultyNotes, setFacultyNotes] = useState('');
   const [resolving, setResolving] = useState(false);
   const [resolveFeedback, setResolveFeedback] = useState(null);
@@ -320,41 +318,6 @@ export default function Dashboard() {
           setTrajectoryData(trajectory);
         }
 
-        // 4. Fetch Recent Activities from Audit Log
-        const actorName = profile ? `${profile.first_name} ${profile.last_name}` : '';
-        if (actorName) {
-          const { data: logs } = await supabase
-            .from('activity_logs')
-            .select('timestamp, action, message')
-            .ilike('actor', `%${actorName}%`)
-            .order('timestamp', { ascending: false })
-            .limit(3);
-
-          if (logs && logs.length > 0) {
-            setActivities(logs.map(l => {
-              const diffMs = new Date() - new Date(l.timestamp);
-              const diffMins = Math.floor(diffMs / 60000);
-              let timeString = 'Just now';
-              if (diffMins > 0 && diffMins < 60) {
-                timeString = `${diffMins} mins ago`;
-              } else if (diffMins >= 60 && diffMins < 1440) {
-                const diffHours = Math.floor(diffMins / 60);
-                timeString = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-              } else if (diffMins >= 1440) {
-                timeString = new Date(l.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' });
-              }
-
-              return {
-                time: timeString,
-                message: `${l.action}: ${l.message}`
-              };
-            }));
-          } else {
-            setActivities([
-              { time: 'System', message: 'No recent activity logs recorded.' }
-            ]);
-          }
-        }
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
       } finally {
@@ -367,7 +330,9 @@ export default function Dashboard() {
 
   const handleOpenResolutionModal = (consult) => {
     setSelectedConsultation(consult);
-    setResolutionStatus(consult.status === 'pending' ? 'scheduled' : consult.status);
+    // Only the two outcomes this modal offers; scheduling happens on the
+    // Consultation Requests page, where a date and mode are required.
+    setResolutionStatus(consult.status === 'declined' ? 'declined' : 'completed');
     setFacultyNotes(consult.faculty_notes || '');
     setResolveFeedback(null);
   };
@@ -523,7 +488,7 @@ export default function Dashboard() {
                     <div className="min-w-0">
                       <h4 className="font-bold text-xs sm:text-sm text-slate-900 truncate">{task.title}</h4>
                       <p className="text-[11px] sm:text-xs text-slate-600 mt-0.5 line-clamp-2">{task.description}</p>
-                      <span className={`inline-block text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-full mt-2 border ${
+                      <span className={`inline-block text-micro sm:text-[10px] font-bold px-2 py-0.5 rounded-full mt-2 border ${
                         task.type === 'danger' 
                           ? 'bg-rose-100 text-rose-800 border-rose-200' 
                           : 'bg-amber-100 text-amber-800 border-amber-200'
@@ -557,7 +522,7 @@ export default function Dashboard() {
             </div>
             <div className="mt-3 sm:mt-4">
               <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono">{String(stats.handledClassesCount).padStart(2, '0')}</h3>
-              <p className="text-[9px] sm:text-[10px] text-slate-500 mt-0.5">Assigned records</p>
+              <p className="text-micro sm:text-[10px] text-slate-500 mt-0.5">Assigned records</p>
             </div>
           </div>
 
@@ -576,7 +541,7 @@ export default function Dashboard() {
             </div>
             <div className="mt-3 sm:mt-4">
               <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono">{String(stats.pendingGradesCount).padStart(2, '0')}</h3>
-              <p className="text-[9px] sm:text-[10px] text-slate-500 mt-0.5">Ongoing terms</p>
+              <p className="text-micro sm:text-[10px] text-slate-500 mt-0.5">Current Grading Period</p>
             </div>
           </div>
 
@@ -595,7 +560,7 @@ export default function Dashboard() {
             </div>
             <div className="mt-3 sm:mt-4">
               <h3 className={`text-xl sm:text-2xl font-extrabold font-mono ${stats.pendingConsultationsCount > 0 ? 'text-sky-600' : 'text-slate-900'}`}>{String(stats.pendingConsultationsCount).padStart(2, '0')}</h3>
-              <p className="text-[9px] sm:text-[10px] text-slate-500 mt-0.5">Pending requests</p>
+              <p className="text-micro sm:text-[10px] text-slate-500 mt-0.5">Pending requests</p>
             </div>
           </div>
 
@@ -614,7 +579,7 @@ export default function Dashboard() {
             </div>
             <div className="mt-3 sm:mt-4">
               <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono">{String(stats.interventionsCount).padStart(2, '0')}</h3>
-              <p className="text-[9px] sm:text-[10px] text-slate-500 mt-0.5 truncate">
+              <p className="text-micro sm:text-[10px] text-slate-500 mt-0.5 truncate">
                 {stats.deanReferralsCount > 0 ? `${stats.deanReferralsCount} Dean referral${stats.deanReferralsCount > 1 ? 's' : ''}` : 'Evaluated students'}
               </p>
             </div>
@@ -635,7 +600,7 @@ export default function Dashboard() {
             </div>
             <div className="mt-3 sm:mt-4">
               <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono">{String(stats.notificationsCount).padStart(2, '0')}</h3>
-              <p className="text-[9px] sm:text-[10px] text-slate-500 mt-0.5">Unread alerts</p>
+              <p className="text-micro sm:text-[10px] text-slate-500 mt-0.5">Unread alerts</p>
             </div>
           </div>
 
@@ -654,7 +619,7 @@ export default function Dashboard() {
             </div>
             <div className="mt-3 sm:mt-4">
               <h3 className={`text-xl sm:text-2xl font-extrabold font-mono ${stats.atRiskCount > 0 ? 'text-rose-600' : 'text-slate-900'}`}>{String(stats.atRiskCount).padStart(2, '0')}</h3>
-              <p className="text-[9px] sm:text-[10px] text-rose-500 mt-0.5 font-semibold truncate">Flagged Failed/INC</p>
+              <p className="text-micro sm:text-[10px] text-rose-500 mt-0.5 font-semibold truncate">Flagged Failed/INC</p>
             </div>
           </div>
 
@@ -761,15 +726,15 @@ export default function Dashboard() {
                       </div>
 
                       {cls.status === 'Pending Setup' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200 flex-shrink-0">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-micro font-bold bg-amber-50 text-amber-700 border border-amber-200 flex-shrink-0">
                           Pending Setup
                         </span>
                       ) : cls.status === 'Ongoing' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200 flex-shrink-0">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-micro font-bold bg-blue-50 text-blue-700 border border-blue-200 flex-shrink-0">
                           Ongoing
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex-shrink-0">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-micro font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex-shrink-0">
                           Grades Posted
                         </span>
                       )}
@@ -894,7 +859,7 @@ export default function Dashboard() {
                           {ev.student ? `${ev.student.first_name} ${ev.student.last_name}` : 'Student'}
                         </span>
                         {ev.refer_to_dean && (
-                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                          <span className="px-1.5 py-0.2 rounded text-micro font-bold bg-rose-50 text-rose-700 border border-rose-200">
                             Dean Queue
                           </span>
                         )}
@@ -914,24 +879,6 @@ export default function Dashboard() {
                   </Link>
                 </div>
               )}
-            </div>
-
-            {/* Recent Activities Panel */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 sm:p-6 space-y-4 text-left">
-              <h3 className="text-xs sm:text-sm font-bold font-display text-slate-900">Recent Activity Logs</h3>
-              <div className="space-y-4 relative before:absolute before:inset-y-0 before:left-3 before:w-0.5 before:bg-slate-100">
-                {activities.map((act, index) => (
-                  <div key={index} className="flex gap-3.5 items-start relative text-xs">
-                    <div className="w-6 h-6 rounded-full bg-sage-50 border border-sage-200 flex items-center justify-center text-sage-600 flex-shrink-0 z-10">
-                      <CheckSquare className="h-3 w-3" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-slate-700 font-medium text-[11px] sm:text-xs break-words">{act.message}</p>
-                      <span className="text-[9px] sm:text-[10px] text-slate-400 mt-1 block font-mono">{act.time}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
 
           </div>
@@ -982,7 +929,7 @@ export default function Dashboard() {
                 >
                   {tab.label}
                   {tab.id === 'pending' && stats.pendingConsultationsCount > 0 && (
-                    <span className={`ml-1.5 px-1.5 py-0.2 rounded-full text-[9px] font-mono ${
+                    <span className={`ml-1.5 px-1.5 py-0.2 rounded-full text-micro font-mono ${
                       consultationFilter === tab.id ? 'bg-white/30 text-white' : 'bg-amber-100 text-amber-800'
                     }`}>
                       {stats.pendingConsultationsCount}
@@ -1139,9 +1086,8 @@ export default function Dashboard() {
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   Resolution / Meeting Status
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {[
-                    { id: 'scheduled', label: 'Scheduled', color: 'border-sky-300 bg-sky-50 text-sky-800' },
                     { id: 'completed', label: 'Completed', color: 'border-emerald-300 bg-emerald-50 text-emerald-800' },
                     { id: 'declined', label: 'Declined', color: 'border-rose-300 bg-rose-50 text-rose-800' }
                   ].map(opt => (
@@ -1159,17 +1105,26 @@ export default function Dashboard() {
                     </button>
                   ))}
                 </div>
+                {/* Scheduling lives on the Consultation Requests page, which captures the
+                    date, time and mode. Offering "Scheduled" here too would let a request
+                    be marked scheduled with no schedule attached. */}
+                <Link
+                  to="/faculty/consultations"
+                  className="mt-2 inline-block text-[11px] font-bold text-sage-700 hover:text-sage-900 hover:underline"
+                >
+                  Need to set a date and time? Schedule it in Consultation Requests →
+                </Link>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Faculty Advising Notes / Meeting Details
+                  Faculty Advising Notes
                 </label>
                 <textarea
                   rows={3}
                   value={facultyNotes}
                   onChange={(e) => setFacultyNotes(e.target.value)}
-                  placeholder="e.g., Confirmed for Thursday 2:30 PM in Faculty Room 204 or via Google Meet. Please bring your exam papers."
+                  placeholder="e.g., Reviewed the exam papers together and agreed on a study plan for the Final period."
                   className="w-full text-xs p-3 rounded-xl border border-slate-200 focus:border-sage-500 focus:ring-1 focus:ring-sage-500 outline-none resize-none transition-all placeholder:text-slate-400"
                 />
                 <p className="text-[10px] text-slate-400 mt-1">

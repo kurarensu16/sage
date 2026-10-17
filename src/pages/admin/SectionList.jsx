@@ -1,42 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, Plus, Edit2, Trash2, Layers, Upload, X, Check, FileSpreadsheet, AlertCircle, CheckCircle, SlidersHorizontal } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import * as XLSX from 'xlsx';
 
-const PROGRAM_NAMES = {
-  "BSA": "Bachelor of Science in Accountancy",
-  "BSAIS": "Bachelor of Science in Accounting Information System",
-  "BAPS": "Bachelor of Arts in Political Science",
-  "BSBA": "Bachelor of Science in Business Administration",
-  "BSBA-HRDM": "Bachelor of Science in Business Administration Major in Human Resource Development Management",
-  "BSBA-FM": "Bachelor of Science in Business Administration Major in Financial Management",
-  "BSBA-OM": "Bachelor of Science in Business Administration Major in Operations Management",
-  "BSBA-MM": "Bachelor of Science in Business Administration Major in Marketing Management",
-  "BSCS": "Bachelor of Science in Computer Science",
-  "BSCPE": "Bachelor of Science in Computer Engineering",
-  "BSIT": "Bachelor of Science in Information Technology",
-  "ACT": "Associate in Computer Technology",
-  "BEED": "Bachelor of Elementary Education",
-  "BSED-MATH": "Bachelor of Secondary Education Major in Mathematics",
-  "BSED-FIL": "Bachelor of Secondary Education Major in Filipino",
-  "BSED-ENG": "Bachelor of Secondary Education Major in English",
-  "BSED-SCI": "Bachelor of Secondary Education Major in Sciences",
-  "CPTE": "Continuing Professional Teacher Education",
-  "BSN": "Bachelor of Science in Nursing",
-  "BSM": "Bachelor of Science in Midwifery",
-  "BSHM": "Bachelor of Science in Hospitality Management",
-  "BSTM": "Bachelor of Science in Tourism Management",
-  "BSMT": "Bachelor of Science in Marine Transportation",
-  "BSMARE": "Bachelor of Science in Marine Engineering",
-  "BSME": "Bachelor of Science in Mechanical Engineering",
-  "BAPSYCH": "Bachelor of Arts in Psychology"
-};
+// Program names and codes are read from the programs table, never from a map in code.
 
 export default function SectionList() {
   const navigate = useNavigate();
   const [sections, setSections] = useState([]);
+  const [programs, setPrograms] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
   const [filterProgram, setFilterProgram] = useState('');
@@ -51,20 +25,35 @@ export default function SectionList() {
   const [importSuccess, setImportSuccess] = useState('');
   const fileInputRef = useRef(null);
 
-  const sampleCSV = `BSIT-1B,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Information Technology
-BSIT-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Information Technology
-BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Computer Science`;
+  // Built from an existing section so the template never names a college, program or term
+  // that is not in the database — the import rejects unknown colleges and programs.
+  const sampleCSV = useMemo(() => {
+    const reference = sections[0];
+    if (!reference) return 'Section Name,School Year,Semester,College,Program';
+    const prefix = reference.programPrefix || reference.name.split('-')[0] || 'SECTION';
+    return [
+      `${prefix}-1B,${reference.schoolYear},${reference.semester},${reference.department},${reference.program}`,
+      `${prefix}-2A,${reference.schoolYear},${reference.semester},${reference.department},${reference.program}`
+    ].join('\n');
+  }, [sections]);
 
   const [loading, setLoading] = useState(true);
 
   const loadSections = async () => {
     try {
       setLoading(true);
+
+      const { data: progs } = await supabase
+        .from('programs')
+        .select('program_id, name, abbreviation, department_id')
+        .order('name');
+      if (progs) setPrograms(progs);
+
       const { data, error } = await supabase
         .from('sections')
         .select('*, departments(name)')
         .order('name', { ascending: true });
-        
+
       if (error) throw error;
       
       const mappedSections = data.map(sec => {
@@ -152,16 +141,17 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
     setSemFilter('');
   };
 
+  // Resolves the program named by a section-name prefix against programs.abbreviation.
+  const programNameForPrefix = (prefix) => {
+    if (!prefix) return '';
+    const match = programs.find(prog => (prog.abbreviation || '').toUpperCase() === prefix.toUpperCase());
+    return match?.name || '';
+  };
+
   const filteredSections = sections.filter(sec => {
     const matchesSearch = sec.name.toLowerCase().includes(searchTerm.toLowerCase());
 
-    // Normalise department comparison for legacy data
-    let secDept = sec.department;
-    if (secDept === 'College of IT' || secDept === 'College of CS') secDept = 'College of Computer Studies';
-    let filterDept = deptFilter;
-    if (filterDept === 'College of IT' || filterDept === 'College of CS') filterDept = 'College of Computer Studies';
-
-    const matchesDept     = !filterDept     || secDept           === filterDept;
+    const matchesDept     = !deptFilter     || sec.department    === deptFilter;
     const matchesProgram  = !filterProgram  || sec.programPrefix === filterProgram;
     const matchesYearLvl  = !filterYearLevel || sec.yearLevel    === filterYearLevel;
     const matchesSem      = !semFilter      || sec.semester      === semFilter;
@@ -226,20 +216,15 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
 
       let [name, schoolYear, semester, department, program] = parts.map(p => p?.trim() || '');
 
-      // Backwards compatibility for 4 columns
+      // With only 4 columns the program is inferred from the section-name prefix. The
+      // college is taken exactly as given: rewriting it to a different college is what
+      // used to produce rows naming a college this database does not contain.
+      const prefix = name.split('-')[0].toUpperCase();
       if (parts.length === 4) {
         department = parts[3].trim();
-        if (department === 'College of IT' || department === 'College of CS' || department === 'College of Computer Studies') {
-          department = 'College of Computer Studies';
-        }
-        const prefix = name.split('-')[0].toUpperCase();
-        program = PROGRAM_NAMES[prefix] || 'General Program';
+        program = programNameForPrefix(prefix);
       } else {
-        if (department === 'College of IT' || department === 'College of CS') {
-          department = 'College of Computer Studies';
-        }
-        const prefix = name.split('-')[0].toUpperCase();
-        program = program || PROGRAM_NAMES[prefix] || 'General Program';
+        program = program || programNameForPrefix(prefix);
       }
 
       // Validate uniqueness in current parsed list & database
@@ -341,7 +326,7 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
             <SlidersHorizontal className="h-3.5 w-3.5 text-sage-600" />
             Filter by
             {activeFilterCount > 0 && (
-              <span className="ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-sage-600 text-white text-[9px] font-bold">
+              <span className="ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-sage-600 text-white text-micro font-bold">
                 {activeFilterCount}
               </span>
             )}
@@ -351,7 +336,7 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
 
           {/* College Filter */}
           <div className="flex flex-col gap-0.5 min-w-[130px] flex-1 sm:flex-none">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">College</span>
+            <span className="text-micro font-bold text-slate-400 uppercase tracking-wider">College</span>
             <select
               value={deptFilter}
               onChange={(e) => setDeptFilter(e.target.value)}
@@ -366,7 +351,7 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
 
           {/* Program Filter */}
           <div className="flex flex-col gap-0.5 min-w-[130px] flex-1 sm:flex-none">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Program</span>
+            <span className="text-micro font-bold text-slate-400 uppercase tracking-wider">Program</span>
             <select
               value={filterProgram}
               onChange={(e) => setFilterProgram(e.target.value)}
@@ -381,7 +366,7 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
 
           {/* Year Level */}
           <div className="flex flex-col gap-0.5 min-w-[100px] flex-1 sm:flex-none">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Year Level</span>
+            <span className="text-micro font-bold text-slate-400 uppercase tracking-wider">Year Level</span>
             <select
               value={filterYearLevel}
               onChange={(e) => setFilterYearLevel(e.target.value)}
@@ -396,7 +381,7 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
 
           {/* Semester */}
           <div className="flex flex-col gap-0.5 min-w-[100px] flex-1 sm:flex-none">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Semester</span>
+            <span className="text-micro font-bold text-slate-400 uppercase tracking-wider">Semester</span>
             <select
               value={semFilter}
               onChange={(e) => setSemFilter(e.target.value)}
@@ -451,14 +436,14 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
                       </span>
                     </div>
                     <h3 className="text-sm font-bold font-display text-slate-900 leading-snug">
-                      {sec.program || PROGRAM_NAMES[(sec.programPrefix || '').toUpperCase()] || 'General Program'}
+                      {sec.program || programNameForPrefix(sec.programPrefix)}
                     </h3>
                   </div>
                 </div>
 
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
                   <span className="text-xs text-slate-500 truncate">
-                    {sec.department === 'College of IT' || sec.department === 'College of CS' ? 'College of Computer Studies' : sec.department}
+                    {sec.department}
                   </span>
 
                   <div className="flex items-center gap-1 flex-shrink-0">
@@ -516,10 +501,10 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
                         {sec.semester} Sem
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                        {sec.department === 'College of IT' || sec.department === 'College of CS' ? 'College of Computer Studies' : sec.department}
+                        {sec.department}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-655 font-medium">
-                        {sec.program || PROGRAM_NAMES[(sec.programPrefix || '').toUpperCase()] || 'General Program'}
+                        {sec.program || programNameForPrefix(sec.programPrefix)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex justify-end gap-2">
@@ -649,7 +634,7 @@ BSCS-2A,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Compute
                 }}
                 onBlur={() => handleParseCSV()}
                 rows="6"
-                placeholder="BSIT-1B,2025-2026,2nd,College of Computer Studies,Bachelor of Science in Information Technology"
+                placeholder={sampleCSV}
                 className="block w-full p-3 border border-slate-200 rounded-lg text-xs font-mono focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors"
               />
 

@@ -33,6 +33,7 @@ export default function Consultations() {
   });
   const [submittingConsult, setSubmittingConsult] = useState(false);
   const [consultFeedback, setConsultFeedback] = useState(null);
+  const [acknowledgingId, setAcknowledgingId] = useState(null);
 
   // 1. Fetch enrolled subjects
   useEffect(() => {
@@ -95,6 +96,11 @@ export default function Consultations() {
           message,
           status,
           faculty_notes,
+          scheduled_at,
+          consultation_mode,
+          meeting_link,
+          onsite_location,
+          schedule_acknowledged_at,
           created_at,
           class_records:class_record_id (
             subjects:subject_id (code, name)
@@ -125,6 +131,30 @@ export default function Consultations() {
   useEffect(() => {
     fetchConsultationRequests();
   }, [fetchConsultationRequests]);
+
+  // The faculty's decision is final, so this records only that the student has seen it.
+  const handleAcknowledgeSchedule = async (consultationId) => {
+    if (!user) return;
+    setAcknowledgingId(consultationId);
+    const acknowledgedAt = new Date().toISOString();
+    try {
+      const { error } = await supabase
+        .from('student_consultation_requests')
+        .update({ schedule_acknowledged_at: acknowledgedAt, schedule_acknowledged_by: user.id })
+        .eq('consultation_id', consultationId);
+      if (error) throw error;
+
+      setConsultationRequests(prev => prev.map(item => (
+        item.consultation_id === consultationId
+          ? { ...item, schedule_acknowledged_at: acknowledgedAt }
+          : item
+      )));
+    } catch (err) {
+      console.error('Could not acknowledge consultation schedule:', err);
+    } finally {
+      setAcknowledgingId(null);
+    }
+  };
 
   const handleSubmitConsultation = async (e) => {
     e.preventDefault();
@@ -157,6 +187,11 @@ export default function Consultations() {
           message,
           status,
           faculty_notes,
+          scheduled_at,
+          consultation_mode,
+          meeting_link,
+          onsite_location,
+          schedule_acknowledged_at,
           created_at,
           class_records:class_record_id (
             subjects:subject_id (code, name)
@@ -391,6 +426,41 @@ export default function Consultations() {
                                 <Calendar className="w-3.5 h-3.5 text-sage-600 shrink-0" />
                                 <span>Preferred Schedule: <strong>{req.preferred_schedule}</strong></span>
                               </div>
+
+                              {req.scheduled_at && (
+                                <div className="p-3 bg-sage-50 border border-sage-200 rounded-lg space-y-2">
+                                  <span className="font-bold text-sage-950 block text-[10px] uppercase tracking-wider">Confirmed Schedule</span>
+                                  <p className="text-sage-900 font-semibold">
+                                    {new Date(req.scheduled_at).toLocaleString()}
+                                    {req.consultation_mode === 'online' && ' · Online'}
+                                    {req.consultation_mode === 'face_to_face' && ' · Face-to-Face'}
+                                  </p>
+                                  {req.consultation_mode === 'online' && req.meeting_link && (
+                                    <a href={req.meeting_link} target="_blank" rel="noopener noreferrer" className="text-sage-700 underline break-all">
+                                      {req.meeting_link}
+                                    </a>
+                                  )}
+                                  {req.consultation_mode === 'face_to_face' && req.onsite_location && (
+                                    <p className="text-sage-800">Location: {req.onsite_location}</p>
+                                  )}
+
+                                  {req.schedule_acknowledged_at ? (
+                                    <p className="flex items-center gap-1.5 text-[10px] font-bold text-sage-700">
+                                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                      You confirmed you have seen this schedule.
+                                    </p>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAcknowledgeSchedule(req.consultation_id)}
+                                      disabled={acknowledgingId === req.consultation_id}
+                                      className="px-3 py-1.5 rounded-lg bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 text-white text-[10px] font-bold cursor-pointer disabled:cursor-not-allowed"
+                                    >
+                                      {acknowledgingId === req.consultation_id ? 'Saving…' : 'I have seen this schedule'}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
 
                               <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-lg text-slate-700 leading-relaxed">
                                 <span className="font-bold text-slate-800 block text-[10px] uppercase tracking-wider mb-0.5">Student Notes / Question:</span>

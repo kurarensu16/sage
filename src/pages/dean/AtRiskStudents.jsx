@@ -939,7 +939,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                                   {s.runningGwa.toFixed(2)}
                                 </span>
                                 {s.isTentative && (
-                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[8px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="Computed from draft term scores">
+                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded text-micro font-bold bg-amber-50 text-amber-700 border border-amber-200" title="Computed from draft term scores">
                                     Tentative
                                   </span>
                                 )}

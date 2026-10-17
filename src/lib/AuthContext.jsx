@@ -7,7 +7,7 @@ import { PushNotifications } from '@capacitor/push-notifications';
 import { initLocalNotifications, showLocalNotification } from './notificationService';
 import { NOTIFICATION_TITLES } from './notificationDispatcher';
 import { isChannelEnabled, loadNotificationPreferences } from './notificationPreferences';
-import { invalidateCache } from './dataCache';
+import { invalidateCache, clearLocalWorkspace, syncActiveUser } from './dataCache';
 
 const AuthContext = createContext({});
 
@@ -151,6 +151,9 @@ export const AuthProvider = ({ children }) => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session?.user) {
+        // A session restored on a shared machine may belong to a different person than
+        // the one whose drafts are still in localStorage.
+        syncActiveUser(session.user.id);
         fetchUserProfile(session.user.id);
       } else {
         setLoading(false);
@@ -161,6 +164,7 @@ export const AuthProvider = ({ children }) => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session?.user) {
+        syncActiveUser(session.user.id);
         fetchUserProfile(session.user.id);
       } else {
         setUserProfile(null);
@@ -329,8 +333,23 @@ export const AuthProvider = ({ children }) => {
     setSession(null);
     setUnreadCount(0);
     invalidateCache(); // Purge all cached memory and session storage
-    await supabase.auth.signOut();
-    setLoading(false);
+    // Score drafts and attendance entries live in localStorage and used to survive
+    // sign-out, so the next person on a shared browser inherited them. Entries whose
+    // save never reached Supabase are kept: discarding them would destroy the one thing
+    // that has no copy on the server. If a different account signs in afterwards,
+    // syncActiveUser removes them before that person sees anything.
+    clearLocalWorkspace({ keepUnsynced: true });
+
+    // Signing out must finish even when Supabase is unreachable. The local session is
+    // already cleared above, so a network failure here must not leave the app stuck
+    // behind a loading state with no way forward.
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('Sign-out could not reach Supabase; the local session was cleared anyway:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const value = {

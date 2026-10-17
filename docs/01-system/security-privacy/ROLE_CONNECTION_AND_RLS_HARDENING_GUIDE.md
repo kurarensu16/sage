@@ -4,6 +4,26 @@
 **Purpose:** Explain the role-connection audit findings and provide a safe plan for database hardening after functional testing.
 **Scope:** Documentation only. This guide does not apply SQL or change application behavior.
 
+> ## Status update — 2026-10-14: workstream A is now applied
+>
+> This guide was written while RLS was disabled across the database. **That is no longer the current state.** Statements below describing tables as unprotected describe the situation before 2026-10-14 and are kept because the reasoning still explains *why* each policy exists.
+>
+> Applied on 2026-10-14 (migrations `20261014120000`–`20261014150000`):
+>
+> | Table | Now |
+> | --- | --- |
+> | `users` | RLS enabled. SELECT stays open to authenticated users because faculty rosters and notification fan-out read other users' rows; `role`/`status` changes are blocked for non-admins by the `prevent_self_role_escalation` trigger; DELETE revoked |
+> | `activity_logs` | RLS enabled. **Admin-only to read**, append-only for everyone (UPDATE/DELETE revoked from all API roles) |
+> | `student_consultation_requests` | RLS enabled. Restricted to the owning student, the assigned faculty, or an admin |
+> | `class_room_join_codes` | RLS enabled. Readable only by the class's faculty or an admin; students join through the `request_class_join` RPC |
+> | `class_join_requests` | RLS enabled. Student sees their own; faculty see their class's |
+> | `departments`, `sections`, `programs` | RLS enabled. Readable by any authenticated user (dropdowns depend on it), writable only by an admin |
+> | The legacy evaluation tables listed later in this guide | **Dropped** (`20261014150000`), not hardened — they held synthetic data and nothing referenced them |
+>
+> Also closed: the admin bypass in `enforce_sg_correction_application`, which let an admin overwrite a posted grade with no approval and no audit row. See [`feature-updates/2026-10-14_1443-01_security-hardening-rls-and-grade-override.md`](../../05-operations/agents/feature-updates/2026-10-14_1443-01_security-hardening-rls-and-grade-override.md).
+>
+> **Still open:** narrowing SELECT on `users` to roster scope, and the remaining workstream B/C items this guide describes.
+
 ## Regrouped hardening plan
 
 The work is divided into three related but independent security layers. All three are required because none of them is sufficient alone.

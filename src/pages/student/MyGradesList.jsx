@@ -35,7 +35,7 @@ function MilestoneValue({ value, isPosted }) {
   return (
     <span className="inline-flex flex-col items-center leading-tight">
       <span className="font-bold text-amber-700">{value}</span>
-      <span className="text-[8px] font-sans font-bold uppercase tracking-wide text-amber-600">Tentative</span>
+      <span className="text-micro font-sans font-bold uppercase tracking-wide text-amber-600">Tentative</span>
     </span>
   );
 }
@@ -593,7 +593,7 @@ export default function MyGradesList() {
                         ? "bg-emerald-50 border-emerald-200 text-emerald-900"
                         : "bg-amber-50 border-amber-200 text-amber-900"
                   )}>
-                    <span className="text-[9px] font-bold uppercase tracking-wider block opacity-70">
+                    <span className="text-micro font-bold uppercase tracking-wider block opacity-70">
                       {hasGrade && !item.isOfficial ? 'Tentative GWA' : 'GWA'}
                     </span>
                     <span className="font-mono text-base font-extrabold block">
@@ -605,15 +605,15 @@ export default function MyGradesList() {
                 {/* Milestone Summary Grid */}
                 <div className="grid grid-cols-3 gap-2 py-2 border-y border-slate-100 text-center text-xs">
                   <div className="bg-slate-50 rounded-lg p-1.5">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Midterm (MR)</span>
+                    <span className="text-micro font-bold text-slate-400 uppercase block">Midterm (MR)</span>
                     <span className="font-mono"><MilestoneValue value={item.mrGwa} isPosted={item.mrIsPosted} /></span>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-1.5">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Tent. Final (TFR)</span>
+                    <span className="text-micro font-bold text-slate-400 uppercase block">Tent. Final (TFR)</span>
                     <span className="font-mono"><MilestoneValue value={item.tfrGwa} isPosted={item.tfrIsPosted} /></span>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-1.5">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase block">Sem. Grade (SG)</span>
+                    <span className="text-micro font-bold text-slate-400 uppercase block">Sem. Grade (SG)</span>
                     <span className="font-mono"><MilestoneValue value={item.sgGwa} isPosted={item.sgIsPosted} /></span>
                   </div>
                 </div>
@@ -703,7 +703,7 @@ export default function MyGradesList() {
                           {item.runningGwa}
                         </span>
                         {item.runningGwa !== '—' && !item.isOfficial && (
-                          <span className="block text-[8px] font-bold uppercase tracking-wide text-amber-600">Tentative</span>
+                          <span className="block text-micro font-bold uppercase tracking-wide text-amber-600">Tentative</span>
                         )}
                       </td>
                       <td className="px-3 py-4 text-center">

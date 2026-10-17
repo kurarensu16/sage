@@ -1,0 +1,47 @@
+flowchart LR
+%% ===== Figure 2.11 — Level 1 DFD: Admin Portal (consolidated to module-level processes, 2026-10-14) =====
+%% Each process now corresponds 1:1 with a module in Figure 2.12 (VTOC) and the Scope and Delimitation.
+%% Manage Users / Import Users merge into 3.0 User Accounts. Maintain Subjects / Manage Grading
+%% Formulas / Manage Academic Structure / Provision Classrooms merge into 4.0 Academic Setup.
+%% Configure Term Settings / Apply Grade Override / View Activity Logs merge into 5.0 System.
+%% Single-column layout (6 processes fit without a column split; see compose_columns.py for the
+%% two-column pattern still used by Figure 2.9).
+%% Layout: External entity (left) -> Process (middle) -> Data stores (right)
+
+  %% ---------- 1.0 ----------
+  E1["Admin"] <-- "credentials / access session" --> P1(("1.0<br/>Authenticate<br/>User"))
+  P1 <-- "account record" --> D1@{ shape: lin-rect, label: "D1&nbsp; users" }
+
+  %% ---------- 2.0 ----------
+  E2["Admin"] <-- "user counts, system metrics" --> P2(("2.0<br/>Dashboard"))
+  P2 <-- "recent transactions" --> D25b@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+  P2 <-- "active term" --> D4b@{ shape: lin-rect, label: "D4&nbsp; academic_terms" }
+
+  %% ---------- 3.0 ----------
+  E3["Admin"] <-- "account details / account list /<br/>CSV or Excel file / import results" --> P3(("3.0<br/>User<br/>Accounts"))
+  P3 <-- "create, edit, deactivate;<br/>name, email, ID, department /<br/>bulk account creation" --> D1c@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P3 -- "audit entry" --> D25c@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+  P3 -- "section enrollment" --> D8c@{ shape: lin-rect, label: "D8&nbsp; enrollments" }
+
+  %% ---------- 4.0 ----------
+  E4["Admin"] <-- "subject details, CSV/Excel file /<br/>subject catalog / template weights,<br/>formula list / structure data, section<br/>CSV/Excel / directory / classroom<br/>assignments / classroom list" --> P4(("4.0<br/>Academic<br/>Setup"))
+  P4 <-- "course codes, units" --> D5d@{ shape: lin-rect, label: "D5&nbsp; subjects" }
+  P4 <-- "bound COG template,<br/>templates" --> D6d@{ shape: lin-rect, label: "D6&nbsp; grade_computations" }
+  P4 <-- "component weights" --> D27d@{ shape: lin-rect, label: "D27&nbsp; grade_computation_components" }
+  P4 <-- "colleges" --> D2d@{ shape: lin-rect, label: "D2&nbsp; departments" }
+  P4 <-- "programs" --> D26d@{ shape: lin-rect, label: "D26&nbsp; programs" }
+  P4 <-- "section shells, section" --> D3d@{ shape: lin-rect, label: "D3&nbsp; sections" }
+  P4 <-- "classroom instances" --> D7d@{ shape: lin-rect, label: "D7&nbsp; class_records" }
+  P4 -- "section students" --> D8d@{ shape: lin-rect, label: "D8&nbsp; enrollments" }
+
+  %% ---------- 5.0 ----------
+  E5["Admin"] <-- "term settings / active term /<br/>authorized override / override<br/>result / filters / audit entries" --> P5(("5.0<br/>System"))
+  P5 <-- "school year, semester" --> D4e@{ shape: lin-rect, label: "D4&nbsp; academic_terms" }
+  P5 -- "overridden effective grade" --> D12e@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P5 <-- "audit entry, immutable ledger" --> D25e@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+
+  %% ---------- 6.0 ----------
+  E6["Admin"] <-- "photo, contact number,<br/>password, alert choices / profile" --> P6(("6.0<br/>Account"))
+  P6 <-- "contact number, photo reference" --> D1f@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P6 <-- "profile photo file" --> D30f@{ shape: lin-rect, label: "D30&nbsp; avatars (private storage)" }
+  P6 <-- "device alert choices" --> D29f@{ shape: lin-rect, label: "D29&nbsp; notification_preferences" }

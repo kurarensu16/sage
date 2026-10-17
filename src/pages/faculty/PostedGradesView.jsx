@@ -990,7 +990,7 @@ export default function PostedGradesView() {
         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 sm:gap-4 p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 bg-white shadow-2xs">
           {/* Class Record */}
           <div className="flex flex-col gap-1 flex-1 min-w-0">
-            <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
+            <label className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
             <div className="text-xs font-bold text-slate-800 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 truncate">
               {subjectCode} - {sectionName} ({subjectName})
             </div>
@@ -1000,7 +1000,7 @@ export default function PostedGradesView() {
 
           {/* Search bar */}
           <div className="flex flex-col gap-1 min-w-[180px]">
-            <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Search Students</label>
+            <label className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Search Students</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
                 <Search className="h-3.5 w-3.5 text-slate-400" />
@@ -1019,7 +1019,7 @@ export default function PostedGradesView() {
 
           {/* View Mode Selector */}
           <div className="flex flex-col gap-1 min-w-[180px]">
-            <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">View Period</label>
+            <label className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">View Period</label>
             <div className="relative">
               <select
                 value={viewMode}
@@ -1058,7 +1058,7 @@ export default function PostedGradesView() {
                     <span className="text-[10px] font-mono text-slate-400 block mt-0.5">{student.studentNo}</span>
                   </div>
 
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold border flex-shrink-0 ${
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-micro font-bold border flex-shrink-0 ${
                     isPassed 
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
                       : 'bg-rose-50 text-rose-700 border-rose-200'
@@ -1070,12 +1070,12 @@ export default function PostedGradesView() {
                 {/* Score and Effective GWA Details */}
                 <div className="flex items-center justify-between py-2 border-y border-slate-100 text-xs font-mono">
                   <div>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Computed Score</span>
+                    <span className="text-micro font-bold text-slate-400 uppercase tracking-wider block">Computed Score</span>
                     <span className="text-sm font-bold text-slate-800">{student.computedGrade != null ? student.computedGrade : '—'}</span>
                   </div>
 
                   <div className="text-right">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Effective GWA</span>
+                    <span className="text-micro font-bold text-slate-400 uppercase tracking-wider block">Effective GWA</span>
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-lg inline-block mt-0.5 ${
                       isPassed ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
                     }`}>
@@ -1162,7 +1162,7 @@ export default function PostedGradesView() {
                             )}
                         </tr>
                         
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-micro font-bold text-center">
                             {(periodsList.includes('Prelim') && (viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch')) && (
                               <>
                                 {(activities.Prelim || []).map((act, index) => (
@@ -1338,7 +1338,7 @@ export default function PostedGradesView() {
                   {['Passed', 'Failed', 'INC', 'FDA', 'Dropped']
                     .map(remark => <option key={remark} value={remark}>{remark}</option>)}
                 </select>
-                <p className="text-[9px] text-slate-400">Dean approval applies only to this proposed remark and does not immediately change the official SG.</p>
+                <p className="text-micro text-slate-400">Dean approval applies only to this proposed remark and does not immediately change the official SG.</p>
               </div>
             )}
             {remarkReqStudent && (
@@ -1367,7 +1367,7 @@ export default function PostedGradesView() {
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-mono outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300"
                   />
                 </div>
-                <p className="col-span-2 text-[9px] leading-relaxed text-slate-400">
+                <p className="col-span-2 text-micro leading-relaxed text-slate-400">
                   Enter the exact values expected after the official grading engine recalculates the corrected scores. Reposting is rejected if the result differs from this approved proposal.
                 </p>
               </div>
@@ -1395,7 +1395,7 @@ export default function PostedGradesView() {
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans flex items-center justify-between">
                 <span>Proof / Evidence URL</span>
-                <span className="text-[9px] text-slate-400 font-normal">Optional / secure link</span>
+                <span className="text-micro text-slate-400 font-normal">Optional / secure link</span>
               </label>
               <div className="flex items-center gap-2 border border-slate-200 rounded-xl p-2.5 bg-slate-50/50">
                 <Paperclip className="h-4 w-4 text-slate-400 flex-shrink-0" />
@@ -1407,9 +1407,9 @@ export default function PostedGradesView() {
                   className="w-full text-xs bg-transparent outline-none text-slate-700"
                 />
               </div>
-              <p className="text-[9px] text-slate-400">Paste an existing secure document URL. ASPIRE stores the reference for Dean review; this field does not upload a file.</p>
+              <p className="text-micro text-slate-400">Paste an existing secure document URL. ASPIRE stores the reference for Dean review; this field does not upload a file.</p>
               {!evidenceReferenceIsValid && (
-                <p className="text-[9px] font-semibold text-rose-600">Use a complete HTTPS URL or leave this field empty.</p>
+                <p className="text-micro font-semibold text-rose-600">Use a complete HTTPS URL or leave this field empty.</p>
               )}
             </div>
 

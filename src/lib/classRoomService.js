@@ -3,7 +3,7 @@
 
 import { supabase } from './supabase';
 import { calculateAcademicRisk, computeTentativeGradeDetails } from './riskEngine';
-import { resolveGradingFormula } from './gradingMath';
+import { resolveGradingFormula, createGradingFormulaSnapshot } from './gradingMath';
 import { resolveOfficialGwa } from './academicPolicy';
 import { findMostAdvancedPostedGrade, getCanonicalGradePeriod } from './gradeMilestones';
 import { countPendingActivities, countRecordedZeroScores, scoreOrNull } from './evaluationTracking';
@@ -21,6 +21,71 @@ export function getEnrollmentType(studentSectionId, classSectionId) {
   // to NULL (never TRUE), falling through its CASE to 'Irregular'. Match that.
   if (!classSectionId) return 'Irregular';
   return studentSectionId === classSectionId ? 'Regular' : 'Irregular';
+}
+
+/**
+ * The official masterlist of a section: the students whose home block it is
+ * (users.section_id), independent of any subject offering.
+ */
+export async function getSectionHomeRoster(sectionId) {
+  if (!sectionId) return [];
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id, first_name, last_name, middle_name, email, user_number, year_level, status')
+    .eq('section_id', sectionId)
+    .eq('role', 'student')
+    .order('last_name')
+    .order('first_name');
+
+  if (error) throw error;
+  return data || [];
+}
+
+/**
+ * Students taking one of a section's subject offerings whose home section is a
+ * different block — the companion list to the home-section masterlist.
+ *
+ * Lives here, beside getEnrollmentType and getClassPriorityRoster, so enrollment
+ * resolution has one owner: enrollments are keyed by the CLASS's subject_id and
+ * section_id, not by the student's home section, and the Regular/Irregular label is
+ * decided by getEnrollmentType. A separate query written in a page could drift from
+ * the faculty rosters that rely on the same rule.
+ */
+export async function getSectionIrregularEnrollees(sectionId) {
+  if (!sectionId) return [];
+  const { data, error } = await supabase
+    .from('enrollments')
+    .select(`
+      student_id,
+      subject_id,
+      section_id,
+      subjects:subject_id ( code, name ),
+      users:student_id (
+        user_id, first_name, last_name, middle_name, email, user_number, year_level, status,
+        section_id,
+        sections:section_id ( name )
+      )
+    `)
+    .eq('section_id', sectionId);
+
+  if (error) throw error;
+
+  const seen = new Set();
+  return (data || [])
+    .filter(row => row.users)
+    .filter(row => getEnrollmentType(row.users.section_id, row.section_id) === 'Irregular')
+    .filter(row => {
+      const key = `${row.student_id}:${row.subject_id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map(row => ({
+      ...row.users,
+      homeSectionName: row.users.sections?.name || '',
+      subjectCode: row.subjects?.code || '',
+      subjectName: row.subjects?.name || ''
+    }));
 }
 
 /**
@@ -162,9 +227,36 @@ export async function provisionClassroomByAdmin({
 
   // 2. Fetch subject and section info for code generation
   const [{ data: sub }, { data: sec }] = await Promise.all([
-    supabase.from('subjects').select('code, name').eq('subject_id', subjectId).single(),
+    supabase.from('subjects').select('code, name, computation_id').eq('subject_id', subjectId).single(),
     supabase.from('sections').select('name').eq('section_id', sectionId).single()
   ]);
+
+  // 2.5 Freeze the subject's current COG onto the class now, at creation, rather than
+  // leaving it NULL until the first official posting (ASPIRE-C10). A template edit must
+  // only reach the next rolling term: with the snapshot already set, an already-running
+  // class keeps the weights it was created with, and that applies to the tentative and
+  // live grades students and faculty see, not just to posted milestones.
+  //
+  // Built with the same resolve + snapshot functions the posting path uses, deliberately:
+  // post_grade_milestone_atomic compares the submitted snapshot against the stored one with
+  // a strict JSONB <>, which is order-sensitive for the components array, so this must not
+  // be a reimplementation. A subject with no template, or one whose weights do not total
+  // 100%, yields null here and falls back to the old snapshot-at-first-posting behavior.
+  let gradingFormulaSnapshot = null;
+  if (sub?.computation_id) {
+    const { data: computation } = await supabase
+      .from('grade_computations')
+      .select('name, description, grade_computation_components ( * )')
+      .eq('computation_id', sub.computation_id)
+      .maybeSingle();
+
+    const formula = resolveGradingFormula(computation?.grade_computation_components || null, {
+      formulaAssigned: true
+    });
+    gradingFormulaSnapshot = createGradingFormulaSnapshot(formula, {
+      computationId: sub.computation_id
+    });
+  }
 
   // 3. Insert class record
   const { data: newClass, error: insErr } = await supabase
@@ -175,7 +267,8 @@ export async function provisionClassroomByAdmin({
       faculty_id: facultyId,
       school_year: schoolYear,
       semester: semester,
-      status: 'active'
+      status: 'active',
+      grading_formula_snapshot: gradingFormulaSnapshot
     })
     .select()
     .single();

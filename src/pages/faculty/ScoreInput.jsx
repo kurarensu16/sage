@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import StudentRow from '../../components/StudentRow';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus, X, AlertTriangle, AlertCircle, Info, Settings, Sliders, CloudUpload, Eye } from 'lucide-react';
+import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Minimize2, Lock, Plus, X, AlertTriangle, AlertCircle, Info, Settings, Sliders, CloudUpload, Eye, Trash2, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
@@ -95,6 +95,8 @@ export default function ScoreInput() {
   const [configComponentId, setConfigComponentId] = useState('');
   const [configMaxScore, setConfigMaxScore] = useState(20);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [deleteColumnState, setDeleteColumnState] = useState(null);
+  const [deletingColumn, setDeletingColumn] = useState(false);
 
   const [isAddActivityModalOpen, setIsAddActivityModalOpen] = useState(false);
   const [newActivityTerm, setNewActivityTerm] = useState('Prelim');
@@ -212,13 +214,23 @@ export default function ScoreInput() {
     });
   };
 
+  // The section name carries the program abbreviation ahead of its last hyphen
+  // (e.g. BSIT-1A), which is the only link from a class to its program: sections has no
+  // program_id column.
+  const courseFromSectionName = () => {
+    const sectionName = classInfo?.sections?.name || '';
+    const lastHyphen = sectionName.lastIndexOf('-');
+    return lastHyphen > 0 ? sectionName.slice(0, lastHyphen) : '';
+  };
+
   const handleExportExcel = (selectedTab) => {
     if (!classInfo || students.length === 0) return;
 
     const studentsWithGrades = compileStudentsWithGrades();
     const metadata = {
-      college: classInfo.subjects?.departments?.name || 'College of Computer Studies',
-      course: classInfo.course || 'BSIT',
+      college: classInfo.subjects?.departments?.name || '',
+      collegeShortName: classInfo.subjects?.departments?.short_name || classInfo.subjects?.departments?.name || '',
+      course: courseFromSectionName(),
       subjectCode: classInfo.subjects?.code || '',
       subjectName: classInfo.subjects?.name || '',
       section: classInfo.sections?.name || '',
@@ -423,12 +435,12 @@ export default function ScoreInput() {
             grading_formula_snapshot,
             subject_id,
             section_id,
-            subjects ( 
-              code, 
-              name, 
-              units, 
+            subjects (
+              code,
+              name,
+              units,
               computation_id,
-              departments ( name )
+              departments ( name, short_name )
             ),
             sections ( name )
           `)
@@ -570,6 +582,7 @@ export default function ScoreInput() {
                 topicTag: a.topic_tag || '',
                 releasedAt: a.released_at || null,
                 releasedBy: a.released_by || null,
+                createdAt: a.created_at || null,
                 componentId: a.component_id || null
               }));
             } else {
@@ -754,16 +767,15 @@ export default function ScoreInput() {
             }
           }
 
-          // Determine if we should prioritize the database scores
-          let useDbData = true;
-          if (hasLocalDraft && draftPayload.savedAt) {
-            const localTime = new Date(draftPayload.savedAt).getTime();
-            const dbTime = dbData.dbSavedAt || 0;
-            // If local draft is strictly newer than database save, use the local draft
-            if (localTime > dbTime) {
-              useDbData = false;
-            }
-          }
+          // The database wins unless the draft holds edits that never reached it.
+          //
+          // This used to compare draftPayload.savedAt (browser clock) against
+          // dbData.dbSavedAt (server clock). On a machine whose clock ran even slightly
+          // fast, a stale draft outranked fresher saved scores — including scores saved
+          // from another device — and silently overwrote them. pendingSync is set when an
+          // edit is written locally and cleared once Supabase confirms the write, so it
+          // answers "is there unsaved work here?" without consulting any clock.
+          const useDbData = !(hasLocalDraft && draftPayload.pendingSync === true);
           
           const merged = useDbData ? {
             Prelim: dbData.Prelim || {},
@@ -772,7 +784,8 @@ export default function ScoreInput() {
             Final: dbData.Final || {},
             customRemarks: dbData.customRemarks || '',
             remarksNote: dbData.remarksNote || '',
-            savedAt: dbData.dbSavedAt ? new Date(dbData.dbSavedAt).toISOString() : new Date().toISOString()
+            savedAt: dbData.dbSavedAt ? new Date(dbData.dbSavedAt).toISOString() : new Date().toISOString(),
+            pendingSync: false
           } : {
             Prelim: { ...dbData.Prelim, ...draftPayload.Prelim },
             Midterm: { ...dbData.Midterm, ...draftPayload.Midterm },
@@ -780,7 +793,10 @@ export default function ScoreInput() {
             Final: { ...dbData.Final, ...draftPayload.Final },
             customRemarks: draftPayload.customRemarks || dbData.customRemarks || '',
             remarksNote: draftPayload.remarksNote || dbData.remarksNote || '',
-            savedAt: draftPayload.savedAt || new Date().toISOString()
+            savedAt: draftPayload.savedAt || new Date().toISOString(),
+            // Still unsaved, so it must keep outranking the database on the next reload
+            // too — otherwise reloading twice would quietly discard the faculty's work.
+            pendingSync: true
           };
           
           localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
@@ -967,7 +983,8 @@ export default function ScoreInput() {
         topicTag: savedAct.topic_tag || '',
         componentId: savedAct.component_id || null,
         releasedAt: savedAct.released_at || null,
-        releasedBy: savedAct.released_by || null
+        releasedBy: savedAct.released_by || null,
+        createdAt: savedAct.created_at || null
       };
 
       const updatedActivities = {
@@ -1010,6 +1027,79 @@ export default function ScoreInput() {
     }
   };
 
+  // Asks the database how many scores the column holds rather than trusting the loaded
+  // sheet, so a score another device saved since this page loaded is still counted. The
+  // BEFORE DELETE trigger on class_activities is the actual guard.
+  const handleRequestColumnDelete = async () => {
+    const activity = activities[configTerm]?.[configSlotIndex];
+    const activityId = activity?.dbId || configActivityId;
+    if (!activityId) return;
+
+    setDeleteColumnState({ activityId, term: configTerm, name: configTitle.trim() || activity?.name || 'this column', checking: true, scoreCount: 0 });
+
+    const { count, error } = await supabase
+      .from('student_activity_scores')
+      .select('score_id', { count: 'exact', head: true })
+      .eq('activity_id', activityId);
+
+    if (error) {
+      setDeleteColumnState(prev => prev && { ...prev, checking: false, error: error.message });
+      return;
+    }
+
+    setDeleteColumnState(prev => prev && { ...prev, checking: false, scoreCount: count || 0 });
+  };
+
+  const handleConfirmColumnDelete = async () => {
+    if (!deleteColumnState || deleteColumnState.scoreCount > 0) return;
+    const { activityId, term, name } = deleteColumnState;
+
+    setDeletingColumn(true);
+    try {
+      const { error } = await supabase
+        .from('class_activities')
+        .delete()
+        .eq('activity_id', activityId);
+
+      if (error) throw error;
+
+      // slotKey is positional and re-derived from fetch order on every load, so the
+      // remaining columns are renumbered here to match what the next load will produce.
+      const remaining = (activities[term] || [])
+        .filter(act => (act?.dbId || act?.id) !== activityId)
+        .map((act, idx) => ({ ...act, slotKey: `act${idx + 1}` }));
+      const updated = { ...activities, [term]: remaining };
+      setActivities(updated);
+      localStorage.setItem(`sage_activities_${classRecordId}`, JSON.stringify(updated));
+
+      setMaxItems(prev => {
+        const termMax = { ...(prev[term] || {}) };
+        Object.keys(termMax)
+          .filter(key => /^act\d+$/.test(key))
+          .forEach(key => { delete termMax[key]; });
+        remaining.forEach((act, idx) => { termMax[`act${idx + 1}`] = act.max; });
+        return { ...prev, [term]: termMax };
+      });
+
+      await logActivity(
+        'Grading Column Deletion',
+        `Deleted empty ${term} column "${name}" from ${classInfo?.subjects?.code} (${classInfo?.sections?.name}). No student scores were recorded in it.`,
+        resolveActorName(profile, user)
+      );
+
+      setDeleteColumnState(null);
+      setIsConfigModalOpen(false);
+      setPopupTitle('Column Deleted');
+      setPopupDesc(`"${name}" was removed from ${term}. No student scores were affected.`);
+      setShowPopup(true);
+    } catch (err) {
+      console.error('Error deleting grading column:', err);
+      // Surfaces the trigger's own message, which names the blocking score count.
+      setDeleteColumnState(prev => prev && { ...prev, error: err.message || String(err) });
+    } finally {
+      setDeletingColumn(false);
+    }
+  };
 
   const handleAddActivitySubmit = async () => {
     if (isArchivedClass) {
@@ -1089,7 +1179,8 @@ export default function ScoreInput() {
         topicTag: savedAct.topic_tag || '',
         componentId: savedAct.component_id || null,
         releasedAt: savedAct.released_at || null,
-        releasedBy: savedAct.released_by || null
+        releasedBy: savedAct.released_by || null,
+        createdAt: savedAct.created_at || null
       };
 
       const updatedList = [...validList, newAct];
@@ -1777,7 +1868,7 @@ export default function ScoreInput() {
 
   const renderActivityVisibilityStatus = () => (
     <span
-      className="inline-flex items-center gap-0.5 rounded-full border border-sage-200 bg-sage-50 px-1 py-0.5 font-sans text-[7px] font-bold leading-none text-sage-700"
+      className="inline-flex items-center gap-0.5 rounded-full border border-sage-200 bg-sage-50 px-1 py-0.5 font-sans text-micro font-bold leading-none text-sage-700"
       title="Visible to students; recorded scores remain tentative until milestone posting"
     >
       <Eye className="h-2 w-2" />
@@ -1883,7 +1974,7 @@ export default function ScoreInput() {
             <div className="flex flex-col sm:flex-row flex-wrap sm:items-center gap-3 sm:gap-4 p-3.5 sm:p-4 border-b border-slate-200/90 bg-white shadow-2xs">
               {/* Class Record Selector */}
               <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
-                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
+                <label className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
                 <div className="relative">
                   <select
                     value={classRecordId || ''}
@@ -1911,7 +2002,7 @@ export default function ScoreInput() {
 
               {/* View Mode Selector */}
               <div className="flex flex-col gap-1 min-w-[180px]">
-                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">View Period</label>
+                <label className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">View Period</label>
                 <div className="relative">
                   <select
                     value={viewMode}
@@ -1935,7 +2026,7 @@ export default function ScoreInput() {
 
               {/* Roster Ordering Toggle */}
               <div className="flex flex-col gap-1 min-w-[210px]">
-                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Roster Ordering</label>
+                <label className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Roster Ordering</label>
                 <div className="flex items-center p-0.5 bg-slate-100 rounded-xl border border-slate-200 text-xs">
                   <button
                     type="button"
@@ -1970,7 +2061,7 @@ export default function ScoreInput() {
 
               {/* Add Activity Button */}
               <div className="flex flex-col gap-1">
-                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Grading Setup</label>
+                <label className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Grading Setup</label>
                 <button
                   onClick={() => {
                     if (!periodsList.includes(newActivityTerm)) {
@@ -1994,11 +2085,11 @@ export default function ScoreInput() {
               {/* Stats Overview */}
               <div className="flex items-center gap-4 sm:gap-6 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
                 <div>
-                  <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</p>
+                  <p className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</p>
                   <p className="text-xs font-mono font-bold text-slate-800 mt-0.5">{students.length} Students</p>
                 </div>
                 <div>
-                  <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Spreadsheet Mode</p>
+                  <p className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Spreadsheet Mode</p>
                   <p className="text-xs font-mono font-bold text-emerald-700 mt-0.5 truncate max-w-[140px]">
                     {viewMode === 'All' ? (isSummer ? 'All 2 Terms' : 'All 4 Terms') : `${viewMode} View`}
                   </p>
@@ -2058,7 +2149,7 @@ export default function ScoreInput() {
                               <th rowSpan={2} className="px-4 py-3 border-r border-slate-200 bg-emerald-100 text-emerald-950 font-extrabold uppercase tracking-wider w-20">Remarks</th>
                             )}
                         </tr>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[9px] font-bold text-center">
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-micro font-bold text-center">
                             {/* Prelim sub-headers */}
                             {(periodsList.includes('Prelim') && (viewMode === 'All' || viewMode === 'Prelim' || viewMode === 'MidtermBatch')) && (
                               <>
@@ -2077,7 +2168,7 @@ export default function ScoreInput() {
                                       <div className="flex flex-col items-center justify-center gap-0.5">
                                         <span>{index + 1}</span>
                                         {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
-                                        {isConfigured && <span className="text-[7px] text-sky-750 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
+                                        {isConfigured && <span className="text-micro text-sky-750 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
                                         {isConfigured && renderActivityVisibilityStatus()}
                                       </div>
                                     </th>
@@ -2113,7 +2204,7 @@ export default function ScoreInput() {
                                       <div className="flex flex-col items-center justify-center gap-0.5">
                                         <span>{index + 1}</span>
                                         {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
-                                        {isConfigured && <span className="text-[7px] text-indigo-755 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
+                                        {isConfigured && <span className="text-micro text-indigo-755 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
                                         {isConfigured && renderActivityVisibilityStatus()}
                                       </div>
                                     </th>
@@ -2149,7 +2240,7 @@ export default function ScoreInput() {
                                       <div className="flex flex-col items-center justify-center gap-0.5">
                                         <span>{index + 1}</span>
                                         {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
-                                        {isConfigured && <span className="text-[7px] text-amber-755 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
+                                        {isConfigured && <span className="text-micro text-amber-755 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
                                         {isConfigured && renderActivityVisibilityStatus()}
                                       </div>
                                     </th>
@@ -2185,7 +2276,7 @@ export default function ScoreInput() {
                                       <div className="flex flex-col items-center justify-center gap-0.5">
                                         <span>{index + 1}</span>
                                         {!isConfigured && <Settings className="w-2.5 h-2.5 text-slate-400" />}
-                                        {isConfigured && <span className="text-[7px] text-orange-755 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
+                                        {isConfigured && <span className="text-micro text-orange-755 font-sans block max-w-[64px] truncate" title={act.name}>{act.name}</span>}
                                         {isConfigured && renderActivityVisibilityStatus()}
                                       </div>
                                     </th>
@@ -2234,7 +2325,7 @@ export default function ScoreInput() {
                               <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
                                 {(activities.Prelim || []).reduce((acc, c) => acc + (c.max || 0), 0)}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.activityWeight}%</td>
+                              <td className="px-1.5 py-3 font-mono text-micro bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.activityWeight}%</td>
                               {gradingPresentation.hasCharacter && (
                                 <td className="p-1 border-r border-slate-100 w-16 bg-slate-100/50 text-center font-mono text-xs font-bold text-slate-400">
                                   {maxItems.Prelim.char}
@@ -2250,7 +2341,7 @@ export default function ScoreInput() {
                               >
                                 {maxItems.Prelim.exam}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.examWeight}%</td>
+                              <td className="px-1.5 py-3 font-mono text-micro bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.examWeight}%</td>
                               <td className="px-2 py-3 font-mono font-bold bg-sky-100/80 border-r border-slate-200 text-sky-900 w-14 text-center text-[10px]">100%</td>
                             </>
                           )}
@@ -2274,7 +2365,7 @@ export default function ScoreInput() {
                               <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
                                 {(activities.Midterm || []).reduce((acc, c) => acc + (c.max || 0), 0)}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.activityWeight}%</td>
+                              <td className="px-1.5 py-3 font-mono text-micro bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.activityWeight}%</td>
                               {gradingPresentation.hasCharacter && (
                                 <td className="p-1 border-r border-slate-100 w-16 bg-indigo-50/50 text-center font-mono text-xs font-bold text-indigo-900">
                                   {maxItems.Midterm.char || 100}
@@ -2290,7 +2381,7 @@ export default function ScoreInput() {
                               >
                                 {maxItems.Midterm.exam}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.examWeight}%</td>
+                              <td className="px-1.5 py-3 font-mono text-micro bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.examWeight}%</td>
                               <td className="px-2 py-3 font-mono font-bold bg-indigo-100/80 border-r border-slate-200 text-indigo-900 w-14 text-center text-[10px]">100%</td>
                             </>
                           )}
@@ -2320,7 +2411,7 @@ export default function ScoreInput() {
                               <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
                                 {(activities['Semi-Final'] || []).reduce((acc, c) => acc + (c.max || 0), 0)}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.activityWeight}%</td>
+                              <td className="px-1.5 py-3 font-mono text-micro bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.activityWeight}%</td>
                               {gradingPresentation.hasCharacter && (
                                 <td className="p-1 border-r border-slate-100 w-16 bg-slate-100/50 text-center font-mono text-xs font-bold text-slate-400">
                                   {maxItems['Semi-Final'].char}
@@ -2336,7 +2427,7 @@ export default function ScoreInput() {
                               >
                                 {maxItems['Semi-Final'].exam}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.examWeight}%</td>
+                              <td className="px-1.5 py-3 font-mono text-micro bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.examWeight}%</td>
                               <td className="px-2 py-3 font-mono font-bold bg-amber-100/80 border-r border-slate-200 text-amber-900 w-14 text-center text-[10px]">100%</td>
                             </>
                           )}
@@ -2362,7 +2453,7 @@ export default function ScoreInput() {
                               <td className="px-1.5 py-3 font-mono font-bold bg-slate-100/80 border-r border-slate-200 text-slate-700 w-12 text-center text-[10px]">
                                 {(activities.Final || []).reduce((acc, c) => acc + (c.max || 0), 0)}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.activityWeight}%</td>
+                              <td className="px-1.5 py-3 font-mono text-micro bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.activityWeight}%</td>
                               {gradingPresentation.hasCharacter && (
                                 <td className="p-1 border-r border-slate-100 w-16 bg-slate-100/50 text-center font-mono text-xs font-bold text-slate-400">
                                   {maxItems.Final.char}
@@ -2378,7 +2469,7 @@ export default function ScoreInput() {
                               >
                                 {maxItems.Final.exam}
                               </td>
-                              <td className="px-1.5 py-3 font-mono text-[9px] bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.examWeight}%</td>
+                              <td className="px-1.5 py-3 font-mono text-micro bg-slate-100/50 border-r border-slate-200 text-slate-400 w-12 text-center">{gradingPresentation.examWeight}%</td>
                               <td className="px-2 py-3 font-mono font-bold bg-orange-100/80 border-r border-slate-200 text-orange-900 w-14 text-center text-[10px]">100%</td>
                             </>
                           )}
@@ -2545,7 +2636,12 @@ export default function ScoreInput() {
         activities={activities}
         gradingFormula={gradingFormula}
         isSummer={isSummer}
-        metadata={exportMetadata}
+        metadata={{
+          college: classInfo?.subjects?.departments?.name || '',
+          collegeShortName: classInfo?.subjects?.departments?.short_name || classInfo?.subjects?.departments?.name || '',
+          course: courseFromSectionName(),
+          ...exportMetadata
+        }}
         onMetadataChange={(updated) => setExportMetadata(prev => ({ ...prev, ...updated }))}
         onExportExcel={handleExportExcel}
         onExportPdf={handleExportPdf}
@@ -2555,8 +2651,10 @@ export default function ScoreInput() {
       {/* ⚙️ Configure Activity Modal */}
       {isConfigModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm text-left">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+          {/* Capped at the viewport with only the middle section scrolling, so the title
+              and the Save/Delete actions stay reachable on a short screen. */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="shrink-0 px-5 py-3.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 font-sans">
                 <span>⚙️ Configure Activity: {configTerm} Slot {configSlotIndex + 1}</span>
               </h3>
@@ -2568,10 +2666,31 @@ export default function ScoreInput() {
               </button>
             </div>
             
-            <div className="p-6 space-y-4">
-              <div className="bg-sage-50 border border-sage-200 text-sage-900 rounded-xl p-3.5 text-xs leading-relaxed">
-                <strong>Visibility policy:</strong> Saved activities are visible to enrolled students. An unrecorded score appears as Pending; a saved score remains Tentative until the applicable milestone is posted.
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3.5">
+              {/* One visibility statement only. This used to be said twice — here and
+                  again in a box above the footer — which was most of the modal's height. */}
+              <div className="flex items-start gap-2.5 rounded-xl border border-sage-200 bg-sage-50 p-3 text-sage-900">
+                <Eye className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sage-600" />
+                <p className="text-micro leading-relaxed">
+                  Visible to enrolled students once saved. An unrecorded score shows as Pending; a saved score stays Tentative until the milestone is posted, and may be used as live advising evidence.
+                </p>
               </div>
+
+              {(() => {
+                const configuredActivity = activities[configTerm]?.[configSlotIndex];
+                if (!configuredActivity?.createdAt) return null;
+                return (
+                  <div className="flex items-center gap-1.5 text-micro text-slate-400">
+                    <Clock className="h-3 w-3 shrink-0" />
+                    <span>
+                      Created {new Date(configuredActivity.createdAt).toLocaleString()}
+                      {configuredActivity.releasedAt && configuredActivity.releasedAt !== configuredActivity.createdAt
+                        ? ` · Released ${new Date(configuredActivity.releasedAt).toLocaleString()}`
+                        : ''}
+                    </span>
+                  </div>
+                );
+              })()}
 
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
@@ -2654,19 +2773,21 @@ export default function ScoreInput() {
                 />
               </div>
 
-              <div className="flex items-start gap-3 rounded-xl border border-sage-200 bg-sage-50 p-3.5">
-                <Eye className="mt-0.5 h-4 w-4 shrink-0 text-sage-600" />
-                <span className="min-w-0">
-                  <span className="text-xs font-bold text-sage-900">Visible to enrolled students</span>
-                  <span className="mt-1 block text-[10px] leading-relaxed text-sage-700">
-                    ASPIRE may use saved non-NULL scores as tentative advising and live-performance evidence.
-                  </span>
-                </span>
-              </div>
             </div>
 
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
-              <button 
+            <div className="shrink-0 px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
+              {!isArchivedClass && configActivityId && configActivityId.length > 10 ? (
+                <button
+                  type="button"
+                  onClick={handleRequestColumnDelete}
+                  className="px-3 py-2 border border-rose-200 text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete Column</span>
+                </button>
+              ) : <span />}
+              <div className="flex items-center gap-3">
+              <button
                 type="button"
                 onClick={() => setIsConfigModalOpen(false)}
                 className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
@@ -2682,6 +2803,64 @@ export default function ScoreInput() {
                 <Save className="h-3.5 w-3.5" />
                 <span>{savingConfig ? 'Saving...' : 'Save Activity'}</span>
               </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Grading Column confirmation */}
+      {deleteColumnState && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm text-left">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-rose-600" />
+              <h3 className="text-sm font-bold text-slate-800 font-sans">Delete Grading Column</h3>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {deleteColumnState.checking ? (
+                <p className="text-xs text-slate-600">Checking for recorded scores…</p>
+              ) : deleteColumnState.error ? (
+                <div className="bg-rose-50 border border-rose-100 text-rose-700 rounded-xl p-3.5 text-xs font-semibold">
+                  {deleteColumnState.error}
+                </div>
+              ) : deleteColumnState.scoreCount > 0 ? (
+                <div className="bg-rose-50 border border-rose-100 text-rose-800 rounded-xl p-3.5 text-xs leading-relaxed">
+                  <strong>This column cannot be deleted.</strong> {deleteColumnState.scoreCount} student score{deleteColumnState.scoreCount === 1 ? ' is' : 's are'} already recorded in
+                  {' '}&quot;{deleteColumnState.name}&quot;. Deleting it would permanently destroy those scores. A recorded zero counts as a score.
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-slate-700 leading-relaxed">
+                    Delete the {deleteColumnState.term} column <strong>&quot;{deleteColumnState.name}&quot;</strong>? No student scores are recorded in it.
+                  </p>
+                  <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3.5 text-xs leading-relaxed">
+                    This cannot be undone. The column is removed for this class only, and the action is recorded in the activity log.
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteColumnState(null)}
+                className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+              >
+                {deleteColumnState.scoreCount > 0 || deleteColumnState.error ? 'Close' : 'Cancel'}
+              </button>
+              {!deleteColumnState.checking && !deleteColumnState.error && deleteColumnState.scoreCount === 0 && (
+                <button
+                  type="button"
+                  onClick={handleConfirmColumnDelete}
+                  disabled={deletingColumn}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-lg text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>{deletingColumn ? 'Deleting…' : 'Delete Column'}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

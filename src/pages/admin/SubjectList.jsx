@@ -278,7 +278,7 @@ CS202,Object Oriented Programming,3,College of Computer Studies`;
             <SlidersHorizontal className="h-3.5 w-3.5 text-sage-600" />
             Filter by
             {activeFilterCount > 0 && (
-              <span className="ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-sage-600 text-white text-[9px] font-bold">
+              <span className="ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-sage-600 text-white text-micro font-bold">
                 {activeFilterCount}
               </span>
             )}
@@ -288,7 +288,7 @@ CS202,Object Oriented Programming,3,College of Computer Studies`;
 
           {/* College Filter */}
           <div className="flex flex-col gap-0.5 min-w-[130px] flex-1 sm:flex-none">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">College</span>
+            <span className="text-micro font-bold text-slate-400 uppercase tracking-wider">College</span>
             <select
               value={deptFilter}
               onChange={(e) => setDeptFilter(e.target.value)}
@@ -303,7 +303,7 @@ CS202,Object Oriented Programming,3,College of Computer Studies`;
 
           {/* Year Level Filter */}
           <div className="flex flex-col gap-0.5 min-w-[100px] flex-1 sm:flex-none">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Year Level</span>
+            <span className="text-micro font-bold text-slate-400 uppercase tracking-wider">Year Level</span>
             <select
               value={filterYearLevel}
               onChange={(e) => setFilterYearLevel(e.target.value)}
@@ -318,7 +318,7 @@ CS202,Object Oriented Programming,3,College of Computer Studies`;
 
           {/* Units Filter */}
           <div className="flex flex-col gap-0.5 min-w-[90px] flex-1 sm:flex-none">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Units</span>
+            <span className="text-micro font-bold text-slate-400 uppercase tracking-wider">Units</span>
             <select
               value={filterUnits}
               onChange={(e) => setFilterUnits(e.target.value)}

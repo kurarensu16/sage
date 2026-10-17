@@ -21,24 +21,12 @@ import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { provisionClassroomByAdmin, getOrCreateJoinCode } from '../../lib/classRoomService';
 import { cn } from '../../lib/utils';
 
+// Reads programs.abbreviation. The name-guessing fallback this replaced produced codes
+// that did not match the section names it was compared against (e.g. BAPSYCH vs BAPsych),
+// so a program with no abbreviation recorded now matches nothing instead of the wrong row.
 function getProgramAbbreviation(program) {
-  if (!program) return '';
-  if (typeof program === 'object' && program.abbreviation) return program.abbreviation;
-  const programName = typeof program === 'string' ? program : (program.name || '');
-  if (!programName) return '';
-  if (programName.includes('Psychology')) return 'BAPSYCH';
-  if (programName.includes('Computer Engineering')) return 'BSCpE';
-  if (programName.includes('Human Resource')) return 'BSBA-HRDM';
-  if (programName.includes('Financial Management')) return 'BSBA-FM';
-  if (programName.includes('Operations Management')) return 'BSBA-OM';
-  if (programName.includes('Marketing Management')) return 'BSBA-MM';
-  if (programName.includes('Accounting Information')) return 'BSAIS';
-  const stopWords = new Set(['of', 'in', 'and', 'for', 'major', 'the']);
-  return programName
-    .split(/\s+/)
-    .filter(w => !stopWords.has(w.toLowerCase()))
-    .map(w => w[0].toUpperCase())
-    .join('');
+  if (!program || typeof program !== 'object') return '';
+  return program.abbreviation || '';
 }
 
 export default function ClassroomProvisioning() {
@@ -241,11 +229,12 @@ export default function ClassroomProvisioning() {
     return programs.filter(p => p.department_id === targetDeptIdForSections);
   }, [programs, targetDeptIdForSections]);
 
-  // Active program abbreviation for filtering
+  // Active program abbreviation for filtering. The dropdown stores a program name, so the
+  // code is resolved from the programs row rather than guessed from the name.
   const activeProgramAbbr = useMemo(() => {
     if (!selectedProgramFilter) return '';
-    return getProgramAbbreviation(selectedProgramFilter) || selectedProgramFilter;
-  }, [selectedProgramFilter]);
+    return getProgramAbbreviation(programs.find(p => p.name === selectedProgramFilter));
+  }, [programs, selectedProgramFilter]);
 
   // Reset filters when department or target department changes
   useEffect(() => {
@@ -876,7 +865,7 @@ export default function ClassroomProvisioning() {
                     <label className="text-[10px] font-bold text-amber-900 uppercase tracking-wide">
                       Target College for Block Section <span className="text-rose-500">*</span>
                     </label>
-                    <span className="text-[9px] bg-amber-200/80 text-amber-900 px-2 py-0.5 rounded font-semibold">
+                    <span className="text-micro bg-amber-200/80 text-amber-900 px-2 py-0.5 rounded font-semibold">
                       General Education / Service Course
                     </span>
                   </div>
@@ -932,7 +921,7 @@ export default function ClassroomProvisioning() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wide">Target Academic Term</label>
-                  <span className="text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-semibold font-mono flex items-center gap-1">
+                  <span className="text-micro bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-semibold font-mono flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     Locked to Active Term
                   </span>

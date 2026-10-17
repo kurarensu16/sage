@@ -36,7 +36,7 @@ export default function ResetPassword() {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
 
-      // 2. Optionally revoke every other signed-in session; this recovery session stays.
+      // 2. Optionally revoke every other signed-in session.
       let endedOthers = false;
       if (signOutOthers) {
         const { error: signOutError } = await supabase.auth.signOut({ scope: 'others' });
@@ -52,15 +52,27 @@ export default function ResetPassword() {
       await logActivity(
         'Password Reset Success',
         endedOthers
-          ? 'Password updated via recovery link; all other active sessions were signed out.'
-          : 'Password updated via recovery link; other active sessions were left signed in.',
+          ? 'Password updated via emailed verification code; all other active sessions were signed out.'
+          : 'Password updated via emailed verification code; other active sessions were left signed in.',
         'Public Account Service'
       );
+
+      // 4. End this recovery session too, so "Go to Sign In" genuinely signs in.
+      //
+      // This session was established by an emailed code, not by knowing a password.
+      // Leaving it active meant the user was silently logged straight into the dashboard
+      // and never typed the password they had just set. Ending it makes the new
+      // credential the only way back in, and proves it works while they are still here.
+      //
+      // Only this flow signs out. Changing a password from Settings, or the forced change
+      // at first login, both keep the session: those users already authenticated and
+      // supplied their current password.
+      await supabase.auth.signOut();
 
       setIsSubmitted(true);
     } catch (err) {
       console.error('Password reset update error:', err);
-      setErrorMsg(err.message || 'Failed to update password. Recovery link may have expired.');
+      setErrorMsg(err.message || 'Failed to update password. Your verification code may have expired — request a new one.');
     }
   };
 

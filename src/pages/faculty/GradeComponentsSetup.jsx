@@ -210,7 +210,7 @@ export default function GradeComponentsSetup() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-4">
               {[1, 2, 3, 4, 5, 6].map(num => (
                 <div key={num} className="space-y-1 bg-slate-50/60 p-2.5 sm:p-3 rounded-xl border border-slate-200/70">
-                  <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wide block truncate">Formative {num} Max</label>
+                  <label className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wide block truncate">Formative {num} Max</label>
                   <input
                     type="number"
                     required
@@ -226,7 +226,7 @@ export default function GradeComponentsSetup() {
               <div className="col-span-2 sm:col-span-3 lg:col-span-4 border-t border-slate-100 pt-3 mt-1"></div>
               
               <div className="col-span-1 sm:col-span-2 space-y-1 bg-slate-50/60 p-2.5 sm:p-3 rounded-xl border border-slate-200/70">
-                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wide block truncate">Term Exam Max Points</label>
+                <label className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wide block truncate">Term Exam Max Points</label>
                 <input
                   type="number"
                   required
@@ -239,7 +239,7 @@ export default function GradeComponentsSetup() {
               </div>
 
               <div className="col-span-1 sm:col-span-2 space-y-1 bg-slate-50/60 p-2.5 sm:p-3 rounded-xl border border-slate-200/70">
-                <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wide block truncate">Character Rating (Fixed)</label>
+                <label className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wide block truncate">Character Rating (Fixed)</label>
                 <input
                   type="text"
                   disabled

@@ -134,10 +134,6 @@ export async function sendTestNotification(role = 'student', delayMs = 0) {
       title: '🏛️ Grade Sheet Pending Approval',
       body: 'Prof. Amanda Rivera submitted final grade sheets for IT401 for your approval.',
     },
-    office: {
-      title: '🏢 Student Roster Processed',
-      body: 'Batch synchronization completed for College of Computer Studies.',
-    },
     admin: {
       title: '🛡️ SAGE Audit Log Alert',
       body: 'System notice: SAGE Platform Registry core auto-synchronized successfully.',

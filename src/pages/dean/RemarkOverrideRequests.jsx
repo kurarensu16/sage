@@ -325,7 +325,7 @@ export default function RemarkOverrideRequests() {
               >
                 {s ? s.charAt(0).toUpperCase() + s.slice(1) : 'All'}
                 {s === 'pending' && pendingCount > 0 && (
-                  <span className="ml-1 bg-amber-400 text-white rounded-full px-1 text-[9px]">{pendingCount}</span>
+                  <span className="ml-1 bg-amber-400 text-white rounded-full px-1 text-micro">{pendingCount}</span>
                 )}
               </button>
             ))}
@@ -391,7 +391,7 @@ export default function RemarkOverrideRequests() {
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-bold text-slate-800">{req.studentName}</p>
                         {req.isLate && (
-                          <span className="px-1.5 py-0.5 rounded text-[8px] bg-rose-50 text-rose-700 border border-rose-200 font-bold uppercase tracking-wider">
+                          <span className="px-1.5 py-0.5 rounded text-micro bg-rose-50 text-rose-700 border border-rose-200 font-bold uppercase tracking-wider">
                             Late
                           </span>
                         )}
@@ -408,7 +408,7 @@ export default function RemarkOverrideRequests() {
                         {req.requestedRemark}
                       </span>
                       {isGracePass && (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-violet-50 text-violet-700 border border-violet-200 font-bold">Grace Pass</span>
+                        <span className="px-1.5 py-0.5 rounded text-micro bg-violet-50 text-violet-700 border border-violet-200 font-bold">Grace Pass</span>
                       )}
                     </div>
 
@@ -473,7 +473,7 @@ export default function RemarkOverrideRequests() {
                           { label: 'To Remark', value: req.requestedRemark, color: '' },
                         ].map(item => (
                           <div key={item.label} className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
-                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{item.label}</p>
+                            <p className="text-micro font-bold text-slate-400 uppercase tracking-wider">{item.label}</p>
                             <p className={cn('text-base font-extrabold font-mono mt-1', item.color || 'text-slate-700')}>{item.value}</p>
                           </div>
                         ))}

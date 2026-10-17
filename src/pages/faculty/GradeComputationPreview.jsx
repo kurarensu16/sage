@@ -1369,7 +1369,7 @@ export default function GradeComputationPreview() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 bg-white shadow-2xs">
           {/* Class Record Selector */}
           <div className="flex flex-col gap-1 flex-1 min-w-0">
-            <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
+            <label className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
             <div className="relative">
               <select
                 value={classRecordId}
@@ -1392,11 +1392,11 @@ export default function GradeComputationPreview() {
           {/* Stats Overview */}
           <div className="flex items-center gap-4 sm:gap-6 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
             <div>
-              <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</p>
+              <p className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</p>
               <p className="text-xs font-mono font-bold text-slate-800 mt-0.5">{computedStudents.length} Students</p>
             </div>
             <div>
-              <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ledger Status</p>
+              <p className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ledger Status</p>
               <p className={`text-xs font-mono font-bold mt-0.5 ${isLocked ? 'text-emerald-700' : 'text-amber-700'}`}>
                 {isLocked ? 'Posted & Locked' : 'Draft / Unposted'}
               </p>
@@ -1410,7 +1410,7 @@ export default function GradeComputationPreview() {
           {/* KPI 1: Passing Rate */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between gap-3">
             <div>
-              <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Passing Rate</span>
+              <span className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Passing Rate</span>
               <h3 className="text-xl sm:text-2xl font-extrabold text-emerald-700 font-mono mt-0.5">
                 {stats.passRate}%
               </h3>
@@ -1426,7 +1426,7 @@ export default function GradeComputationPreview() {
           {/* KPI 2: Mean GWA */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between gap-3">
             <div>
-              <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Class Mean GWA</span>
+              <span className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Class Mean GWA</span>
               <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono mt-0.5">
                 {stats.avgGwa}
               </h3>
@@ -1442,7 +1442,7 @@ export default function GradeComputationPreview() {
           {/* KPI 3: Honor Contenders */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between gap-3">
             <div>
-              <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Honor Roll (≤ 1.75)</span>
+              <span className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Honor Roll (≤ 1.75)</span>
               <h3 className="text-xl sm:text-2xl font-extrabold text-indigo-700 font-mono mt-0.5">
                 {stats.honors}
               </h3>
@@ -1458,7 +1458,7 @@ export default function GradeComputationPreview() {
           {/* KPI 4: At-Risk / In Jeopardy */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex items-center justify-between gap-3">
             <div>
-              <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">At-Risk / Warning</span>
+              <span className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">At-Risk / Warning</span>
               <h3 className="text-xl sm:text-2xl font-extrabold text-rose-700 font-mono mt-0.5">
                 {stats.atRisk}
               </h3>
@@ -1740,7 +1740,7 @@ export default function GradeComputationPreview() {
                     <span className="text-[10px] font-mono text-slate-400 block mt-0.5">{student.studentNo}</span>
                   </div>
 
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold border flex-shrink-0 ${
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-micro font-bold border flex-shrink-0 ${
                     student.isPassed 
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
                       : 'bg-rose-50 text-rose-700 border-rose-200'
@@ -1758,7 +1758,7 @@ export default function GradeComputationPreview() {
                       : "bg-sky-50/50 text-slate-800 border-sky-100"
                   )}>
                     <span className={cn(
-                      "text-[8px] font-bold uppercase tracking-wider block",
+                      "text-micro font-bold uppercase tracking-wider block",
                       student.isPrelimMissing ? "text-rose-600" : "text-sky-600"
                     )}>Prelim</span>
                     <span className="text-xs font-bold">
@@ -1773,7 +1773,7 @@ export default function GradeComputationPreview() {
                       : "bg-indigo-50/50 text-indigo-900 border-indigo-100"
                   )}>
                     <span className={cn(
-                      "text-[8px] font-bold uppercase tracking-wider block",
+                      "text-micro font-bold uppercase tracking-wider block",
                       student.isMidtermMissing ? "text-rose-600" : "text-indigo-600"
                     )}>Midterm MR</span>
                     <span className="text-xs font-bold">
@@ -1788,7 +1788,7 @@ export default function GradeComputationPreview() {
                       : "bg-amber-50/50 text-slate-800 border-amber-100"
                   )}>
                     <span className={cn(
-                      "text-[8px] font-bold uppercase tracking-wider block",
+                      "text-micro font-bold uppercase tracking-wider block",
                       student.isSemiFinalMissing ? "text-rose-600" : "text-amber-600"
                     )}>Semis</span>
                     <span className="text-xs font-bold">
@@ -1803,7 +1803,7 @@ export default function GradeComputationPreview() {
                       : "bg-orange-50/50 text-orange-900 border-orange-100"
                   )}>
                     <span className={cn(
-                      "text-[8px] font-bold uppercase tracking-wider block",
+                      "text-micro font-bold uppercase tracking-wider block",
                       student.isFinalMissing ? "text-rose-600" : "text-orange-600"
                     )}>Final TFR</span>
                     <span className="text-xs font-bold">
@@ -1817,7 +1817,7 @@ export default function GradeComputationPreview() {
                   <div className="text-[11px] text-slate-600 flex items-center gap-2">
                     <span>Sem Grade: <strong className="text-emerald-800">{student.sg}</strong></span>
                     {student.isFDA && (
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-micro font-bold bg-rose-50 text-rose-700 border border-rose-200">
                         FDA ({student.absences})
                       </span>
                     )}
@@ -2009,7 +2009,7 @@ export default function GradeComputationPreview() {
                           )}
                         </div>
                         {!isSummer && (
-                          <span className="block text-[9px] text-indigo-500 font-normal font-sans">AVG(P, M)</span>
+                          <span className="block text-micro text-indigo-500 font-normal font-sans">AVG(P, M)</span>
                         )}
                       </td>
 
@@ -2062,7 +2062,7 @@ export default function GradeComputationPreview() {
                           )}
                         </div>
                         {!isSummer && (
-                          <span className="block text-[9px] text-orange-500 font-normal font-sans">AVG(SF, F)</span>
+                          <span className="block text-micro text-orange-500 font-normal font-sans">AVG(SF, F)</span>
                         )}
                       </td>
 
@@ -2078,7 +2078,7 @@ export default function GradeComputationPreview() {
                             <AlertCircle className="w-3 h-3 text-amber-600 shrink-0" title="Projected from incomplete terms" />
                           )}
                         </div>
-                        <span className="block text-[9px] text-emerald-600 font-normal font-sans">AVG(MR, TFR)</span>
+                        <span className="block text-micro text-emerald-600 font-normal font-sans">AVG(MR, TFR)</span>
                       </td>
 
                       <td className="px-3 py-3 border-r border-slate-100">

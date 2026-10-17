@@ -2,7 +2,7 @@
 
 ## Polishing stage: change freeze (read before anything else)
 
-**FREEZE: ON**
+**FREEZE: OFF**
 
 > Switch: change the line above to `FREEZE: OFF` to suspend this section, then start a new AI session. The Claude Code lock is separate: rename `.claude/settings.json` to `.claude/settings.off.json` (rename it back to turn it on). Full guide: [`docs/05-operations/agents/CHANGE_FREEZE_GUIDE.md`](docs/05-operations/agents/CHANGE_FREEZE_GUIDE.md).
 
@@ -24,20 +24,19 @@
 6. **Never** commit, push, run migrations against the remote Supabase project, or change `.env*` files unless the developer asks for that exact action.
 
 ## Documentation (read first)
+
 - **Start at [`docs/README.md`](docs/README.md).** It is the index of every document, with its status (Current / Reference / Needs update / Archived).
 - Where a new doc goes:
-
-  | Kind of document | Folder |
-  |---|---|
-  | How the system works now (scope, schema, rules, notifications, AI, design, security) | `docs/01-system/<topic>/` |
-  | Thesis paper work: audits, figures, defense prep, design decisions | `docs/02-thesis/<topic>/` |
-  | Implementation reports for finished work | `docs/03-development/implementation-reports/` |
-  | Code audits of a system area and their fix plans (work in progress) | `docs/03-development/audits/` |
-  | Test checklists, QA runbooks, evidence | `docs/04-testing/` |
-  | Setup, database reset/seed, deployment, PWA/APK | `docs/05-operations/<topic>/` |
-  | Planned improvements, documented but not built (never the owner's deferred items) | `docs/06-future-enhancements/` |
-  | Superseded, completed, or rejected material | `docs/archive/<era-or-kind>/` |
-
+  | Kind of document                                                                     | Folder                                          |
+  | ------------------------------------------------------------------------------------ | ----------------------------------------------- |
+  | How the system works now (scope, schema, rules, notifications, AI, design, security) | `docs/01-system/<topic>/`                     |
+  | Thesis paper work: audits, figures, defense prep, design decisions                   | `docs/02-thesis/<topic>/`                     |
+  | Implementation reports for finished work                                             | `docs/03-development/implementation-reports/` |
+  | Code audits of a system area and their fix plans (work in progress)                  | `docs/03-development/audits/`                 |
+  | Test checklists, QA runbooks, evidence                                               | `docs/04-testing/`                            |
+  | Setup, database reset/seed, deployment, PWA/APK                                      | `docs/05-operations/<topic>/`                 |
+  | Planned improvements, documented but not built (never the owner's deferred items)    | `docs/06-future-enhancements/`                |
+  | Superseded, completed, or rejected material                                          | `docs/archive/<era-or-kind>/`                 |
 - Name dated docs `TOPIC_YYYY-MM-DD.md`. Do not create `.md` files in the repo root (only `README.md`, `AGENTS.md`, and the one-line `CLAUDE.md`/`GEMINI.md` pointers live there).
 - Every time you add, move, archive, or retire a doc, update `docs/README.md` in the same change.
 - **`docs/archive/` is historical, not authoritative.** Do not use it as a source of truth or audit against it.
@@ -45,6 +44,7 @@
 - The thesis paper (Chapters 1–2) treats RLS, the Gemini 2.5 Flash model, and the hosted password policy as already in place. The owner will apply these in code later. In thesis audits, do not flag them as gaps, and never add "to be applied later" notes to the paper.
 
 ## Dev Commands
+
 - `npm run dev`: Vite dev server on port **5175** (`strictPort`, not the default 5173)
 - `npm run build`: production build
 - `npm run lint`: ESLint (there is no separate prettier or lint-staged step)
@@ -56,6 +56,7 @@
   - `node scripts/verifyEvaluationReferrals.js`
 
 ## Data Layer
+
 - Every portal reads and writes **Supabase** through `src/lib/supabase.js` and the service modules in `src/lib/`:
   - `evaluationService.js`, `gradePostingService.js`, `reportsService.js`, `profileService.js`
   - `notificationService.js`, `notificationPreferences.js`, and others
@@ -63,6 +64,7 @@
 - Privileged writes go through SECURITY DEFINER RPCs defined in migrations. Prefer calling an existing RPC over a direct table write.
 
 ## Supabase
+
 - Remote project: `ettnwknyhdhehoclrwwh.supabase.co` (configured in `.env.local`)
 - `supabase/migrations/` holds 52 migration files. Add new ones as `YYYYMMDDHHMMSS_description.sql`. The owner runs them manually in the SQL editor.
 - Edge functions (Deno, `supabase/functions/`):
@@ -83,6 +85,7 @@
   - student: `s.jenkins@student.sage.edu`
 
 ## Architecture
+
 - **4 portals** under `src/pages/`:
   - `admin/`
   - `dean/`
@@ -96,6 +99,7 @@
 - Passwords: 8+ characters with upper, lower, digit, and symbol (`src/lib/passwordPolicy.js`).
 
 ## Design System Rules
+
 - **No arbitrary hex codes** (no `text-[#...]`); use `sage-*` semantic tokens only.
 - **No dark mode** (no `dark:` variants).
 - **No emoji as icons**; use `lucide-react` exclusively.
@@ -105,6 +109,7 @@
 - Feature naming: the student AI feature is called **"AI Study Tutor"** everywhere.
 
 ## Grading Math
+
 - 4-term progression: Prelim → Midterm → Semi-Final → Final.
 - Term weights come from the class's **COG template** (dynamic components, `src/lib/gradingMath.js` + `officialGradingPresets.js`). They are not a fixed 50/10/40.
 - Milestones: Midterm Rating (MR), Tentative Final Rating (TFR), Semestral Grade (SG), posted atomically through `gradePostingService.js`.
@@ -114,6 +119,7 @@
   - tiers: Low 0–24, Moderate 25–49, High 50–74, Critical 75–100
 
 ## Important Docs
+
 - [`docs/README.md`](docs/README.md): documentation index, start here
 - `docs/01-system/overview/ASPIRE_SYSTEM_SCOPE.md`: current system scope
 - `docs/01-system/database/ASPIRE_DATABASE_SCHEMA.md`: schema reference (needs update; migrations are the source of truth)

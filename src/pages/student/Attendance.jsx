@@ -152,10 +152,10 @@ export default function Attendance() {
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-sm text-slate-900">{item.subjectCode}</span>
                         {item.isFDA && (
-                          <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-rose-50 text-rose-600 border border-rose-100 uppercase animate-pulse">FDA Risk</span>
+                          <span className="px-1.5 py-0.5 rounded text-micro font-extrabold bg-rose-50 text-rose-600 border border-rose-100 uppercase animate-pulse">FDA Risk</span>
                         )}
                         {!item.isFDA && item.isWarning && (
-                          <span className="px-1.5 py-0.5 rounded text-[8px] font-extrabold bg-amber-50 text-amber-600 border border-amber-100 uppercase">Warning</span>
+                          <span className="px-1.5 py-0.5 rounded text-micro font-extrabold bg-amber-50 text-amber-600 border border-amber-100 uppercase">Warning</span>
                         )}
                       </div>
                       <div className="text-xs text-slate-500 truncate">{item.subjectName}</div>

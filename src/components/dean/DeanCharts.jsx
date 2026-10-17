@@ -214,7 +214,7 @@ export function AcademicTrajectoryLineChart({ trajectoryData = [] }) {
                     x={padLeft - 8} 
                     y={y + 3.5} 
                     textAnchor="end" 
-                    className="font-mono text-[9px] fill-slate-400 font-semibold"
+                    className="font-mono text-micro fill-slate-400 font-semibold"
                   >
                     {gwaVal.toFixed(2)}
                   </text>
@@ -223,7 +223,7 @@ export function AcademicTrajectoryLineChart({ trajectoryData = [] }) {
                       x={width - padRight + 4} 
                       y={y + 3} 
                       textAnchor="start" 
-                      className="font-mono text-[8px] fill-amber-500 font-bold"
+                      className="font-mono text-micro fill-amber-500 font-bold"
                     >
                       Pass Limit
                     </text>
@@ -249,7 +249,7 @@ export function AcademicTrajectoryLineChart({ trajectoryData = [] }) {
                     x={padLeft - 8} 
                     y={y + 3.5} 
                     textAnchor="end" 
-                    className="font-mono text-[9px] fill-slate-400 font-semibold"
+                    className="font-mono text-micro fill-slate-400 font-semibold"
                   >
                     {pctVal}%
                   </text>
@@ -612,7 +612,7 @@ export function AcademicHealthDonutChart({ distribution = {} }) {
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
             {activeInfo ? (
               <div className="space-y-0.5 px-2">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block truncate">
+                <span className="text-micro font-bold uppercase tracking-wider text-slate-400 block truncate">
                   {activeInfo.label}
                 </span>
                 <span className="text-xl font-extrabold font-mono text-slate-900 leading-none block">
@@ -624,7 +624,7 @@ export function AcademicHealthDonutChart({ distribution = {} }) {
               </div>
             ) : (
               <div className="space-y-0.5">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
+                <span className="text-micro font-bold uppercase tracking-wider text-slate-400 block">
                   Pass Rate
                 </span>
                 <span className="text-2xl font-extrabold font-mono text-sage-900 leading-none block">
@@ -770,7 +770,7 @@ export function GradeDistributionHistogram({ brackets = [] }) {
                   x={padLeft - 6} 
                   y={y + 3} 
                   textAnchor="end" 
-                  className="font-mono text-[9px] fill-slate-400 font-semibold"
+                  className="font-mono text-micro fill-slate-400 font-semibold"
                 >
                   {val}
                 </text>
@@ -836,7 +836,7 @@ export function GradeDistributionHistogram({ brackets = [] }) {
                   x={x + barWidth / 2}
                   y={height - padBottom + 16}
                   textAnchor="middle"
-                  className={`font-mono text-[9px] font-bold tracking-tight transition-colors ${
+                  className={`font-mono text-micro font-bold tracking-tight transition-colors ${
                     isHovered ? 'fill-sage-900' : 'fill-slate-600'
                   }`}
                 >
@@ -848,7 +848,7 @@ export function GradeDistributionHistogram({ brackets = [] }) {
                   x={x + barWidth / 2}
                   y={height - padBottom + 27}
                   textAnchor="middle"
-                  className="text-[8px] fill-slate-400 font-medium"
+                  className="text-micro fill-slate-400 font-medium"
                 >
                   {b.sub}
                 </text>
