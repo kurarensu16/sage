@@ -1,8 +1,8 @@
 flowchart LR
-%% ===== Figure 2.10 — Level 1 DFD: Dean Portal (updated 2026-10-10) =====
-%% Dean decides the faculty's SG proposal (no direct grade write); referrals stored in
-%% student_evaluation_referrals; Intervention Results reads frozen baseline/follow-up,
-%% verified tasks, acknowledgment, and posted milestones (follow-up due); 8.0 Manage Account.
+%% ===== Figure 2.10 — Level 1 DFD: Dean Portal (consolidated to module-level processes, 2026-10-14) =====
+%% Each process now corresponds 1:1 with a module in Figure 2.12 (VTOC) and the Scope and Delimitation.
+%% Decide Grade Corrections broadens into 3.0 Grades (adds submission-status and distribution reads).
+%% Risk and Honors Overview / Resolve Escalated Cases / Intervention Results merge into 4.0 Student Risk.
 %% Layout: External entity (left) -> Process (middle) -> Data stores (right)
 
   %% ---------- 1.0 ----------
@@ -10,38 +10,31 @@ flowchart LR
   P1 <-- "account record" --> D1@{ shape: lin-rect, label: "D1&nbsp; users" }
 
   %% ---------- 2.0 ----------
-  C2["College Dean"] <-- "submission compliance,<br/>active interventions" --> P2(("2.0<br/>Load Dean<br/>Dashboard"))
+  C2["College Dean"] <-- "submission compliance,<br/>active interventions" --> P2(("2.0<br/>Dashboard"))
   P2 <-- "college-wide grades" --> D12b@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
   P2 <-- "open evaluations" --> D16b@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
 
   %% ---------- 3.0 ----------
-  C3["College Dean"] <-- "SG correction proposals /<br/>approve or reject" --> P3(("3.0<br/>Decide Grade<br/>Corrections"))
+  C3["College Dean"] <-- "submission status, grade distribution /<br/>SG correction proposals / approve or reject" --> P3(("3.0<br/>Grades"))
+  P3 <-- "handled sections,<br/>submission status" --> D7c@{ shape: lin-rect, label: "D7&nbsp; class_records" }
+  P3 <-- "grade distribution" --> D12c@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
   P3 <-- "proposed SG, remark, evidence,<br/>decision" --> D14c@{ shape: lin-rect, label: "D14&nbsp; remark_override_requests" }
   P3 -- "audit entry" --> D25c@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
 
   %% ---------- 4.0 ----------
-  C4["College Dean"] <-- "dual-tier rosters,<br/>evaluation status" --> P4(("4.0<br/>Risk and Honors<br/>Overview"))
-  P4 <-- "GWA, honors eligibility" --> D12d@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
-  P4 <-- "risk tier, evaluation status" --> D16d@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
+  C4["College Dean"] <-- "dual-tier rosters, evaluation status /<br/>escalated cases / recommendation,<br/>disposition / GWA change, risk transition,<br/>verified completion, follow-up due" --> P4(("4.0<br/>Student<br/>Risk"))
+  P4 <-- "GWA, honors eligibility,<br/>milestones posted after publication" --> D12d@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P4 <-- "risk tier, evaluation status,<br/>frozen baseline, follow-up snapshot,<br/>verified tasks, acknowledgment" --> D16d@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
+  P4 <-- "referral, reason,<br/>review note, resolution" --> D31d@{ shape: lin-rect, label: "D31&nbsp; student_evaluation_referrals" }
+  P4 -- "audit entry" --> D25d@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
 
   %% ---------- 5.0 ----------
-  C5["College Dean"] <-- "escalated cases /<br/>recommendation, disposition" --> P5(("5.0<br/>Resolve Escalated<br/>Cases"))
-  P5 <-- "referral, reason, review note,<br/>resolution" --> D31e@{ shape: lin-rect, label: "D31&nbsp; student_evaluation_referrals" }
-  P5 <-- "referral flag" --> D16e@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
-  P5 -- "audit entry" --> D25e@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+  C5["College Dean"] <-- "report parameters / exportable reports" --> P5(("5.0<br/>Reports"))
+  P5 <-- "grade distribution" --> D12e@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P5 <-- "evaluations and outcomes" --> D16e@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
 
   %% ---------- 6.0 ----------
-  C6["College Dean"] <-- "GWA change, risk transition,<br/>verified completion, acknowledgment,<br/>follow-up due" --> P6(("6.0<br/>Intervention<br/>Results"))
-  P6 <-- "frozen baseline, follow-up snapshot,<br/>verified tasks, acknowledgment" --> D16f@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
-  P6 <-- "milestones posted after publication" --> D12f@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
-
-  %% ---------- 7.0 ----------
-  C7["College Dean"] <-- "report parameters / exportable reports" --> P7(("7.0<br/>Generate<br/>Reports"))
-  P7 <-- "grade distribution" --> D12g@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
-  P7 <-- "evaluations and outcomes" --> D16g@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
-
-  %% ---------- 8.0 ----------
-  C8["College Dean"] <-- "photo, contact number,<br/>password, alert choices / profile" --> P8(("8.0<br/>Manage<br/>Account"))
-  P8 <-- "contact number, photo reference" --> D1h@{ shape: lin-rect, label: "D1&nbsp; users" }
-  P8 <-- "profile photo file" --> D30h@{ shape: lin-rect, label: "D30&nbsp; avatars (private storage)" }
-  P8 <-- "device and email choices" --> D29h@{ shape: lin-rect, label: "D29&nbsp; notification_preferences" }
+  C6["College Dean"] <-- "photo, contact number,<br/>password, alert choices / profile" --> P6(("6.0<br/>Account"))
+  P6 <-- "contact number, photo reference" --> D1f@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P6 <-- "profile photo file" --> D30f@{ shape: lin-rect, label: "D30&nbsp; avatars (private storage)" }
+  P6 <-- "device and email choices" --> D29f@{ shape: lin-rect, label: "D29&nbsp; notification_preferences" }

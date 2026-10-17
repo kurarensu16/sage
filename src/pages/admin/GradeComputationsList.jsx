@@ -232,52 +232,6 @@ export default function GradeComputationsList() {
     }
   };
 
-  const handleDeleteTemplate = async (templateId, templateName) => {
-    // A template used by subjects cannot be deleted (the database refuses it), so
-    // check first and say so plainly.
-    const { count: subjectCount, error: countErr } = await supabase
-      .from('subjects')
-      .select('subject_id', { count: 'exact', head: true })
-      .eq('computation_id', templateId);
-    if (countErr) {
-      alert('Could not check whether this template is in use: ' + countErr.message);
-      return;
-    }
-    if (subjectCount) {
-      alert(`"${templateName}" is used by ${subjectCount} subject${subjectCount === 1 ? '' : 's'} and can't be deleted. Assign those subjects another template first.`);
-      return;
-    }
-
-    if (!window.confirm(`Delete the grading template "${templateName}"? No subject uses it. This cannot be undone.`)) return;
-
-    try {
-      const { error } = await supabase
-        .from('grade_computations')
-        .delete()
-        .eq('computation_id', templateId);
-
-      if (error) throw error;
-
-      const actorName = resolveActorName(profile, user);
-      await logActivity(
-        'Grading Template Deletion',
-        `Deleted grading template: "${templateName}"`,
-        actorName
-      );
-
-      await notifyAdminActivity({
-        type: 'system',
-        message: `Grade Computation Templates: Template "${templateName}" was deleted by ${actorName}.`,
-        actorName
-      });
-
-      loadTemplates();
-    } catch (err) {
-      console.error('Failed to delete template:', err);
-      alert('Delete failed: ' + err.message);
-    }
-  };
-
   return (
     <>
       <PageHeader title="Grade Computation Templates" breadcrumb="Admin Portal">
@@ -335,12 +289,10 @@ export default function GradeComputationsList() {
                   >
                     <Edit2 className="h-3.5 w-3.5" /> Edit
                   </button>
-                  <button 
-                    onClick={() => handleDeleteTemplate(temp.computation_id, temp.name)}
-                    className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50/50 rounded-lg transition-colors flex items-center gap-1 text-xs font-semibold"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Delete
-                  </button>
+                  {/* No delete action: every template is referenced by subjects, and a
+                      class that has posted grades holds a snapshot of the template it was
+                      graded with. Removing one is never the right operation — superseding
+                      it with a new template is. */}
                 </div>
               </div>
             ))}
@@ -467,7 +419,7 @@ export default function GradeComputationsList() {
                   </div>
 
                   {/* Table Row Headers */}
-                  <div className="hidden sm:flex gap-2.5 items-center text-[9px] font-extrabold text-slate-400 uppercase tracking-wider px-1">
+                  <div className="hidden sm:flex gap-2.5 items-center text-micro font-extrabold text-slate-400 uppercase tracking-wider px-1">
                     <div className="flex-1">Component Name</div>
                     <div className="w-20 text-center">Weight %</div>
                     <div className="w-20 text-center">Max Score</div>

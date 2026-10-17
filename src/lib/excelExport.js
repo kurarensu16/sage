@@ -236,7 +236,7 @@ export function buildSubjectProfile(ws, metadata, students, isSingleSheet = fals
   const inputStyle = style.inputGreen;
 
   setCell(ws, 9,  2, 'College:',                  false, null, null, labelStyle);
-  setCell(ws, 9,  3, metadata.college || 'College of Computer Studies', false, null, null, inputStyle);
+  setCell(ws, 9,  3, metadata.college || '', false, null, null, inputStyle);
   setCell(ws, 9,  7, 'No.of Units:',              false, null, null, labelStyle);
   setCell(ws, 9,  8, metadata.units || 3,          false, null, null, inputStyle);
 
@@ -258,7 +258,7 @@ export function buildSubjectProfile(ws, metadata, students, isSingleSheet = fals
   setCell(ws, 16, 3, metadata.schoolYear || '2025-2026', false, null, null, inputStyle);
 
   setCell(ws, 17, 2, 'Course:',                   false, null, null, labelStyle);
-  setCell(ws, 17, 3, metadata.course || 'BSIT',   false, null, null, inputStyle);
+  setCell(ws, 17, 3, metadata.course || '',   false, null, null, inputStyle);
 
   setCell(ws, 18, 2, 'Section:',                  false, null, null, labelStyle);
   setCell(ws, 18, 3, metadata.section || '',       false, null, null, inputStyle);
@@ -349,9 +349,9 @@ export function buildRecordSheet(ws, metadata, students, isSingleSheet = false, 
   };
 
   setCell(ws, 1, 0,  'College:',       false, null, null, style.label);
-  writeMetaRef(1, 1,  metadata.college || 'College of Computer Studies', `'Subject Profile'!D10`);
+  writeMetaRef(1, 1,  metadata.college || '', `'Subject Profile'!D10`);
   setCell(ws, 1, 14, 'Course:',        false, null, null, style.label);
-  writeMetaRef(1, 15, metadata.course || 'BSIT',             `'Subject Profile'!D18`);
+  writeMetaRef(1, 15, metadata.course || '',             `'Subject Profile'!D18`);
   setCell(ws, 1, 40, 'Academic Year:', false, null, null, style.label);
   writeMetaRef(1, 41, metadata.schoolYear || '2025-2026',     `'Subject Profile'!D17`);
 
@@ -586,7 +586,7 @@ export function buildReportOfGrades(ws, metadata, students, isSingleSheet = fals
   }
 
   setCell(ws, 13, 3, 'Course:', false, null, null, style.label);
-  writeMetaRef(13, 4, metadata.course || 'BSIT',     `'Subject Profile'!D18`);
+  writeMetaRef(13, 4, metadata.course || '',     `'Subject Profile'!D18`);
   setCell(ws, 13, 7, 'Section:', false, null, null, style.label);
   writeMetaRef(13, 8, metadata.section || '',         `'Subject Profile'!D19`);
 
@@ -595,7 +595,7 @@ export function buildReportOfGrades(ws, metadata, students, isSingleSheet = fals
   setCell(ws, 6,  11, 'Subject Description:', false, null, null, style.label);
   writeMetaRef(7,  11, metadata.subjectName || '',    `'Subject Profile'!D14`);
   setCell(ws, 8,  11, 'College:',             false, null, null, style.label);
-  writeMetaRef(9,  11, metadata.college || 'College of Computer Studies', `'Subject Profile'!D10`);
+  writeMetaRef(9,  11, metadata.college || '', `'Subject Profile'!D10`);
   setCell(ws, 10, 11, 'Schedule of Classes:', false, null, null, style.label);
   setCell(ws, 11, 11, 'Day:',                 false, null, null, style.label);
   writeMetaRef(11, 12, metadata.day || 'Sat',         `'Subject Profile'!I14`);

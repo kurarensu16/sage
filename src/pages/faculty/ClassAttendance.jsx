@@ -554,7 +554,7 @@ export default function ClassAttendance() {
           
           {/* Class Record Selector */}
           <div className="flex flex-col gap-1 flex-1 min-w-0">
-            <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
+            <label className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Record</label>
             <div className="relative">
               <select
                 value={selectedClass}
@@ -573,7 +573,7 @@ export default function ClassAttendance() {
 
           {/* Date Selector */}
           <div className="flex flex-col gap-1 min-w-[160px]">
-            <label className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attendance Date</label>
+            <label className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attendance Date</label>
             <div className="relative">
               <input 
                 type="date" 
@@ -589,11 +589,11 @@ export default function ClassAttendance() {
           {/* Stats Overview */}
           <div className="flex items-center gap-4 sm:gap-6 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
             <div>
-              <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</p>
+              <p className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</p>
               <p className="text-xs font-mono font-bold text-slate-800 mt-0.5">{totalEnrolled} Students</p>
             </div>
             <div>
-              <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Session Tally</p>
+              <p className="text-micro sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">Session Tally</p>
               <p className="text-xs font-mono font-bold text-slate-800 mt-0.5">
                 <span className="text-emerald-600">{presentCount} P</span> · <span className="text-rose-500">{absentCount} A</span> · <span className="text-amber-500">{lateCount} L</span> · <span className="text-blue-500">{excusedCount} E</span>
               </p>
@@ -746,11 +746,11 @@ export default function ClassAttendance() {
                         </span>
                         <div className="flex items-center gap-2 mt-1">
                           {student.type === 'Irregular' ? (
-                            <span className="inline-flex px-2 py-0.5 rounded text-[9px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 font-mono">
+                            <span className="inline-flex px-2 py-0.5 rounded text-micro font-semibold bg-purple-50 text-purple-700 border border-purple-200 font-mono">
                               Irregular
                             </span>
                           ) : (
-                            <span className="inline-flex px-2 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-600 font-mono">
+                            <span className="inline-flex px-2 py-0.5 rounded text-micro font-medium bg-slate-100 text-slate-600 font-mono">
                               Regular
                             </span>
                           )}

@@ -85,7 +85,10 @@ export default function StudentRow({
 
       setSaveStatus('saving');
       onSaveStatusChange?.('saving');
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
+      // pendingSync marks edits that have not reached Supabase yet. It is the only
+      // reason a local draft may outrank the database on reload: comparing a browser
+      // timestamp against a server one let a clock-ahead machine resurrect stale scores.
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...scores, pendingSync: true }));
 
       try {
         const { data: authUser } = await supabase.auth.getUser();
@@ -189,6 +192,13 @@ export default function StudentRow({
           const { error } = await supabase.from('student_activity_scores').delete()
             .eq('student_id', student.id).in('activity_id', dynamicScoreDeletes);
           if (error) throw error;
+        }
+
+        // Supabase now holds these scores, so the draft is no longer authoritative.
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...scores, pendingSync: false }));
+        } catch (cacheErr) {
+          console.warn('Scores saved, but the local draft flag could not be cleared:', cacheErr);
         }
 
         setSaveStatus('saved');
@@ -585,7 +595,7 @@ export default function StudentRow({
               </select>
 
               {remarks === 'FDA' && (
-                <span className="block text-[8px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 mt-0.5 text-center" title="FDA Recommendation Alert.">
+                <span className="block text-micro font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 mt-0.5 text-center" title="FDA Recommendation Alert.">
                   FDA Advisory (4 Absences)
                 </span>
               )}
@@ -597,19 +607,19 @@ export default function StudentRow({
                     onChange={(e) => setScores(prev => ({ ...prev, remarksNote: e.target.value }))}
                     placeholder="Reason for override…"
                     rows={2}
-                    className="w-full text-[9px] px-2 py-1 rounded border border-amber-300 bg-amber-50 text-amber-900 placeholder-amber-400 focus:ring-1 focus:ring-amber-400 focus:border-amber-400 outline-none resize-none transition-all font-normal"
+                    className="w-full text-micro px-2 py-1 rounded border border-amber-300 bg-amber-50 text-amber-900 placeholder-amber-400 focus:ring-1 focus:ring-amber-400 focus:border-amber-400 outline-none resize-none transition-all font-normal"
                   />
                   <MessageSquare className="absolute top-1.5 right-1.5 h-2.5 w-2.5 text-amber-400 pointer-events-none" />
                 </div>
               )}
 
               {saveStatus === 'saving' && (
-                <span className="flex items-center gap-1 text-[9px] text-slate-400 font-medium mt-1">
+                <span className="flex items-center gap-1 text-micro text-slate-400 font-medium mt-1">
                   <CloudUpload className="h-2.5 w-2.5 animate-pulse" /> Saving…
                 </span>
               )}
               {saveStatus === 'saved' && (
-                <span className="flex items-center gap-1 text-[9px] text-emerald-600 font-semibold mt-1">
+                <span className="flex items-center gap-1 text-micro text-emerald-600 font-semibold mt-1">
                   <Check className="h-2.5 w-2.5" /> Saved
                 </span>
               )}

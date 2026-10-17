@@ -3,9 +3,10 @@ import {
   X, 
   AlertCircle, 
   Plus, 
-  Trash2, 
-  Send, 
+  Trash2,
+  Send,
   Loader2,
+  Pencil,
   TrendingDown,
   TrendingUp
 } from 'lucide-react';
@@ -92,6 +93,7 @@ export default function StudentRiskEvaluationModal({
   const lastSavedDraftFingerprintRef = useRef('');
   const skipInitialDraftPersistenceRef = useRef(Boolean(student?.evaluation?.evaluation_id || restoredWorkingDraft));
   const draftSaveQueueRef = useRef(Promise.resolve());
+  const taskInputRefs = useRef({});
   const minimumPlanDeadline = earliestFutureDate();
 
   // Compute live explainable risk metrics
@@ -597,6 +599,7 @@ export default function StudentRiskEvaluationModal({
                 </button>
               </div>
             </div>
+            <p className="text-xs font-semibold text-slate-700">Select the action(s) you intend to take.</p>
             <p className="text-[10px] text-sage-500">{tasks.length}/5 tasks. AI suggestions consider every current manual, AI-generated, and faculty-edited task.</p>
 
             <label className="block rounded-lg border border-sage-200 bg-sage-50 p-3 text-xs font-semibold text-sage-800">
@@ -620,12 +623,30 @@ export default function StudentRiskEvaluationModal({
                     type="text"
                     required
                     maxLength={500}
+                    ref={(element) => { taskInputRefs.current[task.task_id] = element; }}
                     value={task.description ?? ''}
                     onChange={(e) => handleTaskChange(task.task_id, 'description', e.target.value)}
                     placeholder="e.g. Redo pointer reversal supplementary lab exercises"
                     className="flex-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded text-xs focus:outline-none focus:border-sage-600"
                   />
-                  {task.source === 'ai_assisted' && <span className="rounded bg-sage-100 px-1.5 py-1 text-[9px] font-bold uppercase text-sage-700">AI</span>}
+                  {task.source === 'ai_assisted' && <span className="rounded bg-sage-100 px-1.5 py-1 text-micro font-bold uppercase text-sage-700">AI</span>}
+                  {/* The field is always editable; this is the explicit "Edit Action"
+                      affordance the consultation asked for, so revising a task is a
+                      visible, deliberate step rather than something only discoverable by
+                      clicking into the text. */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const element = taskInputRefs.current[task.task_id];
+                      element?.focus();
+                      element?.select();
+                    }}
+                    title="Edit this action"
+                    className="flex items-center gap-1 p-1 text-slate-400 hover:text-sage-700 rounded transition-colors cursor-pointer"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span className="text-[10px] font-bold">Edit</span>
+                  </button>
                   {tasks.length > 1 && (
                     <button
                       type="button"

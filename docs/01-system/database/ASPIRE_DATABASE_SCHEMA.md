@@ -2,6 +2,27 @@
 
 This document describes the complete relational database schema for ASPIRE (Academic Support and Performance Advising with Intervention, Risk, and Evaluation). The database is designed for **Supabase PostgreSQL** and consists of **21 tables** organized into six functional groups: User/Organizational Data, Class/Enrollment Management, Grading, Evaluations, AI Insights, and System Notifications.
 
+> ## Needs update — diverged from the live schema
+>
+> **`supabase/migrations/` is the source of truth, not this file.** Known differences as of 2026-10-14:
+>
+> **Tables documented here that no longer exist.** Dropped by `20261014150000_drop_legacy_evaluation_tables.sql`: `evaluation_forms`, `evaluation_criteria`, `evaluation_windows`, `evaluation_responses`, `evaluation_ratings`, `evaluation_comments`, `faculty_performance_insights`, `unlock_requests`, `class_faculty_log`, `component_scores`, `grade_components`. They held synthetic data and nothing in `src/` referenced them. The **Evaluations** group in the ERD below and its table definitions are therefore obsolete.
+>
+> Note that `component_scores` (dropped) is a different table from `student_component_scores` (live, created by `20261007130000_dynamic_grade_sheet_v2.sql`), which this document does not describe.
+>
+> **Columns added since this was written**, among others:
+>
+> | Table | Column | Migration |
+> | --- | --- | --- |
+> | `departments` | `short_name` | `20261014170000` |
+> | `programs` | `abbreviation` | `20261014180000` |
+> | `student_consultation_requests` | `scheduled_at`, `consultation_mode`, `meeting_link`, `onsite_location`, `schedule_acknowledged_at`, `schedule_acknowledged_by` | `20261014190000` |
+> | `class_records`, `posted_grades` | `grading_formula_snapshot` | `20260928120000` |
+> | `academic_terms` | `sg_grace_days`, `ended_at` | `20261011130000` |
+> | `posted_grades` | `sg_submission_status`, `last_correction_request_id` | `20261011130000`, `20261008160000` |
+>
+> **Row-level security.** This document predates RLS being enabled; see [`../security-privacy/ROLE_CONNECTION_AND_RLS_HARDENING_GUIDE.md`](../security-privacy/ROLE_CONNECTION_AND_RLS_HARDENING_GUIDE.md) for the current state.
+
 ---
 
 ## 1. Entity Relationship Diagram (ERD)

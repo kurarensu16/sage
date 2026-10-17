@@ -20,6 +20,7 @@ import AdminSubjectList from './pages/admin/SubjectList';
 import AdminSubjectForm from './pages/admin/SubjectForm';
 import AdminSectionList from './pages/admin/SectionList';
 import AdminSectionForm from './pages/admin/SectionForm';
+import AdminSectionMasterlist from './pages/admin/SectionMasterlist';
 import AdminNotifications from './pages/admin/Notifications';
 import AdminTermManagement from './pages/admin/TermManagement';
 import AdminGradeComputationsList from './pages/admin/GradeComputationsList';
@@ -126,6 +127,7 @@ function App() {
               <Route path="/admin/subjectform" element={<AdminSubjectForm />} />
               <Route path="/admin/sectionlist" element={<AdminSectionList />} />
               <Route path="/admin/sectionform" element={<AdminSectionForm />} />
+              <Route path="/admin/sectionmasterlist" element={<AdminSectionMasterlist />} />
               <Route path="/admin/notifications" element={<AdminNotifications />} />
               <Route path="/admin/termmanagement" element={<AdminTermManagement />} />
               <Route path="/admin/gradecomputationslist" element={<AdminGradeComputationsList />} />

@@ -291,7 +291,7 @@ export default function ExportPreviewModal({
                     <div className="space-y-2 border border-slate-150 rounded-lg p-4 bg-slate-50/50">
                       <div className="flex justify-between border-b border-slate-200 pb-1.5">
                         <span className="text-slate-400">College:</span>
-                        <span>{metadata.college || 'College of Computer Studies'}</span>
+                        <span>{metadata.college}</span>
                       </div>
                       <div className="flex justify-between border-b border-slate-200 pb-1.5">
                         <span className="text-slate-400">Subject Code:</span>
@@ -311,7 +311,7 @@ export default function ExportPreviewModal({
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400">Course / Section:</span>
-                        <span>{metadata.course || 'BSIT'} - {sectionName}</span>
+                        <span>{metadata.course} - {sectionName}</span>
                       </div>
                     </div>
 
@@ -393,8 +393,8 @@ export default function ExportPreviewModal({
                     <h3 className="text-sm font-bold text-emerald-800 uppercase tracking-wide">Sheet: Record Sheet</h3>
                   </div>
                   <div className="grid grid-cols-3 gap-4 border border-slate-150 rounded-lg p-3 bg-slate-50/50 font-semibold text-[10px]">
-                    <div>College: {metadata.college || 'College of Computer Studies'}</div>
-                    <div>Course & Section: {metadata.course || 'BSIT'} - {sectionName}</div>
+                    <div>College: {metadata.college}</div>
+                    <div>Course &amp; Section: {metadata.course} - {sectionName}</div>
                     <div>Academic Year: {classInfo.school_year || ''}</div>
                     <div>Subject: {subjectName}</div>
                     <div>Semester: {classInfo.semester === '1st' ? '1st Sem' : classInfo.semester === '2nd' ? '2nd Sem' : 'Summer'}</div>
@@ -403,7 +403,7 @@ export default function ExportPreviewModal({
 
                   {/* HTML preview of the massive grid */}
                   <div className="overflow-x-auto border border-slate-200 rounded-lg">
-                    <table className="w-full border-collapse text-center text-[9px] font-sans">
+                    <table className="w-full border-collapse text-center text-micro font-sans">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold">
                           <th className="px-1.5 py-1.5 border-r border-slate-200 w-6">No.</th>
@@ -452,8 +452,8 @@ export default function ExportPreviewModal({
                   </div>
                   <div className="grid grid-cols-2 gap-4 border border-slate-150 rounded-lg p-3 bg-slate-50/50 text-[10px]">
                     <div className="space-y-1.5">
-                      <div><strong>College:</strong> {metadata.college || 'College of Computer Studies'}</div>
-                      <div><strong>Course:</strong> {metadata.course || 'BSIT'}</div>
+                      <div><strong>College:</strong> {metadata.college}</div>
+                      <div><strong>Course:</strong> {metadata.course}</div>
                       <div><strong>Section:</strong> {sectionName}</div>
                     </div>
                     <div className="space-y-1.5">
@@ -466,7 +466,7 @@ export default function ExportPreviewModal({
                   {/* Roster split list with grades */}
                   <div className="grid grid-cols-2 gap-x-6 border border-slate-200 rounded-lg p-3 overflow-x-auto">
                     {/* Left roster */}
-                    <table className="w-full text-center text-[9px] border-collapse">
+                    <table className="w-full text-center text-micro border-collapse">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 font-bold">
                           <th className="px-1 py-1 text-left">No.</th>
@@ -493,7 +493,7 @@ export default function ExportPreviewModal({
                     </table>
 
                     {/* Right roster */}
-                    <table className="w-full text-center text-[9px] border-collapse">
+                    <table className="w-full text-center text-micro border-collapse">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200 font-bold">
                           <th className="px-1 py-1 text-left">No.</th>
@@ -523,7 +523,7 @@ export default function ExportPreviewModal({
               )}
               
               {/* Footer Block */}
-              <div className="grid grid-cols-4 gap-4 border-t border-slate-200 pt-6 mt-6 text-[9px] font-sans text-center">
+              <div className="grid grid-cols-4 gap-4 border-t border-slate-200 pt-6 mt-6 text-micro font-sans text-center">
                 <div className="space-y-1">
                   <p className="font-semibold text-slate-400">PREPARED BY:</p>
                   <div className="h-4"></div>
@@ -534,7 +534,7 @@ export default function ExportPreviewModal({
                   <p className="font-semibold text-slate-400">RECOMMENDED BY:</p>
                   <div className="h-4"></div>
                   <p className="font-bold border-t border-slate-300 pt-1 uppercase">{metadata.dean}</p>
-                  <p className="text-slate-500">DEAN, CCS</p>
+                  <p className="text-slate-500">DEAN, {metadata.collegeShortName || metadata.college}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="font-semibold text-slate-400">CHECKED BY:</p>

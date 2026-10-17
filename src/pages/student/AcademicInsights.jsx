@@ -1473,7 +1473,7 @@ export default function AcademicInsights() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-bold">{advisorEvaluation.headline}</p>
-                      <span className="rounded-full border border-current/20 bg-white/60 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                      <span className="rounded-full border border-current/20 bg-white/60 px-2 py-0.5 text-micro font-bold uppercase tracking-wider">
                         {advisorEvaluation.state.replaceAll('_', ' ')}
                       </span>
                     </div>
@@ -1525,7 +1525,7 @@ export default function AcademicInsights() {
                       </div>
                     )}
 
-                    <p className="mt-3 text-[9px] font-medium opacity-60">{advisorEvaluation.boundaryStatement}</p>
+                    <p className="mt-3 text-micro font-medium opacity-60">{advisorEvaluation.boundaryStatement}</p>
                   </div>
                 </div>
               </div>
@@ -1762,7 +1762,7 @@ export default function AcademicInsights() {
                     >
                       <span className="text-xs font-extrabold font-mono">{b.gwa}</span>
                       <span className={cn(
-                        "text-[9px] font-medium leading-tight mt-0.5",
+                        "text-micro font-medium leading-tight mt-0.5",
                         simTargetGwa === b.gwa ? "text-sage-100" : "text-slate-400"
                       )}>
                         {b.label.split('(')[0]}

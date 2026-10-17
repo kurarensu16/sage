@@ -320,15 +320,15 @@ export default function GradePostingStatus() {
                     <h4 className="text-xs text-slate-600 truncate">{c.subjectName}</h4>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="flex flex-col items-center"><span className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Midterm</span>{getStatusBadge(c, GRADE_MILESTONES.MIDTERM_RATING)}</div>
-                    <div className="flex flex-col items-center"><span className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Final</span>{getStatusBadge(c, GRADE_MILESTONES.TENTATIVE_FINAL_RATING)}</div>
-                    <div className="flex flex-col items-center"><span className="text-[9px] uppercase font-bold text-slate-400 mb-0.5">Semestral</span>{getStatusBadge(c, GRADE_MILESTONES.SEMESTRAL_GRADE)}</div>
+                    <div className="flex flex-col items-center"><span className="text-micro uppercase font-bold text-slate-400 mb-0.5">Midterm</span>{getStatusBadge(c, GRADE_MILESTONES.MIDTERM_RATING)}</div>
+                    <div className="flex flex-col items-center"><span className="text-micro uppercase font-bold text-slate-400 mb-0.5">Final</span>{getStatusBadge(c, GRADE_MILESTONES.TENTATIVE_FINAL_RATING)}</div>
+                    <div className="flex flex-col items-center"><span className="text-micro uppercase font-bold text-slate-400 mb-0.5">Semestral</span>{getStatusBadge(c, GRADE_MILESTONES.SEMESTRAL_GRADE)}</div>
                   </div>
                 </div>
 
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2 text-slate-700 font-medium">
-                    <div className="w-5 h-5 rounded-full bg-sage-50 border border-sage-200 text-sage-700 font-bold text-[9px] flex items-center justify-center font-mono shrink-0">
+                    <div className="w-5 h-5 rounded-full bg-sage-50 border border-sage-200 text-sage-700 font-bold text-micro flex items-center justify-center font-mono shrink-0">
                       {c.facultyName.split(' ').map(n => n[0]).join('')}
                     </div>
                     <span className="text-[11px] truncate">Prof. {c.facultyName}</span>

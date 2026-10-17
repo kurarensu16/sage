@@ -7,7 +7,36 @@
  */
 
 const RAM_CACHE = new Map();
-const SESSION_PREFIX = 'sage_cache_';
+
+// The prefix carries the build ID so cached entries cannot outlive the code that wrote
+// them. sessionStorage survives a deploy inside an open tab, so without this a new build
+// could read an object written in an older shape — a crash that only reproduces for
+// people who never closed their tab.
+const BUILD_ID = import.meta.env.VITE_BUILD_ID || 'dev';
+const SESSION_PREFIX = `sage_cache_${BUILD_ID}_`;
+const LEGACY_SESSION_PREFIX = 'sage_cache_';
+
+/**
+ * Drop entries written by earlier builds. They can never be read again now that the
+ * prefix has changed, so leaving them would just consume the storage quota.
+ */
+function purgeStaleBuildCaches() {
+  const storage = getSessionStorage();
+  if (!storage) return;
+
+  try {
+    const stale = [];
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (key && key.startsWith(LEGACY_SESSION_PREFIX) && !key.startsWith(SESSION_PREFIX)) {
+        stale.push(key);
+      }
+    }
+    stale.forEach((key) => storage.removeItem(key));
+  } catch {
+    // Storage unavailable; nothing to clean up.
+  }
+}
 
 /**
  * Safely access sessionStorage without crashing in restricted environments
@@ -22,6 +51,9 @@ function getSessionStorage() {
   }
   return null;
 }
+
+// Runs once when the module loads, which is before any page reads the cache.
+purgeStaleBuildCaches();
 
 /**
  * Get cached item if present in RAM or sessionStorage and within TTL.
@@ -143,9 +175,111 @@ export function invalidateCache(keyOrPrefix) {
 
 /**
  * Purge all cached data associated with a specific user ID.
- * @param {string} userId 
+ * @param {string} userId
  */
 export function clearUserCache(userId) {
   if (!userId) return;
   invalidateCache(userId);
+}
+
+const WORKSPACE_PREFIX = 'sage_';
+const ACTIVE_USER_KEY = 'sage_active_user';
+
+function getLocalStorage() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      return window.localStorage;
+    }
+  } catch {
+    // Access denied or disabled (e.g. strict privacy mode)
+  }
+  return null;
+}
+
+/**
+ * Remove the signed-in user's working data from localStorage: score drafts,
+ * attendance entries, cached activity configuration, consultations and AI replies.
+ *
+ * Several of those keys are scoped by class and student but not by the faculty who
+ * typed them (`sage_scores_<class>_<student>`, `sage_att_status_<class>_<date>_<student>`),
+ * so on a shared machine the next person to sign in would otherwise read the previous
+ * user's drafts. Supabase keeps its session under an `sb-` prefix, which this never
+ * matches, so signing out stays the concern of the auth client.
+ */
+export function clearLocalWorkspace({ keepUnsynced = false } = {}) {
+  const storage = getLocalStorage();
+  if (!storage) return;
+
+  try {
+    const keysToRemove = [];
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (!key || !key.startsWith(WORKSPACE_PREFIX) || key === ACTIVE_USER_KEY) continue;
+      if (keepUnsynced && holdsUnsyncedWork(storage, key)) continue;
+      keysToRemove.push(key);
+    }
+    keysToRemove.forEach(key => storage.removeItem(key));
+  } catch (err) {
+    console.warn('[dataCache] Could not clear the local workspace:', err);
+  }
+}
+
+/**
+ * True when an entry still holds edits Supabase never acknowledged. Set while a save is
+ * in flight and cleared once the write succeeds, so a failed or offline save leaves it
+ * standing. Sign-out keeps these; a different user signing in removes them anyway.
+ */
+function holdsUnsyncedWork(storage, key) {
+  try {
+    const parsed = JSON.parse(storage.getItem(key) || 'null');
+    return Boolean(parsed && parsed.pendingSync === true);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * How many entries still hold work that never reached Supabase. Lets the UI warn before
+ * an action that would discard them.
+ */
+export function countUnsyncedEntries() {
+  const storage = getLocalStorage();
+  if (!storage) return 0;
+
+  let count = 0;
+  try {
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (key && key.startsWith(WORKSPACE_PREFIX) && holdsUnsyncedWork(storage, key)) count += 1;
+    }
+  } catch {
+    return count;
+  }
+  return count;
+}
+
+/**
+ * Wipe the workspace when a different account signs in on this browser.
+ *
+ * Sign-out already clears it, but a session that ended by simply closing the tab leaves
+ * localStorage intact — which is exactly how a shared QA or campus machine is used.
+ * Returns true when a different user was detected and the workspace was cleared.
+ */
+export function syncActiveUser(userId) {
+  const storage = getLocalStorage();
+  if (!storage || !userId) return false;
+
+  try {
+    const previousUserId = storage.getItem(ACTIVE_USER_KEY);
+    if (previousUserId && previousUserId !== userId) {
+      clearLocalWorkspace();
+      invalidateCache();
+      storage.setItem(ACTIVE_USER_KEY, userId);
+      return true;
+    }
+    if (!previousUserId) storage.setItem(ACTIVE_USER_KEY, userId);
+  } catch (err) {
+    console.warn('[dataCache] Could not record the active user:', err);
+  }
+  return false;
 }

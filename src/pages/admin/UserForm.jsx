@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { ChevronRight, Save, User } from 'lucide-react';
-import { PROGRAM_ABBREVIATIONS } from '../../lib/constants';
 import { supabase } from '../../lib/supabase';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { useAuth } from '../../lib/AuthContext';
@@ -23,7 +22,7 @@ const DEFAULT_PASSWORD = 'SagePassword123!';
 
 const yearDigitOf = (yearLevel) => (yearLevel || '').charAt(0);
 const termLabel = (sec) => `${sec.school_year} · ${sec.semester}`;
-const programAbbreviation = (program) => (program ? PROGRAM_ABBREVIATIONS[program.name] || '' : '');
+const programAbbreviation = (program) => program?.abbreviation || '';
 
 // Section names follow "<PROGRAM ABBREVIATION>-<year digit><suffix>", e.g. BSIT-1A.
 function sectionMatchesProgram(section, abbreviation) {
@@ -79,7 +78,7 @@ export default function UserForm() {
       try {
         const [deptRes, progRes, termRes, secRes] = await Promise.all([
           supabase.from('departments').select('department_id, name').order('name'),
-          supabase.from('programs').select('program_id, name, department_id').order('name'),
+          supabase.from('programs').select('program_id, name, abbreviation, department_id').order('name'),
           supabase.from('academic_terms').select('term_id, school_year, semester, is_active').eq('is_active', true).maybeSingle(),
           supabase.from('sections').select('section_id, name, department_id, school_year, semester').order('name')
         ]);

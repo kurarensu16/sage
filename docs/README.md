@@ -64,6 +64,8 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | Document | Status | Notes |
 |---|---|---|
 | [audits/ADMIN_SETUP_AUDIT_2026-10-11.md](03-development/audits/ADMIN_SETUP_AUDIT_2026-10-11.md) | Current (fixes planned) | Admin functions: colleges, programs, sections, terms, users, import, classrooms, COG, Grade Override, Activity Logs. QA bug BSIT-1A → ACT-1A, hard-coded colleges, 320 students without home section, cascading deletes; fix plan in 3 batches plus a data repair. |
+| [audits/ASPIRE_CONSULTATION_AUDIT_2026-10-14.md](03-development/audits/ASPIRE_CONSULTATION_AUDIT_2026-10-14.md) | Current (fixes planned) | Read-only audit of the 13 Dean Lim consultation items (ASPIRE-C01–C13) plus a critical-issue sweep: `users` RLS disabled enabling student→admin self-escalation, which chains into an untraceable admin bypass of the SG-correction approval workflow, and an unguarded `class_activities` DELETE that can destroy real student scores. All open decisions resolved 2026-10-14; see the paired implementation plan. |
+| [audits/ASPIRE_CONSULTATION_IMPLEMENTATION_PLAN_2026-10-14.md](03-development/audits/ASPIRE_CONSULTATION_IMPLEMENTATION_PLAN_2026-10-14.md) | Current (execution in progress) | Execution plan for the audit above: 6 phases, every decision locked in (admin override → secured RPC, legacy tables dropped, COG snapshot moved to class-creation time, home-section masterlist, consultation scheduling + student acknowledgment, At-Risk 'Covered'-state fix, CCS→TECH with a dynamic `short_name` column). Checklist tracks implementation status. |
 
 ### Implementation reports (finished work)
 
@@ -82,6 +84,7 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | Document | Status | Notes |
 |---|---|---|
 | [SYSTEM_TEST_CHECKLIST_2026-10-10.md](04-testing/SYSTEM_TEST_CHECKLIST_2026-10-10.md) | **Current: active runbook** | Combined runbook: remediation cases plus every 2026-10-10 update. |
+| [CONSULTATION_REMEDIATION_TEST_GUIDE_2026-10-14.md](04-testing/CONSULTATION_REMEDIATION_TEST_GUIDE_2026-10-14.md) | **Current** | Manual UI cases for the consultation remediation and security hardening (Phases 0–6), the RLS login check, the grading-formula freeze regression test, and §14 caching: deploy-over-deploy, offline, clock-skew score drafts, and shared-browser sign-out. |
 | [GRADING_WORKFLOW_REMEDIATION_CHECKLIST.md](04-testing/GRADING_WORKFLOW_REMEDIATION_CHECKLIST.md) | Reference | Remediation design; its §12 tests now live in the runbook above. |
 | [FRONTEND_QA_CHECKLIST_OCTOBER_2026.md](04-testing/FRONTEND_QA_CHECKLIST_OCTOBER_2026.md) | Pending merge | Frontend QA items not yet folded into the active runbook. |
 | [evidence/](04-testing/evidence/) | Reference | Test evidence (faculty tracker). |
@@ -93,6 +96,7 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | [database/ASPIRE_DATABASE_RESET_AND_MANUAL_SEEDING.md](05-operations/database/ASPIRE_DATABASE_RESET_AND_MANUAL_SEEDING.md) | Reference | Reset and seed the database. |
 | [database/TEST_YEAR_SEED_2026-2027.md](05-operations/database/TEST_YEAR_SEED_2026-2027.md) | Current | Test-year seed after the 2026-10-11 reset: BSIT and BSMarE, 40 students, sections and classes for 1st, 2nd, and Summer, with the rollover tests. |
 | [database/DEV_HANDOFF_SQL_SETUP_2026-10-03.md](05-operations/database/DEV_HANDOFF_SQL_SETUP_2026-10-03.md) | Reference | SQL setup handoff (2026-10-03). Migrations added since then are in `supabase/migrations/`. |
+| [setup/SUPABASE_SMTP_AND_OTP_EMAIL_2026-10-14.md](05-operations/setup/SUPABASE_SMTP_AND_OTP_EMAIL_2026-10-14.md) | **Current** | Custom SMTP settings and the HTML Reset Password template for the OTP password reset. Required: without both, the code never arrives. |
 | [mobile-pwa/WALKTHROUGH_PWA.md](05-operations/mobile-pwa/WALKTHROUGH_PWA.md) | Reference | PWA install and mobile walkthrough. |
 | [agents/CHANGE_FREEZE_GUIDE.md](05-operations/agents/CHANGE_FREEZE_GUIDE.md) | Current | How the AI-agent change freeze works and how to switch it ON/OFF (`FREEZE:` line in `AGENTS.md` + `.claude/settings.json`). |
 | [agents/feature-updates/](05-operations/agents/feature-updates/README.md) | Current | One change record per change made while the freeze is ON (AI tool, device owner, type, migration, files, reason, how to verify). Template in its README. Checked by `npm run audit:freeze`. |

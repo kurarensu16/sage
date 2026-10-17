@@ -206,6 +206,7 @@ const PORTAL_NAVIGATION = {
         { to: '/admin/subjectlist', label: 'Subjects', icon: BookMarked },
         { to: '/admin/gradecomputationslist', label: 'Grading Formulas', icon: Settings },
         { to: '/admin/sectionlist', label: 'Sections', icon: Layers },
+        { to: '/admin/sectionmasterlist', label: 'Section Masterlist', icon: ClipboardList },
         { to: '/admin/departmentslist', label: 'Departments & Programs', icon: Building2 },
         { to: '/admin/classrooms', label: 'Classrooms', icon: GraduationCap }
       ]
@@ -355,7 +356,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
             <h1 className="text-xl font-bold font-display text-white tracking-tight flex items-center gap-2">
               <SageLogo variant="white" className="h-6 w-6" /> ASPIRE
             </h1>
-            <p className="text-[11px] font-semibold text-slate-400 mt-0.5 tracking-wider uppercase font-mono">
+            <p className="text-tiny font-semibold text-slate-400 mt-0.5 tracking-wider uppercase font-mono">
               {role.toUpperCase()} PORTAL
             </p>
           </div>
@@ -424,7 +425,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
               <button
                 type="button"
                 onClick={() => toggleGroup(group.id)}
-                className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-extrabold text-slate-400 hover:text-slate-200 tracking-wider uppercase rounded-md hover:bg-sage-800/40 transition-colors select-none cursor-pointer"
+                className="w-full flex items-center justify-between px-3 py-1.5 text-micro font-extrabold text-slate-400 hover:text-slate-200 tracking-wider uppercase rounded-md hover:bg-sage-800/40 transition-colors select-none cursor-pointer"
               >
                 <div className="flex items-center gap-1.5">
                   {isExpanded ? (

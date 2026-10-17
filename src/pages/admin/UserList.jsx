@@ -4,7 +4,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Search, Plus, Edit2, Power, CheckCircle, AlertCircle, Upload, X, Check, FileSpreadsheet, MoreVertical, Archive, RotateCcw, FileText, Eye, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, SlidersHorizontal, Table, HelpCircle, FileCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import * as XLSX from 'xlsx';
-import { getProgramFromSectionName } from '../../lib/constants';
+import { getProgramAbbrFromSectionName } from '../../lib/constants';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
@@ -104,6 +104,7 @@ export default function UserList() {
   };
 
   const [departments, setDepartments] = useState([]);
+  const [programs, setPrograms] = useState([]);
   const [dbSections, setDbSections] = useState([]);
   const [activeTerm, setActiveTerm] = useState(null);
 
@@ -117,6 +118,14 @@ export default function UserList() {
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
 
   const activeFilterCount = [roleFilter, deptFilter, programFilter, yearFilter, sectionFilter, statusFilter, showArchived ? 'archived' : ''].filter(Boolean).length;
+
+  // Abbreviation comes from departments.short_name, never from a literal: the college
+  // names this used to match on are not the names this database actually stores.
+  const departmentShortName = (departmentName) => {
+    if (!departmentName) return '';
+    const match = departments.find(dept => dept.name === departmentName);
+    return match?.short_name || departmentName;
+  };
 
   const clearFilters = () => {
     setRoleFilter('');
@@ -143,17 +152,35 @@ export default function UserList() {
 Cruz,Patricia,N.,p.cruz@sage.edu.ph,dean,College of Accountancy,,,,DN-2026-00002
 Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelor of Science in Accountancy,,,FAC-2026-00003`;
 
-  // Load users, departments and sections from Supabase
+  // Load users, departments, programs and sections from Supabase
   const loadUsers = async () => {
     try {
       setLoading(true);
+
+      // Colleges and programs are loaded first: a user's program is derived from the
+      // abbreviation in their section name, resolved against programs.abbreviation.
+      const [{ data: depts }, { data: progs }] = await Promise.all([
+        supabase.from('departments').select('*'),
+        supabase.from('programs').select('program_id, name, abbreviation, department_id')
+      ]);
+      if (depts) setDepartments(depts);
+      if (progs) setPrograms(progs);
+
+      const programNameByAbbr = new Map(
+        (progs || [])
+          .filter(prog => prog.abbreviation)
+          .map(prog => [prog.abbreviation.toUpperCase(), prog.name])
+      );
+      const programOfSection = (sectionName) =>
+        programNameByAbbr.get(getProgramAbbrFromSectionName(sectionName)) || '';
+
       const { data, error } = await supabase
         .from('users')
         .select('*, departments(name), sections(name)')
         .order('last_name', { ascending: true });
-        
+
       if (error) throw error;
-      
+
       const mappedUsers = data.map(u => ({
         id: u.user_id,
         firstName: u.first_name,
@@ -162,16 +189,13 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         email: u.email,
         role: u.role,
         department: u.departments?.name || '',
-        program: getProgramFromSectionName(u.sections?.name),
+        program: programOfSection(u.sections?.name),
         yearLevel: u.year_level || '',
         section: u.sections?.name || (u.role === 'student' ? 'Irregular' : ''),
         status: u.status || 'active',
         userNumber: u.user_number || ''
       }));
       setUsers(mappedUsers);
-
-      const { data: depts } = await supabase.from('departments').select('*');
-      if (depts) setDepartments(depts);
 
       const { data: secs } = await supabase.from('sections').select('*');
       if (secs) setDbSections(secs.map(s => ({
@@ -1094,11 +1118,13 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
     .map(sec => sec.name);
   const uniqueSections = [...new Set(availableSections)].sort();
 
-  const availablePrograms = dbSections
-    .filter(sec => !deptFilter || sec.department === deptFilter)
-    .map(sec => getProgramFromSectionName(sec.name))
-    .filter(Boolean);
-  const uniquePrograms = [...new Set(availablePrograms)].sort();
+  // Programs come straight from the programs table, scoped to the selected college.
+  const selectedDepartmentId = departments.find(dept => dept.name === deptFilter)?.department_id;
+  const uniquePrograms = programs
+    .filter(prog => !deptFilter || prog.department_id === selectedDepartmentId)
+    .map(prog => prog.name)
+    .filter(Boolean)
+    .sort();
 
   const itemsPerPage = 20;
   const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
@@ -1273,7 +1299,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
             </span>
             {deptFilter && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-sage-50 text-sage-800 border border-sage-200">
-                {deptFilter === 'College of IT' || deptFilter === 'College of CS' ? 'CCS' : deptFilter}
+                {departmentShortName(deptFilter)}
                 <X className="h-2.5 w-2.5 cursor-pointer" onClick={() => setDeptFilter('')} />
               </span>
             )}
@@ -1310,7 +1336,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
               <SlidersHorizontal className="h-3.5 w-3.5" />
               <span>Filters</span>
               {activeFilterCount > 0 && (
-                <span className="w-4 h-4 rounded-full bg-white text-sage-700 text-[9px] font-bold flex items-center justify-center">
+                <span className="w-4 h-4 rounded-full bg-white text-sage-700 text-micro font-bold flex items-center justify-center">
                   {activeFilterCount}
                 </span>
               )}
@@ -1349,7 +1375,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
             <SlidersHorizontal className="h-3.5 w-3.5 text-sage-600" />
             Filter by
             {activeFilterCount > 0 && (
-              <span className="ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-sage-600 text-white text-[9px] font-bold">
+              <span className="ml-0.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-sage-600 text-white text-micro font-bold">
                 {activeFilterCount}
               </span>
             )}
@@ -1359,7 +1385,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
           {/* Role Filter */}
           <div className="flex flex-col gap-0.5 min-w-[100px] flex-1 sm:flex-none">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Role</span>
+            <span className="text-micro font-bold text-slate-400 uppercase tracking-wider">Role</span>
             <select
               value={roleFilter}
               onChange={(e) => {
@@ -1378,7 +1404,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
           {/* Status Filter */}
           <div className="flex flex-col gap-0.5 min-w-[100px] flex-1 sm:flex-none">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Status</span>
+            <span className="text-micro font-bold text-slate-400 uppercase tracking-wider">Status</span>
             <select
               value={statusFilter}
               onChange={(e) => {
@@ -1396,7 +1422,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
           {/* Department Filter */}
           <div className="flex flex-col gap-0.5 min-w-[130px] flex-1 sm:flex-none max-w-full sm:max-w-[200px]">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">College</span>
+            <span className="text-micro font-bold text-slate-400 uppercase tracking-wider">College</span>
             <select
               value={deptFilter}
               onChange={(e) => {
@@ -1415,7 +1441,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
           {/* Program Filter */}
           <div className="flex flex-col gap-0.5 min-w-[130px] flex-1 sm:flex-none max-w-full sm:max-w-[200px]">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Program</span>
+            <span className="text-micro font-bold text-slate-400 uppercase tracking-wider">Program</span>
             <select
               value={programFilter}
               onChange={(e) => {
@@ -1433,7 +1459,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
           {/* Year Level Filter */}
           <div className="flex flex-col gap-0.5 min-w-[100px] flex-1 sm:flex-none">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Year Level</span>
+            <span className="text-micro font-bold text-slate-400 uppercase tracking-wider">Year Level</span>
             <select
               value={yearFilter}
               onChange={(e) => {
@@ -1452,7 +1478,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
           {/* Section Filter */}
           <div className="flex flex-col gap-0.5 min-w-[100px] flex-1 sm:flex-none">
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Section</span>
+            <span className="text-micro font-bold text-slate-400 uppercase tracking-wider">Section</span>
             <select
               value={sectionFilter}
               onChange={(e) => {
@@ -1535,7 +1561,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                           {user.lastName}, {user.firstName} {user.middleName && user.middleName[0] + '.'}
                         </button>
                         
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold border flex-shrink-0 ${
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-micro font-bold border flex-shrink-0 ${
                           user.status === 'active' 
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
                             : user.status === 'archived'
@@ -1561,7 +1587,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                   <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                     {getRoleBadge(user.role)}
                     <span className="text-[10px] text-slate-600 font-semibold px-2 py-0.5 rounded-md bg-slate-50 border border-slate-150 truncate max-w-[200px]">
-                      {user.department === 'College of IT' || user.department === 'College of CS' ? 'CCS' : user.department}
+                      {departmentShortName(user.department)}
                     </span>
                     {user.role === 'student' && (
                       <>
@@ -1704,15 +1730,15 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                         {getRoleBadge(user.role)}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-650 font-medium whitespace-normal">
-                        <div>{user.department === 'College of IT' || user.department === 'College of CS' ? 'College of Computer Studies' : user.department}</div>
+                        <div>{user.department}</div>
                         {user.program && <div className="text-[10px] text-slate-400 font-normal">{user.program}</div>}
                         {user.role === 'student' && (
                           <div className="text-[10px] font-semibold mt-0.5 flex items-center gap-1.5">
                             <span className="text-sage-600">{user.yearLevel || '1st Year'}</span>
                             {user.section && (
                               <span className={user.section === 'Irregular' 
-                                ? 'bg-amber-50 text-amber-700 border border-amber-100 rounded px-1.5 py-0.5 text-[9px] font-bold' 
-                                : 'bg-slate-100 text-slate-600 rounded px-1.5 py-0.5 text-[9px] font-medium'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-100 rounded px-1.5 py-0.5 text-micro font-bold' 
+                                : 'bg-slate-100 text-slate-600 rounded px-1.5 py-0.5 text-micro font-medium'
                               }>
                                 {user.section}
                               </span>
@@ -2776,7 +2802,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                       )}
                     >
                       <div className="flex items-center justify-between gap-4">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold bg-sage-50 text-sage-850 border border-sage-150 uppercase font-mono tracking-wider">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-micro font-bold bg-sage-50 text-sage-850 border border-sage-150 uppercase font-mono tracking-wider">
                           {log.action}
                         </span>
                         <span className="text-[10px] font-mono text-slate-450 font-medium">

@@ -211,17 +211,16 @@ export default function GradeOverride() {
 
     try {
       const overrideAt = new Date().toISOString();
-      const { error: updateErr } = await supabase
-        .from('posted_grades')
-        .update({
-          effective_grade: parsedGrade,
-          remarks: remarks,
-          remarks_note: overrideReason.trim(),
-          override_at: overrideAt,
-          override_by: user?.id,
-          is_locked: true
-        })
-        .eq('posted_grade_id', selectedGrade.id);
+
+      // Goes through the RPC rather than a direct table update: it is the only path
+      // allowed to change a locked SG, and it records the override in
+      // grade_correction_history with the reason attached.
+      const { error: updateErr } = await supabase.rpc('apply_admin_grade_override', {
+        p_posted_grade_id: selectedGrade.id,
+        p_new_effective_grade: parsedGrade,
+        p_new_remarks: remarks,
+        p_reason: overrideReason.trim()
+      });
 
       if (updateErr) throw updateErr;
 
@@ -393,7 +392,7 @@ export default function GradeOverride() {
 
                       <div className="text-right">
                         <div className="text-lg font-bold font-mono text-slate-950">{grade.computedGrade.toFixed(2)}</div>
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border ${remarkBadgeClass(grade.remarks)}`}>
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-micro font-bold border ${remarkBadgeClass(grade.remarks)}`}>
                           {toDisplayRemark(grade.remarks)}
                         </span>
                       </div>

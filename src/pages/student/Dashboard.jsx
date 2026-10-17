@@ -371,7 +371,7 @@ export default function Dashboard() {
           {/* Stat 1: Current GWA */}
           <div className="bg-white p-3 sm:p-5 md:p-6 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all shadow-xs flex items-start justify-between gap-2 sm:gap-3">
             <div className="min-w-0 flex-1">
-              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
+              <span className="text-micro sm:text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
                 {gwaSummary?.isOfficial ? 'Official GWA' : 'Current Running GWA'}
                 <button onClick={() => setInfoModalType('gwa')} className="text-slate-400 hover:text-sage-600 transition-colors" aria-label="What does this mean?">
                   <Info className="h-3 w-3" />
@@ -380,7 +380,7 @@ export default function Dashboard() {
               <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5 sm:mt-1 min-w-0">
                 <h3 className="text-lg sm:text-2xl md:text-3xl font-extrabold text-slate-900 font-mono truncate">{currentGwa}</h3>
                 {currentGwa !== '—' && (
-                  <span className={`px-1.5 sm:px-2 py-0.5 rounded-full border text-[8px] sm:text-[10px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                  <span className={`px-1.5 sm:px-2 py-0.5 rounded-full border text-micro sm:text-[10px] font-bold uppercase tracking-wide flex-shrink-0 ${
                     gwaSummary?.isOfficial
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                       : 'bg-amber-50 text-amber-700 border-amber-200'
@@ -401,7 +401,7 @@ export default function Dashboard() {
           {/* Stat 2: Enrolled Subjects */}
           <div className="bg-white p-3 sm:p-5 md:p-6 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all shadow-xs flex items-start justify-between gap-2 sm:gap-3">
             <div className="min-w-0 flex-1">
-              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
+              <span className="text-micro sm:text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
                 Subjects
                 <button onClick={() => setInfoModalType('subjects')} className="text-slate-400 hover:text-sage-600 transition-colors" aria-label="What does this mean?">
                   <Info className="h-3 w-3" />
@@ -420,7 +420,7 @@ export default function Dashboard() {
           {/* Stat 3: Advising Tasks (Replacing obsolete Eval Clearance) */}
           <div className="bg-white p-3 sm:p-5 md:p-6 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all shadow-xs flex items-start justify-between gap-2 sm:gap-3">
             <div className="min-w-0 flex-1">
-              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
+              <span className="text-micro sm:text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
                 Action Tasks
                 <button onClick={() => setInfoModalType('tasks')} className="text-slate-400 hover:text-sage-600 transition-colors" aria-label="What does this mean?">
                   <Info className="h-3 w-3" />
@@ -445,7 +445,7 @@ export default function Dashboard() {
           {/* Stat 4: Academic Insight */}
           <div className="bg-white p-3 sm:p-5 md:p-6 rounded-2xl border border-slate-200/90 hover:border-sage-300 transition-all shadow-xs flex items-start justify-between gap-2 sm:gap-3">
             <div className="min-w-0 flex-1">
-              <span className="text-[9px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
+              <span className="text-micro sm:text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 truncate">
                 AI Standing
                 <button onClick={() => setInfoModalType('ai')} className="text-slate-400 hover:text-sage-600 transition-colors" aria-label="What does this mean?">
                   <Info className="h-3 w-3" />

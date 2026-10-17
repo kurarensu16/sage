@@ -8,34 +8,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { notifyAdminActivity } from '../../lib/notificationDispatcher';
 
-const PROGRAM_ABBREVIATIONS = {
-  "Bachelor of Science in Accountancy": "BSA",
-  "Bachelor of Science in Accounting Information System": "BSAIS",
-  "Bachelor of Arts in Political Science": "BAPS",
-  "Bachelor of Science in Business Administration": "BSBA",
-  "Bachelor of Science in Business Administration Major in Human Resource Development Management": "BSBA-HRDM",
-  "Bachelor of Science in Business Administration Major in Financial Management": "BSBA-FM",
-  "Bachelor of Science in Business Administration Major in Operations Management": "BSBA-OM",
-  "Bachelor of Science in Business Administration Major in Marketing Management": "BSBA-MM",
-  "Bachelor of Science in Computer Science": "BSCS",
-  "Bachelor of Science in Computer Engineering": "BSCpE",
-  "Bachelor of Science in Information Technology": "BSIT",
-  "Associate in Computer Technology": "ACT",
-  "Bachelor of Elementary Education": "BEEd",
-  "Bachelor of Secondary Education Major in Mathematics": "BSEd-Math",
-  "Bachelor of Secondary Education Major in Filipino": "BSEd-Fil",
-  "Bachelor of Secondary Education Major in English": "BSEd-Eng",
-  "Bachelor of Secondary Education Major in Sciences": "BSEd-Sci",
-  "Continuing Professional Teacher Education": "CPTE",
-  "Bachelor of Science in Nursing": "BSN",
-  "Bachelor of Science in Midwifery": "BSM",
-  "Bachelor of Science in Hospitality Management": "BSHM",
-  "Bachelor of Science in Tourism Management": "BSTM",
-  "Bachelor of Science in Marine Transportation": "BSMT",
-  "Bachelor of Science in Marine Engineering": "BSMarE",
-  "Bachelor of Science in Mechanical Engineering": "BSME",
-  "Bachelor of Arts in Psychology": "BAPsych"
-};
+// Program codes are read from programs.abbreviation, never from a map in code.
 
 export default function SectionForm() {
   const navigate = useNavigate();
@@ -127,15 +100,10 @@ export default function SectionForm() {
             }
           }
           
-          const matchedProgram = allPrograms.find(p => 
-            (p.abbreviation && p.abbreviation.toUpperCase() === programAbbr.toUpperCase()) ||
-            (PROGRAM_ABBREVIATIONS[p.name] && PROGRAM_ABBREVIATIONS[p.name].toUpperCase() === programAbbr.toUpperCase())
+          const matchedProgram = allPrograms.find(p =>
+            p.abbreviation && p.abbreviation.toUpperCase() === programAbbr.toUpperCase()
           );
-          const matchedProgramName = matchedProgram ? matchedProgram.name : (
-            Object.keys(PROGRAM_ABBREVIATIONS).find(
-              key => PROGRAM_ABBREVIATIONS[key] === programAbbr.toUpperCase()
-            ) || ''
-          );
+          const matchedProgramName = matchedProgram ? matchedProgram.name : '';
 
           const yearLevelText = 
             yearDigit === '1' ? '1st Year' :
@@ -179,7 +147,7 @@ export default function SectionForm() {
   useEffect(() => {
     if (!isEditMode || (isEditMode && formData.programName && formData.yearLevel && formData.suffix)) {
       const progObj = allPrograms.find(p => p.name === formData.programName);
-      const programAbbr = progObj?.abbreviation || PROGRAM_ABBREVIATIONS[formData.programName] || '';
+      const programAbbr = progObj?.abbreviation || '';
       const yearDigit = 
         formData.yearLevel === '1st Year' ? '1' :
         formData.yearLevel === '2nd Year' ? '2' :
