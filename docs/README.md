@@ -56,6 +56,7 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | [decisions/LATE_JOINER_MISSING_ACTIVITIES_2026-10-10.md](02-thesis/decisions/LATE_JOINER_MISSING_ACTIVITIES_2026-10-10.md) | Current | Late joiners get `0` for missing posted-term work so the risk is visible; corrected after make-up. |
 | [decisions/STUDENT_RUNNING_GWA_2026-10-11.md](02-thesis/decisions/STUDENT_RUNNING_GWA_2026-10-11.md) | Current | Students see a tentative running GWA before posting (posted milestones replace it); live AI Standing, per-subject FDA, AI insight refresh rules. Supersedes panel rule 2.2.1. |
 | [defense/SCALABILITY_DEFENSE_QA_2026-10-10.md](02-thesis/defense/SCALABILITY_DEFENSE_QA_2026-10-10.md) | Current | Panel answers on 1,000-user scale, data handling, caching, and late joiners. |
+| [defense/ASPIRE_DEFENSE_AUDIT_2026-10-19.md](02-thesis/defense/ASPIRE_DEFENSE_AUDIT_2026-10-19.md) | Current | Evidence-cited defense audit: role/feature inventory with status labels, data lifecycle and hand-off tables, 16-step cross-role workflow, live-demo script with fallbacks, swimlane, 10 panel Q&A, pre-demo checklist, the hard-coded-data fix plan (Tiers 1 and 5 applied 2026-10-19), a migration-vs-code consistency audit (RPCs, tables, type constraints), and a notification lock-screen policy review. Source-verified only; app not run in a browser. |
 
 ## 03 · Development: audits and implementation reports
 
@@ -78,11 +79,13 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | [FACULTY_TRACKER_AND_GHOST_STUDENT_IMPLEMENTATION_REPORT.md](03-development/implementation-reports/FACULTY_TRACKER_AND_GHOST_STUDENT_IMPLEMENTATION_REPORT.md) | Reference | Faculty tracker and ghost-student handling. |
 | [IRREGULAR_STUDENT_AUDIT_CURRENT_STATE_REVIEW.md](03-development/implementation-reports/IRREGULAR_STUDENT_AUDIT_CURRENT_STATE_REVIEW.md) | Reference | Irregular-student handling review. |
 | [CLASS_JOIN_APPROVAL_2026-10-10.md](03-development/implementation-reports/CLASS_JOIN_APPROVAL_2026-10-10.md) | Current | Class-code joins require faculty approval (pending requests, one-step faculty-only approval, locked request cards, late-join hint, in-app notifications). Also block-section enrollment on section assignment and *Class Roster Update* notices (§8). Migrations `20261010150000`, `20261010160000`. |
+| [FACULTY_IRREGULAR_ENROLLEE_EXPORT_2026-10-19.md](03-development/implementation-reports/FACULTY_IRREGULAR_ENROLLEE_EXPORT_2026-10-19.md) | Current | Faculty Excel export separates the block section from students who joined by code: official sheets are block-only so they match the registrar’s masterlist, with a parallel `(Irregular)` sheet set for cross-enrolled students. No migration. |
 
 ## 04 · Testing
 
 | Document | Status | Notes |
 |---|---|---|
+| [QA_CHECKLIST_2026-10-19.md](04-testing/QA_CHECKLIST_2026-10-19.md) | Current | Manual QA for the 2026-10-19 batch: faculty export split, hard-coded identity removal, notification privacy and dean scoping. 40 checks in 5 sections, with the verified live demo accounts and COG templates. |
 | [SYSTEM_TEST_CHECKLIST_2026-10-10.md](04-testing/SYSTEM_TEST_CHECKLIST_2026-10-10.md) | **Current: active runbook** | Combined runbook: remediation cases plus every 2026-10-10 update. |
 | [CONSULTATION_REMEDIATION_TEST_GUIDE_2026-10-14.md](04-testing/CONSULTATION_REMEDIATION_TEST_GUIDE_2026-10-14.md) | **Current** | Manual UI cases for the consultation remediation and security hardening (Phases 0–6), the RLS login check, the grading-formula freeze regression test, and §14 caching: deploy-over-deploy, offline, clock-skew score drafts, and shared-browser sign-out. |
 | [GRADING_WORKFLOW_REMEDIATION_CHECKLIST.md](04-testing/GRADING_WORKFLOW_REMEDIATION_CHECKLIST.md) | Reference | Remediation design; its §12 tests now live in the runbook above. |

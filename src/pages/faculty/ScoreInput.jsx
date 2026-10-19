@@ -479,7 +479,8 @@ export default function ScoreInput() {
               last_name,
               email,
               user_number,
-              section_id
+              section_id,
+              sections:section_id ( name )
             )
           `)
           .eq('section_id', cr.section_id)
@@ -514,6 +515,7 @@ export default function ScoreInput() {
             name: `${u.last_name}, ${u.first_name}`,
             email: u.email,
             home_section_id: u.section_id || null,
+            home_section_name: u.sections?.name || '',
             enrollment_type: enrollmentType,
             is_irregular: pInfo.is_irregular ?? enrollmentType === 'Irregular',
             risk_score: pInfo.risk_score || 0,

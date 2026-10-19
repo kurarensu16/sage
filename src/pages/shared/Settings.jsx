@@ -9,6 +9,7 @@ import NotificationPreferences from '../../components/settings/NotificationPrefe
 import PasswordRequirements from '../../components/auth/PasswordRequirements';
 import ProfilePhotoAndContact from '../../components/settings/ProfilePhotoAndContact';
 import UserAvatar from '../../components/layout/UserAvatar';
+import { Skeleton } from '../../components/common/Skeleton';
 import { checkPassword, PASSWORD_POLICY_MESSAGE } from '../../lib/passwordPolicy';
 import { 
   User, 
@@ -140,68 +141,37 @@ export default function Settings() {
     }
   }, [location.search]);
 
-  // Role metadata default configs
-  const roleMeta = {
-    admin: {
-      name: 'Admin System Control',
-      email: 'admin@sage.edu.ph',
-      title: 'Administrator',
-      department: 'System Administration',
-      college: 'ICT Services Division'
-    },
-    faculty: {
-      name: 'Prof. Amanda Rivera',
-      email: 'a.rivera@sage.edu.ph',
-      title: 'Senior Faculty',
-      department: 'Department of Information Technology',
-      college: 'College of Computer Studies'
-    },
-    dean: {
-      name: 'Dr. Carlos Valdes',
-      email: 'c.valdes@sage.edu.ph',
-      title: 'College Dean',
-      department: 'Dean\'s Office',
-      college: 'College of Computer Studies'
-    },
-    office: {
-      name: 'College Office Staff',
-      email: 'office@sage.edu.ph',
-      title: 'Office Staff',
-      department: 'College Office',
-      college: 'College of Computer Studies'
-    },
-    student: {
-      name: 'Sarah Jenkins',
-      email: 's.jenkins@student.sage.edu',
-      title: 'BSIT - 3rd Year',
-      department: 'IT Department',
-      college: 'College of Computer Studies'
-    }
-  };
+  // Every field on this screen is the signed-in user's own record. There is
+  // deliberately no stand-in: this block used to fall back to a map of named staff
+  // (and a named student), so an unloaded profile showed a real but different
+  // person's name, email, department and college on their own settings page.
+  const profileLoaded = Boolean(profile?.first_name);
 
-  const defaultData = roleMeta[role] || roleMeta.faculty;
-
-  // Compute profile data
   const profileData = (() => {
-    if (!profile) return defaultData;
-    const displayName = profile.first_name ? `${profile.first_name} ${profile.last_name}` : defaultData.name;
+    if (!profile) return { name: '', email: '', title: '', department: '', college: '' };
+
     const displayTitle = (() => {
       if (role === 'student') {
         const prog = profile.program || '';
         const year = profile.year_level || profile.yearLevel || '';
-        return [prog, year].filter(Boolean).join(' • ') || defaultData.title;
+        return [prog, year].filter(Boolean).join(' • ');
       }
-      return profile.departments?.name || profile.department || profile.department_name || defaultData.title;
+      return profile.departments?.name || profile.department || profile.department_name || '';
     })();
 
     return {
-      name: displayName,
-      email: profile.email || defaultData.email,
+      name: [profile.first_name, profile.last_name].filter(Boolean).join(' '),
+      email: profile.email || '',
       title: displayTitle,
-      department: profile.departments?.name || profile.department || profile.department_name || defaultData.department,
-      college: profile.departments?.name || profile.college || defaultData.college
+      department: profile.departments?.name || profile.department || profile.department_name || '',
+      college: profile.departments?.name || profile.college || ''
     };
   })();
+
+  // Joins the title and department without leaving a stray bullet when one is absent.
+  const titleAndDepartment = [profileData.title, profileData.department]
+    .filter(Boolean)
+    .join(' • ');
 
   // Password Form state
   const [passwordData, setPasswordData] = useState({
@@ -318,16 +288,28 @@ export default function Settings() {
             className="w-14 h-14 sm:w-16 sm:h-16 bg-sage-800 text-white font-bold font-display text-lg sm:text-xl shadow-md"
           />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-xl font-bold font-display text-slate-900 truncate">
-                {profileData.name}
-              </h2>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sage-100 text-sage-800 border border-sage-200 capitalize flex-shrink-0">
-                {role}
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 truncate mt-0.5">{profileData.email}</p>
-            <p className="text-[11px] text-slate-400 font-medium truncate mt-0.5">{profileData.title} &bull; {profileData.department}</p>
+            {profileLoaded ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base sm:text-xl font-bold font-display text-slate-900 truncate">
+                    {profileData.name}
+                  </h2>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sage-100 text-sage-800 border border-sage-200 capitalize flex-shrink-0">
+                    {role}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 truncate mt-0.5">{profileData.email}</p>
+                {titleAndDepartment && (
+                  <p className="text-[11px] text-slate-400 font-medium truncate mt-0.5">{titleAndDepartment}</p>
+                )}
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-40 sm:w-56 rounded-lg" />
+                <Skeleton className="h-3 w-32 sm:w-44 rounded-md" />
+                <Skeleton className="h-2.5 w-28 sm:w-36 rounded-md" />
+              </div>
+            )}
           </div>
         </div>
 
@@ -376,19 +358,19 @@ export default function Settings() {
                   <span className="text-sm font-bold text-slate-800 block">{profileData.email}</span>
                 </div>
 
-                {(profile?.user_number || (role === 'student' ? '2026-00005' : 'FAC-2026-00003')) && (
+                {profile?.user_number && (
                   <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 space-y-1">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                       {role === 'student' ? 'Student Number / ID' : 'Employee ID Number'}
                     </span>
-                    <span className="text-sm font-bold text-slate-850 block">{profile?.user_number || (role === 'student' ? '2026-00005' : 'FAC-2026-00003')}</span>
+                    <span className="text-sm font-bold text-slate-850 block">{profile?.user_number || '—'}</span>
                   </div>
                 )}
 
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 space-y-1">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Department & College</span>
-                  <span className="text-sm font-bold text-slate-800 block">{profileData.department}</span>
-                  <span className="text-xs text-slate-500 block">{profileData.college}</span>
+                  <span className="text-sm font-bold text-slate-800 block">{profileData.department || '—'}</span>
+                  <span className="text-xs text-slate-500 block">{profileData.college || '—'}</span>
                 </div>
 
                 {user?.id && (

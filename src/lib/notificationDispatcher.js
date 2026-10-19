@@ -375,33 +375,71 @@ export async function notifyAdminActivity({
  */
 export async function notifyOverrideRequested({
   deanId = null,
+  departmentId = null,
   facultyName = 'Faculty',
   studentName = 'Student',
   subjectName = 'Subject',
   currentRemark = '',
   requestedRemark = 'Pending Edit'
 }) {
+  // Names the student and their remark transition, so it is locked to the college that
+  // owns the class. The scope key is the SECTION's department, because that is the rule
+  // the database itself enforces on reads: is_authorized_dean_for_class gates
+  // remark_override_requests on `actor.department_id = section.department_id`
+  // (20261008180000_grading_authorization_hardening.sql:60). Scoping on anything else
+  // would notify deans who cannot open the request.
+  const detailMessage = `Remark Override Request: Prof. ${facultyName} submitted a request for ${studentName} (${currentRemark} → ${requestedRemark}) in ${subjectName}.`;
+
   try {
     const list = [];
     if (deanId) {
       list.push({
         recipient_id: deanId,
         type: 'override_request',
-        message: `Remark Override Request: Prof. ${facultyName} submitted a request for ${studentName} (${currentRemark} → ${requestedRemark}) in ${subjectName}.`
+        message: detailMessage
       });
     } else {
-      const { data: deans } = await supabase
+      let deanQuery = supabase
         .from('users')
         .select('user_id')
         .eq('role', 'dean')
         .eq('status', 'active');
-      
+
+      if (departmentId) {
+        deanQuery = deanQuery.eq('department_id', departmentId);
+      }
+
+      const { data: deans } = await deanQuery;
+
       if (deans && deans.length > 0) {
         deans.forEach(d => {
           list.push({
             recipient_id: d.user_id,
             type: 'override_request',
-            message: `Remark Override Request: Prof. ${facultyName} submitted a request for ${studentName} (${currentRemark} → ${requestedRemark}) in ${subjectName}.`
+            message: detailMessage
+          });
+        });
+      } else if (departmentId) {
+        // The college has no active dean, so no scoped reviewer exists and the request
+        // would otherwise go unseen. It escalates to admins instead of to other colleges'
+        // deans, which keeps the student's name and remark locked to the owning college.
+        //
+        // Admins are the correct escalation: is_active_admin() can read the request
+        // (20261008180000_grading_authorization_hardening.sql:502) but
+        // review_sg_correction_request rejects them with 42501, 'Only an active Dean may
+        // review an SG correction request'. So the actionable step is assigning a dean to
+        // that college, and the message says exactly that rather than implying approval.
+        const { data: admins } = await supabase
+          .from('users')
+          .select('user_id')
+          .eq('role', 'admin')
+          .eq('status', 'active');
+
+        (admins || []).forEach(a => {
+          list.push({
+            recipient_id: a.user_id,
+            type: 'override_request',
+            message: `Remark Override Request: Prof. ${facultyName} submitted a grade correction request in ${subjectName}, but no active Dean is assigned to that college. Assign a Dean so the request can be reviewed.`
           });
         });
       }

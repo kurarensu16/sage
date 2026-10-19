@@ -27,6 +27,7 @@ import { TableSkeleton } from '../../components/common/Skeleton';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { notifyOverrideRequested } from '../../lib/notificationDispatcher';
 import { triggerExcelExport } from '../../lib/excelExport';
+import { getEnrollmentType } from '../../lib/classRoomService';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
 import {
@@ -416,7 +417,7 @@ export default function PostedGradesView() {
               computation_id,
               departments ( name ) 
             ),
-            sections ( name )
+            sections ( name, department_id )
           `)
           .eq('class_record_id', classRecordId)
           .single();
@@ -452,7 +453,9 @@ export default function PostedGradesView() {
               first_name,
               last_name,
               email,
-              user_number
+              user_number,
+              section_id,
+              sections:section_id ( name )
             )
           `)
           .eq('section_id', cr.section_id)
@@ -463,12 +466,23 @@ export default function PostedGradesView() {
         const studentList = (enrolls || [])
           .map(e => e.users)
           .filter(Boolean)
-          .map((u, idx) => ({
-            id: u.user_id,
-            studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
-            name: `${u.last_name}, ${u.first_name}`,
-            email: u.email
-          }));
+          .map((u, idx) => {
+            // Posted grades are what reaches the registrar, so this roster has to
+            // carry the same class-contextual Regular/Irregular call the other
+            // faculty screens use. Without it the export cannot tell the block
+            // section from the students who joined this offering by code.
+            const enrollmentType = getEnrollmentType(u.section_id, cr.section_id);
+            return {
+              id: u.user_id,
+              studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
+              name: `${u.last_name}, ${u.first_name}`,
+              email: u.email,
+              home_section_id: u.section_id || null,
+              home_section_name: u.sections?.name || '',
+              enrollment_type: enrollmentType,
+              is_irregular: enrollmentType === 'Irregular'
+            };
+          });
         studentList.sort((a, b) => a.name.localeCompare(b.name));
 
         // 3. Fetch column setup configurations
@@ -802,6 +816,10 @@ export default function PostedGradesView() {
 
       // Dispatch notification to Dean
       await notifyOverrideRequested({
+        // Locks the request to the dean of the college that owns this section, matching
+        // the read rule in is_authorized_dean_for_class. Without this the dispatcher
+        // falls back to every active dean in the institution.
+        departmentId: classInfo?.sections?.department_id || null,
         facultyName: actorName,
         studentName: remarkReqStudent,
         subjectName: `${subjCode} - ${subjName}`,

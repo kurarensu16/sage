@@ -467,7 +467,7 @@ export default function SummaryReports() {
     wsData.push([]);
     wsData.push([getReportTitle()]);
     wsData.push([`Department: ${deptFilter}  |  A.Y. ${syFilter}  |  ${semFilter} Semester`]);
-    wsData.push([`Generated: ${new Date().toLocaleDateString()}  |  Author: Dean ${deanFullName}`]);
+    wsData.push([`Generated: ${new Date().toLocaleDateString()}  |  Author: ${deanAuthorLabel}`]);
     wsData.push([]);
 
     if (reportType === 'grade-distribution') {
@@ -694,7 +694,10 @@ export default function SummaryReports() {
     }
   };
 
-  const deanFullName = profile?.first_name ? `${profile.first_name} ${profile.last_name}` : 'Carlos Valdes';
+  // No stand-in name here: this is written into exported reports as the author, so an
+  // unloaded profile must never attribute the document to a different real person.
+  const deanFullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ');
+  const deanAuthorLabel = deanFullName ? `Dean ${deanFullName}` : 'Dean';
   const deanCollegeName = profile?.departments?.name || deptFilter;
 
   // ── KPI Cards data ────────────────────────────────────────────────────
@@ -1102,7 +1105,7 @@ export default function SummaryReports() {
               </div>
               <div className="text-right space-y-1 font-mono text-[10px] text-slate-400">
                 <p>Generated: {new Date().toLocaleDateString()}</p>
-                <p>Author: Dean {deanFullName}</p>
+                <p>Author: {deanAuthorLabel}</p>
                 <p>Security Class: Restricted</p>
               </div>
             </div>
@@ -1318,7 +1321,7 @@ export default function SummaryReports() {
                 </div>
                 <div className="space-y-1">
                   <div className="border-b border-slate-800 pb-1 mb-1 h-10 flex items-end justify-center">
-                    <span className="font-bold text-slate-800">Dean {deanFullName}</span>
+                    <span className="font-bold text-slate-800">{deanAuthorLabel}</span>
                   </div>
                   <p className="font-bold text-slate-900">Noted by</p>
                   <p className="text-slate-500">Dean, {deanCollegeName}</p>

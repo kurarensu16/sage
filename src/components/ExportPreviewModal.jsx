@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileSpreadsheet, FileText, X, Check } from 'lucide-react';
+import { FileSpreadsheet, FileText, X, Check, Users } from 'lucide-react';
 import {
   calculateSemestralGrade,
   calculateStoredTermRating,
@@ -29,6 +29,13 @@ export default function ExportPreviewModal({
   const subjectName = classInfo.subjects?.name || '';
   const sectionName = classInfo.sections?.name || '';
   const effectiveFormula = gradingFormula || null;
+
+  // Mirrors partitionByEnrollment in excelExport.js. Faculty should see before they
+  // export that the official sheets stop at the block section and a companion set
+  // is coming for anyone who joined this offering by code.
+  const irregularCount = (students || []).filter(
+    s => s?.is_irregular ?? s?.enrollment_type === 'Irregular'
+  ).length;
 
   // Helpers to calculate student values
   const getComputedStudentRow = (student) => {
@@ -252,6 +259,21 @@ export default function ExportPreviewModal({
                 </div>
               </div>
             </div>
+
+            {irregularCount > 0 && (
+              <div className="mt-6 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <Users className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+                <p className="text-[10px] leading-relaxed text-amber-900 font-sans">
+                  <span className="font-bold">
+                    {irregularCount} cross-enrolled {irregularCount === 1 ? 'student' : 'students'}
+                  </span>{' '}
+                  joined this class from another block. The official sheets list section{' '}
+                  <span className="font-bold">{sectionName || 'this class'}</span> only, so they match the
+                  registrar&apos;s masterlist. The workbook adds a separate{' '}
+                  <span className="font-bold">(Irregular)</span> set for the cross-enrolled students.
+                </p>
+              </div>
+            )}
 
             {/* Actions Panel */}
             <div className="border-t border-slate-200 pt-4 mt-6 space-y-2">

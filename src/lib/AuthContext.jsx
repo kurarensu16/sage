@@ -235,9 +235,23 @@ export const AuthProvider = ({ children }) => {
     // leaves the authenticated app. This function fires for every unread/incoming
     // notification regardless of type, so the filtering has to happen here rather
     // than relying on each dispatcher to self-censor.
+    // Added 2026-10-19: override_request / override_approved / override_rejected /
+    // compliance each name a student alongside a grade, a remark, or both, and were
+    // reaching the banner verbatim. They go to deans and faculty rather than to the
+    // student, but the standing rule is about the data leaving the authenticated app,
+    // not about who holds the phone. Full detail still reaches them in the in-app
+    // inbox, which reads notifications.message directly and is unaffected by this set.
+    // After this, the guardian email (send-email's renderGuardianTemplate, a deliberate
+    // 2026-10-03 product decision) is the only channel carrying a grade or remark
+    // outside the authenticated app.
     const SENSITIVE_PUSH_TYPES = new Set([
       'ews_alert', 'risk_threshold', 'academic_advising', 'dean_referral', 'academic_notice',
-      'grade_posted', 'grade_changed'
+      'grade_posted', 'grade_changed',
+      'override_request', 'override_approved', 'override_rejected', 'compliance',
+      // 'security' carries a staff member's full name and email address. That is PII
+      // rather than student academic standing, so it is outside the rule above, but an
+      // email address on a lock screen helps nobody: admins open the app to act on it.
+      'security'
     ]);
 
     const triggerInboundLocalNotification = async (notif) => {

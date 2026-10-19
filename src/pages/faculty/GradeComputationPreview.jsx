@@ -329,7 +329,8 @@ export default function GradeComputationPreview() {
               last_name,
               email,
               user_number,
-              section_id
+              section_id,
+              sections:section_id ( name )
             )
           `)
           .eq('section_id', cr.section_id)
@@ -345,15 +346,19 @@ export default function GradeComputationPreview() {
           }
         });
 
-        const studentList = Array.from(uniqueUsersMap.values()).map((u, idx) => ({
-          id: u.user_id,
-          studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
-          name: `${u.last_name}, ${u.first_name}`,
-          email: u.email,
-          home_section_id: u.section_id || null,
-          enrollment_type: getEnrollmentType(u.section_id, cr.section_id),
-          is_irregular: getEnrollmentType(u.section_id, cr.section_id) === 'Irregular'
-        }));
+        const studentList = Array.from(uniqueUsersMap.values()).map((u, idx) => {
+          const enrollmentType = getEnrollmentType(u.section_id, cr.section_id);
+          return {
+            id: u.user_id,
+            studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
+            name: `${u.last_name}, ${u.first_name}`,
+            email: u.email,
+            home_section_id: u.section_id || null,
+            home_section_name: u.sections?.name || '',
+            enrollment_type: enrollmentType,
+            is_irregular: enrollmentType === 'Irregular'
+          };
+        });
         studentList.sort((a, b) => a.name.localeCompare(b.name));
 
         // 3. Fetch column max items

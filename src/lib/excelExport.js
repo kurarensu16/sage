@@ -707,6 +707,33 @@ export function buildReportOfGrades(ws, metadata, students, isSingleSheet = fals
 // ===========================================================================
 // TRIGGER EXPORT
 // ===========================================================================
+/**
+ * Splits an export roster into the block section and the join-code enrollees.
+ *
+ * The registrar files grades against a section's block masterlist, which holds only
+ * the students whose home section it is. Someone who joined this offering by code
+ * belongs to another block, so mixing them into the official sheets hands the
+ * registrar rows it cannot file. Faculty therefore submit block-only sheets plus a
+ * parallel companion set for the cross-enrolled students.
+ *
+ * The Regular/Irregular call is whatever the page already resolved with
+ * getEnrollmentType; this never re-derives it. A roster carrying no classification
+ * at all stays whole and counts as block, so an unclassified caller keeps today's
+ * single-set workbook instead of silently dropping students.
+ */
+export function partitionByEnrollment(students = []) {
+  const block = [];
+  const irregular = [];
+
+  (students || []).forEach(student => {
+    const isIrregular = student?.is_irregular ?? student?.enrollment_type === 'Irregular';
+    if (isIrregular) irregular.push(student);
+    else block.push(student);
+  });
+
+  return { block, irregular };
+}
+
 export function triggerExcelExport(classroomMetadata, students, selectedTab = 'all', gradingOptions = {}) {
   const wb = XLSX.utils.book_new();
 
@@ -717,22 +744,56 @@ export function triggerExcelExport(classroomMetadata, students, selectedTab = 'a
 
   const filename = `${classroomMetadata.subjectCode || 'SAGE'}_${classroomMetadata.section || 'Class'}_${tabName}.xlsx`;
 
+  const { block, irregular } = partitionByEnrollment(students);
+  const hasIrregular = irregular.length > 0;
+
+  // The companion set repeats the official layout so the registrar files it the same
+  // way, but each of its sheets is self-contained. The official sheets wire
+  // themselves together with formulas that name their sibling tabs literally
+  // ('Record Sheet'!C9, 'Subject Profile'!D15), so a second set built the same way
+  // would resolve to the block students' names and grades. isSingleSheet writes
+  // resolved values instead, keeping every companion sheet on its own roster.
+  const irregularMetadata = {
+    ...classroomMetadata,
+    section: classroomMetadata.section
+      ? `${classroomMetadata.section} - CROSS-ENROLLED LIST`
+      : 'CROSS-ENROLLED LIST'
+  };
+
   if (selectedTab === 'all' || selectedTab === 'profile') {
     const wsProfile = XLSX.utils.aoa_to_sheet([]);
-    buildSubjectProfile(wsProfile, classroomMetadata, students, selectedTab === 'profile');
+    buildSubjectProfile(wsProfile, classroomMetadata, block, selectedTab === 'profile');
     XLSX.utils.book_append_sheet(wb, wsProfile, 'Subject Profile');
   }
 
   if (selectedTab === 'all' || selectedTab === 'record') {
     const wsRecord = XLSX.utils.aoa_to_sheet([]);
-    buildRecordSheet(wsRecord, classroomMetadata, students, selectedTab === 'record', gradingOptions);
+    buildRecordSheet(wsRecord, classroomMetadata, block, selectedTab === 'record', gradingOptions);
     XLSX.utils.book_append_sheet(wb, wsRecord, 'Record Sheet');
   }
 
   if (selectedTab === 'all' || selectedTab === 'report') {
     const wsReport = XLSX.utils.aoa_to_sheet([]);
-    buildReportOfGrades(wsReport, classroomMetadata, students, selectedTab === 'report', gradingOptions);
+    buildReportOfGrades(wsReport, classroomMetadata, block, selectedTab === 'report', gradingOptions);
     XLSX.utils.book_append_sheet(wb, wsReport, 'Report of Grades');
+  }
+
+  if (hasIrregular && (selectedTab === 'all' || selectedTab === 'profile')) {
+    const wsProfileIrr = XLSX.utils.aoa_to_sheet([]);
+    buildSubjectProfile(wsProfileIrr, irregularMetadata, irregular, true);
+    XLSX.utils.book_append_sheet(wb, wsProfileIrr, 'Subject Profile (Irregular)');
+  }
+
+  if (hasIrregular && (selectedTab === 'all' || selectedTab === 'record')) {
+    const wsRecordIrr = XLSX.utils.aoa_to_sheet([]);
+    buildRecordSheet(wsRecordIrr, irregularMetadata, irregular, true, gradingOptions);
+    XLSX.utils.book_append_sheet(wb, wsRecordIrr, 'Record Sheet (Irregular)');
+  }
+
+  if (hasIrregular && (selectedTab === 'all' || selectedTab === 'report')) {
+    const wsReportIrr = XLSX.utils.aoa_to_sheet([]);
+    buildReportOfGrades(wsReportIrr, irregularMetadata, irregular, true, gradingOptions);
+    XLSX.utils.book_append_sheet(wb, wsReportIrr, 'Report of Grades (Irregular)');
   }
 
   // Use writeXLSX with cellStyles enabled
