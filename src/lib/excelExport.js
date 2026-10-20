@@ -1,10 +1,6 @@
-import {
-  calculateSemestralGrade,
-  calculateStoredTermRating,
-  getTransmutedGrade
-} from './gradingMath';
-import { TRANSMUTATION_LADDER } from './academicPolicy';
-import * as XLSX from 'xlsx-js-style';
+import { resolveExportGradeRow } from './exportGradeResolver.js';
+import { TRANSMUTATION_LADDER } from './academicPolicy.js';
+import XLSX from 'xlsx-js-style';
 
 // ---------------------------------------------------------------------------
 // Grading formula helpers — extract component weights from the resolved formula
@@ -56,7 +52,7 @@ function extractComponentWeights(formula) {
  * Build nested Excel IF formula for GWA transmutation from the canonical ladder.
  * Produces: IF(ref>=98,1,IF(ref>=95,1.25,...,5))
  */
-function buildTransmutationFormula(cellRef) {
+function _buildTransmutationFormula(cellRef) {
   let formula = String(TRANSMUTATION_LADDER[TRANSMUTATION_LADDER.length - 1].gwa === 3
     ? '5'                             // below all thresholds → 5.00
     : '5');
@@ -171,50 +167,12 @@ const getScore = (student, term, key) => {
 // JS-side rating computation (used for single-sheet exports)
 // ---------------------------------------------------------------------------
 const computeStudentRatings = (student, gradingOptions = {}) => {
-  if (!student) return { name: '', mr: '', tfr: '', gwa: '' };
-  const formula = gradingOptions.formula || null;
-
-  const getTermRating = (termName) => {
-    const ts = student.periods?.[termName] || {};
-    return calculateStoredTermRating({
-      formula,
-      termScores: ts,
-      maxItems: gradingOptions.maxItems?.[termName] || {},
-      activities: gradingOptions.activities?.[termName] || []
-    }).rating;
-  };
-
-  const prelim    = getTermRating('Prelim');
-  const midterm   = getTermRating('Midterm');
-  const semiFinal = getTermRating('Semi-Final');
-  const finalTerm = getTermRating('Final');
-
-  const semesterResult = calculateSemestralGrade({
-    prelim,
-    midterm,
-    semiFinal,
-    final: finalTerm,
-    isSummer: Boolean(gradingOptions.isSummer)
-  });
-  const { mr, tfr, sg: sgRating } = semesterResult;
-
-  
-
-  const rawGwa = sgRating === null ? null : getTransmutedGrade(sgRating);
-  const remarkLower = student.customRemarks?.toLowerCase() || '';
-
-  let gwa = rawGwa ?? '';
-  if      (student.absences >= 4)                            gwa = 5.00;
-  else if (remarkLower === 'inc' || remarkLower === 'incomplete') gwa = 'Inc.';
-  else if (remarkLower === 'dropped' || remarkLower === 'drp')    gwa = 'Drp.';
-  else if (remarkLower === 'passed' && rawGwa !== null)  gwa = Math.min(3.00, rawGwa);
-  else if (remarkLower === 'failed')  gwa = 5.00;
-
+  const resolved = resolveExportGradeRow(student, gradingOptions);
   return {
-    name: student.name.toUpperCase(),
-    mr:   mr === null ? '' : `${mr}%`,
-    tfr:  tfr === null ? '' : `${tfr}%`,
-    gwa:  typeof gwa === 'number' ? gwa.toFixed(2) : gwa
+    name: resolved.name.toUpperCase(),
+    mr: resolved.mr === null ? '' : `${resolved.mr}%`,
+    tfr: resolved.tfr === null ? '' : `${resolved.tfr}%`,
+    sg: resolved.sg ?? ''
   };
 };
 
@@ -448,6 +406,7 @@ export function buildRecordSheet(ws, metadata, students, isSingleSheet = false, 
       { startCol: 40, startL: 'AO', endL: 'AT', totL: 'AU', csL: 'AV', charL: 'AW', exRawL: 'AX', exPctL: 'AY', ratL: 'AZ', termName: 'Final'      },
     ];
 
+    const resolvedGrades = resolveExportGradeRow(student, gradingOptions);
     terms.forEach(t => {
       if (student) {
         setCell(ws, r, t.startCol,     getScore(student, t.termName, 'act1'), false, null, 'n', style.center);
@@ -468,35 +427,20 @@ export function buildRecordSheet(ws, metadata, students, isSingleSheet = false, 
       // Dynamic weights from formula (CS%, Char%, Exam%)
       setCell(ws, r, t.startCol + 7,  `IF($C${rName}="","",IF(${t.totL}$8>0, (${t.totL}${rName}/${t.totL}$8)*${W.cs}, 0))`, true, '0.0', 'n', style.center);
       setCell(ws, r, t.startCol + 10, `IF($C${rName}="","",IF(${t.exRawL}$8>0, (${t.exRawL}${rName}/${t.exRawL}$8)*${W.exam}, 0))`, true, '0.0', 'n', style.center);
-      setCell(ws, r, t.startCol + 11, `IF($C${rName}="","",ROUND(${t.csL}${rName}+(${t.charL}${rName}*${W.char / 100})+${t.exPctL}${rName},0))`, true, '0', 'n', style.headerDark);
+      const termRating = {
+        Prelim: resolvedGrades.prelim,
+        Midterm: resolvedGrades.midterm,
+        'Semi-Final': resolvedGrades.semiFinal,
+        Final: resolvedGrades.finalTerm
+      }[t.termName];
+      setCell(ws, r, t.startCol + 11, termRating ?? '', false, termRating === null ? null : '0', termRating === null ? 's' : 'n', style.headerDark);
     });
 
-    setCell(ws, r, 27, `IF($C${rName}="","",ROUND(AVERAGE(O${rName},AA${rName}),0))`, true, '0', 'n', style.headerDark);
-    setCell(ws, r, 52, `IF($C${rName}="","",ROUND(AVERAGE(AN${rName},AZ${rName}),0))`, true, '0', 'n', style.headerDark);
-    setCell(ws, r, 53, `IF($C${rName}="","",ROUND(AVERAGE(AB${rName},BA${rName}),0))`, true, '0', 'n', style.headerDark);
-
-    const remarkLower = student?.customRemarks?.toLowerCase() || '';
-    if (student && student.absences >= 4) {
-      setCell(ws, r, 54, 5.00, false, '0.00', 'n', style.center);
-      setCell(ws, r, 55, 'FDA', false, null, 's', style.center);
-    } else if (student && (remarkLower === 'inc' || remarkLower === 'incomplete')) {
-      setCell(ws, r, 54, 'Inc.', false, null, 's', style.center);
-      setCell(ws, r, 55, 'Inc', false, null, 's', style.center);
-    } else if (student && (remarkLower === 'dropped' || remarkLower === 'drp')) {
-      setCell(ws, r, 54, 'Drp.', false, null, 's', style.center);
-      setCell(ws, r, 55, 'Drp', false, null, 's', style.center);
-    } else if (student && remarkLower === 'passed') {
-      const base = buildTransmutationFormula(`BB${rName}`);
-      setCell(ws, r, 54, `IF($C${rName}="","",IF(${base}<=3,${base},3.00))`, true, '0.00', 'n', style.center);
-      setCell(ws, r, 55, 'Passed', false, null, 's', style.center);
-    } else if (student && remarkLower === 'failed') {
-      setCell(ws, r, 54, 5.00, false, '0.00', 'n', style.center);
-      setCell(ws, r, 55, 'Failed', false, null, 's', style.center);
-    } else {
-      const transmutation = buildTransmutationFormula(`BB${rName}`);
-      setCell(ws, r, 54, `IF($C${rName}="","",${transmutation})`, true, '0.00', 'n', style.center);
-      setCell(ws, r, 55, `IF($C${rName}="","",IF(BC${rName}<=3,"Passed","Failed"))`, true, null, 's', style.center);
-    }
+    setCell(ws, r, 27, resolvedGrades.mr ?? '', false, resolvedGrades.mr === null ? null : '0', resolvedGrades.mr === null ? 's' : 'n', style.headerDark);
+    setCell(ws, r, 52, resolvedGrades.tfr ?? '', false, resolvedGrades.tfr === null ? null : '0', resolvedGrades.tfr === null ? 's' : 'n', style.headerDark);
+    setCell(ws, r, 53, resolvedGrades.sg ?? '', false, resolvedGrades.sg === null ? null : '0', resolvedGrades.sg === null ? 's' : 'n', style.headerDark);
+    setCell(ws, r, 54, resolvedGrades.gwa ?? '', false, typeof resolvedGrades.gwa === 'number' ? '0.00' : null, typeof resolvedGrades.gwa === 'number' ? 'n' : 's', style.center);
+    setCell(ws, r, 55, resolvedGrades.remarks, false, null, 's', style.center);
   }
 
   // Merges
@@ -533,7 +477,7 @@ export function buildRecordSheet(ws, metadata, students, isSingleSheet = false, 
 
   const cols = [{ wch: 5 }, { wch: 12 }, { wch: 25 }];
   for (let t = 0; t < 4; t++) {
-    for (let i = 0; i < 6; i++) cols.push({ wch: 4 });
+    for (let i = 0; i < 6; i++) cols.push({ wch: 8 });
     cols.push({ wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 7 });
     if (t === 1) cols.push({ wch: 8 });
   }
@@ -627,7 +571,7 @@ export function buildReportOfGrades(ws, metadata, students, isSingleSheet = fals
         setCell(ws, leftRow, 1, ratings.name, false, null, 's', style.left);
         setCell(ws, leftRow, 4, ratings.mr, false, null, 's', style.center);
         setCell(ws, leftRow, 5, ratings.tfr, false, null, 's', style.center);
-        setCell(ws, leftRow, 6, ratings.gwa, false, null, 's', style.center);
+        setCell(ws, leftRow, 6, ratings.sg, false, null, 's', style.center);
       } else {
         setCell(ws, leftRow, 1, '', false, null, 's', style.left);
         setCell(ws, leftRow, 4, '', false, null, 's', style.center);
@@ -638,7 +582,7 @@ export function buildReportOfGrades(ws, metadata, students, isSingleSheet = fals
       setCell(ws, leftRow, 1, `'Record Sheet'!C${9 + i}`, true, null, 's', style.left);
       setCell(ws, leftRow, 4, `IF('Record Sheet'!C${9 + i}="", "", 'Record Sheet'!AB${9 + i}&"%")`, true, null, 's', style.center);
       setCell(ws, leftRow, 5, `IF('Record Sheet'!C${9 + i}="", "", 'Record Sheet'!BA${9 + i}&"%")`, true, null, 's', style.center);
-      setCell(ws, leftRow, 6, `IF('Record Sheet'!C${9 + i}="", "", 'Record Sheet'!BC${9 + i})`, true, null, 's', style.center);
+      setCell(ws, leftRow, 6, `IF('Record Sheet'!C${9 + i}="", "", 'Record Sheet'!BB${9 + i})`, true, null, 's', style.center);
     }
 
     setCell(ws, leftRow, 7, i + 31, false, null, null, style.center);
@@ -649,7 +593,7 @@ export function buildReportOfGrades(ws, metadata, students, isSingleSheet = fals
         setCell(ws, leftRow, 8, ratings.name, false, null, 's', style.left);
         setCell(ws, leftRow, 11, ratings.mr, false, null, 's', style.center);
         setCell(ws, leftRow, 12, ratings.tfr, false, null, 's', style.center);
-        setCell(ws, leftRow, 13, ratings.gwa, false, null, 's', style.center);
+        setCell(ws, leftRow, 13, ratings.sg, false, null, 's', style.center);
       } else {
         setCell(ws, leftRow, 8, '', false, null, 's', style.left);
         setCell(ws, leftRow, 11, '', false, null, 's', style.center);
@@ -660,7 +604,7 @@ export function buildReportOfGrades(ws, metadata, students, isSingleSheet = fals
       setCell(ws, leftRow, 8,  `'Record Sheet'!C${9 + i + 30}`, true, null, 's', style.left);
       setCell(ws, leftRow, 11, `IF('Record Sheet'!C${9 + i + 30}="", "", 'Record Sheet'!AB${9 + i + 30}&"%")`, true, null, 's', style.center);
       setCell(ws, leftRow, 12, `IF('Record Sheet'!C${9 + i + 30}="", "", 'Record Sheet'!BA${9 + i + 30}&"%")`, true, null, 's', style.center);
-      setCell(ws, leftRow, 13, `IF('Record Sheet'!C${9 + i + 30}="", "", 'Record Sheet'!BC${9 + i + 30})`, true, null, 's', style.center);
+      setCell(ws, leftRow, 13, `IF('Record Sheet'!C${9 + i + 30}="", "", 'Record Sheet'!BB${9 + i + 30})`, true, null, 's', style.center);
     }
   }
 

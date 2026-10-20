@@ -620,10 +620,12 @@ export default function MyGradesDetail() {
             {/* Total Footer row */}
             <div className="bg-slate-50 p-4 border-t border-slate-200 flex justify-between items-center text-xs font-bold">
               <span className="text-slate-500">
-                Period Score Sum Total{activeData.status === 'Tentative' ? ' (Tentative)' : ''}
+                Weighted Period Total (before rounding){activeData.status === 'Tentative' ? ' (Tentative)' : ''}
               </span>
               {activeData.overallPct !== null && activeData.overallPct !== undefined ? (
-                <span className="font-mono text-sm text-slate-950 font-extrabold">{activeData.overallPct.toFixed(2)}%</span>
+                <span className="font-mono text-sm text-slate-950 font-extrabold">
+                  {activeData.overallPct.toFixed(2)}% → {activeData.rating}% rating
+                </span>
               ) : (
                 <span className="text-sm text-slate-400 font-semibold">Pending</span>
               )}

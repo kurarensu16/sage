@@ -17,7 +17,7 @@ import {
   resolveGradingFormula,
   toEffectiveGradeForPosting
 } from '../../lib/gradingMath';
-import { getRemarks } from '../../lib/academicPolicy';
+import { getPersistentRemarkOverride, getRemarks } from '../../lib/academicPolicy';
 import { triggerExcelExport } from '../../lib/excelExport';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import ErrorModal from '../../components/ErrorModal';
@@ -725,6 +725,7 @@ export default function ScoreInput() {
           .eq('class_record_id', classRecordId);
 
         const locksMap = {};
+        const postedSemestralGrades = {};
 
         (pgData || []).forEach(row => {
           if (!scoresByStudent[row.student_id]) {
@@ -738,12 +739,14 @@ export default function ScoreInput() {
               dbSavedAt: null
             };
           }
-          // The final semestral remark override
+          // Passed/Failed are recalculated from the current SG. Preserve only
+          // exceptional overrides that cannot be derived from the GWA.
           const canonicalPeriod = getCanonicalGradePeriod(row);
           if (canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE) {
-            scoresByStudent[row.student_id].customRemarks = row.remarks === 'passed' ? 'Passed' : row.remarks === 'failed' ? 'Failed' : row.remarks.toUpperCase();
+            scoresByStudent[row.student_id].customRemarks = getPersistentRemarkOverride(row.remarks);
             scoresByStudent[row.student_id].remarksNote = row.remarks_note || '';
             locksMap[row.student_id] = row.is_locked;
+            postedSemestralGrades[row.student_id] = row;
           }
 
         });
@@ -751,6 +754,10 @@ export default function ScoreInput() {
         setLockedMilestones(collectPostedMilestoneCoverage(pgData || [], { lockedOnly: true }));
         setPostedMilestones(collectPostedMilestoneCoverage(pgData || []));
         setStudentLocks(locksMap);
+        setStudents(prev => prev.map(student => ({
+          ...student,
+          postedSemestralGrade: postedSemestralGrades[student.id] || null
+        })));
 
         // 6. Initialize local draft caches
         studentList.forEach(stud => {
@@ -1363,11 +1370,23 @@ export default function ScoreInput() {
       setAutoSaveStatus('saved');
       setLastSavedAt(new Date());
 
-      // Log activity
+      // Record one audit event for the completed sheet save. The score tables do
+      // not use row-level audit triggers because a single save can touch hundreds
+      // of rows.
+      const affectedStudentIds = new Set([
+        ...upsertScoresRows.map(row => row.student_id),
+        ...granularScoreUpserts.map(row => row.student_id),
+        ...emptyTermRows.map(row => row.studentId),
+        ...granularScoreDeletes.map(row => row.studentId),
+      ]);
+      const scoreRecordCount = upsertScoresRows.length
+        + granularScoreUpserts.length
+        + emptyTermRows.length
+        + granularScoreDeletes.length;
       const actorName = resolveActorName(profile, user);
       await logActivity(
-        'Save Scores',
-        `Saved tentative scores for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
+        'Score Batch Save',
+        `Synced ${scoreRecordCount} tentative score record${scoreRecordCount === 1 ? '' : 's'} for ${affectedStudentIds.size} student${affectedStudentIds.size === 1 ? '' : 's'} in ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}.`,
         actorName
       );
 

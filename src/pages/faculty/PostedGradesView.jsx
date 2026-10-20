@@ -223,9 +223,16 @@ export default function PostedGradesView() {
           Final: draft.Final || {}
         },
         customRemarks: draft.customRemarks || '',
-        remarksNote: draft.remarksNote || ''
+        remarksNote: draft.remarksNote || '',
+        postedSemestralGrade: student.postedSemestralGrade || null
       };
     });
+  };
+
+  const getCourseFromSectionName = () => {
+    const sectionName = String(classInfo?.sections?.name || '').trim();
+    const delimiter = sectionName.lastIndexOf('-');
+    return delimiter > 0 ? sectionName.slice(0, delimiter) : sectionName;
   };
 
   const handleExportExcel = (selectedTab) => {
@@ -233,8 +240,8 @@ export default function PostedGradesView() {
 
     const studentsWithGrades = compileStudentsWithGrades();
     const metadata = {
-      college: classInfo.subjects?.departments?.name || 'College of Computer Studies',
-      course: classInfo.course || 'BSIT',
+      college: classInfo.subjects?.departments?.name || '',
+      course: getCourseFromSectionName(),
       subjectCode: classInfo.subjects?.code || '',
       subjectName: classInfo.subjects?.name || '',
       section: classInfo.sections?.name || '',
@@ -736,7 +743,8 @@ export default function PostedGradesView() {
             customRemarks: dbData.customRemarks || '',
             remarksNote: dbData.remarksNote || '',
             computedGrade: pgRow ? pgRow.computed_grade : null,
-            effectiveGrade: pgRow ? pgRow.effective_grade : null
+            effectiveGrade: pgRow ? pgRow.effective_grade : null,
+            postedSemestralGrade: pgRow || null
           };
         });
         setStudents(compiled);
@@ -1471,7 +1479,11 @@ export default function PostedGradesView() {
         activities={activities}
         gradingFormula={gradingFormula}
         isSummer={isSummer}
-        metadata={exportMetadata}
+        metadata={{
+          college: classInfo?.subjects?.departments?.name || '',
+          course: getCourseFromSectionName(),
+          ...exportMetadata
+        }}
         onMetadataChange={(updated) => setExportMetadata(prev => ({ ...prev, ...updated }))}
         onExportExcel={handleExportExcel}
         onExportPdf={handleExportPdf}

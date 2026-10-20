@@ -85,6 +85,7 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 
 | Document | Status | Notes |
 |---|---|---|
+| [EXCEL_GRADE_EXPORT_CHECKLIST_2026-10-20.md](04-testing/EXCEL_GRADE_EXPORT_CHECKLIST_2026-10-20.md) | Current | Manual release checklist for posted-SG Excel export alignment: official values, unposted blanks, metadata, Report of Grades, and sheet layout. |
 | [QA_CHECKLIST_2026-10-19.md](04-testing/QA_CHECKLIST_2026-10-19.md) | Current | Manual QA for the 2026-10-19 batch: faculty export split, hard-coded identity removal, notification privacy and dean scoping. 40 checks in 5 sections, with the verified live demo accounts and COG templates. |
 | [SYSTEM_TEST_CHECKLIST_2026-10-10.md](04-testing/SYSTEM_TEST_CHECKLIST_2026-10-10.md) | **Current: active runbook** | Combined runbook: remediation cases plus every 2026-10-10 update. |
 | [CONSULTATION_REMEDIATION_TEST_GUIDE_2026-10-14.md](04-testing/CONSULTATION_REMEDIATION_TEST_GUIDE_2026-10-14.md) | **Current** | Manual UI cases for the consultation remediation and security hardening (Phases 0–6), the RLS login check, the grading-formula freeze regression test, and §14 caching: deploy-over-deploy, offline, clock-skew score drafts, and shared-browser sign-out. |
