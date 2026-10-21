@@ -11,6 +11,7 @@ import {
   computeStudentGwa,
   countAttendance,
   getAttendanceFlags,
+  getPersistentRemarkOverride,
   getHonorTier,
   getRemarks,
   resolveOfficialGwa,
@@ -183,6 +184,17 @@ assert.equal(invalidAssignedFormula.ok, false);
 assert.equal(invalidAssignedFormula.source, 'invalid');
 
 const healthTheory = resolveGradingFormula(presets[1].components, { formulaAssigned: true });
+const halfPointFormula = resolveGradingFormula(presets[0].components, { formulaAssigned: true });
+const halfPointTerm = calculateWeightedTermRating({
+  formula: halfPointFormula,
+  componentScores: {
+    class_standing_formative: [{ score: 51, maxScore: 60 }],
+    character_rating: { score: 90, maxScore: 100 },
+    major_examination: { score: 35, maxScore: 40 }
+  }
+});
+assert.equal(halfPointTerm.rawRating, 86.5, 'the shared component total must retain decimal precision');
+assert.equal(halfPointTerm.rating, 87, 'the official term rating must round the shared total once');
 const uuidActivityResult = calculateStoredTermRating({
   formula: healthTheory,
   activities: [{ id: 'activity-uuid', dbId: 'activity-uuid', name: 'Case Analysis', max: 20 }],
@@ -358,6 +370,10 @@ assert.equal(getHonorTier(1.5, { subjectGrades: [2], units: 17 }).isEligible, fa
 // ── Null-safe posting & remark vocabulary round-trips ───────────────────────────────────────
 assert.equal(toEffectiveGradeForPosting(84), 2.25, 'a real rating must still transmute normally through the posting guard');
 assert.equal(toEffectiveGradeForPosting(NaN), null, 'NaN must never be posted as a failing grade');
+assert.equal(getPersistentRemarkOverride('passed'), '', 'ordinary pass remarks must be recalculated after score corrections');
+assert.equal(getPersistentRemarkOverride('failed'), '', 'ordinary fail remarks must be recalculated after score corrections');
+assert.equal(getPersistentRemarkOverride('incomplete'), 'INC', 'INC must remain an explicit exception');
+assert.equal(getPersistentRemarkOverride('fda'), 'FDA', 'FDA must remain an explicit exception');
 assert.equal(getRemarks({ gwa: 2, isComplete: false }), 'In Progress', 'incomplete must win over a passing gwa value');
 assert.equal(getRemarks({ gwa: 3.00, isComplete: true }), 'Passed', 'the 3.00 passing cutoff is inclusive');
 assert.equal(getRemarks({ gwa: 3.01, isComplete: true }), 'Failed');

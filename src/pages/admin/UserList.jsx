@@ -294,7 +294,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       student: baseList.filter(u => u.role === 'student').length,
       faculty: baseList.filter(u => u.role === 'faculty').length,
       dean: baseList.filter(u => u.role === 'dean').length,
-      office: baseList.filter(u => u.role === 'office').length,
       admin: baseList.filter(u => u.role === 'admin').length,
     };
   }, [users, statusFilter, showArchived]);
@@ -1102,8 +1101,6 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 uppercase font-mono">Faculty</span>;
       case 'student':
         return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 uppercase font-mono">Student</span>;
-      case 'office':
-        return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 uppercase font-mono">Office</span>;
       default:
         return null;
     }
@@ -1518,8 +1515,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 student: { bg: 'bg-emerald-50 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' },
                 faculty: { bg: 'bg-blue-50 text-blue-800 border-blue-200', dot: 'bg-blue-500' },
                 admin: { bg: 'bg-purple-50 text-purple-800 border-purple-200', dot: 'bg-purple-500' },
-                dean: { bg: 'bg-amber-50 text-amber-800 border-amber-200', dot: 'bg-amber-500' },
-                office: { bg: 'bg-indigo-50 text-indigo-800 border-indigo-200', dot: 'bg-indigo-500' }
+                dean: { bg: 'bg-amber-50 text-amber-800 border-amber-200', dot: 'bg-amber-500' }
               }[user.role] || { bg: 'bg-slate-50 text-slate-800 border-slate-200', dot: 'bg-slate-400' };
 
               return (

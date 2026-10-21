@@ -1,11 +1,6 @@
 import { useState, useEffect } from 'react';
-import { FileSpreadsheet, FileText, X, Check } from 'lucide-react';
-import {
-  calculateSemestralGrade,
-  calculateStoredTermRating,
-  getTransmutedGrade,
-  resolveGradingFormula
-} from '../lib/gradingMath';
+import { FileSpreadsheet, FileText, X, Check, Users } from 'lucide-react';
+import { resolveExportGradeRow, formatExportGwa } from '../lib/exportGradeResolver.js';
 
 export default function ExportPreviewModal({
   isOpen,
@@ -28,74 +23,22 @@ export default function ExportPreviewModal({
   const subjectCode = classInfo.subjects?.code || '';
   const subjectName = classInfo.subjects?.name || '';
   const sectionName = classInfo.sections?.name || '';
-  const effectiveFormula = gradingFormula || null;
+  // Mirrors partitionByEnrollment in excelExport.js. Faculty should see before they
+  // export that the official sheets stop at the block section and a companion set
+  // is coming for anyone who joined this offering by code.
+  const irregularCount = (students || []).filter(
+    s => s?.is_irregular ?? s?.enrollment_type === 'Irregular'
+  ).length;
 
-  // Helpers to calculate student values
-  const getComputedStudentRow = (student) => {
-    const getTermRating = (termName) => {
-      const termScores = student.periods?.[termName] || {};
-      const maxT = maxItems[termName] || { act1: 20, act2: 20, act3: 20, act4: 20, act5: 20, act6: 10, char: 100, exam: 40 };
-      return calculateStoredTermRating({
-        formula: effectiveFormula,
-        termScores,
-        maxItems: maxT,
-        activities: activities[termName] || []
-      }).rating;
-    };
-
-    const prelim = getTermRating('Prelim');
-    const midterm = getTermRating('Midterm');
-    const semiFinal = getTermRating('Semi-Final');
-    const finalTerm = getTermRating('Final');
-
-    const semesterResult = calculateSemestralGrade({
-      prelim,
-      midterm,
-      semiFinal,
-      final: finalTerm,
+  const computedStudents = students.map(student => {
+    const resolved = resolveExportGradeRow(student, {
+      formula: gradingFormula,
+      maxItems,
+      activities,
       isSummer
     });
-    const { mr, tfr, sg } = semesterResult;
-
-    const rawGwa = sg === null ? null : getTransmutedGrade(sg);
-    const remarkLower = student.customRemarks?.toLowerCase() || '';
-
-    let gwa = rawGwa ?? '';
-    let remarks = rawGwa === null ? 'Pending' : rawGwa <= 3.00 ? 'Passed' : 'Failed';
-
-    if (student.absences >= 4) {
-      gwa = 5.00;
-      remarks = 'FDA';
-    } else if (remarkLower === 'inc' || remarkLower === 'incomplete') {
-      gwa = 'Inc.';
-      remarks = 'Inc';
-    } else if (remarkLower === 'dropped' || remarkLower === 'drp') {
-      gwa = 'Drp.';
-      remarks = 'Drp';
-    } else if (remarkLower === 'passed') {
-      gwa = rawGwa === null ? '' : Math.min(3.00, rawGwa);
-      remarks = 'Passed';
-    } else if (remarkLower === 'failed') {
-      gwa = 5.00;
-      remarks = 'Failed';
-    }
-
-    return {
-      studentNo: student.studentNo || '',
-      name: student.name || '',
-      prelim,
-      midterm,
-      mr,
-      semiFinal,
-      finalTerm,
-      tfr,
-      sg,
-      gwa: typeof gwa === 'number' ? gwa.toFixed(2) : gwa,
-      remarks
-    };
-  };
-
-  const computedStudents = students.map(getComputedStudentRow);
+    return { ...resolved, gwa: formatExportGwa(resolved.gwa) };
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -252,6 +195,21 @@ export default function ExportPreviewModal({
                 </div>
               </div>
             </div>
+
+            {irregularCount > 0 && (
+              <div className="mt-6 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <Users className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+                <p className="text-[10px] leading-relaxed text-amber-900 font-sans">
+                  <span className="font-bold">
+                    {irregularCount} cross-enrolled {irregularCount === 1 ? 'student' : 'students'}
+                  </span>{' '}
+                  joined this class from another block. The official sheets list section{' '}
+                  <span className="font-bold">{sectionName || 'this class'}</span> only, so they match the
+                  registrar&apos;s masterlist. The workbook adds a separate{' '}
+                  <span className="font-bold">(Irregular)</span> set for the cross-enrolled students.
+                </p>
+              </div>
+            )}
 
             {/* Actions Panel */}
             <div className="border-t border-slate-200 pt-4 mt-6 space-y-2">
@@ -473,7 +431,7 @@ export default function ExportPreviewModal({
                           <th className="px-2 py-1 text-left">Student Name</th>
                           <th className="px-1 py-1">MR</th>
                           <th className="px-1 py-1">TFR</th>
-                          <th className="px-1.5 py-1">GWA</th>
+                          <th className="px-1.5 py-1">SG</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -483,9 +441,9 @@ export default function ExportPreviewModal({
                             <tr key={i} className="hover:bg-slate-50">
                               <td className="px-1 py-0.5 text-left text-slate-400">{i + 1}</td>
                               <td className="px-2 py-0.5 text-left font-bold text-slate-800 truncate uppercase">{stud?.name || ''}</td>
-                              <td className="px-1 py-0.5">{stud?.name ? `${stud.mr}%` : ''}</td>
-                              <td className="px-1 py-0.5">{stud?.name ? `${stud.tfr}%` : ''}</td>
-                              <td className="px-1.5 py-0.5 font-bold">{stud?.name ? stud.gwa : ''}</td>
+                              <td className="px-1 py-0.5">{stud?.mr == null ? '' : `${stud.mr}%`}</td>
+                              <td className="px-1 py-0.5">{stud?.tfr == null ? '' : `${stud.tfr}%`}</td>
+                              <td className="px-1.5 py-0.5 font-bold">{stud?.sg ?? ''}</td>
                             </tr>
                           );
                         })}
@@ -500,7 +458,7 @@ export default function ExportPreviewModal({
                           <th className="px-2 py-1 text-left">Student Name</th>
                           <th className="px-1 py-1">MR</th>
                           <th className="px-1 py-1">TFR</th>
-                          <th className="px-1.5 py-1">GWA</th>
+                          <th className="px-1.5 py-1">SG</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -510,9 +468,9 @@ export default function ExportPreviewModal({
                             <tr key={i} className="hover:bg-slate-50">
                               <td className="px-1 py-0.5 text-left text-slate-400">{i + 31}</td>
                               <td className="px-2 py-0.5 text-left font-bold text-slate-800 truncate uppercase">{stud?.name || ''}</td>
-                              <td className="px-1 py-0.5">{stud?.name ? `${stud.mr}%` : ''}</td>
-                              <td className="px-1 py-0.5">{stud?.name ? `${stud.tfr}%` : ''}</td>
-                              <td className="px-1.5 py-0.5 font-bold">{stud?.name ? stud.gwa : ''}</td>
+                              <td className="px-1 py-0.5">{stud?.mr == null ? '' : `${stud.mr}%`}</td>
+                              <td className="px-1 py-0.5">{stud?.tfr == null ? '' : `${stud.tfr}%`}</td>
+                              <td className="px-1.5 py-0.5 font-bold">{stud?.sg ?? ''}</td>
                             </tr>
                           );
                         })}

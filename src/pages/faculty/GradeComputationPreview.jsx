@@ -7,7 +7,7 @@ import {
   resolveGradingFormula,
   toEffectiveGradeForPosting
 } from '../../lib/gradingMath';
-import { getRemarks } from '../../lib/academicPolicy';
+import { getPersistentRemarkOverride, getRemarks } from '../../lib/academicPolicy';
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
@@ -129,6 +129,15 @@ const computeGradePreviewStudents = ({ students, gradingFormula, maxItems, activ
     termResults
   };
 });
+
+// Sections use the program abbreviation as their prefix (e.g. BSMARE-1B).
+// sections has no program_id, so this is the authoritative class-level source
+// for the Course field on official grade sheets.
+const getCourseFromSectionName = (sectionName) => {
+  const value = String(sectionName || '').trim();
+  const delimiter = value.lastIndexOf('-');
+  return delimiter > 0 ? value.slice(0, delimiter) : value;
+};
 
 export default function GradeComputationPreview() {
   const navigate = useNavigate();
@@ -329,7 +338,8 @@ export default function GradeComputationPreview() {
               last_name,
               email,
               user_number,
-              section_id
+              section_id,
+              sections:section_id ( name )
             )
           `)
           .eq('section_id', cr.section_id)
@@ -345,15 +355,19 @@ export default function GradeComputationPreview() {
           }
         });
 
-        const studentList = Array.from(uniqueUsersMap.values()).map((u, idx) => ({
-          id: u.user_id,
-          studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
-          name: `${u.last_name}, ${u.first_name}`,
-          email: u.email,
-          home_section_id: u.section_id || null,
-          enrollment_type: getEnrollmentType(u.section_id, cr.section_id),
-          is_irregular: getEnrollmentType(u.section_id, cr.section_id) === 'Irregular'
-        }));
+        const studentList = Array.from(uniqueUsersMap.values()).map((u, idx) => {
+          const enrollmentType = getEnrollmentType(u.section_id, cr.section_id);
+          return {
+            id: u.user_id,
+            studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
+            name: `${u.last_name}, ${u.first_name}`,
+            email: u.email,
+            home_section_id: u.section_id || null,
+            home_section_name: u.sections?.name || '',
+            enrollment_type: enrollmentType,
+            is_irregular: enrollmentType === 'Irregular'
+          };
+        });
         studentList.sort((a, b) => a.name.localeCompare(b.name));
 
         // 3. Fetch column max items
@@ -485,12 +499,14 @@ export default function GradeComputationPreview() {
 
         const customRemarksMap = {};
         const remarksNoteMap = {};
+        const postedSemestralGrades = {};
         if (pgData && pgData.length > 0) {
           pgData.forEach(row => {
             const canonicalPeriod = getCanonicalGradePeriod(row);
             if (canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE) {
-              customRemarksMap[row.student_id] = row.remarks;
+              customRemarksMap[row.student_id] = getPersistentRemarkOverride(row.remarks);
               remarksNoteMap[row.student_id] = row.remarks_note;
+              postedSemestralGrades[row.student_id] = row;
             }
           });
         }
@@ -516,7 +532,8 @@ export default function GradeComputationPreview() {
               Final: studentScores.Final || {}
             },
             customRemarks: customRemarksMap[student.id] || '',
-            remarksNote: remarksNoteMap[student.id] || ''
+            remarksNote: remarksNoteMap[student.id] || '',
+            postedSemestralGrade: postedSemestralGrades[student.id] || null
           };
         });
 
@@ -672,7 +689,7 @@ export default function GradeComputationPreview() {
           let computedGWA = stud.gwa;
           if (remarksLabel === 'passed' && stud.gwa > 3.00) computedGWA = 3.00;
 
-          let computedTermGrade = stud.fRate;
+          let computedTermGrade = stud.sg;
           if (targetMilestone === 'midterm') computedTermGrade = stud.mr;
           else if (targetMilestone === 'tfr') computedTermGrade = stud.tfr;
 
@@ -834,7 +851,7 @@ export default function GradeComputationPreview() {
           computedGWA = 3.00;
         }
 
-        let computedTermGrade = stud.fRate;
+        let computedTermGrade = stud.sg;
         if (targetMilestone === 'midterm') {
           computedTermGrade = stud.mr;
         } else if (targetMilestone === 'tfr') {
@@ -985,8 +1002,8 @@ export default function GradeComputationPreview() {
     if (!classInfo || computedStudents.length === 0) return;
 
     const metadata = {
-      college: classInfo.subjects?.departments?.name || 'College of Computer Studies',
-      course: classInfo.course || 'BSIT',
+      college: classInfo.subjects?.departments?.name || '',
+      course: getCourseFromSectionName(classInfo.sections?.name),
       subjectCode: classInfo.subjects?.code || '',
       subjectName: classInfo.subjects?.name || '',
       section: classInfo.sections?.name || '',
@@ -2454,7 +2471,11 @@ export default function GradeComputationPreview() {
           activities={activities}
           gradingFormula={gradingFormula}
           isSummer={isSummer}
-          metadata={exportMetadata}
+          metadata={{
+            college: classInfo?.subjects?.departments?.name || '',
+            course: getCourseFromSectionName(classInfo?.sections?.name),
+            ...exportMetadata
+          }}
           onMetadataChange={(updated) => setExportMetadata(prev => ({ ...prev, ...updated }))}
           onExportExcel={handleExportExcel}
           onExportPdf={handleExportPdf}

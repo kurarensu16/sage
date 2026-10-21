@@ -13,6 +13,6 @@ Everything under `docs/archive/` describes an **earlier state** of ASPIRE: plans
 | `2026-08_update-handoff/` | 2026-08-18/19 system audit, implementation plan, checklist, developer handoff, SQL | Later migrations and reports |
 | `2026-09_v3.1-scope/` | v3.1 SRS, updated scope, cross-document feature audit, BG/RRL copy | `01-system/overview/ASPIRE_SYSTEM_SCOPE.md` (v5.0) |
 | `2026-10-04_paper-audit/` | Oct 4 paper audit and required changes, an earlier draft (`earlier-draft/`), Oct 4 figure sources | `02-thesis/audits/THESIS_AUDIT_2026-10-10.md`, `02-thesis/figures/` |
-| `completed-plans/` | AI advisor, student risk, analytics, reports, PWA/Capacitor, audit-log, dean insight, and unify-academic-rules plans | `03-development/implementation-reports/` and the code |
+| `completed-plans/` | AI advisor, student risk, analytics, reports, PWA/Capacitor, audit-log, dean insight, and unify-academic-rules plans, and the superseded faculty irregular-enrollee export plan | `03-development/implementation-reports/` and the code |
 | `changelogs/` | Ghost update report, system updates report, retired `TASKS.md` tracker | Git history and `04-testing/` |
 | `rejected/` | Faculty grade-weight customization spec (not adopted; COG templates are used instead) | n/a |

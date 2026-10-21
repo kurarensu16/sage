@@ -3,62 +3,46 @@ import { useLocation, Link } from 'react-router-dom';
 import { Search, Bell, PanelLeft } from 'lucide-react';
 import SageLogo from './SageLogo';
 import UserAvatar from './UserAvatar';
+import { Skeleton } from '../common/Skeleton';
+
+// Avatar tint per portal. Styling only: every name and title in the bar comes from
+// the signed-in user's own profile. This used to be a map of named staff that also
+// served as the display fallback, so a slow profile load briefly showed a real but
+// different person's name in the header.
+const ROLE_AVATAR_STYLES = {
+  admin: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+  faculty: 'bg-sage-100 text-sage-800 border-sage-200',
+  dean: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  student: 'bg-blue-100 text-blue-800 border-blue-200'
+};
 
 export default function Topbar({ toggleSidebar }) {
   const location = useLocation();
   const path = location.pathname;
   const role = path.split('/')[1] || 'faculty';
 
-  // Role details mapping
-  const roleMeta = {
-    admin: {
-      name: 'Admin System Control',
-      email: 'admin@sage.edu.ph',
-      title: 'Administrator',
-      avatarBg: 'bg-indigo-100 text-indigo-700 border-indigo-200'
-    },
-    faculty: {
-      name: 'Prof. Amanda Rivera',
-      email: 'a.rivera@sage.edu.ph',
-      title: 'Senior Faculty',
-      avatarBg: 'bg-sage-100 text-sage-800 border-sage-200'
-    },
-    dean: {
-      name: 'Dr. Carlos Valdes',
-      email: 'c.valdes@sage.edu.ph',
-      title: 'College Dean',
-      avatarBg: 'bg-emerald-100 text-emerald-800 border-emerald-200'
-    },
-    office: {
-      name: 'College Office Staff',
-      email: 'office@sage.edu.ph',
-      title: 'College Office',
-      avatarBg: 'bg-amber-100 text-amber-800 border-amber-200'
-    },
-    student: {
-      name: 'Student',
-      email: 'student@sage.edu.ph',
-      title: 'Student',
-      avatarBg: 'bg-blue-100 text-blue-800 border-blue-200'
-    }
-  };
-
   const { profile, unreadCount } = useAuth();
-  const currentMeta = roleMeta[role] || roleMeta.faculty;
-  const displayName = profile?.first_name ? `${profile.first_name} ${profile.last_name}` : currentMeta.name;
-  
-  const initials = profile?.first_name 
+  const avatarStyle = ROLE_AVATAR_STYLES[role] || ROLE_AVATAR_STYLES.faculty;
+
+  // Until the profile arrives there is nothing truthful to show, so the name and
+  // title render as skeletons instead of standing in someone else's details.
+  const profileLoaded = Boolean(profile?.first_name);
+  const displayName = profileLoaded
+    ? [profile.first_name, profile.last_name].filter(Boolean).join(' ')
+    : '';
+
+  const initials = profileLoaded
     ? `${profile.first_name[0] || ''}${profile.last_name ? profile.last_name[0] : ''}`.toUpperCase()
-    : currentMeta.name.split(' ').map(n => n[0]).filter(Boolean).slice(-2).join('');
+    : '';
 
   const displayTitle = (() => {
+    if (!profileLoaded) return '';
     if (role === 'student') {
       const prog = profile?.program || '';
       const year = profile?.year_level || profile?.yearLevel || '';
-      return [prog, year].filter(Boolean).join(' • ') || currentMeta.title;
+      return [prog, year].filter(Boolean).join(' • ');
     }
-    const dept = profile?.departments?.name || profile?.department || profile?.department_name || '';
-    return dept || currentMeta.title;
+    return profile?.departments?.name || profile?.department || profile?.department_name || '';
   })();
 
   return (
@@ -125,16 +109,25 @@ export default function Topbar({ toggleSidebar }) {
           <UserAvatar
             path={profile?.avatar_path}
             initials={initials}
-            className={`w-8 h-8 border font-bold text-xs font-mono ${currentMeta.avatarBg} group-hover:ring-2 group-hover:ring-sage-400 transition-all`}
+            className={`w-8 h-8 border font-bold text-xs font-mono ${avatarStyle} group-hover:ring-2 group-hover:ring-sage-400 transition-all`}
           />
-          
+
           <div className="hidden lg:block text-left">
-            <h4 className="text-xs font-bold text-slate-800 leading-tight group-hover:text-slate-900">
-              {displayName}
-            </h4>
-            <span className="text-[10px] text-slate-400 font-medium">
-              {displayTitle}
-            </span>
+            {profileLoaded ? (
+              <>
+                <h4 className="text-xs font-bold text-slate-800 leading-tight group-hover:text-slate-900">
+                  {displayName}
+                </h4>
+                <span className="text-[10px] text-slate-400 font-medium">
+                  {displayTitle}
+                </span>
+              </>
+            ) : (
+              <div className="space-y-1.5 py-0.5">
+                <Skeleton className="h-3 w-28 rounded-md" />
+                <Skeleton className="h-2 w-20 rounded-md" />
+              </div>
+            )}
           </div>
         </Link>
 

@@ -65,10 +65,16 @@ export default function ClassroomProvisioning() {
   const [successBanner, setSuccessBanner] = useState(null);
   const [copiedCodeMap, setCopiedCodeMap] = useState({});
 
-  // Identify colleges that have degree block sections
+  // Classrooms are created for the active term only, so all dependent options
+  // must be based on that term as well.
+  const termSections = useMemo(() => (activeTerm
+    ? sections.filter(sec => sec.school_year === activeTerm.school_year && sec.semester === activeTerm.semester)
+    : []), [sections, activeTerm]);
+
+  // Identify colleges that have degree block sections in the active term.
   const collegeDeptsWithSections = useMemo(() => {
-    return departments.filter(d => sections.some(sec => sec.department_id === d.department_id));
-  }, [departments, sections]);
+    return departments.filter(d => termSections.some(sec => sec.department_id === d.department_id));
+  }, [departments, termSections]);
   const loadData = async () => {
     setLoading(true);
     try {
@@ -208,26 +214,19 @@ export default function ClassroomProvisioning() {
     setIsModalOpen(true);
   };
 
-  // Classrooms are created for the active term only, so only active-term sections are offered
-  // (admin setup audit 2026-10-11: H1, H4).
-  const termSections = useMemo(() => (activeTerm
-    ? sections.filter(sec => sec.school_year === activeTerm.school_year && sec.semester === activeTerm.semester)
-    : []), [sections, activeTerm]);
-
   // Determine if selected department is a service department without dedicated sections (e.g., General Education)
   const isCrossDept = selectedDeptId
-    ? sections.filter(sec => sec.department_id === selectedDeptId).length === 0
+    ? termSections.filter(sec => sec.department_id === selectedDeptId).length === 0
     : false;
 
-  const targetDeptIdForSections = isCrossDept
-    ? (selectedTargetDeptId || (collegeDeptsWithSections[0]?.department_id || ''))
-    : selectedDeptId;
+  const targetDeptIdForSections = isCrossDept ? selectedTargetDeptId : selectedDeptId;
 
-  // Derived programs for the target section college
+  // Program choices describe the selected offering college. A service course
+  // can target another college's section without borrowing its programs.
   const deptPrograms = useMemo(() => {
-    if (!targetDeptIdForSections) return programs;
-    return programs.filter(p => p.department_id === targetDeptIdForSections);
-  }, [programs, targetDeptIdForSections]);
+    if (!selectedDeptId) return programs;
+    return programs.filter(p => p.department_id === selectedDeptId);
+  }, [programs, selectedDeptId]);
 
   // Active program abbreviation for filtering. The dropdown stores a program name, so the
   // code is resolved from the programs row rather than guessed from the name.
@@ -312,11 +311,13 @@ export default function ClassroomProvisioning() {
   }, [subjects, selectedDeptId, activeProgramAbbr, selectedYearFilter]);
 
   const modalFilteredSections = useMemo(() => {
-    let list = targetDeptIdForSections
-      ? termSections.filter(s => s.department_id === targetDeptIdForSections)
-      : termSections;
+    let list = isCrossDept && !targetDeptIdForSections
+      ? []
+      : targetDeptIdForSections
+        ? termSections.filter(s => s.department_id === targetDeptIdForSections)
+        : termSections;
 
-    if (activeProgramAbbr) {
+    if (activeProgramAbbr && !isCrossDept) {
       const progAbbrUpper = activeProgramAbbr.toUpperCase();
       const progMatched = list.filter(sec => 
         sec.name.toUpperCase().startsWith(`${progAbbrUpper}-`) || 
@@ -339,19 +340,18 @@ export default function ClassroomProvisioning() {
     }
 
     return list;
-  }, [termSections, targetDeptIdForSections, activeProgramAbbr, selectedYearFilter]);
+  }, [termSections, targetDeptIdForSections, activeProgramAbbr, selectedYearFilter, isCrossDept]);
 
   const modalFilteredFaculty = useMemo(() => {
     const matchedFaculty = selectedDeptId ? facultyUsers.filter(f => f.department_id === selectedDeptId) : facultyUsers;
     return matchedFaculty.length > 0 ? matchedFaculty : facultyUsers;
   }, [facultyUsers, selectedDeptId]);
 
-  // Auto-select first matching target college when General Education or service dept is picked
+  // A service course must name its target college explicitly. Reset it whenever
+  // the offering college changes so a previous selection cannot leak through.
   useEffect(() => {
-    if (isCrossDept && !selectedTargetDeptId && collegeDeptsWithSections.length > 0) {
-      setSelectedTargetDeptId(collegeDeptsWithSections[0].department_id);
-    }
-  }, [selectedDeptId, isCrossDept, collegeDeptsWithSections, selectedTargetDeptId]);
+    setSelectedTargetDeptId('');
+  }, [selectedDeptId]);
 
   // Keep every selection inside the options actually shown. Previously the selection was taken
   // from the unfiltered college list, so after the Program/Year filters the screen showed one
@@ -374,6 +374,10 @@ export default function ClassroomProvisioning() {
     }
     if (!selectedSubjectId || !selectedSectionId || !selectedFacultyId) {
       setModalError('Please select Subject, Section, and Faculty.');
+      return;
+    }
+    if (isCrossDept && !selectedTargetDeptId) {
+      setModalError('Select the target college for this service-course block section.');
       return;
     }
     // Final guard: submit only what is visible in the dropdowns.
@@ -874,6 +878,7 @@ export default function ClassroomProvisioning() {
                     onChange={e => setSelectedTargetDeptId(e.target.value)}
                     className="w-full border border-amber-300 px-3 py-2 rounded-lg text-xs bg-white outline-none cursor-pointer focus:border-sage-600 font-medium"
                   >
+                    <option value="">Select target college</option>
                     {collegeDeptsWithSections.map(d => (
                       <option key={d.department_id} value={d.department_id}>{d.name}</option>
                     ))}

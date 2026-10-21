@@ -83,6 +83,19 @@ const DB_TO_DISPLAY = Object.freeze({ passed: REMARKS.PASSED, failed: REMARKS.FA
 export const toDbRemark = (displayRemark) => DISPLAY_TO_DB[String(displayRemark || '').trim().toLowerCase()] ?? DB_REMARKS.FAILED;
 // Never collapses an unrecognized/legacy value to "Failed" silently — surfaces it as-is instead.
 export const toDisplayRemark = (dbRemark) => DB_TO_DISPLAY[String(dbRemark || '').trim().toLowerCase()] ?? (dbRemark || REMARKS.IN_PROGRESS);
+
+// Passed and Failed are derived from the current official GWA. They must not be
+// reloaded as manual overrides after a score correction, or a formerly failing
+// student can remain marked Failed after earning a passing SG. These exceptional
+// remarks cannot be inferred from the GWA, so they remain explicit overrides.
+export const getPersistentRemarkOverride = (dbRemark) => {
+  switch (String(dbRemark || '').trim().toLowerCase()) {
+    case DB_REMARKS.INCOMPLETE: return 'INC';
+    case DB_REMARKS.FDA: return REMARKS.FDA;
+    case DB_REMARKS.DROPPED: return REMARKS.DROPPED;
+    default: return '';
+  }
+};
 export const getRiskTierForScore = (score) => Object.values(RISK_TIERS).find(tier => Math.max(0, Math.min(100, Number(score) || 0)) >= tier.min && Math.max(0, Math.min(100, Number(score) || 0)) <= tier.max) || RISK_TIERS.LOW;
 export const normalizeAttendanceStatus = (status) => ATTENDANCE.statuses.find(item => item.toLowerCase() === String(status || '').trim().toLowerCase()) || null;
 export function countAttendance(records = []) { const statuses = records.map(record => normalizeAttendanceStatus(record?.status ?? record)).filter(Boolean); const absences = statuses.filter(status => status === 'Absent').length; return { total: statuses.length, absences, attendanceRate: statuses.length ? Math.round(((statuses.length - absences) / statuses.length) * 100) : 100 }; }

@@ -226,7 +226,7 @@ export default function GradeOverride() {
 
       const actorName = adminProfile 
         ? `${adminProfile.first_name} ${adminProfile.last_name}` 
-        : (user?.email || 'Admin System Control');
+        : (user?.email || 'Administrator');
 
       const oldGradeVal = selectedGrade.computedGrade;
       const oldRemarksVal = selectedGrade.remarks;

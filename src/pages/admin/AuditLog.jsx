@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, Clock, Shield, RefreshCw, DownloadCloud } from 'lucide-react';
@@ -9,6 +9,7 @@ import { buildCsv } from '../../lib/csvExport';
 
 const ACTION_BADGE_MAP = {
   'Grade Override':            'bg-rose-50 text-rose-700 border-rose-200',
+  'Score Batch Save':          'bg-teal-50 text-teal-700 border-teal-200',
   'Faculty Reassignment':      'bg-amber-50 text-amber-700 border-amber-200',
   'Classroom Archive':         'bg-slate-100 text-slate-600 border-slate-200',
   'Classroom Creation':        'bg-blue-50 text-blue-700 border-blue-200',
@@ -65,6 +66,42 @@ const toStableIsoTimestamp = (value) => {
   return Number.isNaN(timestamp.getTime()) ? String(value) : timestamp.toISOString();
 };
 
+const ITEMS_PER_PAGE = 50;
+const EXPORT_PAGE_SIZE = 1000;
+
+const getManilaDateBounds = (dateKey) => {
+  if (!dateKey) return null;
+  const start = new Date(`${dateKey}T00:00:00+08:00`);
+  const nextDay = new Date(start);
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+  return { start: start.toISOString(), end: nextDay.toISOString() };
+};
+
+const getSearchClause = (searchTerm) => {
+  const term = searchTerm.trim().replace(/[(),]/g, ' ');
+  if (!term) return '';
+  const pattern = `*${term.replaceAll('*', '')}*`;
+  const sourcePattern = `*${term.replaceAll('*', '').replaceAll(' ', '_')}*`;
+  return [
+    `message.ilike.${pattern}`,
+    `actor.ilike.${pattern}`,
+    `actor_role.ilike.${pattern}`,
+    `entity_type.ilike.${pattern}`,
+    `entity_id.ilike.${pattern}`,
+    `source.ilike.${sourcePattern}`,
+  ].join(',');
+};
+
+const applyLogFilters = (query, { searchTerm, actionFilter, sourceFilter, dateFilter }) => {
+  const searchClause = getSearchClause(searchTerm);
+  if (searchClause) query = query.or(searchClause);
+  if (actionFilter) query = query.eq('action', actionFilter);
+  if (sourceFilter) query = query.eq('source', sourceFilter);
+  const dateBounds = getManilaDateBounds(dateFilter);
+  if (dateBounds) query = query.gte('timestamp', dateBounds.start).lt('timestamp', dateBounds.end);
+  return query;
+};
+
 export default function AuditLog() {
   const { user, profile } = useAuth();
   const location = useLocation();
@@ -75,8 +112,18 @@ export default function AuditLog() {
   const [dateFilter, setDateFilter] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
+  const [totalCount, setTotalCount] = useState(0);
+  const [summary, setSummary] = useState({
+    total_records: 0,
+    today_actions: 0,
+    unique_actors: 0,
+    action_types: 0,
+    actions: [],
+    sources: [],
+  });
+  const requestSequence = useRef(0);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -90,38 +137,55 @@ export default function AuditLog() {
     setCurrentPage(1);
   }, [searchTerm, actionFilter, sourceFilter, dateFilter]);
 
-  const loadLogs = async () => {
+  const loadSummary = useCallback(async () => {
+    const { data, error } = await supabase.rpc('get_activity_log_overview');
+    if (error) throw error;
+    setSummary(data?.[0] || {
+      total_records: 0,
+      today_actions: 0,
+      unique_actors: 0,
+      action_types: 0,
+      actions: [],
+      sources: [],
+    });
+  }, []);
+
+  const loadLogs = useCallback(async () => {
+    const requestId = ++requestSequence.current;
     setErrorMsg('');
     setIsLoading(true);
     try {
-      // The API returns at most 1,000 rows per request, so read every page; search,
-      // filters, and the CSV export then cover all entries, not only the newest 1,000.
-      const PAGE_SIZE = 1000;
-      const allLogs = [];
-      for (let from = 0; ; from += PAGE_SIZE) {
-        const { data, error } = await supabase
-          .from('activity_logs')
-          .select('*')
-          .order('timestamp', { ascending: false })
-          .order('log_id', { ascending: false })
-          .range(from, from + PAGE_SIZE - 1);
+      const filters = { searchTerm, actionFilter, sourceFilter, dateFilter };
+      const from = (currentPage - 1) * ITEMS_PER_PAGE;
+      const [logsResult] = await Promise.all([
+        applyLogFilters(
+          supabase
+            .from('activity_logs')
+            .select('*', { count: 'exact' })
+            .order('timestamp', { ascending: false })
+            .order('log_id', { ascending: false }),
+          filters,
+        ).range(from, from + ITEMS_PER_PAGE - 1),
+        loadSummary(),
+      ]);
 
-        if (error) throw error;
-        allLogs.push(...(data || []));
-        if (!data || data.length < PAGE_SIZE) break;
-      }
-      setLogs(allLogs);
+      if (logsResult.error) throw logsResult.error;
+      if (requestId !== requestSequence.current) return;
+      setLogs(logsResult.data || []);
+      setTotalCount(logsResult.count || 0);
     } catch (err) {
+      if (requestId !== requestSequence.current) return;
       console.error('Failed to load activity logs:', err);
       setErrorMsg('Failed to load system audit logs: ' + err.message);
     } finally {
-      setIsLoading(false);
+      if (requestId === requestSequence.current) setIsLoading(false);
     }
-  };
+  }, [actionFilter, currentPage, dateFilter, loadSummary, searchTerm, sourceFilter]);
 
   useEffect(() => {
-    loadLogs();
-  }, []);
+    const timer = window.setTimeout(() => { void loadLogs(); }, searchTerm.trim() ? 300 : 0);
+    return () => window.clearTimeout(timer);
+  }, [loadLogs, searchTerm]);
 
   const formatTimestamp = (isoString) => {
     if (!isoString) return '';
@@ -131,66 +195,64 @@ export default function AuditLog() {
       + date.toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
 
-  const formatDateKey = (isoString) => {
-    if (!isoString) return '';
-    const date = new Date(isoString);
-    const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' });
-    const parts = formatter.formatToParts(date);
-    const getPart = (type) => parts.find(p => p.type === type).value;
-    return `${getPart('year')}-${getPart('month')}-${getPart('day')}`;
-  };
+  const uniqueActions = summary.actions || [];
+  const uniqueSources = summary.sources || [];
+  // Kept as aliases for the existing range label below; the rows themselves now
+  // come directly from the current server-side page.
+  const itemsPerPage = ITEMS_PER_PAGE;
+  const filteredLogs = { length: totalCount };
+  const totalPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE));
 
-  // Get unique action types for filter dropdown (sorted alphabetically)
-  const uniqueActions = Array.from(new Set(logs.map(log => log.action))).sort();
+  const handleExportCSV = async () => {
+    if (totalCount === 0 || isExporting) return;
+    setIsExporting(true);
+    setErrorMsg('');
+    try {
+      const allMatchingLogs = [];
+      const filters = { searchTerm, actionFilter, sourceFilter, dateFilter };
+      for (let from = 0; ; from += EXPORT_PAGE_SIZE) {
+        const { data, error } = await applyLogFilters(
+          supabase
+            .from('activity_logs')
+            .select('*')
+            .order('timestamp', { ascending: false })
+            .order('log_id', { ascending: false }),
+          filters,
+        ).range(from, from + EXPORT_PAGE_SIZE - 1);
+        if (error) throw error;
+        allMatchingLogs.push(...(data || []));
+        if (!data || data.length < EXPORT_PAGE_SIZE) break;
+      }
 
-  const uniqueSources = Array.from(new Set(logs.map(log => normalizeSource(log.source)))).sort();
-
-  // Get unique dates for filter dropdown
-  const uniqueDates = Array.from(new Set(logs.map(log => formatDateKey(log.timestamp)))).sort().reverse();
-
-  const filteredLogs = logs.filter(log => {
-    const source = normalizeSource(log.source);
-    const sourceLabel = getSourcePresentation(source).label;
-    const haystack = `${log.message} ${log.actor} ${log.actor_role || ''} ${log.entity_type || ''} ${log.entity_id || ''} ${source} ${sourceLabel}`.toLowerCase();
-    const matchesSearch = searchTerm ? haystack.includes(searchTerm.toLowerCase()) : true;
-    const matchesAction = actionFilter ? log.action === actionFilter : true;
-    const matchesSource = sourceFilter ? source === sourceFilter : true;
-    const matchesDate = dateFilter ? formatDateKey(log.timestamp) === dateFilter : true;
-    return matchesSearch && matchesAction && matchesSource && matchesDate;
-  });
-
-  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
-  const paginatedLogs = filteredLogs.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
-  // Summary stats
-  const todayKey = formatDateKey(new Date().toISOString());
-  const todayCount = logs.filter(l => formatDateKey(l.timestamp) === todayKey).length;
-
-  const handleExportCSV = () => {
-    if (filteredLogs.length === 0) return;
-    const header = ['Log ID', 'Action', 'Operation', 'Actor', 'Actor ID', 'Role', 'Entity', 'Entity ID', 'Source', 'Message', 'Timestamp'];
-    const rows = filteredLogs.map(l => [
-      l.log_id,
-      l.action,
-      l.operation,
-      l.actor,
-      l.actor_id,
-      l.actor_role,
-      l.entity_type,
-      l.entity_id,
-      normalizeSource(l.source),
-      l.message,
-      toStableIsoTimestamp(l.timestamp),
-    ]);
-    const csv = buildCsv([header, ...rows]);
-    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `sage_audit_logs_${new Date().toISOString().slice(0,10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    void logActivity('File Export', `Exported ${filteredLogs.length} filtered audit-log records to CSV.`, resolveActorName(profile, user));
+      const header = ['Log ID', 'Action', 'Operation', 'Actor', 'Actor ID', 'Role', 'Entity', 'Entity ID', 'Source', 'Message', 'Timestamp'];
+      const rows = allMatchingLogs.map(l => [
+        l.log_id,
+        l.action,
+        l.operation,
+        l.actor,
+        l.actor_id,
+        l.actor_role,
+        l.entity_type,
+        l.entity_id,
+        normalizeSource(l.source),
+        l.message,
+        toStableIsoTimestamp(l.timestamp),
+      ]);
+      const csv = buildCsv([header, ...rows]);
+      const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `sage_audit_logs_${new Date().toISOString().slice(0,10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      void logActivity('File Export', `Exported ${allMatchingLogs.length} filtered audit-log records to CSV.`, resolveActorName(profile, user));
+    } catch (err) {
+      console.error('Failed to export activity logs:', err);
+      setErrorMsg('Failed to export system audit logs: ' + err.message);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -199,10 +261,10 @@ export default function AuditLog() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleExportCSV}
-            disabled={filteredLogs.length === 0}
+            disabled={totalCount === 0 || isExporting}
             className="px-4 py-2 text-sm font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg transition-colors bg-white flex items-center gap-2 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            <DownloadCloud className="h-4 w-4 text-slate-500" /> Export CSV
+            <DownloadCloud className="h-4 w-4 text-slate-500" /> {isExporting ? 'Exporting...' : 'Export CSV'}
           </button>
           <button
             onClick={loadLogs}
@@ -226,10 +288,10 @@ export default function AuditLog() {
         {/* Summary Stats Row - 2x2 on Mobile */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
           {[
-            { label: 'Total Records', value: logs.length, color: 'text-slate-900' },
-            { label: 'Today\'s Actions', value: todayCount, color: 'text-sage-700' },
-            { label: 'Unique Actors', value: Array.from(new Set(logs.map(l => l.actor))).length, color: 'text-blue-700' },
-            { label: 'Action Types', value: uniqueActions.length, color: 'text-violet-700' },
+            { label: 'Total Records', value: summary.total_records, color: 'text-slate-900' },
+            { label: 'Today\'s Actions', value: summary.today_actions, color: 'text-sage-700' },
+            { label: 'Unique Actors', value: summary.unique_actors, color: 'text-blue-700' },
+            { label: 'Action Types', value: summary.action_types, color: 'text-violet-700' },
           ].map((stat) => (
             <div key={stat.label} className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-3.5 sm:p-4">
               <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wide truncate">{stat.label}</p>
@@ -267,17 +329,14 @@ export default function AuditLog() {
               ))}
             </select>
 
-            <select
+            <input
+              type="date"
               id="audit-date-filter"
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
+              aria-label="Filter by date"
               className="bg-white border border-slate-200 rounded-xl text-xs sm:text-sm px-3 py-2 outline-none cursor-pointer hover:border-sage-300 transition-colors flex-1 sm:flex-none"
-            >
-              <option value="">All Dates</option>
-              {uniqueDates.map((date, idx) => (
-                <option key={idx} value={date}>{date}</option>
-              ))}
-            </select>
+            />
 
             <select
               id="audit-source-filter"
@@ -312,13 +371,13 @@ export default function AuditLog() {
               </span>
             </div>
             <span className="text-xs font-semibold text-slate-400 font-mono">
-              {filteredLogs.length} {filteredLogs.length === 1 ? 'record' : 'records'}
+              {totalCount} {totalCount === 1 ? 'record' : 'records'}
             </span>
           </div>
 
           <div className="divide-y divide-slate-100 overflow-y-auto max-h-[560px]">
-            {paginatedLogs.length > 0 ? (
-              paginatedLogs.map((log) => (
+            {logs.length > 0 ? (
+              logs.map((log) => (
                 <div
                   key={log.log_id}
                   className="p-3.5 sm:px-6 sm:py-4 hover:bg-slate-50/60 transition-colors flex flex-col md:flex-row md:items-start justify-between gap-2.5 sm:gap-4"
