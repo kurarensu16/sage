@@ -11,6 +11,7 @@
     "verify:excel-export": "node scripts/verifyExcelGradeExport.js",
     "verify:csv": "node scripts/verifyCsvExport.js",
     "verify:insights": "node scripts/verifyInsightFreshness.js",
+    "verify:sg-correction": "node scripts/verifySgCorrectionPosting.js",
     "diff:grading": "node scripts/diffGradingSnapshot.js",
     "audit:freeze": "node scripts/freezeAudit.js",
     "prepare": "node -e \"try { require('child_process').execSync('git config core.hooksPath .githooks', { stdio: 'ignore' }) } catch {}\"",

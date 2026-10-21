@@ -1,5 +1,24 @@
 import { supabase } from './supabase';
 
+export async function fetchApprovedSgCorrections(classRecordId) {
+  if (!classRecordId) return [];
+  const { data, error } = await supabase
+    .from('remark_override_requests')
+    .select(`
+      request_id,
+      posted_grade_id,
+      student_id,
+      status,
+      proposed_computed_grade,
+      proposed_effective_grade,
+      proposed_remark
+    `)
+    .eq('class_record_id', classRecordId)
+    .eq('status', 'approved');
+  if (error) throw error;
+  return data || [];
+}
+
 export async function submitSgCorrectionRequest({
   classRecordId,
   studentId,

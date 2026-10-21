@@ -36,8 +36,10 @@ import {
   isSummerClass,
   isTermCoveredByPostedMilestone
 } from '../../lib/gradeMilestones';
-import { postGradeMilestoneAtomic } from '../../lib/gradePostingService';
+import { postGradeMilestoneAtomic, preflightSgCorrectionPosting } from '../../lib/gradePostingService';
 import { collectBlankScoreReview, prepareReviewedBlankScores } from '../../lib/gradeScoreReview';
+import { fetchApprovedSgCorrections } from '../../lib/gradeCorrectionService';
+import { planSgCorrectionPosting, requireAuthorizedSgCorrectionPlan } from '../../lib/sgCorrectionPosting';
 
 const ARCHIVED_NOTICE = 'This class is archived (its SG is posted and its term has ended), so it is view only. To change an official SG, submit an SG correction request for the Dean to approve.';
 
@@ -1474,13 +1476,7 @@ export default function ScoreInput() {
 
       let approvedCorrections = [];
       if (targetMilestone === 'semestral') {
-        const { data: correctionRows, error: correctionErr } = await supabase
-          .from('remark_override_requests')
-          .select('request_id, student_id, decision_by, proposed_remark')
-          .eq('class_record_id', classRecordId)
-          .eq('status', 'approved');
-        if (correctionErr) throw correctionErr;
-        approvedCorrections = correctionRows || [];
+        approvedCorrections = await fetchApprovedSgCorrections(classRecordId);
       }
 
       const existingMap = {};
@@ -1497,8 +1493,8 @@ export default function ScoreInput() {
         });
       }
 
-      const postRows = [];
-      const changedStudentIds = [];
+      let postRows = [];
+      let changedStudentIds = [];
       // Captured per student so the grade_posted/grade_changed dispatch below can thread the
       // real term rating/GWA into the notification payload (needed for the guardian email's
       // "grade for that specific term" line) without a second pass or re-querying posted_grades.
@@ -1507,7 +1503,7 @@ export default function ScoreInput() {
       // dispatch below. gradeChangeRevision is shared by every student in this single post
       // invocation so a retried/duplicate click dedupes, while a genuinely later relock gets
       // a fresh revision and notifies again.
-      const changedStudentRemarks = [];
+      let changedStudentRemarks = [];
       const gradeChangeRevision = Date.now();
       const updatedLockedMilestones = getUpdatedMilestoneLocks(
         postedMilestones,
@@ -1581,19 +1577,6 @@ export default function ScoreInput() {
 
         studentGradeResults[stud.id] = { rating: computedTermGrade, gwa: effectiveGrade };
 
-        const oldRecord = existingMap[stud.id];
-        if (!isFirstPost) {
-          if (
-            !oldRecord ||
-            Number(oldRecord.computed_grade) !== Number(computedTermGrade) ||
-            (oldRecord.effective_grade === null ? null : Number(oldRecord.effective_grade)) !== dbEffectiveGrade ||
-            oldRecord.remarks !== remarksLabel
-          ) {
-            changedStudentIds.push(stud.id);
-            changedStudentRemarks.push({ student_id: stud.id, student_name: stud.name, remark: remarksLabel });
-          }
-        }
-
         const payloadRow = {
           class_record_id: classRecordId,
           student_id: stud.id,
@@ -1611,13 +1594,61 @@ export default function ScoreInput() {
           grading_formula_snapshot: gradingFormulaSnapshot
         };
 
-        const existingId = oldRecord?.id;
+        const existingId = existingMap[stud.id]?.id;
         payloadRow.posted_grade_id = existingId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
           const r = Math.random() * 16 | 0;
           return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
         }));
 
         postRows.push(payloadRow);
+      });
+
+      if (targetMilestone === 'semestral') {
+        const sgPlan = planSgCorrectionPosting({
+          candidateRows: postRows,
+          existingPostedGrades: existingPg || [],
+          approvedRequests: approvedCorrections,
+          studentNames: Object.fromEntries(students.map(student => [student.id, student.name]))
+        });
+        requireAuthorizedSgCorrectionPlan(sgPlan);
+        postRows = sgPlan.postRows;
+
+        const preflight = await preflightSgCorrectionPosting({
+          classRecordId,
+          postedGradeRows: postRows
+        });
+        if (!preflight?.ok) {
+          const namesById = Object.fromEntries(students.map(student => [student.id, student.name]));
+          const names = (preflight?.violations || [])
+            .map(item => namesById[item.student_id] || item.student_id)
+            .join(', ');
+          throw new Error(`Official SG update blocked for: ${names || 'one or more students'}.`);
+        }
+      }
+
+      changedStudentIds = [];
+      changedStudentRemarks = [];
+      postRows.forEach(row => {
+        const oldRecord = existingMap[row.student_id];
+        if (
+          !isFirstPost
+          && (!oldRecord
+            || Number(oldRecord.computed_grade) !== Number(row.computed_grade)
+            || (oldRecord.effective_grade === null ? null : Number(oldRecord.effective_grade)) !== row.effective_grade
+            || oldRecord.remarks !== row.remarks)
+        ) {
+          changedStudentIds.push(row.student_id);
+          const student = students.find(item => item.id === row.student_id);
+          changedStudentRemarks.push({
+            student_id: row.student_id,
+            student_name: student?.name || row.student_id,
+            remark: row.remarks
+          });
+        }
+        studentGradeResults[row.student_id] = {
+          rating: row.computed_grade,
+          gwa: row.effective_grade
+        };
       });
 
       await postGradeMilestoneAtomic({

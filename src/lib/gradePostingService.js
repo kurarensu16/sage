@@ -37,3 +37,13 @@ export async function postGradeMilestoneAtomic({
   if (error) throw error;
   return data;
 }
+
+export async function preflightSgCorrectionPosting({ classRecordId, postedGradeRows }) {
+  if (!classRecordId) throw new Error('A class record is required to preflight SG corrections.');
+  const { data, error } = await supabase.rpc('preflight_sg_correction_posting', {
+    p_class_record_id: classRecordId,
+    p_posted_grade_rows: ensureArray(postedGradeRows)
+  });
+  if (error) throw error;
+  return data;
+}
