@@ -80,6 +80,22 @@ export function getMilestonePostingPresentation(targetMilestone, { isSummer = fa
   };
 }
 
+export function getGradePostingAuditAction({ targetMilestone, isFirstPost, changedCount = 0 }) {
+  const milestoneName = targetMilestone === 'midterm'
+    ? 'Midterm Rating'
+    : targetMilestone === 'tfr'
+      ? 'Tentative Final Rating'
+      : 'Semestral Grade';
+
+  if (isFirstPost) return `Posted ${milestoneName}`;
+  if (Number(changedCount) > 0) {
+    return targetMilestone === 'semestral'
+      ? 'Applied Semestral Grade Correction'
+      : `Updated ${milestoneName}`;
+  }
+  return `Reposted ${milestoneName} (No Change)`;
+}
+
 export function getUpdatedMilestoneLocks(existingLocks, targetMilestone, { isSummer = false } = {}) {
   const coveredTerms = getRequiredTermsForPostingTarget(targetMilestone, { isSummer });
   const { milestoneLock } = getMilestonePostingPresentation(targetMilestone, { isSummer });

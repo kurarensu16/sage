@@ -6,8 +6,8 @@
 import { supabase } from './supabase';
 import { PASSING_GRADE, HIGH_CUTOFF, SAME_MARGIN } from './constants';
 import { computeUnifiedRisk } from './riskEngine';
-import { RISK_TIERS, resolveOfficialGwa, countAttendance } from './academicPolicy';
-import { findMostAdvancedPostedGrade } from './gradeMilestones';
+import { RISK_TIERS, resolveOfficialGradeState, countAttendance, getRemarks } from './academicPolicy';
+import { GRADE_MILESTONES, findMostAdvancedPostedGrade, getCanonicalGradePeriod } from './gradeMilestones';
 import { getClassPriorityRoster } from './classRoomService';
 import * as XLSX from 'xlsx-js-style';
 
@@ -230,7 +230,7 @@ export async function fetchClassReportDataset(classRecordId) {
   //    same helper AcademicInsights.jsx/SummaryReports.jsx already use for this exact problem.
   const { data: postedGrades, error: postedError } = await supabase
     .from('posted_grades')
-    .select('student_id, grade_period, computed_grade, effective_grade, locked_milestones')
+    .select('student_id, grade_period, computed_grade, effective_grade, remarks, locked_milestones')
     .eq('class_record_id', classRecordId);
   if (postedError) {
     console.error('Error fetching posted grades:', postedError);
@@ -244,7 +244,13 @@ export async function fetchClassReportDataset(classRecordId) {
   const postedDetailsByStudent = {};
   postedByStudent.forEach((studentRows, studentId) => {
     const advanced = findMostAdvancedPostedGrade(studentRows);
-    postedDetailsByStudent[studentId] = advanced ? { gwa: resolveOfficialGwa(advanced).gwa, period: advanced.grade_period } : null;
+    const official = advanced ? resolveOfficialGradeState(advanced) : null;
+    postedDetailsByStudent[studentId] = advanced ? {
+      gwa: official.gwa,
+      period: getCanonicalGradePeriod(advanced),
+      remarks: official.displayRemark,
+      dbRemark: official.dbRemark
+    } : null;
   });
 
   // 5. Real attendance for this class — never a fabricated absence count.
@@ -392,18 +398,13 @@ export function aggregateByStudent(rows = [], postedDetailsByStudent = {}, atten
     
     const posted = postedDetailsByStudent[stud.studentId];
 
-    if (rosterData && Number.isFinite(rosterData.current_gwa)) {
-      realGwa = rosterData.current_gwa; // Always use the live dynamic grade to match Score Sheet
-      // It is ONLY NOT tentative if the Semestral Grade (SG) is posted AND it perfectly matches the live computed GWA.
-      if (posted && posted.period === 'SG' && posted.gwa === realGwa) {
-        isTentative = false;
-      }
+    if (posted?.period === GRADE_MILESTONES.SEMESTRAL_GRADE && Number.isFinite(posted.gwa)) {
+      realGwa = posted.gwa;
+      isTentative = false;
+    } else if (rosterData && Number.isFinite(rosterData.current_gwa)) {
+      realGwa = rosterData.current_gwa;
     } else if (posted && Number.isFinite(posted.gwa)) {
-      realGwa = posted.gwa; // Fallback to posted if roster fails
-      // If roster failed but we have a posted SG, it's official. If it's a Midterm etc, it's tentative.
-      if (posted.period === 'SG') {
-        isTentative = false;
-      }
+      realGwa = posted.gwa;
     }
 
     const absenceCount = rosterData ? rosterData.absences : (attendanceByStudent[stud.studentId] || 0);
@@ -417,11 +418,9 @@ export function aggregateByStudent(rows = [], postedDetailsByStudent = {}, atten
       overallStatus = 'Struggling';
     }
 
-    // Remarks (Passed / Failed) derived from GWA, matching Score Sheet logic
-    let remarks = null;
-    if (realGwa !== null) {
-      remarks = realGwa <= 3.00 ? 'Passed' : 'Failed';
-    }
+    const remarks = !isTentative && posted?.remarks
+      ? posted.remarks
+      : (realGwa === null ? null : getRemarks({ gwa: realGwa }));
 
     return {
       ...stud,

@@ -3,10 +3,10 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Search, ShieldAlert, Check, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
-import { notifyAdminGradeOverride } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import { getRemarks, toDbRemark, toDisplayRemark, TRANSMUTATION_LADDER, GRADE_SCALE } from '../../lib/academicPolicy';
 import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
+import { applyAdminGradeOverride } from '../../lib/gradePostingService';
 
 // Official DYCI grade steps (1.00 … 3.00, then 5.00), taken from the grading scale.
 const GRADE_STEPS = Object.freeze(
@@ -210,19 +210,15 @@ export default function GradeOverride() {
     const remarks = toDbRemark(getRemarks({ gwa: parsedGrade, isComplete: true }));
 
     try {
-      const overrideAt = new Date().toISOString();
-
       // Goes through the RPC rather than a direct table update: it is the only path
       // allowed to change a locked SG, and it records the override in
       // grade_correction_history with the reason attached.
-      const { error: updateErr } = await supabase.rpc('apply_admin_grade_override', {
-        p_posted_grade_id: selectedGrade.id,
-        p_new_effective_grade: parsedGrade,
-        p_new_remarks: remarks,
-        p_reason: overrideReason.trim()
+      await applyAdminGradeOverride({
+        postedGradeId: selectedGrade.id,
+        newEffectiveGrade: parsedGrade,
+        newRemarks: remarks,
+        reason: overrideReason.trim()
       });
-
-      if (updateErr) throw updateErr;
 
       const actorName = adminProfile 
         ? `${adminProfile.first_name} ${adminProfile.last_name}` 
@@ -238,7 +234,7 @@ export default function GradeOverride() {
       const { error: logErr } = await supabase
         .from('activity_logs')
         .insert({
-          action: 'Grade Override',
+          action: 'Applied Administrative Grade Override',
           message: logMessage,
           actor: actorName
         });
@@ -251,21 +247,6 @@ export default function GradeOverride() {
       await showLocalNotification({
         title: 'Grade Override Executed',
         body: `🔒 Overrode ${selectedStudent.firstName} ${selectedStudent.lastName}'s ${selectedGrade.gradePeriod} grade in ${selectedGrade.subjectCode} to ${parsedGrade.toFixed(2)} (${remarks}).`
-      });
-
-      // Dispatch notifications to affected student and instructor
-      await notifyAdminGradeOverride({
-        studentId: selectedStudent.id,
-        facultyId: selectedGrade.facultyId || null,
-        studentName: `${selectedStudent.firstName} ${selectedStudent.lastName}`,
-        subjectCode: selectedGrade.subjectCode,
-        subjectName: selectedGrade.subjectName,
-        classRecordId: selectedGrade.classRecordId,
-        overrideAt,
-        oldGrade: oldGradeVal,
-        newGrade: parsedGrade,
-        remarks: remarks,
-        actorName
       });
 
       setIsOverrideOpen(false);

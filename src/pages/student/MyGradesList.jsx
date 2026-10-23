@@ -1,5 +1,5 @@
 import { getTransmutedGrade } from '../../lib/gradingMath';
-import { getGwaBand } from '../../lib/academicPolicy';
+import { getGwaBand, toDisplayRemark } from '../../lib/academicPolicy';
 import { loadStudentRunningGrades } from '../../lib/studentRunningGrade';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
@@ -300,7 +300,7 @@ export default function MyGradesList() {
             const sgPostedGwa = sgPostedRow ? postedGwaText(sgPostedRow) : '—';
 
             const remarks = sgPostedRow
-              ? (parseFloat(sgPostedGwa) <= 3.00 ? 'Passed' : 'Failed')
+              ? toDisplayRemark(sgPostedRow.remarks)
               : 'Ongoing';
 
             return {

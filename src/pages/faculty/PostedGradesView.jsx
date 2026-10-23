@@ -817,8 +817,8 @@ export default function PostedGradesView() {
       // The secured RPC is the only source of truth. No local fallback can
       // create an authorization record that the database did not accept.
       await logActivity(
-        'Remark Override Request',
-        `Requested remark override for student ${remarkReqStudent} (${remarkReqFrom} -> ${remarkReqTo}) in ${subjCode}`,
+        'Submitted SG Correction Request',
+        `Submitted an SG correction request for student ${remarkReqStudent} (${remarkReqFrom} -> ${remarkReqTo}) in ${subjCode}`,
         actorName
       );
 
@@ -1377,8 +1377,8 @@ export default function PostedGradesView() {
                     max="100"
                     step="0.01"
                     value={remarkReqComputed}
-                    onChange={event => setRemarkReqComputed(event.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-mono outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300"
+                    readOnly
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-mono text-slate-600"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1389,12 +1389,12 @@ export default function PostedGradesView() {
                     max="5"
                     step="0.01"
                     value={remarkReqEffective}
-                    onChange={event => setRemarkReqEffective(event.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-mono outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300"
+                    readOnly
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-mono text-slate-600"
                   />
                 </div>
                 <p className="col-span-2 text-micro leading-relaxed text-slate-400">
-                  Enter the exact values expected after the official grading engine recalculates the corrected scores. Reposting is rejected if the result differs from this approved proposal.
+                  These values come from the locked official score basis. The server recalculates and rejects the correction if that basis no longer matches.
                 </p>
               </div>
             )}

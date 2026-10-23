@@ -17,6 +17,8 @@ import {
   Smartphone
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { formatPhilippineTimestamp, getPhilippineDateKey, parseDatabaseUtcTimestamp } from '../../lib/dateTime';
+import { formatAuditActionForDisplay, formatAuditMessageForDisplay } from '../../lib/auditLogPresentation';
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState({
@@ -86,9 +88,12 @@ export default function Dashboard() {
 
         // Calculate APK download metrics
         const allApkLogs = apkLogsData || [];
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayDownloads = allApkLogs.filter(l => new Date(l.timestamp) >= today).length;
+        const manilaDateKey = getPhilippineDateKey();
+        const manilaDayStart = new Date(`${manilaDateKey}T00:00:00+08:00`);
+        const todayDownloads = allApkLogs.filter((log) => {
+          const timestamp = parseDatabaseUtcTimestamp(log.timestamp);
+          return timestamp && timestamp >= manilaDayStart;
+        }).length;
 
         setApkMetrics({
           totalDownloads: allApkLogs.length,
@@ -104,12 +109,6 @@ export default function Dashboard() {
     
     fetchDashboardData();
   }, []);
-
-  const formatTimestamp = (isoString) => {
-    if (!isoString) return '';
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) + ' - ' + date.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' });
-  };
 
   const statCards = [
     { 
@@ -354,7 +353,7 @@ export default function Dashboard() {
                   <div key={dl.log_id} className="p-2.5 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200/70 flex items-center justify-between gap-2 transition-colors">
                     <div className="min-w-0">
                       <p className="text-xs font-bold text-slate-800 truncate">{dl.actor}</p>
-                      <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{formatTimestamp(dl.timestamp)}</p>
+                      <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{formatPhilippineTimestamp(dl.timestamp, { includeSeconds: false })}</p>
                     </div>
                     <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200/80 font-semibold flex-shrink-0">
                       APK
@@ -387,13 +386,13 @@ export default function Dashboard() {
                     <div className="min-w-0 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
-                          {log.action}
+                          {formatAuditActionForDisplay(log.action, log.entity_type, log.message)}
                         </span>
                         <span className="text-[10px] font-mono text-slate-400">
-                          {formatTimestamp(log.timestamp)}
+                          {formatPhilippineTimestamp(log.timestamp, { includeSeconds: false })}
                         </span>
                       </div>
-                      <p className="text-xs sm:text-sm text-slate-700 leading-snug">{log.message}</p>
+                      <p className="text-xs sm:text-sm text-slate-700 leading-snug">{formatAuditMessageForDisplay(log.message, log.entity_type)}</p>
                     </div>
                     <span className="text-[11px] text-slate-500 font-medium self-start sm:self-auto whitespace-nowrap flex-shrink-0">
                       by <strong className="text-slate-800">{log.actor}</strong>

@@ -8,9 +8,11 @@ import { getProgramAbbrFromSectionName } from '../../lib/constants';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { formatAuditActionForDisplay, formatAuditMessageForDisplay } from '../../lib/auditLogPresentation';
 import { notifyUserStatusChange, notifyAdminActivity } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import { TableSkeleton } from '../../components/common/Skeleton';
+import { formatPhilippineTimestamp } from '../../lib/dateTime';
 
 // Custom styled premium checkbox matching SAGE design language
 const CustomCheckbox = ({ checked, onChange }) => {
@@ -2799,14 +2801,14 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                     >
                       <div className="flex items-center justify-between gap-4">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-micro font-bold bg-sage-50 text-sage-850 border border-sage-150 uppercase font-mono tracking-wider">
-                          {log.action}
+                          {formatAuditActionForDisplay(log.action, log.entity_type, log.message)}
                         </span>
                         <span className="text-[10px] font-mono text-slate-450 font-medium">
-                          {log.timestamp ? new Date(log.timestamp).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : ''}
+                          {formatPhilippineTimestamp(log.timestamp)}
                         </span>
                       </div>
                       <p className="text-xs text-slate-700 leading-relaxed font-sans font-medium">
-                        {log.message}
+                        {formatAuditMessageForDisplay(log.message, log.entity_type)}
                       </p>
                       <div className="text-[10px] text-slate-455 flex items-center gap-1 font-medium font-sans">
                         <span>Actor:</span>

@@ -11,7 +11,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { dispatchNotifications } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import { resolveGradingFormula } from '../../lib/gradingMath';
-import { computeStudentGwa, getRiskDisplay, HONORS, resolveOfficialGwa } from '../../lib/academicPolicy';
+import { computeStudentGwa, getRiskDisplay, HONORS, resolveOfficialGradeState } from '../../lib/academicPolicy';
 import {
   computeTentativeGrade,
   computeUnifiedRisk
@@ -435,14 +435,18 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
 
           // Posted grades
           advancedGrades.forEach(g => {
-            const val = resolveOfficialGwa(g).gwa;
+            const official = resolveOfficialGradeState(g);
+            const val = official.gwa;
             if (!isNaN(val)) {
               subjectGradeList.push({
                 subjectCode: g.class_records?.subjects?.code || 'SUBJ',
                 subjectName: g.class_records?.subjects?.name || 'Subject',
                 val,
-                isTentative: false
+                isTentative: false,
+                isFailing: official.isFailing,
+                remarks: official.displayRemark
               });
+              if (official.dbRemark === 'incomplete' || official.dbRemark === 'dropped') containsTentative = true;
             }
           });
 
@@ -475,7 +479,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
 
           const avgGwa = computeStudentGwa(subjectGradeList.map(item => item.val)).gwa;
 
-          const failingItems = subjectGradeList.filter(item => item.val > 3.00);
+          const failingItems = subjectGradeList.filter(item => item.isFailing ?? item.val > 3.00);
           const failingCount = failingItems.length;
 
           // Unified Risk Assessment via centralized ASPIRE 7-Rule Matrix (single source of truth)

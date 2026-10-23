@@ -24,6 +24,7 @@ import {
 } from '../../lib/gradeMilestones';
 import { scoreOrNull } from '../../lib/evaluationTracking';
 import { loadStudentRunningGrades } from '../../lib/studentRunningGrade';
+import { toDisplayRemark } from '../../lib/academicPolicy';
 
 export default function MyGradesDetail() {
   const navigate = useNavigate();
@@ -366,9 +367,7 @@ export default function MyGradesDetail() {
 
         let remarks = 'Pending';
         if (postedSg) {
-          remarks = postedSg.remarks
-            ? postedSg.remarks.charAt(0).toUpperCase() + postedSg.remarks.slice(1)
-            : (running?.gwa !== null && running?.gwa <= 3 ? 'Passed' : 'Failed');
+          remarks = toDisplayRemark(postedSg.remarks);
         } else if (running?.gwa != null) {
           remarks = 'Tentative';
         }

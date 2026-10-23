@@ -164,8 +164,8 @@ export default function RemarkOverrideRequests() {
 
       // 4. Audit log
       await logActivity(
-        'Remark Override Approved',
-        `Dean approved remark override for student ${req.studentName} (${req.currentRemark} → ${req.requestedRemark}) in ${req.subjectName}`,
+        'Approved SG Correction Request',
+        `Dean approved the SG correction request for student ${req.studentName} (${req.currentRemark} → ${req.requestedRemark}) in ${req.subjectName}`,
         actorName
       );
 
@@ -200,8 +200,8 @@ export default function RemarkOverrideRequests() {
 
       // 3. Audit log
       await logActivity(
-        'Remark Override Rejected',
-        `Dean rejected remark override for student ${req.studentName} (${req.currentRemark} → ${req.requestedRemark}) in ${req.subjectName}. Reason: ${dNote || 'None'}`,
+        'Rejected SG Correction Request',
+        `Dean rejected the SG correction request for student ${req.studentName} (${req.currentRemark} → ${req.requestedRemark}) in ${req.subjectName}. Reason: ${dNote || 'None'}`,
         actorName
       );
 
@@ -270,7 +270,7 @@ export default function RemarkOverrideRequests() {
             <p className="text-xs text-blue-600 mt-0.5">
               Faculty must submit the exact proposed SG percentage, effective GWA, academic remark, reason, and evidence reference.
               Approval grants one revision but does not change the official SG.
-              The row changes and re-locks only after the assigned faculty reposts the approved correction.
+              The row stays locked. Approval authorizes one audited server-side correction transaction by the assigned faculty.
             </p>
           </div>
         </div>
@@ -537,7 +537,7 @@ export default function RemarkOverrideRequests() {
                               : 'bg-rose-50 border-rose-200 text-rose-700'
                         )}>
                           {req.status === 'approved'
-                            ? <><Unlock className="h-3.5 w-3.5" /> Revision approved; official SG is unchanged until faculty reposts — {formatDate(req.resolvedAt)}</>
+                            ? <><Unlock className="h-3.5 w-3.5" /> One correction transaction approved; official SG remains locked until faculty applies it — {formatDate(req.resolvedAt)}</>
                             : req.status === 'applied'
                               ? <><CheckCircle2 className="h-3.5 w-3.5" /> Corrected SG applied and relocked — {formatDate(req.appliedAt)}</>
                               : <><Lock className="h-3.5 w-3.5" /> Request {req.status} — {formatDate(req.resolvedAt)}{req.deanNote ? ` · "${req.deanNote}"` : ''}</>

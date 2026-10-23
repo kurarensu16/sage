@@ -49,6 +49,7 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 |---|---|---|
 | [audits/THESIS_AUDIT_2026-10-10.md](02-thesis/audits/THESIS_AUDIT_2026-10-10.md) | Current | Latest code-vs-Chapters 1–2 audit and action checklist. |
 | [figures/](02-thesis/figures/) | Current | Sources for the 2026-10-10 thesis figures, including the evening revision (2.2, 2.3, 2.5, 2.8, 2.9, 2.11, and the rebuilt 2.14 ERD Layer 2), plus the 2026-10-11 running-GWA revision of 2.2 and 2.8 (Mermaid `.mmd`, `make_figure_2_7.py`, `compose_columns.py`). `render-config/` holds the shared grayscale style. |
+| [figures/USER_INTERFACE_SCREEN_CAPTURE_GUIDE_2026-10-21.docx](02-thesis/figures/USER_INTERFACE_SCREEN_CAPTURE_GUIDE_2026-10-21.docx) | Current | Revised Figure 2.18–2.22 descriptions and the navigation path for each screen capture. |
 | [defense/ASPIRE_GRADING_AND_RISK_RULES_DEFENSE_GUIDE.md](02-thesis/defense/ASPIRE_GRADING_AND_RISK_RULES_DEFENSE_GUIDE.md) | Reference | Defense prep on grading and risk rules. |
 | [defense/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md](02-thesis/defense/CAPSTONE_DEFENSE_TRANSCRIPT_ANALYSIS.md) | Reference | Capstone 1 panel rulings and policy specs. Rule 2.2.1 (no real-time grades for students) is superseded by the running-GWA decision below. |
 | [decisions/COLLEGE_OFFICE_PORTAL_DISCARD_ANALYSIS.md](02-thesis/decisions/COLLEGE_OFFICE_PORTAL_DISCARD_ANALYSIS.md) | Current | Why the Office portal was dropped (4 portals). |
@@ -64,6 +65,8 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 
 | Document | Status | Notes |
 |---|---|---|
+| [audits/GRADE_POSTING_WORKFLOW_MAJOR_AUDIT_2026-10-22.md](03-development/audits/GRADE_POSTING_WORKFLOW_MAJOR_AUDIT_2026-10-22.md) | Current (P0 code complete; live QA pending) | End-to-end audit of score entry, MR/TFR/SG posting, corrections, admin overrides, locks/archive, audit/notifications, reports/exports, RLS, failure recovery, and tests; P0 implementation is linked below, while P1 remains planned. |
+| [audits/SERVER_AUTHORITATIVE_GRADING_MAJOR_AUDIT_2026-10-21.md](03-development/audits/SERVER_AUTHORITATIVE_GRADING_MAJOR_AUDIT_2026-10-21.md) | Current (design audit) | Major Phase 2 architecture and impact audit for server-calculated tentative, MR, TFR, and official SG results; includes database/API/files, rollout, rollback, risks, and approval decisions. |
 | [audits/PHASED_QA_AND_CODEBASE_REMEDIATION_PLAN_2026-10-21.md](03-development/audits/PHASED_QA_AND_CODEBASE_REMEDIATION_PLAN_2026-10-21.md) | Phase 1 code ready | QA defects implemented locally; migration application and live Maritime/IT acceptance QA remain before release. |
 | [audits/ADMIN_SETUP_AUDIT_2026-10-11.md](03-development/audits/ADMIN_SETUP_AUDIT_2026-10-11.md) | Current (fixes planned) | Admin functions: colleges, programs, sections, terms, users, import, classrooms, COG, Grade Override, Activity Logs. QA bug BSIT-1A → ACT-1A, hard-coded colleges, 320 students without home section, cascading deletes; fix plan in 3 batches plus a data repair. |
 | [audits/ASPIRE_CONSULTATION_AUDIT_2026-10-14.md](03-development/audits/ASPIRE_CONSULTATION_AUDIT_2026-10-14.md) | Current (fixes planned) | Read-only audit of the 13 Dean Lim consultation items (ASPIRE-C01–C13) plus a critical-issue sweep: `users` RLS disabled enabling student→admin self-escalation, which chains into an untraceable admin bypass of the SG-correction approval workflow, and an unguarded `class_activities` DELETE that can destroy real student scores. All open decisions resolved 2026-10-14; see the paired implementation plan. |
@@ -73,6 +76,7 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 
 | Document | Status | Notes |
 |---|---|---|
+| [GRADE_POSTING_P0_HARDENING_2026-10-22.md](03-development/implementation-reports/GRADE_POSTING_P0_HARDENING_2026-10-22.md) | Code complete; migrations/live QA pending | Server-authoritative official posting, locked one-use SG corrections, immutable revisions, idempotency, full-roster enforcement, transactional notifications, backend admin validation, and official-remark consumer fixes. |
 | [ACADEMIC_RULES_UNIFICATION_IMPLEMENTATION_REPORT_2026-10-01.md](03-development/implementation-reports/ACADEMIC_RULES_UNIFICATION_IMPLEMENTATION_REPORT_2026-10-01.md) | Reference | Academic rules unification. |
 | [ACADEMIC_RULES_VERIFICATION_RESPONSE_2026-10-01.md](03-development/implementation-reports/ACADEMIC_RULES_VERIFICATION_RESPONSE_2026-10-01.md) | Reference | Verification response to the above. |
 | [ANALYTICS_STRONGEST_ADDITIONS.md](03-development/implementation-reports/ANALYTICS_STRONGEST_ADDITIONS.md) | Reference | Analytics upgrade outcome; its verification items are not yet merged into the system test checklist. |
