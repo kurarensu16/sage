@@ -452,7 +452,8 @@ export async function notifyOverrideRequested({
 
 /**
  * Notify Faculty when Dean approves a correction request. Approval grants
- * revision permission; the student is notified only after faculty reposts.
+ * one student-scoped correction permission; the student is notified only after
+ * faculty applies the revised score row and the server posts the recalculation.
  */
 export async function notifyOverrideApproved({
   facultyId,
@@ -469,7 +470,7 @@ export async function notifyOverrideApproved({
       list.push({
         recipient_id: facultyId,
         type: 'override_approved',
-        message: `Correction Request Approved: Your requested revision for ${studentName} in ${subjectName} was approved by ${actorName}. Authorized result: ${proposedComputedGrade ?? 'unchanged'}% / GWA ${proposedEffectiveGrade ?? 'unchanged'} / ${requestedRemark}. Apply the correction and repost the SG before it becomes official.`
+        message: `Correction Request Approved: ${actorName} authorized one correction transaction for ${studentName} in ${subjectName}. You may now edit that student's score row; the server will recalculate SG, GWA, and status and relock the record when applied. Requested outcome: ${proposedComputedGrade ?? 'current'}% / GWA ${proposedEffectiveGrade ?? 'current'} / ${requestedRemark}.`
       });
     }
     await dispatchNotifications(list);

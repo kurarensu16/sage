@@ -4,11 +4,27 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Search, Clock, Shield, RefreshCw, DownloadCloud } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import {
+  formatAuditActionForDisplay,
+  formatAuditEntityForDisplay,
+  formatAuditMessageForDisplay,
+} from '../../lib/auditLogPresentation';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { buildCsv } from '../../lib/csvExport';
+import { formatPhilippineTimestamp, toPhilippineIsoTimestamp } from '../../lib/dateTime';
 
 const ACTION_BADGE_MAP = {
   'Grade Override':            'bg-rose-50 text-rose-700 border-rose-200',
+  'Applied Administrative Grade Override':'bg-rose-50 text-rose-700 border-rose-200',
+  'Applied Semestral Grade Correction':'bg-blue-50 text-blue-700 border-blue-200',
+  'Submitted SG Correction Request':'bg-amber-50 text-amber-700 border-amber-200',
+  'Approved SG Correction Request':'bg-emerald-50 text-emerald-700 border-emerald-200',
+  'Rejected SG Correction Request':'bg-rose-50 text-rose-700 border-rose-200',
+  'Posted Midterm Rating':     'bg-blue-50 text-blue-700 border-blue-200',
+  'Updated Midterm Rating':    'bg-teal-50 text-teal-700 border-teal-200',
+  'Posted Tentative Final Rating':'bg-blue-50 text-blue-700 border-blue-200',
+  'Updated Tentative Final Rating':'bg-teal-50 text-teal-700 border-teal-200',
+  'Posted Semestral Grade':    'bg-sage-50 text-sage-700 border-sage-200',
   'Score Batch Save':          'bg-teal-50 text-teal-700 border-teal-200',
   'Faculty Reassignment':      'bg-amber-50 text-amber-700 border-amber-200',
   'Classroom Archive':         'bg-slate-100 text-slate-600 border-slate-200',
@@ -58,12 +74,6 @@ const getSourcePresentation = (source) => {
     label: normalizedSource.replaceAll('_', ' '),
     className: 'bg-slate-100 text-slate-600 border-slate-200',
   };
-};
-
-const toStableIsoTimestamp = (value) => {
-  if (!value) return '';
-  const timestamp = new Date(value);
-  return Number.isNaN(timestamp.getTime()) ? String(value) : timestamp.toISOString();
 };
 
 const ITEMS_PER_PAGE = 50;
@@ -187,14 +197,6 @@ export default function AuditLog() {
     return () => window.clearTimeout(timer);
   }, [loadLogs, searchTerm]);
 
-  const formatTimestamp = (isoString) => {
-    if (!isoString) return '';
-    const date = new Date(isoString);
-    return date.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: 'numeric' })
-      + ' • '
-      + date.toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  };
-
   const uniqueActions = summary.actions || [];
   const uniqueSources = summary.sources || [];
   // Kept as aliases for the existing range label below; the rows themselves now
@@ -224,7 +226,7 @@ export default function AuditLog() {
         if (!data || data.length < EXPORT_PAGE_SIZE) break;
       }
 
-      const header = ['Log ID', 'Action', 'Operation', 'Actor', 'Actor ID', 'Role', 'Entity', 'Entity ID', 'Source', 'Message', 'Timestamp'];
+      const header = ['Log ID', 'Action', 'Operation', 'Actor', 'Actor ID', 'Role', 'Entity', 'Entity ID', 'Source', 'Message', 'Timestamp (PHT UTC+8)'];
       const rows = allMatchingLogs.map(l => [
         l.log_id,
         l.action,
@@ -236,7 +238,7 @@ export default function AuditLog() {
         l.entity_id,
         normalizeSource(l.source),
         l.message,
-        toStableIsoTimestamp(l.timestamp),
+        toPhilippineIsoTimestamp(l.timestamp),
       ]);
       const csv = buildCsv([header, ...rows]);
       const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
@@ -385,21 +387,20 @@ export default function AuditLog() {
                   <div className="space-y-1 sm:space-y-1.5 flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs font-bold border ${getActionBadgeColor(log.action)}`}>
-                        {log.action}
+                        {formatAuditActionForDisplay(log.action, log.entity_type, log.message)}
                       </span>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs font-bold border ${getSourcePresentation(log.source).className}`}>
                         {getSourcePresentation(log.source).label}
                       </span>
                       <span className="text-[10px] sm:text-xs font-mono text-slate-400 flex items-center gap-1">
                         <Clock className="h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0" />
-                        {formatTimestamp(log.timestamp)}
+                        {formatPhilippineTimestamp(log.timestamp)}
                       </span>
                     </div>
-                    <p className="text-xs sm:text-sm text-slate-700 leading-snug sm:leading-relaxed font-sans break-words">{log.message}</p>
+                    <p className="text-xs sm:text-sm text-slate-700 leading-snug sm:leading-relaxed font-sans break-words">{formatAuditMessageForDisplay(log.message, log.entity_type)}</p>
                     {(log.entity_type || log.operation) && <p className="text-[10px] font-mono text-slate-500">
-                      {[log.operation, log.entity_type, log.entity_id].filter(Boolean).join(' · ')}
+                      {[log.operation, formatAuditEntityForDisplay(log.entity_type)].filter(Boolean).join(' · ')}
                     </p>}
-                    <p className="text-[10px] font-mono text-slate-400">ID: {log.log_id}</p>
                   </div>
 
                   <div className="md:text-right flex-shrink-0 self-start md:self-center pt-1 md:pt-0 border-t md:border-t-0 border-slate-100 w-full md:w-auto flex items-center justify-between md:block">

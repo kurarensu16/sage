@@ -76,6 +76,27 @@ export default function GradePostingStatus() {
 
       if (deptData) setDepartments(deptData);
 
+      // Active roster totals are part of posting completeness. "One row exists"
+      // is not equivalent to a successfully posted class milestone.
+      const enrollmentData = [];
+      for (let from = 0; ; from += 1000) {
+        const { data: page, error: pageErr } = await supabase
+          .from('enrollments')
+          .select('student_id, section_id, subject_id, status')
+          .order('student_id')
+          .range(from, from + 999);
+        if (pageErr) throw pageErr;
+        enrollmentData.push(...(page || []));
+        if (!page || page.length < 1000) break;
+      }
+      const rosterSets = {};
+      enrollmentData.forEach(enrollment => {
+        if (enrollment.status && enrollment.status !== 'active') return;
+        const key = `${enrollment.section_id}:${enrollment.subject_id}`;
+        if (!rosterSets[key]) rosterSets[key] = new Set();
+        rosterSets[key].add(enrollment.student_id);
+      });
+
       // 3. Fetch posted grades per class, in pages: the API returns at most 1,000 rows
       // per request, and a cut-off list would show posted classes as pending.
       const classIds = (classData || []).map(c => c.class_record_id);
@@ -119,7 +140,8 @@ export default function GradePostingStatus() {
           semester: c.semester || '',
           schoolYear: c.school_year || '',
           termId: c.term_id,
-          status: c.status
+          status: c.status,
+          rosterCount: rosterSets[`${c.section?.section_id}:${c.subject?.subject_id}`]?.size || 0
         };
       });
 
@@ -138,7 +160,18 @@ export default function GradePostingStatus() {
   const getStatusBadge = (cls, milestone) => {
     const postedList = (postedGradesMap[cls.id] || []).filter(row => getCanonicalGradePeriod(row) === milestone);
 
-    if (postedList.length > 0) {
+    if (postedList.length > 0 && postedList.length !== cls.rosterCount) {
+      return (
+        <div className="flex flex-col items-center gap-1 justify-center">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+            Partial {postedList.length}/{cls.rosterCount}
+          </span>
+          <span className="text-[10px] font-semibold text-rose-600">Action required</span>
+        </div>
+      );
+    }
+
+    if (postedList.length > 0 && postedList.length === cls.rosterCount) {
       // SG submission label recorded by the database at the first posting.
       let label = null;
       if (milestone === GRADE_MILESTONES.SEMESTRAL_GRADE) {

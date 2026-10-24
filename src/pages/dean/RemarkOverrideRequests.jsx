@@ -4,7 +4,6 @@ import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity } from '../../lib/auditLog';
-import { notifyOverrideApproved, notifyOverrideRejected } from '../../lib/notificationDispatcher';
 import { reviewSgCorrectionRequest } from '../../lib/gradeCorrectionService';
 import {
   Search,
@@ -81,6 +80,7 @@ export default function RemarkOverrideRequests() {
             proposed_effective_grade,
             proposed_remark,
             proposed_score_changes,
+            correction_scope,
             evidence_url,
             applied_by,
             applied_at,
@@ -127,6 +127,7 @@ export default function RemarkOverrideRequests() {
           proposedComputedGrade: r.proposed_computed_grade,
           proposedEffectiveGrade: r.proposed_effective_grade,
           proposedScoreChanges: r.proposed_score_changes || [],
+          correctionScope: r.correction_scope || 'result_only',
           evidenceUrl: r.evidence_url || null,
           appliedAt: r.applied_at,
           finalComputedGrade: r.final_computed_grade,
@@ -164,22 +165,10 @@ export default function RemarkOverrideRequests() {
 
       // 4. Audit log
       await logActivity(
-        'Remark Override Approved',
-        `Dean approved remark override for student ${req.studentName} (${req.currentRemark} → ${req.requestedRemark}) in ${req.subjectName}`,
+        'Approved SG Correction Request',
+        `Dean approved the SG correction request for student ${req.studentName} (${req.currentRemark} → ${req.requestedRemark}) in ${req.subjectName}`,
         actorName
       );
-
-      // Approval notifies faculty only. The student is notified after the
-      // approved correction is actually reposted and becomes official.
-      await notifyOverrideApproved({
-        facultyId: req.facultyId,
-        studentName: req.studentName,
-        subjectName: req.subjectName,
-        requestedRemark: req.requestedRemark,
-        proposedComputedGrade: req.proposedComputedGrade,
-        proposedEffectiveGrade: req.proposedEffectiveGrade,
-        actorName
-      });
 
       setRefreshKey(k => k + 1);
     } catch (err) {
@@ -200,19 +189,10 @@ export default function RemarkOverrideRequests() {
 
       // 3. Audit log
       await logActivity(
-        'Remark Override Rejected',
-        `Dean rejected remark override for student ${req.studentName} (${req.currentRemark} → ${req.requestedRemark}) in ${req.subjectName}. Reason: ${dNote || 'None'}`,
+        'Rejected SG Correction Request',
+        `Dean rejected the SG correction request for student ${req.studentName} (${req.currentRemark} → ${req.requestedRemark}) in ${req.subjectName}. Reason: ${dNote || 'None'}`,
         actorName
       );
-
-      // 4. Notify Faculty
-      await notifyOverrideRejected({
-        facultyId: req.facultyId,
-        studentName: req.studentName,
-        subjectName: req.subjectName,
-        reason: dNote,
-        actorName
-      });
 
       setRefreshKey(k => k + 1);
     } catch (err) {
@@ -268,9 +248,8 @@ export default function RemarkOverrideRequests() {
           <div>
             <p className="font-semibold">About SG Correction Requests</p>
             <p className="text-xs text-blue-600 mt-0.5">
-              Faculty must submit the exact proposed SG percentage, effective GWA, academic remark, reason, and evidence reference.
-              Approval grants one revision but does not change the official SG.
-              The row changes and re-locks only after the assigned faculty reposts the approved correction.
+              Faculty requests one student-scoped correction with a reason and optional evidence.
+              Approval does not unlock or change the official SG immediately. It authorizes the assigned faculty to edit that student's full score row once; the server then recalculates, audits, and relocks the record atomically.
             </p>
           </div>
         </div>
@@ -466,11 +445,11 @@ export default function RemarkOverrideRequests() {
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                         {[
                           { label: 'Original SG %', value: req.computedGrade, color: 'text-slate-700' },
-                          { label: 'Proposed SG %', value: req.proposedComputedGrade != null ? Number(req.proposedComputedGrade).toFixed(2) : req.computedGrade, color: 'text-violet-700' },
+                          { label: req.status === 'applied' ? 'Final SG %' : req.correctionScope === 'student_score_row' ? 'Request-Time SG %' : 'Proposed SG %', value: req.status === 'applied' && req.finalComputedGrade != null ? Number(req.finalComputedGrade).toFixed(2) : req.proposedComputedGrade != null ? Number(req.proposedComputedGrade).toFixed(2) : req.computedGrade, color: 'text-violet-700' },
                           { label: 'Original GWA', value: req.effectiveGrade, color: parseFloat(req.effectiveGrade) <= 3.00 ? 'text-emerald-600' : 'text-rose-600' },
-                          { label: 'Proposed GWA', value: req.proposedEffectiveGrade != null ? Number(req.proposedEffectiveGrade).toFixed(2) : req.effectiveGrade, color: 'text-violet-700' },
+                          { label: req.status === 'applied' ? 'Final GWA' : req.correctionScope === 'student_score_row' ? 'Request-Time GWA' : 'Proposed GWA', value: req.status === 'applied' && req.finalEffectiveGrade != null ? Number(req.finalEffectiveGrade).toFixed(2) : req.proposedEffectiveGrade != null ? Number(req.proposedEffectiveGrade).toFixed(2) : req.effectiveGrade, color: 'text-violet-700' },
                           { label: 'From Remark', value: req.currentRemark, color: '' },
-                          { label: 'To Remark', value: req.requestedRemark, color: '' },
+                          { label: req.status === 'applied' ? 'Final Remark' : 'To Remark', value: req.status === 'applied' ? req.finalRemark : req.requestedRemark, color: '' },
                         ].map(item => (
                           <div key={item.label} className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
                             <p className="text-micro font-bold text-slate-400 uppercase tracking-wider">{item.label}</p>
@@ -479,12 +458,32 @@ export default function RemarkOverrideRequests() {
                         ))}
                       </div>
 
+                      <div className="rounded-lg border border-violet-200 bg-violet-50/60 px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-violet-700">
+                          Authorized correction scope
+                        </p>
+                        {req.proposedScoreChanges.length > 0 ? (
+                          <div className="mt-2 space-y-1.5">
+                            {req.proposedScoreChanges.map((change, index) => (
+                              <div key={`${change.target_type}-${change.activity_id || `${change.term}-${change.field}`}-${index}`} className="flex items-center justify-between gap-3 rounded-lg border border-violet-100 bg-white px-3 py-2 text-xs">
+                                <span className="font-semibold text-slate-700">{change.term} · {change.label || change.field || 'Score item'}</span>
+                                <span className="font-mono font-bold text-violet-700">{change.original_score ?? 'Not encoded'} → {change.proposed_score} / {change.max_score}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-1 text-xs text-violet-700">
+                            One correction transaction for this student. If approved, faculty may edit the complete score row; every exact before/after value will be frozen into the audit record when applied.
+                          </p>
+                        )}
+                      </div>
+
                       {/* Grace pass warning */}
                       {isGracePass && (
                         <div className="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-lg px-4 py-2.5">
                           <AlertTriangle className="h-3.5 w-3.5 text-violet-500 flex-shrink-0 mt-0.5" />
                           <p className="text-xs text-violet-700">
-                            <strong>Grace Pass detected:</strong> The proposed SG is {req.proposedComputedGrade ?? req.computedGrade}, but the faculty is requesting <strong>Passed</strong> with an effective grade of 3.00. Please verify the complete exact proposal.
+                            <strong>Grace Pass requested:</strong> The request-time SG is {req.proposedComputedGrade ?? req.computedGrade}, but the faculty is requesting <strong>Passed</strong> with an effective grade of 3.00. Exact score changes will be server-validated and frozen when the approved correction is applied.
                           </p>
                         </div>
                       )}
@@ -512,7 +511,7 @@ export default function RemarkOverrideRequests() {
                               className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors outline-none disabled:opacity-60"
                             >
                               {isActioning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                              Approve Revision
+                              Approve Student Correction
                             </button>
                             <button
                               onClick={() => handleReject(req)}
@@ -537,7 +536,7 @@ export default function RemarkOverrideRequests() {
                               : 'bg-rose-50 border-rose-200 text-rose-700'
                         )}>
                           {req.status === 'approved'
-                            ? <><Unlock className="h-3.5 w-3.5" /> Revision approved; official SG is unchanged until faculty reposts — {formatDate(req.resolvedAt)}</>
+                            ? <><Unlock className="h-3.5 w-3.5" /> One student-scoped correction approved; official SG remains locked until faculty edits and applies the row — {formatDate(req.resolvedAt)}</>
                             : req.status === 'applied'
                               ? <><CheckCircle2 className="h-3.5 w-3.5" /> Corrected SG applied and relocked — {formatDate(req.appliedAt)}</>
                               : <><Lock className="h-3.5 w-3.5" /> Request {req.status} — {formatDate(req.resolvedAt)}{req.deanNote ? ` · "${req.deanNote}"` : ''}</>

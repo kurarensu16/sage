@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   Bell, 
@@ -23,6 +24,7 @@ import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { CardListSkeleton } from '../../components/common/Skeleton';
 
 export default function Notifications() {
+  const navigate = useNavigate();
   const { user, refreshUnreadCount } = useAuth();
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('All');
@@ -75,7 +77,7 @@ export default function Notifications() {
             iconColor = 'text-blue-600 bg-blue-50 border-blue-200';
           } else if (n.type === 'override_approved' || n.type === 'override_rejected') {
             type = 'override';
-            title = n.type === 'override_approved' ? 'Override Request Approved' : 'Override Request Rejected';
+            title = n.type === 'override_approved' ? 'SG Correction Approved' : 'SG Correction Rejected';
             icon = ShieldCheck;
             iconColor = n.type === 'override_approved' 
               ? 'text-emerald-600 bg-emerald-50 border-emerald-200' 
@@ -109,13 +111,19 @@ export default function Notifications() {
 
           return {
             id: n.notification_id,
+            notificationType: n.type,
             type,
             title,
             message: n.message,
             time: formatRelativeTime(n.created_at),
             read: n.is_read,
             icon,
-            iconColor
+            iconColor,
+            link: n.link,
+            payload: n.payload || {},
+            actionLink: n.type === 'override_approved' && n.payload?.class_record_id
+              ? `/faculty/postedgradesview?id=${encodeURIComponent(n.payload.class_record_id)}${n.payload?.request_id ? `&request=${encodeURIComponent(n.payload.request_id)}` : ''}`
+              : n.link || null
           };
         });
 
@@ -158,6 +166,15 @@ export default function Notifications() {
   };
 
   const handleCardClick = (noti) => {
+    if (!noti.read) {
+      markAsRead(noti.id);
+    }
+
+    if (noti.actionLink) {
+      navigate(noti.actionLink);
+      return;
+    }
+
     setExpandedIds(prev => {
       const next = new Set(prev);
       if (next.has(noti.id)) {
@@ -168,9 +185,6 @@ export default function Notifications() {
       return next;
     });
 
-    if (!noti.read) {
-      markAsRead(noti.id);
-    }
   };
 
   const toggleSelect = (id, e) => {

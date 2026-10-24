@@ -84,6 +84,36 @@ export const toDbRemark = (displayRemark) => DISPLAY_TO_DB[String(displayRemark 
 // Never collapses an unrecognized/legacy value to "Failed" silently — surfaces it as-is instead.
 export const toDisplayRemark = (dbRemark) => DB_TO_DISPLAY[String(dbRemark || '').trim().toLowerCase()] ?? (dbRemark || REMARKS.IN_PROGRESS);
 
+export const isOfficialPassingRemark = (remark) => (
+  String(remark || '').trim().toLowerCase() === DB_REMARKS.PASSED
+);
+
+export const isOfficialFailingRemark = (remark) => (
+  [DB_REMARKS.FAILED, DB_REMARKS.FDA].includes(String(remark || '').trim().toLowerCase())
+);
+
+/**
+ * Resolves the official academic outcome without deriving over an explicit
+ * stored remark. INC, FDA, and Dropped must survive every consumer unchanged.
+ */
+export function resolveOfficialGradeState(row = {}) {
+  const rawRemark = String(row.remarks ?? row.remark ?? '').trim().toLowerCase();
+  const { gwa, rating, source } = resolveOfficialGwa(row);
+  const dbRemark = Object.values(DB_REMARKS).includes(rawRemark)
+    ? rawRemark
+    : (gwa === null ? null : (gwa <= GRADE_SCALE.passingCutoff ? DB_REMARKS.PASSED : DB_REMARKS.FAILED));
+  return {
+    gwa,
+    rating,
+    source,
+    dbRemark,
+    displayRemark: toDisplayRemark(dbRemark),
+    isPassing: isOfficialPassingRemark(dbRemark),
+    isFailing: isOfficialFailingRemark(dbRemark),
+    isExceptional: [DB_REMARKS.INCOMPLETE, DB_REMARKS.FDA, DB_REMARKS.DROPPED].includes(dbRemark)
+  };
+}
+
 // Passed and Failed are derived from the current official GWA. They must not be
 // reloaded as manual overrides after a score correction, or a formerly failing
 // student can remain marked Failed after earning a passing SG. These exceptional

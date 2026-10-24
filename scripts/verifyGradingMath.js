@@ -24,6 +24,7 @@ import {
   GRADE_MILESTONES,
   collectPostedMilestoneCoverage,
   findMostAdvancedPostedGrade,
+  findPostedTermGrade,
   getCanonicalGradePeriod,
   getMilestonePostingPresentation,
   getPostedMilestoneCoverage,
@@ -56,6 +57,26 @@ assert.deepEqual(
   ['Midterm', 'Midterm Rating'],
   'summer milestone locks must not introduce regular-semester periods'
 );
+
+const periodDisplayRows = [
+  { grade_period: 'midterm_rating', computed_grade: 63 },
+  { grade_period: 'tentative_final_rating', computed_grade: 79 },
+  { grade_period: 'semestral_grade', computed_grade: 81 },
+  { grade_period: 'prelim', computed_grade: 74 },
+  { grade_period: 'semi_final', computed_grade: 85 }
+];
+assert.equal(
+  findPostedTermGrade(periodDisplayRows, 'Midterm'),
+  null,
+  'a posted MR must not replace the individual Midterm-period calculation'
+);
+assert.equal(
+  findPostedTermGrade(periodDisplayRows, 'Final'),
+  null,
+  'a posted TFR or SG must not replace the individual Final-period calculation'
+);
+assert.equal(findPostedTermGrade(periodDisplayRows, 'Prelim')?.computed_grade, 74);
+assert.equal(findPostedTermGrade(periodDisplayRows, 'Semi-Final')?.computed_grade, 85);
 
 const blankReview = collectBlankScoreReview({
   targetMilestone: 'midterm',
@@ -244,6 +265,19 @@ const summer = calculateSemestralGrade({
   isSummer: true
 });
 assert.equal(summer.sg, 85, 'Summer calculation must ignore stray Prelim and Semi-Final values');
+
+const correctedMilestoneExample = calculateSemestralGrade({
+  prelim: 74,
+  midterm: 71,
+  semiFinal: 85,
+  final: 90
+});
+assert.deepEqual(
+  { mr: correctedMilestoneExample.mr, tfr: correctedMilestoneExample.tfr, sg: correctedMilestoneExample.sg },
+  { mr: 73, tfr: 88, sg: 81 },
+  'A corrected score row must cascade coherently through MR, TFR, and SG'
+);
+assert.equal(toGwaOrNull(correctedMilestoneExample.sg), 2.5, 'Corrected SG 81 must transmute to 2.50');
 
 const tentativeHealth = computeTentativeGradeDetails({
   Prelim: { act1: 20, char_rating: 100, exam: 100 },

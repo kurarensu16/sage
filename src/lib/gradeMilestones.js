@@ -80,6 +80,22 @@ export function getMilestonePostingPresentation(targetMilestone, { isSummer = fa
   };
 }
 
+export function getGradePostingAuditAction({ targetMilestone, isFirstPost, changedCount = 0 }) {
+  const milestoneName = targetMilestone === 'midterm'
+    ? 'Midterm Rating'
+    : targetMilestone === 'tfr'
+      ? 'Tentative Final Rating'
+      : 'Semestral Grade';
+
+  if (isFirstPost) return `Posted ${milestoneName}`;
+  if (Number(changedCount) > 0) {
+    return targetMilestone === 'semestral'
+      ? 'Applied Semestral Grade Correction'
+      : `Updated ${milestoneName}`;
+  }
+  return `Reposted ${milestoneName} (No Change)`;
+}
+
 export function getUpdatedMilestoneLocks(existingLocks, targetMilestone, { isSummer = false } = {}) {
   const coveredTerms = getRequiredTermsForPostingTarget(targetMilestone, { isSummer });
   const { milestoneLock } = getMilestonePostingPresentation(targetMilestone, { isSummer });
@@ -155,6 +171,27 @@ export function collectPostedMilestoneCoverage(rows = [], { lockedOnly = false }
 export function findPostedMilestone(rows, milestone) {
   const exact = (rows || []).find(row => String(row?.grade_period || '').toLowerCase() === milestone);
   return exact || (rows || []).find(row => isGradeMilestone(row, milestone)) || null;
+}
+
+/**
+ * Finds only a posted row that represents one individual academic period.
+ * Aggregate MR, TFR, and SG records must never replace the Midterm or Final
+ * period calculation in a score breakdown.
+ *
+ * The current posting workflow stores aggregate milestones only. Prelim and
+ * Semi-Final are retained here for compatibility with older posted rows whose
+ * identities are unambiguous. Legacy `midterm` and `final` identities are
+ * aggregate aliases, so they are intentionally excluded.
+ */
+export function findPostedTermGrade(rows, term) {
+  const gradePeriod = term === 'Prelim'
+    ? 'prelim'
+    : term === 'Semi-Final' ? 'semi_final' : null;
+  if (!gradePeriod) return null;
+
+  return (rows || []).find(row => (
+    String(row?.grade_period || '').trim().toLowerCase() === gradePeriod
+  )) || null;
 }
 
 export function findMostAdvancedPostedGrade(rows) {

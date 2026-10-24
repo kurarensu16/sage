@@ -173,19 +173,25 @@ Seed and step-by-step stages: `docs/05-operations/database/TEST_YEAR_SEED_2026-2
 - While a request is pending or approved, every screen must still show the original SG.
 
 - [ ] SG-01 Post an SG; it is locked.
-- [ ] SG-02 Submit a correction request with the exact proposed values plus a reason or evidence.
+- [ ] SG-02 Submit a student-scoped correction request with an intended outcome plus a reason or evidence.
 - [ ] SG-03 While pending, the student still sees the original SG.
 - [ ] SG-04 Reject one request; no academic value changes, and the SG stays locked.
 - [ ] SG-05 Approve one request; approval alone does not change the SG.
-- [ ] SG-06 Only the affected student's row in the named class becomes editable. Attempts against another student, another class, or a second use are rejected.
-- [ ] SG-07 Apply corrected scores or remarks through the official grading engine.
-- [ ] SG-08 Review the before-and-after values.
-- [ ] SG-09 **(2026-10-10)** Reposting an SG that **differs** from the approved proposal is rejected ("The corrected percentage differs from the approved proposal").
-- [ ] SG-10 Repost the matching SG; the row is locked again.
+- [ ] SG-06 Only the affected student's row opens in the dedicated correction editor. Attempts against another student, another class, ordinary score autosave, or a second use are rejected.
+- [ ] SG-07 Change one activity, one exam, and multiple values across terms; each original/proposed value and maximum is shown and validated.
+- [ ] SG-08 Recalculate on the server and review MR/TFR/SG/GWA/status before application.
+- [ ] SG-09 Change a score after preview or submit a stale original value; application is rejected and no partial score or official-grade change remains.
+- [ ] SG-10 Apply the previewed correction; exact score deltas and the official SG revision commit together and the row remains locked.
+- [ ] SG-10a The same transaction revises the affected student's official MR and TFR from the corrected score basis before SG is finalized. For the regression fixture Prelim 74, Midterm 71, Semi-Final 85, Final 90, verify MR 73, TFR 88, SG 81, and GWA 2.50.
+- [ ] SG-10b The individual Midterm Period Evaluation remains 5.00 at 71%, while its status reads **Included in corrected official SG**. The Semestral Summary labels MR and TFR **Corrected**.
+- [ ] SG-10c Force a failure during the final SG update; the score edits and MR/TFR revisions roll back with it and the request remains approved and reusable.
 - [ ] SG-11 The request changes from `approved` to `applied`, and a `grade_correction_history` row is written and cannot be edited.
+- [ ] SG-11a The immutable revision rows for MR, TFR, and SG reference the same correction request. Retrying the same operation ID produces no additional revision or notification.
 - [ ] SG-12 Student, Faculty, Dean, Admin, reports, and exports show the corrected value.
+- [ ] SG-12a The Dean-approval notification opens the exact class and approved correction editor; returning to an already-open page or refocusing the tab refreshes the correction state.
 - [ ] SG-13 Current GWA and risk recalculate.
 - [ ] SG-14 Historical risk-evaluation snapshots stay unchanged.
+- [ ] SG-15 Admin Override replaces SG percentage, effective GWA, and status together; inconsistent combinations and no-op replacements are rejected.
 
 ### A4. Student privacy
 

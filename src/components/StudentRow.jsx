@@ -7,6 +7,8 @@ import {
   calculateStoredTermRating,
   resolveGradingFormula
 } from '../lib/gradingMath';
+import { toDisplayRemark } from '../lib/academicPolicy';
+import { hasActiveAdminGradeOverride } from '../lib/sgCorrectionPosting';
 import { calculateAcademicRisk } from '../lib/riskEngine';
 import { isTermCoveredByPostedMilestone } from '../lib/gradeMilestones';
 import RiskTierBadge from './faculty/RiskTierBadge';
@@ -65,14 +67,26 @@ export default function StudentRow({
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
   const [showNoteInput, setShowNoteInput] = useState(Boolean(scores.remarksNote));
   const debounceRef = useRef(null);
-  const isFirstRender = useRef(true);
+  const editVersionRef = useRef(scores.pendingSync === true ? 1 : 0);
+  const savedVersionRef = useRef(0);
   const lastValidScoresRef = useRef(scores);
   const protectedEmptyCellsRef = useRef(new Set());
+  const isLocked = readOnly || studentLocked === true;
 
   // Auto-save effect
   useEffect(() => {
-    if (isFirstRender.current) { isFirstRender.current = false; return; }
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (isLocked) {
+      // Once SG exists, any browser draft is obsolete. The database remains the
+      // source of truth and no direct score-table write may leave this row.
+      savedVersionRef.current = editVersionRef.current;
+      setSaveStatus('idle');
+      onSaveStatusChange?.('idle');
+      return;
+    }
+    if (editVersionRef.current === savedVersionRef.current) return;
+
+    const versionBeingSaved = editVersionRef.current;
 
     debounceRef.current = setTimeout(async () => {
       // A posted term may be corrected with another numeric value, but clearing
@@ -202,6 +216,7 @@ export default function StudentRow({
         }
 
         setSaveStatus('saved');
+        savedVersionRef.current = Math.max(savedVersionRef.current, versionBeingSaved);
         lastValidScoresRef.current = scores;
         onSaveStatusChange?.('saved');
       } catch (err) {
@@ -210,9 +225,12 @@ export default function StudentRow({
         onSaveStatusChange?.('idle');
       }
     }, 1200);
-  }, [scores]);
+    return () => clearTimeout(debounceRef.current);
+  }, [scores, isLocked]);
 
   const handleCellChange = (term, key, val) => {
+    if (isLocked) return;
+    editVersionRef.current += 1;
     const cellId = `${term}:${key}`;
     const protectsPostedValue = isTermCoveredByPostedMilestone(term, postedMilestones);
 
@@ -327,9 +345,23 @@ export default function StudentRow({
 
   const rawGrade = semestralCalc.sg !== null ? semestralCalc.gwa : '—';
   const autoRemarks = isFDA ? 'FDA' : (semestralCalc.sg !== null ? (parseFloat(rawGrade) <= 3.00 ? 'Passed' : 'Failed') : '—');
-  const remarks = isFDA ? 'FDA' : (scores.customRemarks || autoRemarks);
+  // Passed/Failed and FDA are authoritative calculated outcomes. Only academic
+  // standings that cannot be inferred from scores remain explicit faculty input.
+  const exceptionalRemark = ['INC', 'Dropped'].includes(scores.customRemarks)
+    ? scores.customRemarks
+    : '';
+  const scoreDerivedRemarks = isFDA ? 'FDA' : (exceptionalRemark || autoRemarks);
+  const officialAdminOverride = hasActiveAdminGradeOverride(student?.postedSemestralGrade)
+    ? student.postedSemestralGrade
+    : null;
+  const remarks = officialAdminOverride
+    ? toDisplayRemark(officialAdminOverride.remarks)
+    : scoreDerivedRemarks;
 
   const grade = (() => {
+    if (officialAdminOverride?.effective_grade !== null && officialAdminOverride?.effective_grade !== undefined) {
+      return Number(officialAdminOverride.effective_grade).toFixed(2);
+    }
     if (remarks === 'FDA') return '5.00';
     if (remarks === 'INC') return rawGrade;
     if (remarks === 'Passed' && parseFloat(rawGrade) > 3.00) return '3.00';
@@ -348,7 +380,6 @@ export default function StudentRow({
 
   const statusInfo = getStatus(sg);
 
-  const isLocked = readOnly || (studentLocked !== undefined ? studentLocked : false);
   const isPrelimCellLocked = isLocked;
   const isMidtermCellLocked = isLocked;
   const isSemiFinalCellLocked = isLocked;
@@ -561,7 +592,7 @@ export default function StudentRow({
 
       {(viewMode === 'All' || viewMode === 'Final' || viewMode === 'Summary') && (
         <td className="px-4 py-3 border-r border-slate-200 bg-emerald-100/30 w-36 text-center font-bold text-xs">
-          {readOnly ? (
+          {isLocked ? (
             <span className={cn(
               "px-2 py-0.5 rounded border text-[10px] font-bold shadow-sm",
               remarks === 'Passed' && "text-emerald-700 border-emerald-300 bg-emerald-50",
@@ -573,26 +604,37 @@ export default function StudentRow({
             <div className="flex flex-col gap-1 items-center">
               <select
                 value={remarks}
-                disabled={isFDA}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setScores(prev => ({ ...prev, customRemarks: val }));
+                 disabled={isFDA || Boolean(officialAdminOverride)}
+                 onChange={(e) => {
+                   const val = e.target.value;
+                   editVersionRef.current += 1;
+                   setScores(prev => ({ ...prev, customRemarks: val }));
                   setShowNoteInput(val !== autoRemarks);
                   if (val === autoRemarks) setScores(prev => ({ ...prev, remarksNote: '' }));
                 }}
                 className={cn(
                   "appearance-none border px-2 py-1 rounded text-[10px] font-extrabold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all w-full text-center",
-                  isFDA
+                  isFDA || officialAdminOverride
                     ? "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed"
                     : "bg-white border-slate-200 hover:border-sage-300 text-slate-700 cursor-pointer"
                 )}
               >
-                <option value="Passed">Passed</option>
-                <option value="Failed">Failed</option>
+                {officialAdminOverride && remarks !== autoRemarks && (
+                  <option value={remarks}>{remarks} (Official admin)</option>
+                )}
+                <option value={autoRemarks}>{autoRemarks} (Calculated)</option>
                 <option value="INC">INC</option>
-                <option value="FDA">FDA (Advisory)</option>
                 <option value="Dropped">Dropped</option>
               </select>
+
+              {officialAdminOverride && (
+                <span
+                  className="block text-micro font-bold text-sage-700 bg-sage-50 border border-sage-200 rounded px-1 py-0.5 text-center"
+                  title={`Official Admin Grade Override. Score-derived result: ${rawGrade} / ${scoreDerivedRemarks}.`}
+                >
+                  Official admin override
+                </span>
+              )}
 
               {remarks === 'FDA' && (
                 <span className="block text-micro font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 mt-0.5 text-center" title="FDA Recommendation Alert.">
@@ -600,12 +642,15 @@ export default function StudentRow({
                 </span>
               )}
 
-              {showNoteInput && (
+              {showNoteInput && !officialAdminOverride && (
                 <div className="w-full mt-0.5 relative group">
-                  <textarea
-                    value={scores.remarksNote || ''}
-                    onChange={(e) => setScores(prev => ({ ...prev, remarksNote: e.target.value }))}
-                    placeholder="Reason for override…"
+                   <textarea
+                     value={scores.remarksNote || ''}
+                     onChange={(e) => {
+                       editVersionRef.current += 1;
+                       setScores(prev => ({ ...prev, remarksNote: e.target.value }));
+                     }}
+                    placeholder="Reason required for exceptional remark…"
                     rows={2}
                     className="w-full text-micro px-2 py-1 rounded border border-amber-300 bg-amber-50 text-amber-900 placeholder-amber-400 focus:ring-1 focus:ring-amber-400 focus:border-amber-400 outline-none resize-none transition-all font-normal"
                   />

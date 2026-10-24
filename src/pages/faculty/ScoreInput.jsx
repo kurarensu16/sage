@@ -6,7 +6,6 @@ import { ChevronRight, Save, FileSpreadsheet, ChevronDown, Check, Maximize2, Min
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { notifyGradePosted, notifyGradeChanged, notifyOverrideApplied } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import {
   calculateSemestralGrade,
@@ -30,14 +29,17 @@ import {
   GRADE_MILESTONES,
   collectPostedMilestoneCoverage,
   getCanonicalGradePeriod,
+  getGradePostingAuditAction,
   getMilestonePostingPresentation,
   getRequiredTermsForPostingTarget,
   getUpdatedMilestoneLocks,
   isSummerClass,
   isTermCoveredByPostedMilestone
 } from '../../lib/gradeMilestones';
-import { postGradeMilestoneAtomic } from '../../lib/gradePostingService';
+import { postGradeMilestoneAtomic, preflightSgCorrectionPosting } from '../../lib/gradePostingService';
 import { collectBlankScoreReview, prepareReviewedBlankScores } from '../../lib/gradeScoreReview';
+import { fetchApprovedSgCorrections } from '../../lib/gradeCorrectionService';
+import { planSgCorrectionPosting, requireAuthorizedSgCorrectionPlan } from '../../lib/sgCorrectionPosting';
 
 const ARCHIVED_NOTICE = 'This class is archived (its SG is posted and its term has ended), so it is view only. To change an official SG, submit an SG correction request for the Dean to approve.';
 
@@ -745,7 +747,9 @@ export default function ScoreInput() {
           if (canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE) {
             scoresByStudent[row.student_id].customRemarks = getPersistentRemarkOverride(row.remarks);
             scoresByStudent[row.student_id].remarksNote = row.remarks_note || '';
-            locksMap[row.student_id] = row.is_locked;
+            // The existence of an official SG is the lock boundary. Do not
+            // trust a stale legacy is_locked=false flag to reopen score input.
+            locksMap[row.student_id] = true;
             postedSemestralGrades[row.student_id] = row;
           }
 
@@ -765,6 +769,7 @@ export default function ScoreInput() {
           const existingDraft = localStorage.getItem(STORAGE_KEY);
           
           const dbData = scoresByStudent[stud.id] || {};
+          const hasOfficialSg = locksMap[stud.id] === true;
           let draftPayload = {};
           let hasLocalDraft = false;
           if (existingDraft) {
@@ -784,7 +789,9 @@ export default function ScoreInput() {
           // from another device — and silently overwrote them. pendingSync is set when an
           // edit is written locally and cleared once Supabase confirms the write, so it
           // answers "is there unsaved work here?" without consulting any clock.
-          const useDbData = !(hasLocalDraft && draftPayload.pendingSync === true);
+          // An official SG permanently closes the score basis. Never let an
+          // older browser draft outrank the server after that boundary.
+          const useDbData = hasOfficialSg || !(hasLocalDraft && draftPayload.pendingSync === true);
           
           const merged = useDbData ? {
             Prelim: dbData.Prelim || {},
@@ -827,6 +834,10 @@ export default function ScoreInput() {
 
   const handleConfirmMaxItem = async (value) => {
     if (!editingColumn || !classRecordId) return;
+    if (isLocked) {
+      alert('Class score configuration is locked because an official SG already exists.');
+      return;
+    }
 
     const { period, key } = editingColumn;
 
@@ -906,6 +917,7 @@ export default function ScoreInput() {
 
 
   const openConfigModal = (term, slotIndex, act) => {
+    if (isLocked) return;
     setConfigTerm(term);
     setConfigSlotIndex(slotIndex);
     setConfigActivityId(act.id);
@@ -922,8 +934,10 @@ export default function ScoreInput() {
   };
 
   const handleSaveConfig = async () => {
-    if (isArchivedClass) {
-      alert(ARCHIVED_NOTICE);
+    if (isArchivedClass || isLocked) {
+      alert(isLocked
+        ? 'Class score configuration is locked because an official SG already exists.'
+        : ARCHIVED_NOTICE);
       return;
     }
     const trimmedTitle = configTitle.trim();
@@ -1265,8 +1279,10 @@ export default function ScoreInput() {
 
   const handleBulkSave = async () => {
     if (!classRecordId || students.length === 0) return;
-    if (archivedReadOnly) {
-      alert(ARCHIVED_NOTICE);
+    if (archivedReadOnly || isLocked) {
+      alert(isLocked
+        ? 'Scores are locked because an official SG already exists. Use the approved SG correction workflow.'
+        : ARCHIVED_NOTICE);
       return;
     }
 
@@ -1438,7 +1454,7 @@ export default function ScoreInput() {
 
   const handlePostGrades = async (targetMilestone = 'semestral', acceptNullsAsZero = false) => {
     if (!classRecordId || students.length === 0) return;
-    if (archivedReadOnly || (isArchivedClass && targetMilestone !== 'semestral')) {
+    if (isArchivedClass && targetMilestone !== 'semestral') {
       alert(ARCHIVED_NOTICE);
       return;
     }
@@ -1466,7 +1482,7 @@ export default function ScoreInput() {
       // 1. Fetch existing posted grades for this class record and period to match primary keys & detect changes
       const { data: existingPg, error: fetchErr } = await supabase
         .from('posted_grades')
-        .select('posted_grade_id, student_id, computed_grade, effective_grade, remarks')
+        .select('posted_grade_id, student_id, computed_grade, effective_grade, remarks, override_by, override_at, remarks_set_at')
         .eq('class_record_id', classRecordId)
         .eq('grade_period', periodParam);
 
@@ -1474,13 +1490,10 @@ export default function ScoreInput() {
 
       let approvedCorrections = [];
       if (targetMilestone === 'semestral') {
-        const { data: correctionRows, error: correctionErr } = await supabase
-          .from('remark_override_requests')
-          .select('request_id, student_id, decision_by, proposed_remark')
-          .eq('class_record_id', classRecordId)
-          .eq('status', 'approved');
-        if (correctionErr) throw correctionErr;
-        approvedCorrections = correctionRows || [];
+        approvedCorrections = await fetchApprovedSgCorrections(classRecordId);
+        if (isArchivedClass && approvedCorrections.length === 0) {
+          throw new Error('This archived class has no approved SG correction ready to apply.');
+        }
       }
 
       const existingMap = {};
@@ -1497,18 +1510,7 @@ export default function ScoreInput() {
         });
       }
 
-      const postRows = [];
-      const changedStudentIds = [];
-      // Captured per student so the grade_posted/grade_changed dispatch below can thread the
-      // real term rating/GWA into the notification payload (needed for the guardian email's
-      // "grade for that specific term" line) without a second pass or re-querying posted_grades.
-      const studentGradeResults = {};
-      // Per-student remark, captured alongside changedStudentIds, for the grade_changed
-      // dispatch below. gradeChangeRevision is shared by every student in this single post
-      // invocation so a retried/duplicate click dedupes, while a genuinely later relock gets
-      // a fresh revision and notifies again.
-      const changedStudentRemarks = [];
-      const gradeChangeRevision = Date.now();
+      let postRows = [];
       const updatedLockedMilestones = getUpdatedMilestoneLocks(
         postedMilestones,
         targetMilestone,
@@ -1569,6 +1571,11 @@ export default function ScoreInput() {
         const autoRemarks = getRemarks({ gwa: rawGWA, isComplete: finalSG !== null });
         const draftRemarks = draft.customRemarks || autoRemarks;
         const remarksLabel = mapRemarkToDb(draftRemarks);
+        if (targetMilestone === 'semestral'
+          && ['incomplete', 'dropped'].includes(remarksLabel)
+          && !String(draft.remarksNote || '').trim()) {
+          throw new Error(`${stud.name}: a reason is required for the ${draftRemarks} remark.`);
+        }
         
         let computedGWA = rawGWA;
         if (remarksLabel === 'passed' && rawGWA > 3.00) {
@@ -1578,21 +1585,6 @@ export default function ScoreInput() {
         const effectiveGrade = targetMilestone === 'semestral' ? computedGWA : toEffectiveGradeForPosting(computedTermGrade);
         if (effectiveGrade === null) throw new Error(`${stud.name}: no complete rating is available for this milestone.`);
         const dbEffectiveGrade = targetMilestone === 'semestral' ? effectiveGrade : null;
-
-        studentGradeResults[stud.id] = { rating: computedTermGrade, gwa: effectiveGrade };
-
-        const oldRecord = existingMap[stud.id];
-        if (!isFirstPost) {
-          if (
-            !oldRecord ||
-            Number(oldRecord.computed_grade) !== Number(computedTermGrade) ||
-            (oldRecord.effective_grade === null ? null : Number(oldRecord.effective_grade)) !== dbEffectiveGrade ||
-            oldRecord.remarks !== remarksLabel
-          ) {
-            changedStudentIds.push(stud.id);
-            changedStudentRemarks.push({ student_id: stud.id, student_name: stud.name, remark: remarksLabel });
-          }
-        }
 
         const payloadRow = {
           class_record_id: classRecordId,
@@ -1611,7 +1603,7 @@ export default function ScoreInput() {
           grading_formula_snapshot: gradingFormulaSnapshot
         };
 
-        const existingId = oldRecord?.id;
+        const existingId = existingMap[stud.id]?.id;
         payloadRow.posted_grade_id = existingId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
           const r = Math.random() * 16 | 0;
           return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
@@ -1620,7 +1612,30 @@ export default function ScoreInput() {
         postRows.push(payloadRow);
       });
 
-      await postGradeMilestoneAtomic({
+      if (targetMilestone === 'semestral') {
+        const sgPlan = planSgCorrectionPosting({
+          candidateRows: postRows,
+          existingPostedGrades: existingPg || [],
+          approvedRequests: approvedCorrections,
+          studentNames: Object.fromEntries(students.map(student => [student.id, student.name]))
+        });
+        requireAuthorizedSgCorrectionPlan(sgPlan);
+        postRows = sgPlan.postRows;
+
+        const preflight = await preflightSgCorrectionPosting({
+          classRecordId,
+          postedGradeRows: postRows
+        });
+        if (!preflight?.ok) {
+          const namesById = Object.fromEntries(students.map(student => [student.id, student.name]));
+          const names = (preflight?.violations || [])
+            .map(item => namesById[item.student_id] || item.student_id)
+            .join(', ');
+          throw new Error(`Official SG update blocked for: ${names || 'one or more students'}.`);
+        }
+      }
+
+      const postingResult = await postGradeMilestoneAtomic({
         classRecordId,
         gradePeriod: periodParam,
         gradingFormulaSnapshot: classInfo?.grading_formula_snapshot || gradingFormulaSnapshot,
@@ -1645,9 +1660,14 @@ export default function ScoreInput() {
 
       // Log activity
       const actorName = resolveActorName(profile, user);
+      const auditAction = getGradePostingAuditAction({
+        targetMilestone,
+        isFirstPost,
+        changedCount: postingResult?.changed_count,
+      });
       await logActivity(
-        'Grade Posting',
-        `Posted ${termNotificationName} for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
+        auditAction,
+        `${auditAction} for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
         actorName
       );
 
@@ -1657,88 +1677,16 @@ export default function ScoreInput() {
         body: `📊 ${termNotificationName} posted for ${classInfo?.subjects?.code || 'subject'} (${classInfo?.sections?.name || ''}).`
       });
 
-      // Dispatch structured idempotent notifications
-      try {
-        await notifyGradePosted({
-          classRecordId,
-          term: termNotificationName,
-          students: students.map(s => ({
-            student_id: s.id,
-            student_name: s.name,
-            remark: s.remarks || 'Posted',
-            rating: studentGradeResults[s.id]?.rating ?? null,
-            gwa: studentGradeResults[s.id]?.gwa ?? null
-          })),
-          subject: {
-            code: classInfo?.subjects?.code || '',
-            name: classInfo?.subjects?.name || classInfo?.subject_name || ''
-          }
-        });
-      } catch (err) {
-        console.warn('Error dispatching notifyGradePosted:', err);
-      }
-
-      // On first post, notifyGradePosted() above already notified every student in the
-      // roster (idempotent, deduped per class_record_id+term+student) — nothing further
-      // to dispatch here. On a relock, that call no-ops for every student via dedupe, so
-      // students whose grade actually changed get a distinct grade_changed notification
-      // instead (also deduped, per-revision, so a doubled click can't double-notify).
-      if (!isFirstPost && changedStudentRemarks.length > 0) {
-        for (const { student_id, student_name, remark } of changedStudentRemarks) {
-          try {
-            await notifyGradeChanged({
-              classRecordId,
-              term: termNotificationName,
-              studentId: student_id,
-              studentName: student_name,
-              subject: {
-                code: classInfo?.subjects?.code || '',
-                name: classInfo?.subjects?.name || classInfo?.subject_name || ''
-              },
-              remark,
-              rating: studentGradeResults[student_id]?.rating ?? null,
-              gwa: studentGradeResults[student_id]?.gwa ?? null,
-              revision: gradeChangeRevision
-            });
-          } catch (err) {
-            console.warn('Error dispatching notifyGradeChanged:', err);
-          }
-        }
-      }
-
-      const appliedCandidateIds = approvedCorrections
-        .filter(request => changedStudentIds.includes(request.student_id))
-        .map(request => request.request_id);
-      if (appliedCandidateIds.length > 0) {
-        try {
-          const { data: appliedCorrections, error: appliedErr } = await supabase
-            .from('remark_override_requests')
-            .select('request_id, student_id, decision_by, final_remark')
-            .in('request_id', appliedCandidateIds)
-            .eq('status', 'applied');
-          if (appliedErr) throw appliedErr;
-
-          for (const correction of appliedCorrections || []) {
-            const correctedStudent = students.find(student => student.id === correction.student_id);
-            await notifyOverrideApplied({
-              deanId: correction.decision_by,
-              studentName: correctedStudent?.name || 'Student',
-              subjectName: `${classInfo?.subjects?.code || 'Subject'} - ${classInfo?.subjects?.name || ''}`,
-              finalRemark: correction.final_remark || ''
-            });
-          }
-        } catch (err) {
-          console.warn('Error dispatching applied-correction notification:', err);
-        }
-      }
+      // Student, guardian, and Dean notifications are inserted by the same
+      // database transaction as the official grade write.
 
       setShowPostModal(false);
       setPendingPostMilestone(null);
 
       const notifDetailText = isFirstPost 
         ? 'Enrolled students have been notified for consultation.'
-        : changedStudentIds.length > 0 
-          ? `${changedStudentIds.length} student(s) with updated grades have been notified.`
+        : Number(postingResult?.changed_count || 0) > 0
+          ? `${postingResult.changed_count} student(s) with updated grades have been notified.`
           : 'Grades re-posted. No score changes detected for enrolled students.';
 
       setPopupTitle('Grades Posted!');
@@ -1767,7 +1715,7 @@ export default function ScoreInput() {
   if (!classRecordId) {
     return (
       <>
-        <PageHeader title="Log Class Scores" breadcrumb="Faculty Portal" />
+        <PageHeader title="Scorebook" breadcrumb="Faculty Portal" />
         <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 text-left">
           <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-6 shadow-2xs space-y-1">
             <h2 className="text-base sm:text-lg font-bold text-slate-900 font-display">Select a Class to Input Scores</h2>
@@ -1867,11 +1815,13 @@ export default function ScoreInput() {
   const subjectName = classInfo?.subjects?.name || '';
   const sectionName = classInfo?.sections?.name || '';
 
-  // An archived class (SG posted after its term ended) is view only. The one exception
-  // is an SG correction the Dean approved, which unlocks that student's SG row.
+  // Archived score inputs stay read-only. A Dean approval authorizes the
+  // server-side SG transaction without unlocking live score autosave.
   const isArchivedClass = classInfo?.status === 'archived';
-  const archivedReadOnly = isArchivedClass && !Object.values(studentLocks).some(locked => locked === false);
-  const isLocked = lockedMilestones.includes('Semestral Grade') || lockedMilestones.includes('Final');
+  const archivedReadOnly = isArchivedClass;
+  // MR and TFR are revisable progress ratings. Only an official SG freezes the
+  // score-sheet configuration and requires the correction workflow.
+  const isLocked = postedMilestones.includes('Semestral Grade');
   const isPrelimLocked = isLocked;
   const isMidtermLocked = isLocked;
   const isSemiFinalLocked = isLocked;
@@ -1900,15 +1850,15 @@ export default function ScoreInput() {
   return (
     <>
       {/* Header */}
-      <PageHeader title="Log Class Scores" breadcrumb="Faculty Portal">
+      <PageHeader title="Scorebook" breadcrumb="Faculty Portal">
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
           <button 
             onClick={() => navigate(`/faculty/postedgradesview?id=${classRecordId}`)}
             className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
           >
             <Lock className="h-3.5 w-3.5 text-slate-500" />
-            <span className="hidden sm:inline">Preview Grades</span>
-            <span className="sm:hidden">Preview</span>
+            <span className="hidden sm:inline">Posted Grades &amp; Corrections</span>
+            <span className="sm:hidden">Posted</span>
           </button>
           <button
             disabled={students.length === 0}
@@ -1916,11 +1866,11 @@ export default function ScoreInput() {
             className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-sage-200 bg-sage-50 hover:bg-sage-100 text-sage-700 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
           >
             <FileSpreadsheet className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Post Grades</span>
-            <span className="sm:hidden">Post</span>
+            <span className="hidden sm:inline">Review &amp; Post</span>
+            <span className="sm:hidden">Review</span>
           </button>
           <button 
-            disabled={savingScores || students.length === 0}
+            disabled={savingScores || students.length === 0 || isLocked}
             onClick={handleBulkSave}
             className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs disabled:opacity-50 cursor-pointer whitespace-nowrap"
           >
@@ -1938,9 +1888,7 @@ export default function ScoreInput() {
           <div className="bg-slate-50 border border-slate-200 text-slate-700 p-3.5 rounded-xl text-xs font-medium flex items-start gap-2">
             <Lock className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
             <span>
-              {archivedReadOnly
-                ? ARCHIVED_NOTICE
-                : 'This class is archived. Only the SG correction approved by the Dean can be applied and reposted.'}
+              This class is archived and its score sheet remains locked. Continue an approved SG correction from Posted Grades &amp; Corrections.
             </span>
           </div>
         )}
@@ -3158,13 +3106,13 @@ export default function ScoreInput() {
                         </div>
                         <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
                           {isSummer 
-                            ? 'Posts Midterm period scores for student consultation. Freezes Midterm input cells.' 
-                            : 'Posts Prelim & Midterm period scores + Midterm Rating (MR) for student consultation. Freezes Midterm input cells.'}
+                            ? 'Posts Midterm scores for consultation. Faculty may revise and re-post this rating until SG is finalized.'
+                            : 'Posts Prelim and Midterm scores with MR for consultation. Faculty may revise and re-post until SG is finalized.'}
                         </p>
                       </div>
                       <button
                         type="button"
-                        disabled={postingGrades}
+                        disabled={postingGrades || isLocked}
                         onClick={() => setPendingPostMilestone('midterm')}
                         className="px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                       >
@@ -3194,14 +3142,14 @@ export default function ScoreInput() {
                           )}
                         </div>
                         <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                          {isSummer 
-                            ? 'Posts Final period scores for consultation before official semestral locking.'
-                            : 'Posts Semi-Final & Final period scores + Tentative Final Rating (TFR) for student consultation.'}
+                          {isSummer
+                            ? 'Posts Final scores for consultation. Faculty may revise and re-post TFR until SG is finalized.'
+                            : 'Posts Semi-Final and Final scores with TFR for consultation. Faculty may revise and re-post until SG is finalized.'}
                         </p>
                       </div>
                       <button
                         type="button"
-                        disabled={postingGrades}
+                        disabled={postingGrades || isLocked}
                         onClick={() => setPendingPostMilestone('tfr')}
                         className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                       >

@@ -13,8 +13,8 @@ import { supabase } from '../../lib/supabase';
 import html2pdf from 'html2pdf.js';
 import * as XLSX from 'xlsx-js-style';
 import { useAuth } from '../../lib/AuthContext';
-import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
-import { resolveOfficialGwa, computeStudentGwa, getRiskDisplay } from '../../lib/academicPolicy';
+import { GRADE_MILESTONES, findMostAdvancedPostedGrade, isGradeMilestone } from '../../lib/gradeMilestones';
+import { resolveOfficialGradeState, computeStudentGwa, getRiskDisplay } from '../../lib/academicPolicy';
 import { getFollowupMilestoneMap } from '../../lib/evaluationService';
 import { isAcknowledged, summarizeInterventionOutcome } from '../../lib/evaluationTracking';
 import { calculateAcademicRisk } from '../../lib/riskEngine';
@@ -123,8 +123,7 @@ export default function SummaryReports() {
         ] = await Promise.all([
           supabase
             .from('class_records')
-            .select('*, subjects(*, departments(name)), sections(*, departments(name)), faculty:users!faculty_id(user_id, first_name, last_name)')
-            .eq('status', 'active'),
+            .select('*, subjects(*, departments(name)), sections(*, departments(name)), faculty:users!faculty_id(user_id, first_name, last_name)'),
           supabase.from('users').select('*, departments(name), sections(*, departments(name))'),
           supabase.from('posted_grades').select('*'),
           supabase.from('enrollments').select('*')
@@ -164,7 +163,7 @@ export default function SummaryReports() {
         });
         const advancedPostedGrades = Object.values(postedRowsByStudentClass)
           .map(findMostAdvancedPostedGrade)
-          .filter(Boolean);
+          .filter(grade => grade && isGradeMilestone(grade, GRADE_MILESTONES.SEMESTRAL_GRADE));
 
         // ── Build semester-over-semester historical data ──
         const allSemesters = [...new Set((classroomsData || []).map(c => {
@@ -183,8 +182,9 @@ export default function SummaryReports() {
           });
           const semClassIds = new Set(semClasses.map(c => c.class_record_id));
           const semGrades = advancedPostedGrades.filter(g => semClassIds.has(g.class_record_id));
-          const gwas = semGrades.map(g => resolveOfficialGwa(g).gwa).filter(g => typeof g === 'number' && !isNaN(g));
-          const passed = gwas.filter(g => g <= 3.00).length;
+          const states = semGrades.map(resolveOfficialGradeState);
+          const gwas = states.map(state => state.gwa).filter(g => typeof g === 'number' && !isNaN(g));
+          const passed = states.filter(state => state.isPassing).length;
           const rate = gwas.length > 0 ? Math.round((passed / gwas.length) * 100) : 0;
           return { label: `${sem} ${sy}`, passRate: isNaN(rate) ? 0 : rate, totalGraded: gwas.length };
         }).filter(p => p.totalGraded > 0);
@@ -200,10 +200,11 @@ export default function SummaryReports() {
             })
             .map(c => {
               const grades = advancedPostedGrades.filter(g => g.class_record_id === c.class_record_id);
-              const gwas = grades.map(g => resolveOfficialGwa(g).gwa).filter(g => typeof g === 'number' && !isNaN(g));
+              const states = grades.map(resolveOfficialGradeState);
+              const gwas = states.map(state => state.gwa).filter(g => typeof g === 'number' && !isNaN(g));
               const sum = gwas.reduce((acc, g) => acc + g, 0);
               const avg = gwas.length > 0 && !isNaN(sum) ? sum / gwas.length : null;
-              const passedCount = gwas.filter(g => g <= 3.00).length;
+              const passedCount = states.filter(state => state.isPassing).length;
               const enrolled = enrollCountMap[`${c.section_id}|${c.subject_id}`] || c.enrolledCount || 0;
 
               return {
@@ -246,8 +247,9 @@ export default function SummaryReports() {
               const enrolled = enrollCountMap[`${c.section_id}|${c.subject_id}`] || 0;
               f.totalEnrolled += enrolled;
               const grades = advancedPostedGrades.filter(g => g.class_record_id === c.class_record_id);
-              const gwas = grades.map(g => resolveOfficialGwa(g).gwa).filter(g => typeof g === 'number' && !isNaN(g));
-              f.totalPassed += gwas.filter(g => g <= 3.00).length;
+              const states = grades.map(resolveOfficialGradeState);
+              const gwas = states.map(state => state.gwa).filter(g => typeof g === 'number' && !isNaN(g));
+              f.totalPassed += states.filter(state => state.isPassing).length;
               const sum = gwas.reduce((acc, g) => acc + g, 0);
               f.gwaSum += isNaN(sum) ? 0 : sum;
               f.gwaCount += gwas.length;
@@ -351,7 +353,7 @@ export default function SummaryReports() {
               if (!studentGradesMap[g.student_id]) {
                 studentGradesMap[g.student_id] = [];
               }
-              const resolvedGwa = resolveOfficialGwa(g).gwa;
+              const resolvedGwa = resolveOfficialGradeState(g).gwa;
               if (typeof resolvedGwa === 'number' && !isNaN(resolvedGwa)) studentGradesMap[g.student_id].push(resolvedGwa);
             }
           });
@@ -400,13 +402,14 @@ export default function SummaryReports() {
 
     const rows = Object.entries(studentMap).map(([sid, grades]) => {
       const best = findMostAdvancedPostedGrade(grades);
-      const resolved = best ? resolveOfficialGwa(best) : { gwa: null };
+      const resolved = best ? resolveOfficialGradeState(best) : { gwa: null, isPassing: false, displayRemark: 'Pending' };
       const gwaVal = (resolved && typeof resolved.gwa === 'number' && !isNaN(resolved.gwa)) ? resolved.gwa : null;
       const student = rawUsers.find(u => u.user_id === sid);
       return {
         name: student ? `${student.first_name} ${student.last_name}` : sid,
         gwa: gwaVal,
-        passed: gwaVal !== null && gwaVal <= 3.00
+        passed: resolved.isPassing,
+        remarks: resolved.displayRemark
       };
     }).sort((a, b) => (a.gwa ?? 99) - (b.gwa ?? 99));
 

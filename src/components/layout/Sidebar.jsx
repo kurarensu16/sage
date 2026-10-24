@@ -95,8 +95,8 @@ const PORTAL_NAVIGATION = {
       label: 'Grades',
       icon: FileText,
       items: [
-        { to: '/faculty/gradecomputationpreview', label: 'Preview & Post Grades', icon: Layers },
-        { to: '/faculty/scoreinput', label: 'Log Class Scores', icon: FileText }
+        { to: '/faculty/scoreinput', label: 'Scorebook', icon: FileText },
+        { to: '/faculty/gradecomputationpreview', label: 'Review & Post', icon: Layers }
       ]
     },
     {

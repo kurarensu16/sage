@@ -42,8 +42,8 @@ ASPIRE is designed to eliminate manual grade computation, reduce the burden of g
 ### 2.2 Dean
 * View class records within the Dean's authorized department
 * Monitor grade posting status per faculty per grading period
-* Review and approve or reject exact SG correction proposals submitted by assigned faculty within the Dean's department
-* Treat approval as authorization only; the official SG remains unchanged until the assigned faculty successfully reposts the approved values
+* Review and approve or reject student-scoped SG correction requests submitted by assigned faculty within the Dean's department
+* Treat approval as one-use authorization only; the official SG remains unchanged and locked until the assigned faculty edits and atomically applies that student's corrected score row
 * Control **Evaluation Release Controls** (`is_released_to_faculty` toggle) to release survey scores and feedback to faculty members individually or in bulk
 * Access **Dual-Channel Evaluation Analytics** (On-Time Official vs Late Informational) and **Retaliation-Drift** rating cards
 * View grade distribution summaries per subject and section
@@ -57,8 +57,8 @@ ASPIRE is designed to eliminate manual grade computation, reduce the burden of g
 * Input student scores per component (enforcing full activity names; shortened codes prohibited)
 * View real-time running grade and Early Warning System indicators per student
 * Post grades dynamically per milestone grading period (Prelim, Midterm, Semi-Final, Final) via a selective choices modal
-* Submit an exact **SG Correction Request** for a locked Semestral Grade, with required reason and optional HTTPS evidence reference, for Dean review
-* Apply an approved SG correction by reposting the exact approved percentage, GWA, and remark; Dean approval alone does not alter the grade
+* Submit a student-scoped **SG Correction Request** for a locked Semestral Grade, with required reason and optional HTTPS evidence reference, for Dean review
+* After approval, edit that student's full activity/exam row in the dedicated correction transaction; the server recalculates SG, GWA, and status and relocks the row atomically
 * Treat 4 student absences as an **FDA Advisory Recommendation** for faculty review, preserving faculty discretion based on overall student circumstances
 * View faculty evaluation results per section (anonymized) **only after Dean release approval**
 * Receive notifications when an evaluation window closes, when an evaluation is released by the Dean, or when a milestone unlock/resubmission request is resolved
@@ -120,8 +120,8 @@ ASPIRE is designed to eliminate manual grade computation, reduce the burden of g
 | **FR17a** | The system shall allow faculty to filter the class record view by individual grading period (Prelim, Midterm, Semi-Final, Final) or view all terms side-by-side. |
 | **FR17b** | The system shall provide a fullscreen expand/collapse toggle on class record tables (Score Input, Computation Preview, and Posted Grades) to maximize viewing area, with Escape key and backdrop-click to exit. |
 | **FR18** | The system shall lock posted terms and shall reject attempts to clear a saved score to `NULL` while its term is posted. |
-| **FR18a** | Assigned faculty shall be able to submit one unresolved exact SG correction proposal per posted SG, including the original/proposed values, reason, and optional HTTPS evidence reference. |
-| **FR18b** | The authorized Dean shall approve or reject the proposal without directly changing the official SG; only a successful faculty repost of the exact approved values shall update the student record and mark the request applied. |
+| **FR18a** | Assigned faculty shall be able to submit one unresolved student-scoped SG correction request per posted SG, including the original official result, intended outcome, reason, and optional HTTPS evidence reference. |
+| **FR18b** | The authorized Dean shall approve or reject the request without unlocking or changing the official SG; after approval, only the assigned faculty may edit that student's complete score row, and one successful server recalculation transaction shall apply the exact deltas, update the official result, relock it, and mark the request applied. |
 | **FR18c** | Admin official override and the faculty-Dean SG correction workflow shall remain separate, auditable authorities. |
 
 

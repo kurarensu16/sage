@@ -3,7 +3,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { BarChart3, Filter, CheckCircle, XCircle, AlertTriangle, Building2, GraduationCap, Layers } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
-import { resolveOfficialGwa } from '../../lib/academicPolicy';
+import { resolveOfficialGradeState, resolveOfficialGwa } from '../../lib/academicPolicy';
 
 // Program codes are read from programs.abbreviation, never from a map in code.
 
@@ -220,8 +220,14 @@ export default function GradeDistribution() {
           const sum = grades.reduce((acc, g) => acc + g, 0);
           const average = sum / total;
 
-          const passed = grades.filter(g => g <= 3.00).length;
-          const failed = grades.filter(g => g > 3.00).length;
+          const officialStates = (data || []).map(resolveOfficialGradeState);
+          const isSg = selectedPeriod === 'semestral_grade';
+          const passed = isSg
+            ? officialStates.filter(state => state.isPassing).length
+            : grades.filter(g => g <= 3.00).length;
+          const failed = isSg
+            ? officialStates.filter(state => state.isFailing).length
+            : grades.filter(g => g > 3.00).length;
 
           // Contiguous, gap-free bracket boundaries. Previously 1.51-1.74 and
           // 2.51-2.74 matched no bracket at all — those students vanished from this

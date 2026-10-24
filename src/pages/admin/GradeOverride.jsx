@@ -3,10 +3,10 @@ import PageHeader from '../../components/layout/PageHeader';
 import { Search, ShieldAlert, Check, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
-import { notifyAdminGradeOverride } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
-import { getRemarks, toDbRemark, toDisplayRemark, TRANSMUTATION_LADDER, GRADE_SCALE } from '../../lib/academicPolicy';
+import { getRemarks, toDbRemark, toDisplayRemark, toGwaOrNull, TRANSMUTATION_LADDER, GRADE_SCALE } from '../../lib/academicPolicy';
 import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
+import { applyAdminGradeOverride } from '../../lib/gradePostingService';
 
 // Official DYCI grade steps (1.00 … 3.00, then 5.00), taken from the grading scale.
 const GRADE_STEPS = Object.freeze(
@@ -35,7 +35,9 @@ export default function GradeOverride() {
   // Override Modal State
   const [isOverrideOpen, setIsOverrideOpen] = useState(false);
   const [selectedGrade, setSelectedGrade] = useState(null);
+  const [newSgVal, setNewSgVal] = useState('');
   const [newGradeVal, setNewGradeVal] = useState('');
+  const [newRemark, setNewRemark] = useState('failed');
   const [overrideReason, setOverrideReason] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -88,7 +90,8 @@ export default function GradeOverride() {
         facultyId: g.class_records?.faculty_id || null,
         gradePeriod: g.grade_period,
         isSemestral: getCanonicalGradePeriod(g) === GRADE_MILESTONES.SEMESTRAL_GRADE,
-        computedGrade: Number(g.effective_grade !== null ? g.effective_grade : g.computed_grade),
+        computedGrade: Number(g.computed_grade),
+        effectiveGrade: Number(g.effective_grade !== null ? g.effective_grade : toGwaOrNull(g.computed_grade)),
         remarks: g.remarks,
         remarksNote: g.remarks_note || '',
         isLocked: g.is_locked
@@ -177,13 +180,39 @@ export default function GradeOverride() {
   const handleOpenOverride = (grade) => {
     if (!grade.isSemestral) return;
     setSelectedGrade(grade);
+    setNewSgVal(Number(grade.computedGrade).toFixed(2));
     const nearestStep = GRADE_STEPS.reduce((best, step) => (
-      Math.abs(step - grade.computedGrade) < Math.abs(best - grade.computedGrade) ? step : best
+      Math.abs(step - grade.effectiveGrade) < Math.abs(best - grade.effectiveGrade) ? step : best
     ), GRADE_STEPS[0]);
     setNewGradeVal(nearestStep.toFixed(2));
+    setNewRemark(String(grade.remarks || 'failed').toLowerCase());
     setOverrideReason('');
     setErrorMsg('');
     setIsOverrideOpen(true);
+  };
+
+  const handleNewSgChange = (value) => {
+    setNewSgVal(value);
+    const sg = Number(value);
+    if (!Number.isFinite(sg) || sg < 0 || sg > 100) return;
+    const baseGwa = toGwaOrNull(sg);
+    if (newRemark === 'fda') {
+      setNewGradeVal('5.00');
+    } else if (newRemark === 'incomplete' || newRemark === 'dropped') {
+      setNewGradeVal(Number(baseGwa).toFixed(2));
+    } else {
+      const nextRemark = Number(baseGwa) <= 3 ? 'passed' : 'failed';
+      setNewRemark(nextRemark);
+      setNewGradeVal(Number(baseGwa).toFixed(2));
+    }
+  };
+
+  const handleNewRemarkChange = (value) => {
+    setNewRemark(value);
+    const baseGwa = toGwaOrNull(newSgVal);
+    if (baseGwa == null) return;
+    const effective = value === 'fda' ? 5 : value === 'passed' ? Math.min(baseGwa, 3) : baseGwa;
+    setNewGradeVal(Number(effective).toFixed(2));
   };
 
   const handleSaveOverride = async (e) => {
@@ -191,10 +220,15 @@ export default function GradeOverride() {
     setErrorMsg('');
     setSuccessMsg('');
 
+    const parsedSg = parseFloat(newSgVal);
     const parsedGrade = parseFloat(newGradeVal);
 
     if (!selectedGrade?.isSemestral) {
       setErrorMsg('Only the Semestral Grade (SG) can be overridden. MR and TFR are progress ratings.');
+      return;
+    }
+    if (!Number.isFinite(parsedSg) || parsedSg < 0 || parsedSg > 100) {
+      setErrorMsg('Enter an official SG percentage from 0 to 100.');
       return;
     }
     if (!GRADE_STEPS.includes(parsedGrade)) {
@@ -207,38 +241,36 @@ export default function GradeOverride() {
       return;
     }
 
-    const remarks = toDbRemark(getRemarks({ gwa: parsedGrade, isComplete: true }));
+    const remarks = toDbRemark(newRemark || getRemarks({ gwa: parsedGrade, isComplete: true }));
 
     try {
-      const overrideAt = new Date().toISOString();
-
       // Goes through the RPC rather than a direct table update: it is the only path
       // allowed to change a locked SG, and it records the override in
       // grade_correction_history with the reason attached.
-      const { error: updateErr } = await supabase.rpc('apply_admin_grade_override', {
-        p_posted_grade_id: selectedGrade.id,
-        p_new_effective_grade: parsedGrade,
-        p_new_remarks: remarks,
-        p_reason: overrideReason.trim()
+      await applyAdminGradeOverride({
+        postedGradeId: selectedGrade.id,
+        newComputedGrade: parsedSg,
+        newEffectiveGrade: parsedGrade,
+        newRemarks: remarks,
+        reason: overrideReason.trim()
       });
-
-      if (updateErr) throw updateErr;
 
       const actorName = adminProfile 
         ? `${adminProfile.first_name} ${adminProfile.last_name}` 
         : (user?.email || 'Administrator');
 
-      const oldGradeVal = selectedGrade.computedGrade;
+      const oldSgVal = selectedGrade.computedGrade;
+      const oldGradeVal = selectedGrade.effectiveGrade;
       const oldRemarksVal = selectedGrade.remarks;
 
       const studentLabel = `${selectedStudent.lastName}, ${selectedStudent.firstName}${selectedStudent.userNumber ? ` (${selectedStudent.userNumber})` : ''}`;
       const previousNote = selectedGrade.remarksNote ? ` Previous remark note: "${selectedGrade.remarksNote}".` : '';
-      const logMessage = `Overrode ${studentLabel}'s SG in ${selectedGrade.subjectCode} (${selectedGrade.section}) from ${oldGradeVal.toFixed(2)} (${oldRemarksVal}) to ${parsedGrade.toFixed(2)} (${remarks}). Reason: ${overrideReason.trim()}.${previousNote}`;
+      const logMessage = `Overrode ${studentLabel}'s official result in ${selectedGrade.subjectCode} (${selectedGrade.section}) from SG ${oldSgVal.toFixed(2)} / GWA ${oldGradeVal.toFixed(2)} / ${oldRemarksVal} to SG ${parsedSg.toFixed(2)} / GWA ${parsedGrade.toFixed(2)} / ${remarks}. Reason: ${overrideReason.trim()}.${previousNote}`;
 
       const { error: logErr } = await supabase
         .from('activity_logs')
         .insert({
-          action: 'Grade Override',
+          action: 'Applied Administrative Grade Override',
           message: logMessage,
           actor: actorName
         });
@@ -250,22 +282,7 @@ export default function GradeOverride() {
       // Local notification for admin actor
       await showLocalNotification({
         title: 'Grade Override Executed',
-        body: `🔒 Overrode ${selectedStudent.firstName} ${selectedStudent.lastName}'s ${selectedGrade.gradePeriod} grade in ${selectedGrade.subjectCode} to ${parsedGrade.toFixed(2)} (${remarks}).`
-      });
-
-      // Dispatch notifications to affected student and instructor
-      await notifyAdminGradeOverride({
-        studentId: selectedStudent.id,
-        facultyId: selectedGrade.facultyId || null,
-        studentName: `${selectedStudent.firstName} ${selectedStudent.lastName}`,
-        subjectCode: selectedGrade.subjectCode,
-        subjectName: selectedGrade.subjectName,
-        classRecordId: selectedGrade.classRecordId,
-        overrideAt,
-        oldGrade: oldGradeVal,
-        newGrade: parsedGrade,
-        remarks: remarks,
-        actorName
+        body: `Overrode ${selectedStudent.firstName} ${selectedStudent.lastName}'s official result in ${selectedGrade.subjectCode} to SG ${parsedSg.toFixed(2)}, GWA ${parsedGrade.toFixed(2)} (${remarks}).`
       });
 
       setIsOverrideOpen(false);
@@ -391,7 +408,8 @@ export default function GradeOverride() {
                       </div>
 
                       <div className="text-right">
-                        <div className="text-lg font-bold font-mono text-slate-950">{grade.computedGrade.toFixed(2)}</div>
+                        <div className="text-lg font-bold font-mono text-slate-950">{grade.computedGrade.toFixed(2)}%</div>
+                        <div className="text-[10px] font-mono text-slate-500">GWA {grade.effectiveGrade.toFixed(2)}</div>
                         <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-micro font-bold border ${remarkBadgeClass(grade.remarks)}`}>
                           {toDisplayRemark(grade.remarks)}
                         </span>
@@ -425,7 +443,8 @@ export default function GradeOverride() {
                     <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Subject Code</th>
                     <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Class Section</th>
                     <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Grading Period</th>
-                    <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Current Grade</th>
+                    <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">SG %</th>
+                    <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Effective GWA</th>
                     <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Standing</th>
                     <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                   </tr>
@@ -444,7 +463,10 @@ export default function GradeOverride() {
                           {grade.gradePeriod}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-mono font-bold text-slate-950">
-                          {grade.computedGrade.toFixed(2)}
+                          {grade.computedGrade.toFixed(2)}%
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-mono font-bold text-slate-950">
+                          {grade.effectiveGrade.toFixed(2)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${remarkBadgeClass(grade.remarks)}`}>
@@ -467,7 +489,7 @@ export default function GradeOverride() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="6" className="px-6 py-10 text-center text-slate-400 text-sm">
+                      <td colSpan="7" className="px-6 py-10 text-center text-slate-400 text-sm">
                         No posted grades found for this student.
                       </td>
                     </tr>
@@ -517,11 +539,28 @@ export default function GradeOverride() {
                   <div>Student: <strong className="text-slate-800">{selectedStudent?.lastName}, {selectedStudent?.firstName}</strong></div>
                   <div>Subject / Section: <span className="text-slate-600 font-mono">{selectedGrade.subjectCode} ({selectedGrade.section})</span></div>
                   <div>Grading Period: <span className="text-slate-600 capitalize">{selectedGrade.gradePeriod}</span></div>
-                  <div>Current Grade: <strong className="text-slate-800 font-mono">{selectedGrade.computedGrade.toFixed(2)}</strong></div>
+                  <div>Current SG: <strong className="text-slate-800 font-mono">{selectedGrade.computedGrade.toFixed(2)}%</strong></div>
+                  <div>Current GWA: <strong className="text-slate-800 font-mono">{selectedGrade.effectiveGrade.toFixed(2)}</strong></div>
+                  <div>Current Status: <strong className="text-slate-800">{toDisplayRemark(selectedGrade.remarks)}</strong></div>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="override-grade" className="text-xs font-bold text-slate-700 uppercase tracking-wide">New SG (official DYCI grade)</label>
+                  <label htmlFor="override-sg" className="text-xs font-bold text-slate-700 uppercase tracking-wide">Replacement SG Percentage</label>
+                  <input
+                    id="override-sg"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    required
+                    value={newSgVal}
+                    onChange={(e) => handleNewSgChange(e.target.value)}
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 focus:border-sage-500 rounded-xl text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500 bg-white"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="override-grade" className="text-xs font-bold text-slate-700 uppercase tracking-wide">Replacement Effective GWA</label>
                   <select
                     id="override-grade"
                     required
@@ -534,6 +573,24 @@ export default function GradeOverride() {
                         {step.toFixed(2)}{step === GRADE_SCALE.failedValue ? ' (Failed)' : ''}
                       </option>
                     ))}
+                  </select>
+                  <p className="text-[11px] text-slate-400">The database rejects an SG, GWA, and status combination that conflicts with the institutional transmutation policy.</p>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="override-remark" className="text-xs font-bold text-slate-700 uppercase tracking-wide">Replacement Academic Status</label>
+                  <select
+                    id="override-remark"
+                    required
+                    value={newRemark}
+                    onChange={(e) => handleNewRemarkChange(e.target.value)}
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 focus:border-sage-500 rounded-xl text-sm outline-none transition-all focus:ring-1 focus:ring-sage-500 bg-white"
+                  >
+                    <option value="passed">Passed</option>
+                    <option value="failed">Failed</option>
+                    <option value="incomplete">Incomplete (INC)</option>
+                    <option value="fda">FDA</option>
+                    <option value="dropped">Dropped</option>
                   </select>
                 </div>
                 {selectedGrade.remarksNote && (

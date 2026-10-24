@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import StudentRow from '../../components/StudentRow';
@@ -18,14 +18,15 @@ import {
   Check,
   Paperclip,
   Edit3,
-  FileText
+  FileText,
+  Calculator,
+  Save
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { notifyOverrideRequested } from '../../lib/notificationDispatcher';
 import { triggerExcelExport } from '../../lib/excelExport';
 import { getEnrollmentType } from '../../lib/classRoomService';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
@@ -41,7 +42,12 @@ import {
   getCanonicalGradePeriod,
   findPostedMilestone
 } from '../../lib/gradeMilestones';
-import { cancelSgCorrectionRequest, submitSgCorrectionRequest } from '../../lib/gradeCorrectionService';
+import {
+  applyApprovedSgCorrection,
+  cancelSgCorrectionRequest,
+  previewSgScoreCorrection,
+  submitSgCorrectionRequest
+} from '../../lib/gradeCorrectionService';
 
 const REMARK_TO_DB = Object.freeze({
   Passed: 'passed',
@@ -51,12 +57,22 @@ const REMARK_TO_DB = Object.freeze({
   Dropped: 'dropped'
 });
 
+const DB_REMARK_TO_DISPLAY = Object.freeze({
+  passed: 'Passed',
+  failed: 'Failed',
+  incomplete: 'INC',
+  fda: 'FDA',
+  dropped: 'Dropped'
+});
+
 export default function PostedGradesView() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, profile } = useAuth();
   const classRecordId = new URLSearchParams(location.search).get('id');
   const autoExport = new URLSearchParams(location.search).get('export') === '1';
+  const requestedCorrectionId = new URLSearchParams(location.search).get('request');
+  const autoOpenedCorrectionRef = useRef(null);
 
   const [classInfo, setClassInfo] = useState(null);
   const [students, setStudents] = useState([]);
@@ -134,7 +150,15 @@ export default function PostedGradesView() {
   const [evidenceReference, setEvidenceReference] = useState('');
   const [remarkReqSent, setRemarkReqSent] = useState(false);
   const [activeCorrectionRequests, setActiveCorrectionRequests] = useState([]);
+  const [persistedScoresByStudent, setPersistedScoresByStudent] = useState({});
   const [cancellingCorrectionId, setCancellingCorrectionId] = useState(null);
+  const [dataRefreshKey, setDataRefreshKey] = useState(0);
+  const [approvedCorrectionRequest, setApprovedCorrectionRequest] = useState(null);
+  const [correctionDraftScores, setCorrectionDraftScores] = useState({});
+  const [correctionPreview, setCorrectionPreview] = useState(null);
+  const [correctionPreviewSignature, setCorrectionPreviewSignature] = useState('');
+  const [correctionPreviewLoading, setCorrectionPreviewLoading] = useState(false);
+  const [applyingCorrection, setApplyingCorrection] = useState(false);
 
   // Maximum items configuration for activities and exams per period
   const [maxItems, setMaxItems] = useState({
@@ -676,12 +700,16 @@ export default function PostedGradesView() {
           }
 
         });
+        // Correction originals must come only from persisted database rows.
+        // Browser drafts are useful for ordinary editing, but are not valid
+        // concurrency baselines for an audited, locked-SG correction.
+        setPersistedScoresByStudent(scoresByStudent);
 
         setLockedMilestones(collectPostedMilestoneCoverage(pgData || [], { lockedOnly: true }));
 
         const { data: correctionRows, error: correctionError } = await supabase
           .from('remark_override_requests')
-          .select('request_id, student_id, status, original_computed_grade, original_effective_grade, original_remark, proposed_computed_grade, proposed_effective_grade, proposed_remark, requested_at')
+          .select('request_id, student_id, status, correction_scope, original_computed_grade, original_effective_grade, original_remark, proposed_computed_grade, proposed_effective_grade, proposed_remark, proposed_score_changes, requested_at, decision_at, decision_by')
           .eq('class_record_id', classRecordId)
           .in('status', ['pending', 'approved'])
           .order('requested_at', { ascending: false });
@@ -757,7 +785,22 @@ export default function PostedGradesView() {
     }
 
     loadPostedGradesData();
-  }, [classRecordId, user]);
+  }, [classRecordId, user, dataRefreshKey]);
+
+  useEffect(() => {
+    if (!user || !classRecordId) return undefined;
+    const refreshVisibleCorrections = () => {
+      if (document.visibilityState === 'visible') {
+        setDataRefreshKey(value => value + 1);
+      }
+    };
+    window.addEventListener('focus', refreshVisibleCorrections);
+    document.addEventListener('visibilitychange', refreshVisibleCorrections);
+    return () => {
+      window.removeEventListener('focus', refreshVisibleCorrections);
+      document.removeEventListener('visibilitychange', refreshVisibleCorrections);
+    };
+  }, [user, classRecordId]);
 
 
   const prepareCorrectionRequest = (student) => {
@@ -777,8 +820,193 @@ export default function PostedGradesView() {
     setRemarkReqEffective(proposedEffective == null ? '' : String(proposedEffective));
   };
 
+  const getCorrectionTargets = (studentId) => {
+    const student = students.find(item => item.id === studentId);
+    if (!student) return [];
+    const targets = [];
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    periodsList.forEach(term => {
+      const periodScores = persistedScoresByStudent[studentId]?.[term] || {};
+      (activities[term] || []).forEach((activity, index) => {
+        const activityId = activity.dbId || (uuidPattern.test(String(activity.id || '')) ? activity.id : null);
+        const field = activityId ? null : (String(activity.id || '').match(/^act[1-6]$/) ? activity.id : `act${index + 1}`);
+        const key = activityId ? `activity:${activityId}` : `term:${term}:${field}`;
+        targets.push({
+          key,
+          target_type: activityId ? 'activity' : 'term_score',
+          activity_id: activityId,
+          term,
+          field,
+          label: activity.name || `Activity ${index + 1}`,
+          original_score: periodScores[activity.id] ?? periodScores[field] ?? null,
+          max_score: Number(activity.max ?? maxItems[term]?.[field] ?? 20)
+        });
+      });
+      if (gradingPresentation.hasCharacter) {
+        targets.push({
+          key: `term:${term}:char_rating`, target_type: 'term_score', term, field: 'char_rating',
+          label: gradingPresentation.characterLabel || 'Character Rating',
+          original_score: periodScores.char ?? null,
+          max_score: Number(maxItems[term]?.char ?? 100)
+        });
+      }
+      targets.push({
+        key: `term:${term}:exam`, target_type: 'term_score', term, field: 'exam',
+        label: gradingPresentation.examLabel || 'Examination',
+        original_score: periodScores.exam ?? null,
+        max_score: Number(maxItems[term]?.exam ?? 40)
+      });
+    });
+    return targets;
+  };
+
+  const getCorrectionScoreChanges = () => {
+    if (!approvedCorrectionRequest) return [];
+    return getCorrectionTargets(approvedCorrectionRequest.student_id).flatMap(target => {
+      const rawValue = correctionDraftScores[target.key];
+      if (rawValue === '' || rawValue == null) return [];
+      const proposedScore = Number(rawValue);
+      const originalScore = target.original_score == null ? null : Number(target.original_score);
+      if (!Number.isFinite(proposedScore) || proposedScore === originalScore) return [];
+      return [{
+        target_type: target.target_type,
+        activity_id: target.activity_id,
+        term: target.term,
+        field: target.field,
+        label: target.label,
+        original_score: originalScore,
+        proposed_score: proposedScore
+      }];
+    });
+  };
+
+  const openApprovedCorrectionEditor = (request) => {
+    const student = students.find(item => item.id === request.student_id);
+    if (!student) return;
+    const targets = getCorrectionTargets(request.student_id);
+    setApprovedCorrectionRequest(request);
+    setCorrectionDraftScores(Object.fromEntries(targets.map(target => [
+      target.key,
+      target.original_score == null ? '' : String(target.original_score)
+    ])));
+    setRemarkReqStudent(student.name);
+    setRemarkReqStudentId(student.id);
+    setRemarkReqFrom(student.customRemarks || DB_REMARK_TO_DISPLAY[request.original_remark] || 'Failed');
+    setRemarkReqTo(DB_REMARK_TO_DISPLAY[request.proposed_remark] || student.customRemarks || 'Failed');
+    setRemarkReqComputed(String(request.original_computed_grade ?? student.computedGrade ?? ''));
+    setRemarkReqEffective(String(request.original_effective_grade ?? student.effectiveGrade ?? ''));
+    setCorrectionPreview(null);
+    setCorrectionPreviewSignature('');
+  };
+
+  useEffect(() => {
+    if (!requestedCorrectionId || autoOpenedCorrectionRef.current === requestedCorrectionId) return;
+    const requestedCorrection = activeCorrectionRequests.find(request => (
+      request.request_id === requestedCorrectionId
+      && request.status === 'approved'
+      && request.correction_scope === 'student_score_row'
+    ));
+    if (!requestedCorrection || !students.some(student => student.id === requestedCorrection.student_id)) return;
+    autoOpenedCorrectionRef.current = requestedCorrectionId;
+    openApprovedCorrectionEditor(requestedCorrection);
+    // The editor initializer intentionally uses the student/request snapshot
+    // loaded by this effect; reopening is guarded by autoOpenedCorrectionRef.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedCorrectionId, activeCorrectionRequests, students]);
+
+  const handleCorrectionDraftChange = (targetKey, value) => {
+    setCorrectionDraftScores(previous => ({ ...previous, [targetKey]: value }));
+    setCorrectionPreview(null);
+    setCorrectionPreviewSignature('');
+  };
+
+  const getCorrectionSignature = (scoreChanges = getCorrectionScoreChanges(), proposedRemark = remarkReqTo) => (
+    JSON.stringify({ scoreChanges, proposedRemark })
+  );
+
+  const handlePreviewApprovedCorrection = async () => {
+    if (!approvedCorrectionRequest) return;
+    const targets = getCorrectionTargets(approvedCorrectionRequest.student_id);
+    const hasInvalidScore = targets.some(target => {
+      const rawValue = correctionDraftScores[target.key];
+      if (rawValue === '' || rawValue == null) return false;
+      const value = Number(rawValue);
+      return !Number.isFinite(value) || value < 0 || value > target.max_score;
+    });
+    if (hasInvalidScore) {
+      setPopupTitle('Invalid Score Correction');
+      setPopupDesc('Every edited score must stay between zero and its configured maximum.');
+      setShowPopup(true);
+      return;
+    }
+    const scoreChanges = getCorrectionScoreChanges();
+    setCorrectionPreviewLoading(true);
+    try {
+      const preview = await previewSgScoreCorrection({
+        classRecordId,
+        studentId: approvedCorrectionRequest.student_id,
+        scoreChanges
+      });
+      const proposedComputed = Number(preview.proposed_computed_grade);
+      const baseEffective = Number(preview.base_effective_grade);
+      if (remarkReqTo === 'Failed' && baseEffective <= 3) {
+        throw new Error('Failed conflicts with the recalculated passing GWA. Select Passed or an applicable exceptional status.');
+      }
+      const proposedEffective = remarkReqTo === 'FDA'
+        ? 5
+        : remarkReqTo === 'Passed' ? Math.min(baseEffective, 3) : baseEffective;
+      setRemarkReqComputed(String(proposedComputed));
+      setRemarkReqEffective(String(proposedEffective));
+      setCorrectionPreview({ ...preview, proposedEffective });
+      setCorrectionPreviewSignature(getCorrectionSignature(scoreChanges, remarkReqTo));
+    } catch (err) {
+      console.error('Could not preview approved SG correction:', err);
+      setPopupTitle('Correction Preview Failed');
+      setPopupDesc(err.message || 'The server could not validate this score correction.');
+      setShowPopup(true);
+    } finally {
+      setCorrectionPreviewLoading(false);
+    }
+  };
+
+  const handleApplyApprovedCorrection = async () => {
+    if (!approvedCorrectionRequest || !correctionPreview) return;
+    const scoreChanges = getCorrectionScoreChanges();
+    if (correctionPreviewSignature !== getCorrectionSignature(scoreChanges, remarkReqTo)) return;
+    setApplyingCorrection(true);
+    try {
+      const result = await applyApprovedSgCorrection({
+        requestId: approvedCorrectionRequest.request_id,
+        scoreChanges,
+        proposedRemark: REMARK_TO_DB[remarkReqTo]
+      });
+      await logActivity(
+        'Applied Semestral Grade Correction',
+        `Applied the Dean-approved full-row SG correction for ${remarkReqStudent} in ${classInfo?.subjects?.code || 'the class'}. ${scoreChanges.length} score item(s) changed; corrected MR ${result.mr}, TFR ${result.tfr}, SG ${result.computed_grade}, GWA ${result.effective_grade}, ${remarkReqTo}.`,
+        resolveActorName(profile, user)
+      );
+      setApprovedCorrectionRequest(null);
+      setCorrectionPreview(null);
+      setActiveCorrectionRequests(previous => previous.filter(item => item.request_id !== result.request_id));
+      setDataRefreshKey(previous => previous + 1);
+      setPopupTitle('SG Correction Applied');
+      setPopupDesc(`${remarkReqStudent}'s MR, TFR, SG, GWA, and status were recalculated, audited, and locked again.`);
+      setShowPopup(true);
+    } catch (err) {
+      console.error('Could not apply approved SG correction:', err);
+      setPopupTitle('Correction Application Failed');
+      setPopupDesc(err.message || 'No score or official grade was changed.');
+      setShowPopup(true);
+    } finally {
+      setApplyingCorrection(false);
+    }
+  };
+
   const handleProposedRemarkChange = (nextRemark) => {
     setRemarkReqTo(nextRemark);
+    setCorrectionPreview(null);
+    setCorrectionPreviewSignature('');
     const selected = students.find(student => student.id === remarkReqStudentId);
     if (!selected || selected.computedGrade == null) return;
     const rawGwa = getTransmutedGrade(selected.computedGrade);
@@ -801,7 +1029,6 @@ export default function PostedGradesView() {
 
     try {
       const subjCode = classInfo?.subjects?.code || '';
-      const subjName = classInfo?.subjects?.name || '';
       const actorName = resolveActorName(profile, user);
       const evidenceUrl = evidenceReference.trim() || null;
       const correctionRequest = await submitSgCorrectionRequest({
@@ -811,29 +1038,17 @@ export default function PostedGradesView() {
         reason: remarkReqNote.trim(),
         evidenceUrl,
         proposedComputedGrade,
-        proposedEffectiveGrade
+        proposedEffectiveGrade,
+        proposedScoreChanges: []
       });
 
       // The secured RPC is the only source of truth. No local fallback can
       // create an authorization record that the database did not accept.
       await logActivity(
-        'Remark Override Request',
-        `Requested remark override for student ${remarkReqStudent} (${remarkReqFrom} -> ${remarkReqTo}) in ${subjCode}`,
+        'Submitted SG Correction Request',
+        `Submitted an SG correction request for student ${remarkReqStudent} (${remarkReqFrom} -> ${remarkReqTo}) in ${subjCode}`,
         actorName
       );
-
-      // Dispatch notification to Dean
-      await notifyOverrideRequested({
-        // Locks the request to the dean of the college that owns this section, matching
-        // the read rule in is_authorized_dean_for_class. Without this the dispatcher
-        // falls back to every active dean in the institution.
-        departmentId: classInfo?.sections?.department_id || null,
-        facultyName: actorName,
-        studentName: remarkReqStudent,
-        subjectName: `${subjCode} - ${subjName}`,
-        currentRemark: remarkReqFrom,
-        requestedRemark: remarkReqTo
-      });
 
       setActiveCorrectionRequests(previous => [{
         ...correctionRequest,
@@ -853,8 +1068,8 @@ export default function PostedGradesView() {
         setRemarkReqComputed('');
         setRemarkReqEffective('');
         setEvidenceReference('');
-        setPopupTitle('Override Submitted');
-        setPopupDesc(`Remark change request ${correctionRequest.request_id} for ${remarkReqStudent} has been submitted to the Dean.`);
+        setPopupTitle('Correction Access Requested');
+        setPopupDesc(`The student-scoped SG correction request for ${remarkReqStudent} was submitted to the Dean.`);
         setShowPopup(true);
       }, 1500);
 
@@ -920,10 +1135,18 @@ export default function PostedGradesView() {
     && proposedEffectiveNumber <= 5
     && evidenceReferenceIsValid
   );
+  const approvedCorrectionTargets = approvedCorrectionRequest
+    ? getCorrectionTargets(approvedCorrectionRequest.student_id)
+    : [];
+  const approvedScoreChanges = approvedCorrectionRequest ? getCorrectionScoreChanges() : [];
+  const approvedCorrectionReady = Boolean(
+    correctionPreview
+    && correctionPreviewSignature === getCorrectionSignature(approvedScoreChanges, remarkReqTo)
+  );
 
   return (
     <>
-      <PageHeader title="Preview Grades" breadcrumb="Faculty Portal">
+      <PageHeader title="Posted Grades & Corrections" breadcrumb="Faculty Portal">
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
           <button 
             onClick={() => navigate(`/faculty/scoreinput?id=${classRecordId}`)}
@@ -964,7 +1187,7 @@ export default function PostedGradesView() {
               <div>
                 <h4 className="font-bold text-xs sm:text-sm text-slate-800">Class Record Registry &amp; Remark Management</h4>
                 <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  Posted semestral grades remain official and locked. Submit an exact correction request for Dean review; approval grants one revision, and the student record changes only after faculty reposts the corrected SG.
+                  Posted semestral grades remain official and locked. Request correction access for one student; after Dean approval, faculty may edit that student's full score row and apply one audited server-side recalculation.
                 </p>
                 <div className="flex flex-wrap gap-2 mt-2.5 sm:mt-3">
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 border border-emerald-250 text-emerald-700">
@@ -997,14 +1220,25 @@ export default function PostedGradesView() {
                       <span className="mx-1.5 text-slate-400">·</span>
                       <span className="font-semibold capitalize">{request.status}</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleCancelCorrection(request)}
-                      disabled={cancellingCorrectionId === request.request_id}
-                      className="rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-rose-700 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
-                    >
-                      {cancellingCorrectionId === request.request_id ? 'Cancelling…' : 'Cancel Request'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {request.status === 'approved' && request.correction_scope === 'student_score_row' && (
+                        <button
+                          type="button"
+                          onClick={() => openApprovedCorrectionEditor(request)}
+                          className="rounded-lg border border-emerald-300 bg-emerald-600 px-2.5 py-1.5 text-[10px] font-bold text-white transition-colors hover:bg-emerald-700 cursor-pointer"
+                        >
+                          Edit Full Row &amp; Apply
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleCancelCorrection(request)}
+                        disabled={cancellingCorrectionId === request.request_id}
+                        className="rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-rose-700 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                      >
+                        {cancellingCorrectionId === request.request_id ? 'Cancelling…' : 'Cancel Request'}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -1310,7 +1544,7 @@ export default function PostedGradesView() {
                   Request SG Correction
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Approval grants one revision. The official student SG remains unchanged until faculty applies the approved correction and reposts it.
+                  Request one student-scoped correction window. After Dean approval, you can edit that student's complete score row; the server recalculates and relocks the official result.
                 </p>
               </div>
               <button
@@ -1355,7 +1589,7 @@ export default function PostedGradesView() {
             )}
             {remarkReqStudent && (
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Exact Proposed Remark</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Intended Grade Status</label>
                 <select
                   value={remarkReqTo}
                   onChange={event => handleProposedRemarkChange(event.target.value)}
@@ -1364,37 +1598,37 @@ export default function PostedGradesView() {
                   {['Passed', 'Failed', 'INC', 'FDA', 'Dropped']
                     .map(remark => <option key={remark} value={remark}>{remark}</option>)}
                 </select>
-                <p className="text-micro text-slate-400">Dean approval applies only to this proposed remark and does not immediately change the official SG.</p>
+                <p className="text-micro text-slate-400">This records the intended outcome. Dean approval grants one student-scoped correction; no score or official grade changes yet.</p>
               </div>
             )}
             {remarkReqStudent && (
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Exact SG Percentage</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Provisional SG %</label>
                   <input
                     type="number"
                     min="0"
                     max="100"
                     step="0.01"
                     value={remarkReqComputed}
-                    onChange={event => setRemarkReqComputed(event.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-mono outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300"
+                    readOnly
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-mono text-slate-600"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Exact Effective GWA</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Provisional GWA</label>
                   <input
                     type="number"
                     min="1"
                     max="5"
                     step="0.01"
                     value={remarkReqEffective}
-                    onChange={event => setRemarkReqEffective(event.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-mono outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300"
+                    readOnly
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-mono text-slate-600"
                   />
                 </div>
                 <p className="col-span-2 text-micro leading-relaxed text-slate-400">
-                  Enter the exact values expected after the official grading engine recalculates the corrected scores. Reposting is rejected if the result differs from this approved proposal.
+                  These provisional values describe the intended outcome. Exact score edits are entered only after Dean approval.
                 </p>
               </div>
             )}
@@ -1464,6 +1698,149 @@ export default function PostedGradesView() {
                   : <><Send className="h-3.5 w-3.5" /> Submit to Dean</>
                 }
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dean-approved, student-scoped full-row correction editor */}
+      {approvedCorrectionRequest && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/60 backdrop-blur-xs sm:items-center sm:p-4 text-left">
+          <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl sm:rounded-2xl">
+            <div className="flex items-start justify-between border-b border-slate-200 bg-emerald-50/60 px-5 py-4">
+              <div>
+                <h3 className="flex items-center gap-2 font-display text-base font-bold text-slate-900">
+                  <Edit3 className="h-4 w-4 text-emerald-700" /> Approved Full-Row SG Correction
+                </h3>
+                <p className="mt-1 text-xs text-slate-600">
+                  Editing only {remarkReqStudent}. Other students remain locked. Review every changed activity or exam, then let the server recalculate the official result.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setApprovedCorrectionRequest(null)}
+                disabled={applyingCorrection}
+                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white hover:text-slate-700 disabled:opacity-50 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-4 sm:p-5 space-y-5">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">
+                Dean approval is a one-use permission for this student. Scores are still unchanged in the database until you click <strong>Apply &amp; Relock</strong>.
+              </div>
+
+              <div className="space-y-4">
+                {periodsList.map(term => {
+                  const termTargets = approvedCorrectionTargets.filter(target => target.term === term);
+                  return (
+                    <section key={term} className="rounded-xl border border-slate-200 bg-slate-50/40 p-3.5">
+                      <div className="mb-3 flex items-center justify-between">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">{term} score row</h4>
+                        <span className="text-micro text-slate-400">Original → corrected score</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                        {termTargets.map(target => {
+                          const rawValue = correctionDraftScores[target.key] ?? '';
+                          const numericValue = rawValue === '' ? null : Number(rawValue);
+                          const originalValue = target.original_score == null ? null : Number(target.original_score);
+                          const changed = numericValue != null && numericValue !== originalValue;
+                          const invalid = numericValue != null && (!Number.isFinite(numericValue) || numericValue < 0 || numericValue > target.max_score);
+                          return (
+                            <label key={target.key} className={cn(
+                              'rounded-xl border bg-white p-3 transition-colors',
+                              invalid ? 'border-rose-300' : changed ? 'border-violet-300 bg-violet-50/30' : 'border-slate-200'
+                            )}>
+                              <span className="block truncate text-[10px] font-bold text-slate-600" title={target.label}>{target.label}</span>
+                              <span className="mt-0.5 block text-micro font-mono text-slate-400">
+                                Current: {target.original_score ?? 'Not encoded'} / {target.max_score}
+                              </span>
+                              <input
+                                type="number"
+                                min="0"
+                                max={target.max_score}
+                                step="0.01"
+                                value={rawValue}
+                                onChange={event => handleCorrectionDraftChange(target.key, event.target.value)}
+                                placeholder="No score"
+                                className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-mono text-slate-800 outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-300"
+                              />
+                              {invalid && <span className="mt-1 block text-micro font-semibold text-rose-600">Maximum {target.max_score}</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+
+              <div className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-[1fr_auto] sm:items-end">
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">Dean-Approved Final Status</label>
+                  <select
+                    value={remarkReqTo}
+                    disabled
+                    className="w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-sm font-semibold text-slate-600 outline-none disabled:cursor-not-allowed"
+                  >
+                    {['Passed', 'Failed', 'INC', 'FDA', 'Dropped'].map(remark => (
+                      <option key={remark} value={remark}>{remark}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-micro text-slate-400">Score values may be corrected; changing the approved outcome requires a new Dean-reviewed request.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handlePreviewApprovedCorrection}
+                  disabled={correctionPreviewLoading || applyingCorrection}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-4 py-2.5 text-xs font-bold text-violet-700 transition-colors hover:bg-violet-100 disabled:opacity-50 cursor-pointer"
+                >
+                  <Calculator className="h-4 w-4" />
+                  {correctionPreviewLoading ? 'Recalculating…' : 'Recalculate Official Result'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                {[
+                  ['Original SG %', approvedCorrectionRequest.original_computed_grade ?? '—'],
+                  ['Recalculated MR %', correctionPreview ? Number(correctionPreview.projection?.mr).toFixed(2) : 'Preview required'],
+                  ['Recalculated TFR %', correctionPreview ? Number(correctionPreview.projection?.tfr).toFixed(2) : 'Preview required'],
+                  ['Recalculated SG %', correctionPreview ? Number(remarkReqComputed).toFixed(2) : 'Preview required'],
+                  ['Original GWA', approvedCorrectionRequest.original_effective_grade ?? '—'],
+                  ['Recalculated GWA', correctionPreview ? Number(remarkReqEffective).toFixed(2) : 'Preview required']
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+                    <p className="text-micro font-bold uppercase tracking-wider text-slate-400">{label}</p>
+                    <p className="mt-1 text-sm font-bold font-mono text-slate-800">{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-slate-500">
+                  {approvedScoreChanges.length} score item{approvedScoreChanges.length === 1 ? '' : 's'} changed. Application is blocked until this exact draft passes server preview.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setApprovedCorrectionRequest(null)}
+                    disabled={applyingCorrection}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplyApprovedCorrection}
+                    disabled={!approvedCorrectionReady || applyingCorrection}
+                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 cursor-pointer"
+                  >
+                    <Save className="h-4 w-4" />
+                    {applyingCorrection ? 'Applying…' : 'Apply & Relock'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

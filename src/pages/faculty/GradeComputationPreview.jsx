@@ -7,7 +7,7 @@ import {
   resolveGradingFormula,
   toEffectiveGradeForPosting
 } from '../../lib/gradingMath';
-import { getPersistentRemarkOverride, getRemarks } from '../../lib/academicPolicy';
+import { getPersistentRemarkOverride, getRemarks, toDisplayRemark } from '../../lib/academicPolicy';
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
@@ -38,7 +38,6 @@ import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { notifyGradePosted, notifyGradeChanged } from '../../lib/notificationDispatcher';
 import { showLocalNotification } from '../../lib/notificationService';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import { triggerExcelExport } from '../../lib/excelExport';
@@ -50,13 +49,16 @@ import {
   GRADE_MILESTONES,
   collectPostedMilestoneCoverage,
   getCanonicalGradePeriod,
+  getGradePostingAuditAction,
   getMilestonePostingPresentation,
   getRequiredTermsForPostingTarget,
   getUpdatedMilestoneLocks,
   isSummerClass
 } from '../../lib/gradeMilestones';
-import { postGradeMilestoneAtomic } from '../../lib/gradePostingService';
+import { postGradeMilestoneAtomic, preflightSgCorrectionPosting } from '../../lib/gradePostingService';
 import { collectBlankScoreReview, prepareReviewedBlankScores } from '../../lib/gradeScoreReview';
+import { fetchApprovedSgCorrections } from '../../lib/gradeCorrectionService';
+import { hasActiveAdminGradeOverride, planSgCorrectionPosting, requireAuthorizedSgCorrectionPlan } from '../../lib/sgCorrectionPosting';
 
 const computeGradePreviewStudents = ({ students, gradingFormula, maxItems, activities, isSummer }) => students.map(student => {
   const termResults = Object.fromEntries(['Prelim', 'Midterm', 'Semi-Final', 'Final'].map(termName => [
@@ -99,10 +101,26 @@ const computeGradePreviewStudents = ({ students, gradingFormula, maxItems, activ
   const rawGwa = hasAnyScores ? getTransmutedGrade(sg) : null;
   const autoRemarks = hasAnyScores ? getRemarks({ gwa: rawGwa, isComplete: !hasMissingComponents }) : 'Pending';
   const draftRemarks = student.customRemarks || autoRemarks;
-  const isPassed = hasAnyScores && (draftRemarks === 'Passed' || (draftRemarks !== 'Failed' && draftRemarks !== 'FDA' && draftRemarks !== 'Dropped' && rawGwa !== null && rawGwa <= 3.00));
+  const officialAdminOverride = hasActiveAdminGradeOverride(student.postedSemestralGrade)
+    ? student.postedSemestralGrade
+    : null;
+  const officialOverrideGwa = officialAdminOverride?.effective_grade === null
+    || officialAdminOverride?.effective_grade === undefined
+    ? null
+    : Number(officialAdminOverride.effective_grade);
+  const displayedGwa = officialAdminOverride && Number.isFinite(officialOverrideGwa)
+    ? officialOverrideGwa
+    : rawGwa;
+  const displayedRemarks = officialAdminOverride
+    ? toDisplayRemark(officialAdminOverride.remarks)
+    : draftRemarks;
+  const isPassed = hasAnyScores && (displayedRemarks === 'Passed' || (displayedRemarks !== 'Failed' && displayedRemarks !== 'FDA' && displayedRemarks !== 'Dropped' && displayedGwa !== null && displayedGwa <= 3.00));
   const isFDA = (student.absences || 0) >= 4;
-  const isHonor = isPassed && rawGwa !== null && rawGwa <= 1.75;
-  const isAtRisk = hasAnyScores ? (!isPassed || isFDA || (rawGwa !== null && rawGwa > 3.00)) : isFDA;
+  const isHonor = isPassed && displayedGwa !== null && displayedGwa <= 1.75;
+  // An administrative override changes the official result, not the underlying
+  // score evidence used by the intervention/risk view.
+  const scoreDerivedPassed = hasAnyScores && (draftRemarks === 'Passed' || (draftRemarks !== 'Failed' && draftRemarks !== 'FDA' && draftRemarks !== 'Dropped' && rawGwa !== null && rawGwa <= 3.00));
+  const isAtRisk = hasAnyScores ? (!scoreDerivedPassed || isFDA || (rawGwa !== null && rawGwa > 3.00)) : isFDA;
 
   return {
     ...student,
@@ -113,9 +131,12 @@ const computeGradePreviewStudents = ({ students, gradingFormula, maxItems, activ
     fRate: hasFinalScores ? fRate : 0,
     tfr: (hasSemiFinalScores || hasFinalScores) ? tfr : 0,
     sg: hasAnyScores ? sg : 0,
-    gwa: rawGwa,
+    gwa: displayedGwa,
+    scoreDerivedGwa: rawGwa,
     hasAnyScores,
-    remarks: draftRemarks,
+    remarks: displayedRemarks,
+    scoreDerivedRemarks: draftRemarks,
+    hasOfficialAdminOverride: Boolean(officialAdminOverride),
     isPassed,
     isFDA,
     isHonor,
@@ -512,6 +533,7 @@ export default function GradeComputationPreview() {
         }
         setLockedMilestones(collectPostedMilestoneCoverage(pgData || [], { lockedOnly: true }));
 
+
         // Compile complete student datasets
         const compiled = studentList.map(student => {
           const studentScores = scoresByStudent[student.id] || {
@@ -653,7 +675,7 @@ export default function GradeComputationPreview() {
       
       const { data: existingPg, error: fetchErr } = await supabase
         .from('posted_grades')
-        .select('posted_grade_id, student_id, computed_grade, effective_grade, remarks')
+        .select('posted_grade_id, student_id, computed_grade, effective_grade, remarks, override_by, override_at, remarks_set_at')
         .eq('class_record_id', classRecordId)
         .eq('grade_period', periodParam);
 
@@ -683,32 +705,70 @@ export default function GradeComputationPreview() {
       if (isFirstPost) {
         setChangedStudentsPreview(null);
       } else {
-        const changedList = [];
-        computedStudents.forEach(stud => {
+        const candidateRows = computedStudents.map(stud => {
           const remarksLabel = mapRemarkToDb(stud.remarks);
           let computedGWA = stud.gwa;
           if (remarksLabel === 'passed' && stud.gwa > 3.00) computedGWA = 3.00;
-
-          let computedTermGrade = stud.sg;
-          if (targetMilestone === 'midterm') computedTermGrade = stud.mr;
-          else if (targetMilestone === 'tfr') computedTermGrade = stud.tfr;
-
-          const effectiveGWA = targetMilestone === 'semestral' ? computedGWA : toEffectiveGradeForPosting(computedTermGrade);
-          
+          const computedTermGrade = targetMilestone === 'midterm'
+            ? stud.mr
+            : targetMilestone === 'tfr'
+              ? stud.tfr
+              : stud.sg;
+          return {
+            posted_grade_id: existingMap[stud.id]?.id,
+            class_record_id: classRecordId,
+            student_id: stud.id,
+            grade_period: periodParam,
+            computed_grade: computedTermGrade,
+            effective_grade: targetMilestone === 'semestral' ? computedGWA : null,
+            remarks: remarksLabel
+          };
+        });
+        const corrections = targetMilestone === 'semestral'
+          ? await fetchApprovedSgCorrections(classRecordId)
+          : [];
+        const sgPlan = targetMilestone === 'semestral'
+          ? planSgCorrectionPosting({
+            candidateRows,
+            existingPostedGrades: existingPg || [],
+            approvedRequests: corrections,
+            studentNames: Object.fromEntries(computedStudents.map(student => [student.id, student.name]))
+          })
+          : { postRows: candidateRows, violations: [] };
+        requireAuthorizedSgCorrectionPlan(sgPlan);
+        const rowsByStudent = new Map(sgPlan.postRows.map(row => [row.student_id, row]));
+        const approvedByStudent = new Map(corrections.map(request => [request.student_id, request]));
+        const changedList = [];
+        computedStudents.forEach(stud => {
+          let planned = rowsByStudent.get(stud.id);
+          if (!planned) return;
           const oldRecord = existingMap[stud.id];
+          if (targetMilestone === 'semestral') {
+            const approval = approvedByStudent.get(stud.id);
+            if (!approval || !oldRecord) return;
+            planned = {
+              ...planned,
+              computed_grade: approval.proposed_computed_grade ?? oldRecord.computed_grade,
+              effective_grade: approval.proposed_effective_grade ?? oldRecord.effective_grade,
+              remarks: approval.proposed_remark ?? oldRecord.remarks
+            };
+          }
           if (
             !oldRecord ||
-            Number(oldRecord.computed_grade) !== Number(computedTermGrade) ||
-            oldRecord.remarks !== remarksLabel
+            Number(oldRecord.computed_grade) !== Number(planned.computed_grade) ||
+            (oldRecord.effective_grade === null ? null : Number(oldRecord.effective_grade)) !== planned.effective_grade ||
+            oldRecord.remarks !== planned.remarks
           ) {
             changedList.push({
               name: stud.name,
               oldRating: oldRecord?.computed_grade,
-              newRating: computedTermGrade,
+              newRating: planned.computed_grade,
               oldGwa: targetMilestone === 'semestral' ? oldRecord?.effective_grade : (oldRecord?.computed_grade ? toEffectiveGradeForPosting(oldRecord.computed_grade) : null),
-              newGwa: effectiveGWA,
+              newGwa: targetMilestone === 'semestral'
+                ? planned.effective_grade
+                : toEffectiveGradeForPosting(planned.computed_grade),
               oldStanding: oldRecord?.remarks,
-              newStanding: remarksLabel
+              newStanding: planned.remarks
             });
           }
         });
@@ -719,7 +779,7 @@ export default function GradeComputationPreview() {
       setShowConfirmModal(true);
     } catch (err) {
       console.error(err);
-      alert('Error computing differences.');
+      alert(err.message || 'Error computing differences.');
     } finally {
       setIsComputingDiff(false);
     }
@@ -801,7 +861,7 @@ export default function GradeComputationPreview() {
 
       const { data: existingPg, error: fetchErr } = await supabase
         .from('posted_grades')
-        .select('posted_grade_id, student_id, computed_grade, effective_grade, remarks')
+        .select('posted_grade_id, student_id, computed_grade, effective_grade, remarks, override_by, override_at, remarks_set_at')
         .eq('class_record_id', classRecordId)
         .eq('grade_period', periodParam);
 
@@ -834,18 +894,13 @@ export default function GradeComputationPreview() {
         { isSummer }
       );
 
-      const changedStudentIds = [];
-      // Per-student remark, captured alongside changedStudentIds, for the grade_changed
-      // dispatch below. gradeChangeRevision is shared by every student in this single post
-      // invocation so a retried/duplicate click dedupes, while a genuinely later relock gets
-      // a fresh revision and notifies again.
-      const changedStudentRemarks = [];
-      const gradeChangeRevision = Date.now();
-
-      const gradeByStudent = {};
-
-      const postRows = studentsForPosting.map(stud => {
+      let postRows = studentsForPosting.map(stud => {
         const remarksLabel = mapRemarkToDb(stud.remarks);
+        if (targetMilestone === 'semestral'
+          && ['incomplete', 'dropped'].includes(remarksLabel)
+          && !String(stud.remarksNote || '').trim()) {
+          throw new Error(`${stud.name}: a reason is required for the ${stud.remarks} remark.`);
+        }
         let computedGWA = stud.gwa;
         if (remarksLabel === 'passed' && stud.gwa > 3.00) {
           computedGWA = 3.00;
@@ -863,23 +918,7 @@ export default function GradeComputationPreview() {
 
         const dbEffectiveGrade = targetMilestone === 'semestral' ? effectiveGrade : null;
 
-        // Populate notification data payload with the true computed GWA for the email,
-        // even though dbEffectiveGrade suppresses it for non-semestral db records.
-        gradeByStudent[stud.id] = { rating: computedTermGrade, gwa: effectiveGrade };
-
         const oldRecord = existingMap[stud.id];
-        if (!isFirstPost) {
-          if (
-            !oldRecord ||
-            Number(oldRecord.computed_grade) !== Number(computedTermGrade) ||
-            (oldRecord.effective_grade === null ? null : Number(oldRecord.effective_grade)) !== dbEffectiveGrade ||
-            oldRecord.remarks !== remarksLabel
-          ) {
-            changedStudentIds.push(stud.id);
-            changedStudentRemarks.push({ student_id: stud.id, student_name: stud.name, remark: remarksLabel });
-          }
-        }
-
         const existingId = oldRecord?.id;
         return {
           posted_grade_id: existingId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -903,7 +942,31 @@ export default function GradeComputationPreview() {
         };
       });
 
-      await postGradeMilestoneAtomic({
+      if (targetMilestone === 'semestral') {
+        const corrections = await fetchApprovedSgCorrections(classRecordId);
+        const sgPlan = planSgCorrectionPosting({
+          candidateRows: postRows,
+          existingPostedGrades: existingPg || [],
+          approvedRequests: corrections,
+          studentNames: Object.fromEntries(studentsForPosting.map(student => [student.id, student.name]))
+        });
+        requireAuthorizedSgCorrectionPlan(sgPlan);
+        postRows = sgPlan.postRows;
+
+        const preflight = await preflightSgCorrectionPosting({
+          classRecordId,
+          postedGradeRows: postRows
+        });
+        if (!preflight?.ok) {
+          const namesById = Object.fromEntries(studentsForPosting.map(student => [student.id, student.name]));
+          const names = (preflight?.violations || [])
+            .map(item => namesById[item.student_id] || item.student_id)
+            .join(', ');
+          throw new Error(`Official SG update blocked for: ${names || 'one or more students'}.`);
+        }
+      }
+
+      const postingResult = await postGradeMilestoneAtomic({
         classRecordId,
         gradePeriod: periodParam,
         gradingFormulaSnapshot: classInfo?.grading_formula_snapshot || gradingFormulaSnapshot,
@@ -917,9 +980,14 @@ export default function GradeComputationPreview() {
       setLockedMilestones(updatedLockedMilestones);
 
       const actorName = resolveActorName(profile, user);
+      const auditAction = getGradePostingAuditAction({
+        targetMilestone,
+        isFirstPost,
+        changedCount: postingResult?.changed_count,
+      });
       await logActivity(
-        'Grade Posting',
-        `Posted ${termNotificationName} for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
+        auditAction,
+        `${auditAction} for subject ${classInfo?.subjects?.code} - ${classInfo?.sections?.name}`,
         actorName
       );
 
@@ -928,62 +996,16 @@ export default function GradeComputationPreview() {
         body: `📊 ${termNotificationName} posted for ${classInfo?.subjects?.code || 'class'} (${classInfo?.sections?.name || ''}).`
       });
 
-      // Dispatch structured idempotent notifications
-      try {
-        await notifyGradePosted({
-          classRecordId,
-          term: termNotificationName,
-          students: studentsForPosting.map(s => ({
-            student_id: s.id,
-            student_name: s.name,
-            remark: s.remarks || 'Posted',
-            rating: gradeByStudent[s.id]?.rating ?? null,
-            gwa: gradeByStudent[s.id]?.gwa ?? null
-          })),
-          subject: {
-            code: classInfo?.subjects?.code || '',
-            name: classInfo?.subjects?.name || classInfo?.subject_name || ''
-          }
-        });
-      } catch (err) {
-        console.warn('Error dispatching notifyGradePosted:', err);
-      }
-
-      // On first post, notifyGradePosted() above already notified every student in the
-      // roster (idempotent, deduped per class_record_id+term+student) — nothing further
-      // to dispatch here. On a relock, that call no-ops for every student via dedupe, so
-      // students whose grade actually changed get a distinct grade_changed notification
-      // instead (also deduped, per-revision, so a doubled click can't double-notify).
-      if (!isFirstPost && changedStudentRemarks.length > 0) {
-        for (const { student_id, student_name, remark } of changedStudentRemarks) {
-          try {
-            await notifyGradeChanged({
-              classRecordId,
-              term: termNotificationName,
-              studentId: student_id,
-              studentName: student_name,
-              subject: {
-                code: classInfo?.subjects?.code || '',
-                name: classInfo?.subjects?.name || classInfo?.subject_name || ''
-              },
-              remark,
-              rating: gradeByStudent[student_id]?.rating ?? null,
-              gwa: gradeByStudent[student_id]?.gwa ?? null,
-              revision: gradeChangeRevision
-            });
-          } catch (err) {
-            console.warn('Error dispatching notifyGradeChanged:', err);
-          }
-        }
-      }
+      // Student and guardian notifications are inserted by the same database
+      // transaction as the official grade write.
 
       setShowConfirmModal(false);
       setPendingPostMilestone(null);
 
       const notifDetailText = isFirstPost 
         ? 'Enrolled students have been notified for consultation.'
-        : changedStudentIds.length > 0 
-          ? `${changedStudentIds.length} student(s) with updated grades have been notified.`
+        : Number(postingResult?.changed_count || 0) > 0
+          ? `${postingResult.changed_count} student(s) with updated grades have been notified.`
           : 'Grades re-posted. No score changes detected for enrolled students.';
 
       setPostSuccess({
@@ -1357,7 +1379,7 @@ export default function GradeComputationPreview() {
 
   return (
     <>
-      <PageHeader title="Post Grades Preview" breadcrumb="Faculty Portal">
+      <PageHeader title="Review & Post Grades" breadcrumb="Faculty Portal">
         <div className="flex items-center gap-1.5 sm:gap-2">
           <Link
             to={`/faculty/scoreinput?id=${classRecordId}`}
@@ -1763,6 +1785,7 @@ export default function GradeComputationPreview() {
                       : 'bg-rose-50 text-rose-700 border-rose-200'
                   }`}>
                     {student.remarks}
+                    {student.hasOfficialAdminOverride && ' (Official override)'}
                   </span>
                 </div>
 
@@ -2131,6 +2154,9 @@ export default function GradeComputationPreview() {
                               : 'bg-rose-50 text-rose-700 border-rose-200'
                         }`}>
                           {!student.hasAnyScores ? 'Pending' : student.remarks}
+                          {student.hasOfficialAdminOverride && (
+                            <span className="block text-micro font-semibold text-sage-700">Official override</span>
+                          )}
                         </span>
                       </td>
 
@@ -2315,13 +2341,13 @@ export default function GradeComputationPreview() {
                           </div>
                           <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
                             {isSummer 
-                              ? 'Posts Midterm period scores for student consultation. Freezes Midterm input cells.' 
-                              : 'Posts Prelim & Midterm period scores + Midterm Rating (MR) for student consultation. Freezes Midterm input cells.'}
+                              ? 'Posts Midterm scores for consultation. Faculty may revise and re-post this rating until SG is finalized.'
+                              : 'Posts Prelim and Midterm scores with MR for consultation. Faculty may revise and re-post until SG is finalized.'}
                           </p>
                         </div>
                         <button
                           type="button"
-                          disabled={postingGrades || isComputingDiff}
+                          disabled={postingGrades || isComputingDiff || isLocked}
                           onClick={() => computeChangedStudents('midterm')}
                           className="px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                         >
@@ -2351,14 +2377,14 @@ export default function GradeComputationPreview() {
                             )}
                           </div>
                           <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                            {isSummer 
-                              ? 'Posts Final period scores for consultation before official semestral locking.'
-                              : 'Posts Semi-Final & Final period scores + Tentative Final Rating (TFR) for student consultation.'}
+                            {isSummer
+                              ? 'Posts Final scores for consultation. Faculty may revise and re-post TFR until SG is finalized.'
+                              : 'Posts Semi-Final and Final scores with TFR for consultation. Faculty may revise and re-post until SG is finalized.'}
                           </p>
                         </div>
                         <button
                           type="button"
-                          disabled={postingGrades || isComputingDiff}
+                          disabled={postingGrades || isComputingDiff || isLocked}
                           onClick={() => computeChangedStudents('tfr')}
                           className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                         >

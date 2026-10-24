@@ -6,10 +6,106 @@
 import { supabase } from './supabase';
 import { PASSING_GRADE, HIGH_CUTOFF, SAME_MARGIN } from './constants';
 import { computeUnifiedRisk } from './riskEngine';
-import { RISK_TIERS, resolveOfficialGwa, countAttendance } from './academicPolicy';
-import { findMostAdvancedPostedGrade } from './gradeMilestones';
+import { RISK_TIERS, resolveOfficialGradeState, countAttendance, getRemarks } from './academicPolicy';
+import { GRADE_MILESTONES, findMostAdvancedPostedGrade, getCanonicalGradePeriod } from './gradeMilestones';
 import { getClassPriorityRoster } from './classRoomService';
 import * as XLSX from 'xlsx-js-style';
+
+const REPORT_TITLE_STYLE = {
+  font: { bold: true, sz: 16, color: { rgb: 'FFFFFF' } },
+  fill: { fgColor: { rgb: '1E3A5F' } },
+  alignment: { horizontal: 'left', vertical: 'center' }
+};
+const REPORT_SUBTITLE_STYLE = {
+  font: { bold: true, color: { rgb: '1E3A5F' } },
+  fill: { fgColor: { rgb: 'E8F1FA' } },
+  alignment: { vertical: 'center', wrapText: true }
+};
+const REPORT_HEADER_STYLE = {
+  font: { bold: true, color: { rgb: 'FFFFFF' } },
+  fill: { fgColor: { rgb: '2F75B5' } },
+  alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+  border: {
+    top: { style: 'thin', color: { rgb: 'D9E2F3' } },
+    bottom: { style: 'thin', color: { rgb: 'D9E2F3' } },
+    left: { style: 'thin', color: { rgb: 'D9E2F3' } },
+    right: { style: 'thin', color: { rgb: 'D9E2F3' } }
+  }
+};
+const REPORT_BODY_BORDER = {
+  top: { style: 'thin', color: { rgb: 'D9E2F3' } },
+  bottom: { style: 'thin', color: { rgb: 'D9E2F3' } },
+  left: { style: 'thin', color: { rgb: 'D9E2F3' } },
+  right: { style: 'thin', color: { rgb: 'D9E2F3' } }
+};
+
+export function createFormattedReportWorksheet({
+  title,
+  subtitle,
+  headers,
+  rows,
+  columnWidths = [],
+  percentageColumns = []
+}) {
+  const safeHeaders = headers || [];
+  const safeRows = rows || [];
+  const lastColumn = Math.max(0, safeHeaders.length - 1);
+  const worksheet = XLSX.utils.aoa_to_sheet([
+    [title],
+    [subtitle],
+    [`Generated: ${new Date().toLocaleString()}`],
+    [],
+    safeHeaders,
+    ...safeRows
+  ]);
+
+  const generatedStyle = {
+    font: { italic: true, color: { rgb: '5B6573' } },
+    alignment: { vertical: 'center' }
+  };
+  for (let column = 0; column <= lastColumn; column += 1) {
+    const titleCell = worksheet[XLSX.utils.encode_cell({ r: 0, c: column })];
+    const subtitleCell = worksheet[XLSX.utils.encode_cell({ r: 1, c: column })];
+    const generatedCell = worksheet[XLSX.utils.encode_cell({ r: 2, c: column })];
+    const headerCell = worksheet[XLSX.utils.encode_cell({ r: 4, c: column })];
+    if (titleCell) titleCell.s = REPORT_TITLE_STYLE;
+    if (subtitleCell) subtitleCell.s = REPORT_SUBTITLE_STYLE;
+    if (generatedCell) generatedCell.s = generatedStyle;
+    if (headerCell) headerCell.s = REPORT_HEADER_STYLE;
+  }
+
+  safeRows.forEach((row, rowIndex) => {
+    row.forEach((value, columnIndex) => {
+      const cell = worksheet[XLSX.utils.encode_cell({ r: rowIndex + 5, c: columnIndex })];
+      if (!cell) return;
+      cell.s = {
+        alignment: { vertical: 'center', wrapText: true },
+        border: REPORT_BODY_BORDER,
+        fill: rowIndex % 2 === 0 ? { fgColor: { rgb: 'F7FAFC' } } : undefined
+      };
+      if (percentageColumns.includes(columnIndex) && typeof value === 'number') {
+        cell.z = '0.0';
+      }
+    });
+  });
+
+  worksheet['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: lastColumn } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: lastColumn } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: lastColumn } }
+  ];
+  worksheet['!cols'] = safeHeaders.map((header, index) => ({
+    wch: columnWidths[index] || Math.min(Math.max(String(header || '').length + 4, 14), 28)
+  }));
+  worksheet['!rows'] = [{ hpt: 25 }, { hpt: 22 }, { hpt: 18 }, { hpt: 8 }, { hpt: 34 }];
+  worksheet['!autofilter'] = {
+    ref: XLSX.utils.encode_range({ s: { r: 4, c: 0 }, e: { r: Math.max(4, safeRows.length + 4), c: lastColumn } })
+  };
+  worksheet['!freeze'] = { xSplit: 0, ySplit: 5, topLeftCell: 'A6', activePane: 'bottomLeft', state: 'frozen' };
+  worksheet['!margins'] = { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
+  worksheet['!pageSetup'] = { orientation: 'landscape', fitToWidth: 1, fitToHeight: 0 };
+  return worksheet;
+}
 
 /**
  * Determine a student's performance category based on institutional cutoffs.
@@ -134,7 +230,7 @@ export async function fetchClassReportDataset(classRecordId) {
   //    same helper AcademicInsights.jsx/SummaryReports.jsx already use for this exact problem.
   const { data: postedGrades, error: postedError } = await supabase
     .from('posted_grades')
-    .select('student_id, grade_period, computed_grade, effective_grade, locked_milestones')
+    .select('student_id, grade_period, computed_grade, effective_grade, remarks, locked_milestones')
     .eq('class_record_id', classRecordId);
   if (postedError) {
     console.error('Error fetching posted grades:', postedError);
@@ -148,7 +244,13 @@ export async function fetchClassReportDataset(classRecordId) {
   const postedDetailsByStudent = {};
   postedByStudent.forEach((studentRows, studentId) => {
     const advanced = findMostAdvancedPostedGrade(studentRows);
-    postedDetailsByStudent[studentId] = advanced ? { gwa: resolveOfficialGwa(advanced).gwa, period: advanced.grade_period } : null;
+    const official = advanced ? resolveOfficialGradeState(advanced) : null;
+    postedDetailsByStudent[studentId] = advanced ? {
+      gwa: official.gwa,
+      period: getCanonicalGradePeriod(advanced),
+      remarks: official.displayRemark,
+      dbRemark: official.dbRemark
+    } : null;
   });
 
   // 5. Real attendance for this class — never a fabricated absence count.
@@ -296,18 +398,13 @@ export function aggregateByStudent(rows = [], postedDetailsByStudent = {}, atten
     
     const posted = postedDetailsByStudent[stud.studentId];
 
-    if (rosterData && Number.isFinite(rosterData.current_gwa)) {
-      realGwa = rosterData.current_gwa; // Always use the live dynamic grade to match Score Sheet
-      // It is ONLY NOT tentative if the Semestral Grade (SG) is posted AND it perfectly matches the live computed GWA.
-      if (posted && posted.period === 'SG' && posted.gwa === realGwa) {
-        isTentative = false;
-      }
+    if (posted?.period === GRADE_MILESTONES.SEMESTRAL_GRADE && Number.isFinite(posted.gwa)) {
+      realGwa = posted.gwa;
+      isTentative = false;
+    } else if (rosterData && Number.isFinite(rosterData.current_gwa)) {
+      realGwa = rosterData.current_gwa;
     } else if (posted && Number.isFinite(posted.gwa)) {
-      realGwa = posted.gwa; // Fallback to posted if roster fails
-      // If roster failed but we have a posted SG, it's official. If it's a Midterm etc, it's tentative.
-      if (posted.period === 'SG') {
-        isTentative = false;
-      }
+      realGwa = posted.gwa;
     }
 
     const absenceCount = rosterData ? rosterData.absences : (attendanceByStudent[stud.studentId] || 0);
@@ -321,11 +418,9 @@ export function aggregateByStudent(rows = [], postedDetailsByStudent = {}, atten
       overallStatus = 'Struggling';
     }
 
-    // Remarks (Passed / Failed) derived from GWA, matching Score Sheet logic
-    let remarks = null;
-    if (realGwa !== null) {
-      remarks = realGwa <= 3.00 ? 'Passed' : 'Failed';
-    }
+    const remarks = !isTentative && posted?.remarks
+      ? posted.remarks
+      : (realGwa === null ? null : getRemarks({ gwa: realGwa }));
 
     return {
       ...stud,
@@ -518,7 +613,20 @@ export function exportClassPerformanceToExcel({ selectedClass, students = [], ac
     return row;
   });
 
-  const ws = XLSX.utils.json_to_sheet(dataToExport);
+  const headers = Object.keys(dataToExport[0]);
+  const ws = createFormattedReportWorksheet({
+    title: 'Class Performance Report',
+    subtitle: `${selectedClass?.subjects?.code || 'Subject'} — ${selectedClass?.sections?.name || 'Class'} | ${selectedClass?.semester || ''} ${selectedClass?.school_year || ''}`.trim(),
+    headers,
+    rows: dataToExport.map(row => headers.map(header => row[header])),
+    columnWidths: headers.map(header => {
+      if (header === 'Student Name') return 28;
+      if (header === 'Student ID') return 16;
+      if (header.includes('Activities') || header.includes('Overall') || header.includes('Grade')) return 18;
+      if (header.includes('Status') || header.includes('Standing')) return 18;
+      return 24;
+    })
+  });
   const wb = XLSX.utils.book_new();
   const safeSheetName = (selectedClass?.subjects?.code || 'Performance').replace(/[\\/?*[\]]/g, '').slice(0, 31);
   XLSX.utils.book_append_sheet(wb, ws, safeSheetName || 'Class Performance');
@@ -784,9 +892,29 @@ export function exportComparisonToExcel({ targetClass, referenceClass, targetMet
   ];
 
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summaryRows), 'Comparison');
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(distributionRows), 'Distribution');
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(componentRows), 'Components');
+  XLSX.utils.book_append_sheet(workbook, createFormattedReportWorksheet({
+    title: 'Performance Comparison',
+    subtitle: 'Target class compared with reference class',
+    headers: summaryRows[0],
+    rows: summaryRows.slice(1),
+    columnWidths: [24, 34, 34],
+    percentageColumns: [1, 2]
+  }), 'Comparison');
+  XLSX.utils.book_append_sheet(workbook, createFormattedReportWorksheet({
+    title: 'Performance Comparison Distribution',
+    subtitle: 'Student counts by performance band',
+    headers: distributionRows[0],
+    rows: distributionRows.slice(1),
+    columnWidths: [24, 16, 16]
+  }), 'Distribution');
+  XLSX.utils.book_append_sheet(workbook, createFormattedReportWorksheet({
+    title: 'Performance Comparison Components',
+    subtitle: 'Configured component averages and evidence coverage',
+    headers: componentRows[0],
+    rows: componentRows.slice(1),
+    columnWidths: [28, 20, 22, 20, 22],
+    percentageColumns: [1, 2, 3, 4]
+  }), 'Components');
   XLSX.writeFile(workbook, `Performance_Comparison_${new Date().toISOString().slice(0, 10)}.xlsx`);
   return true;
 }
