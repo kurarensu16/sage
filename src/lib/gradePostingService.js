@@ -93,12 +93,14 @@ export async function preflightSgCorrectionPosting({ classRecordId, postedGradeR
 
 export async function applyAdminGradeOverride({
   postedGradeId,
+  newComputedGrade,
   newEffectiveGrade,
   newRemarks,
   reason
 }) {
   if (!postedGradeId) throw new Error('A posted SG is required for an administrative override.');
   const requestFingerprint = stableFingerprint({
+    newComputedGrade: Number(newComputedGrade),
     newEffectiveGrade: Number(newEffectiveGrade),
     newRemarks: String(newRemarks || '').trim().toLowerCase(),
     reason: String(reason || '').trim()
@@ -107,9 +109,10 @@ export async function applyAdminGradeOverride({
     postedGradeId,
     `admin_override:${requestFingerprint}`
   );
-  const { data, error } = await supabase.rpc('apply_admin_grade_override_v2', {
+  const { data, error } = await supabase.rpc('apply_admin_grade_override_v3', {
     p_operation_id: operationId,
     p_posted_grade_id: postedGradeId,
+    p_new_computed_grade: newComputedGrade,
     p_new_effective_grade: newEffectiveGrade,
     p_new_remarks: newRemarks,
     p_reason: reason

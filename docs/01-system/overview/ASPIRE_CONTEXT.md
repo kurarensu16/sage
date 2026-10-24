@@ -93,7 +93,9 @@ Posting MR or TFR writes the complete selected milestone atomically for the clas
 An official locked SG can be revised through either of two separate authorities:
 
 1. An authorized Admin may perform the existing logged official override.
-2. The assigned faculty may submit an exact proposed SG correction, reason, and optional HTTPS evidence reference. The Dean for the class's department may approve or reject it. Approval only authorizes the correction and unlocks the row; it does not change the student's official SG. The assigned faculty must apply the exact approved percentage, GWA, and remark by successfully reposting. Only that committed repost updates the student-facing grade, relocks it, marks the request applied, records immutable correction history, and sends notifications.
+2. The assigned faculty may request one student-scoped SG correction with a reason, intended status, and optional HTTPS evidence reference. The Dean for the class's department may approve or reject it. Approval does not unlock the live score tables or change the official SG. After approval, the assigned faculty may edit any activities, character ratings, or examinations in that student's full row inside the dedicated correction editor. The server stages those exact before/after values, recalculates MR/TFR/SG/GWA/status, applies the result, consumes the one-use approval, records immutable history, sends notifications, and relocks the record in one transaction.
+
+The separate Admin override replaces the official SG percentage, effective GWA, and academic status together. The database validates their institutional-policy consistency and records the complete original and replacement result.
 
 The grade correction does not rewrite or delete an already submitted faculty risk evaluation; its historical baseline and follow-up snapshots remain unchanged.
 

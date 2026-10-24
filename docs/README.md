@@ -77,6 +77,7 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 | Document | Status | Notes |
 |---|---|---|
 | [GRADE_POSTING_P0_HARDENING_2026-10-22.md](03-development/implementation-reports/GRADE_POSTING_P0_HARDENING_2026-10-22.md) | Code complete; migrations/live QA pending | Server-authoritative official posting, locked one-use SG corrections, immutable revisions, idempotency, full-roster enforcement, transactional notifications, backend admin validation, and official-remark consumer fixes. |
+| [STAGED_SG_SCORE_CORRECTIONS_2026-10-23.md](03-development/implementation-reports/STAGED_SG_SCORE_CORRECTIONS_2026-10-23.md) | Code complete; corrected-milestone migration/live QA pending | Student-scoped Dean approval, post-approval full-row faculty correction, atomic MR/TFR/SG recalculation, existing-correction repair, rolled-back server preview, and complete Admin SG/GWA/status override. |
 | [ACADEMIC_RULES_UNIFICATION_IMPLEMENTATION_REPORT_2026-10-01.md](03-development/implementation-reports/ACADEMIC_RULES_UNIFICATION_IMPLEMENTATION_REPORT_2026-10-01.md) | Reference | Academic rules unification. |
 | [ACADEMIC_RULES_VERIFICATION_RESPONSE_2026-10-01.md](03-development/implementation-reports/ACADEMIC_RULES_VERIFICATION_RESPONSE_2026-10-01.md) | Reference | Verification response to the above. |
 | [ANALYTICS_STRONGEST_ADDITIONS.md](03-development/implementation-reports/ANALYTICS_STRONGEST_ADDITIONS.md) | Reference | Analytics upgrade outcome; its verification items are not yet merged into the system test checklist. |

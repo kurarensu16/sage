@@ -173,6 +173,27 @@ export function findPostedMilestone(rows, milestone) {
   return exact || (rows || []).find(row => isGradeMilestone(row, milestone)) || null;
 }
 
+/**
+ * Finds only a posted row that represents one individual academic period.
+ * Aggregate MR, TFR, and SG records must never replace the Midterm or Final
+ * period calculation in a score breakdown.
+ *
+ * The current posting workflow stores aggregate milestones only. Prelim and
+ * Semi-Final are retained here for compatibility with older posted rows whose
+ * identities are unambiguous. Legacy `midterm` and `final` identities are
+ * aggregate aliases, so they are intentionally excluded.
+ */
+export function findPostedTermGrade(rows, term) {
+  const gradePeriod = term === 'Prelim'
+    ? 'prelim'
+    : term === 'Semi-Final' ? 'semi_final' : null;
+  if (!gradePeriod) return null;
+
+  return (rows || []).find(row => (
+    String(row?.grade_period || '').trim().toLowerCase() === gradePeriod
+  )) || null;
+}
+
 export function findMostAdvancedPostedGrade(rows) {
   return findPostedMilestone(rows, GRADE_MILESTONES.SEMESTRAL_GRADE)
     || findPostedMilestone(rows, GRADE_MILESTONES.TENTATIVE_FINAL_RATING)

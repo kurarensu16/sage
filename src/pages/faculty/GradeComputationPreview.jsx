@@ -1379,7 +1379,7 @@ export default function GradeComputationPreview() {
 
   return (
     <>
-      <PageHeader title="Post Grades Preview" breadcrumb="Faculty Portal">
+      <PageHeader title="Review & Post Grades" breadcrumb="Faculty Portal">
         <div className="flex items-center gap-1.5 sm:gap-2">
           <Link
             to={`/faculty/scoreinput?id=${classRecordId}`}

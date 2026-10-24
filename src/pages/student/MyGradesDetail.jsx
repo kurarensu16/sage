@@ -19,7 +19,7 @@ import { DetailSkeleton } from '../../components/common/Skeleton';
 import {
   GRADE_MILESTONES,
   findPostedMilestone,
-  getCanonicalGradePeriod,
+  findPostedTermGrade,
   isTermCoveredByPostedMilestone
 } from '../../lib/gradeMilestones';
 import { scoreOrNull } from '../../lib/evaluationTracking';
@@ -35,6 +35,7 @@ export default function MyGradesDetail() {
   const [activeTab, setActiveTab] = useState('Prelim');
   const [isCsExpanded, setIsCsExpanded] = useState(true);
   const [selectedActivity, setSelectedActivity] = useState(null);
+  const [dataRefreshKey, setDataRefreshKey] = useState(0);
 
   const [loading, setLoading] = useState(true);
   const [classInfo, setClassInfo] = useState(null);
@@ -184,29 +185,13 @@ export default function MyGradesDetail() {
           };
         });
 
-        const postedMap = {};
-        posted?.forEach(p => {
-          const canonicalPeriod = getCanonicalGradePeriod(p);
-          const termKey = canonicalPeriod === 'prelim' ? 'Prelim'
-                        : canonicalPeriod === 'semi_final' ? 'Semi-Final'
-                        : canonicalPeriod === GRADE_MILESTONES.MIDTERM_RATING ? 'Midterm'
-                        : canonicalPeriod === GRADE_MILESTONES.TENTATIVE_FINAL_RATING ? 'Final'
-                        : canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE ? 'Final'
-                        : null;
-          if (!termKey) return;
-          const current = postedMap[termKey];
-          if (
-            !current
-            || canonicalPeriod === GRADE_MILESTONES.SEMESTRAL_GRADE
-            || getCanonicalGradePeriod(current) !== GRADE_MILESTONES.SEMESTRAL_GRADE
-          ) {
-            postedMap[termKey] = p;
-          }
-        });
-
         const postedMr = findPostedMilestone(posted, GRADE_MILESTONES.MIDTERM_RATING);
         const postedTfr = findPostedMilestone(posted, GRADE_MILESTONES.TENTATIVE_FINAL_RATING);
         const postedSg = findPostedMilestone(posted, GRADE_MILESTONES.SEMESTRAL_GRADE);
+        const hasAppliedScoreCorrection = Boolean(
+          postedSg?.official_source === 'dean_correction'
+          && postedSg?.last_correction_request_id
+        );
         const postedLocks = (posted || []).flatMap(row => [row.grade_period, ...(row.locked_milestones || [])]);
 
         const gradingSnapshot = crInfo?.grading_formula_snapshot
@@ -249,7 +234,10 @@ export default function MyGradesDetail() {
           });
           
           // Check if posted
-          const postedRow = postedMap[term];
+          // The period panel describes one term. MR, TFR, and SG are aggregate
+          // milestones and belong only in the semestral summary; substituting
+          // one here made values such as 70.83% appear to round to a posted MR.
+          const postedRow = findPostedTermGrade(posted, term);
           const isPosted = !!postedRow;
           const applicablePostedMilestone = postedSg
             || (['Prelim', 'Midterm'].includes(term) ? postedMr : postedTfr)
@@ -348,6 +336,9 @@ export default function MyGradesDetail() {
             rating: finalRating,
             grade: finalGrade,
             status,
+            coverageLabel: hasAppliedScoreCorrection
+              ? 'Included in corrected official SG'
+              : `Included in the posted ${['Prelim', 'Midterm'].includes(term) ? 'Midterm Rating' : 'Tentative Final Rating'}`,
             overallPct: finalRating !== null ? (calculation.rawRating ?? null) : null,
             components,
             missingScores
@@ -381,6 +372,15 @@ export default function MyGradesDetail() {
           isOfficial: Boolean(running?.isOfficial),
           mrIsPosted: Boolean(postedMr),
           tfrIsPosted: Boolean(postedTfr),
+          mrIsCorrected: Boolean(
+            postedMr?.official_source === 'dean_correction'
+            && postedMr?.last_correction_request_id === postedSg?.last_correction_request_id
+          ),
+          tfrIsCorrected: Boolean(
+            postedTfr?.official_source === 'dean_correction'
+            && postedTfr?.last_correction_request_id === postedSg?.last_correction_request_id
+          ),
+          sgIsCorrected: hasAppliedScoreCorrection,
           blankActivityCount: running?.blankActivityCount || 0
         });
 
@@ -401,6 +401,21 @@ export default function MyGradesDetail() {
     }
 
     loadGradeBreakdown();
+  }, [user, classRecordId, dataRefreshKey]);
+
+  useEffect(() => {
+    if (!user || !classRecordId) return undefined;
+    const refreshVisibleGrade = () => {
+      if (document.visibilityState === 'visible') {
+        setDataRefreshKey(value => value + 1);
+      }
+    };
+    window.addEventListener('focus', refreshVisibleGrade);
+    document.addEventListener('visibilitychange', refreshVisibleGrade);
+    return () => {
+      window.removeEventListener('focus', refreshVisibleGrade);
+      document.removeEventListener('visibilitychange', refreshVisibleGrade);
+    };
   }, [user, classRecordId]);
 
   if (loading) {
@@ -647,8 +662,8 @@ export default function MyGradesDetail() {
                     {activeData.grade === '—'
                       ? 'Awaiting scores'
                       : parseFloat(activeData.grade) <= 3.00
-                        ? (activeData.status !== 'Posted' ? 'Passing so far' : 'Passed')
-                        : (activeData.status !== 'Posted' ? 'Below passing so far' : 'At-Risk')}
+                        ? (activeData.status === 'Tentative' ? 'Passing so far' : 'Passed for this period')
+                        : (activeData.status === 'Tentative' ? 'Below passing so far' : 'Below passing for this period')}
                   </h4>
                   <p className="text-[10px] text-slate-450">
                     {activeData.status === 'Tentative' ? 'Live grade from recorded scores' : 'Computed grade for period'}
@@ -664,7 +679,7 @@ export default function MyGradesDetail() {
               {activeData.status === 'Covered' && (
                 <div className="bg-emerald-50 text-emerald-800 text-[10px] font-bold p-3 rounded-lg border border-emerald-100 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                  Included in the posted {['Prelim', 'Midterm'].includes(activeTab) ? 'Midterm Rating' : 'Tentative Final Rating'}
+                  {activeData.coverageLabel}
                 </div>
               )}
               {activeData.status === 'Tentative' && (
@@ -723,7 +738,7 @@ export default function MyGradesDetail() {
                       "block text-micro font-bold uppercase tracking-wide",
                       finalCalculations.mrIsPosted ? 'text-emerald-600' : 'text-amber-600'
                     )}>
-                      {finalCalculations.mrIsPosted ? 'Posted' : 'Tentative'}
+                      {finalCalculations.mrIsCorrected ? 'Corrected' : finalCalculations.mrIsPosted ? 'Posted' : 'Tentative'}
                     </span>
                   )}
                 </div>
@@ -735,7 +750,7 @@ export default function MyGradesDetail() {
                       "block text-micro font-bold uppercase tracking-wide",
                       finalCalculations.tfrIsPosted ? 'text-emerald-600' : 'text-amber-600'
                     )}>
-                      {finalCalculations.tfrIsPosted ? 'Posted' : 'Tentative'}
+                      {finalCalculations.tfrIsCorrected ? 'Corrected' : finalCalculations.tfrIsPosted ? 'Posted' : 'Tentative'}
                     </span>
                   )}
                 </div>

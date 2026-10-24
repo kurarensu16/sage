@@ -24,7 +24,7 @@ The required direction is a single server projection and posting engine, one fac
 
 ### 2026-10-22 implementation update
 
-The six P0 findings below are implemented in the local code and migrations. See [Grade Posting P0 Hardening](../implementation-reports/GRADE_POSTING_P0_HARDENING_2026-10-22.md) for the exact controls, migration order, and mandatory live release gate. Score-delta SG corrections are deliberately disabled rather than permitted through live autosave; the supported correction operation recalculates against the unchanged locked score basis.
+The six P0 findings below are implemented in the local code and migrations. See [Grade Posting P0 Hardening](../implementation-reports/GRADE_POSTING_P0_HARDENING_2026-10-22.md) for the exact controls, migration order, and mandatory live release gate. The follow-up staged correction migration adds the dedicated score-delta workflow: Dean approval is scoped to one student, live autosave remains locked, and exact score changes plus the server-recalculated official result commit atomically.
 
 Policy clarification: MR and TFR are consultation/progress ratings, not correction-controlled final grades. The assigned faculty may revise and re-post either milestone until SG is posted. The SG transaction is the final lock boundary; afterward MR/TFR inputs and reposts are blocked and SG changes require the audited correction workflow.
 
@@ -59,10 +59,10 @@ This audit did **not** connect to or mutate a deployed Supabase instance. Findin
 | Score entry | `StudentRow` debounces to local storage and directly upserts score tables. `Save All Scores` is a second persistence path. | Browser plus score-table RLS. |
 | Preview | Both faculty pages calculate terms, MR, TFR, SG, GWA, and remarks in JavaScript. | Browser. |
 | MR/TFR/SG post | Client sends calculated posted-grade rows to `post_grade_milestone_atomic`. The RPC validates ranges, identity, formula shape, and authorization, then persists the supplied results. | Client result, database persistence guard. |
-| SG correction request | Faculty manually enters exact proposed SG percentage, GWA, remark, reason, and optional evidence URL. `proposed_score_changes` is supported by SQL but not populated by this UI. | Manual proposal. |
-| Dean approval | Approval validates the official baseline and sets `posted_grades.is_locked = false`. | Database request state. |
-| Correction application | Live score edits autosave first. During repost, the client replaces its calculated result with the exact approved proposal; triggers consume the approval and write immutable history. | Approved manual result, not a server recalculation. |
-| Admin override | Admin RPC creates a synthetic approved request, updates effective GWA/remark, and lets correction triggers record history. | Admin-supplied result. |
+| SG correction request | Faculty requests one correction window for a specific locked student row, with intended outcome, reason, and optional evidence URL. | Student-scoped database request. |
+| Dean approval | Approval validates the official baseline and grants one correction transaction; `posted_grades` and live score tables remain locked. | Database request state. |
+| Correction application | The dedicated editor stages any activities, character ratings, or examinations changed for that student. PostgreSQL validates each original value and maximum, recalculates the complete result, commits score deltas plus official revision/history/notifications, and consumes the approval atomically. | Server calculation and one-use approval. |
+| Admin override | Admin RPC replaces SG percentage, effective GWA, and status together, validates their consistency, creates the audited approval artifact, and records immutable history. | Validated Admin result. |
 | Notifications | Client dispatches after the official transaction. Dedupe keys reduce duplicates. | Best-effort client follow-up. |
 | Official display/export | Most export paths use stored SG/GWA/remark, but several student/dean analytics re-derive standing from numeric GWA. | Mixed. |
 
@@ -96,29 +96,17 @@ The RPC validates that `computed_grade` is 0-100 and that SG has an effective gr
 
 ### P0-02 - Approved correction unlocks unrestricted live score mutation
 
-**Status:** Implemented locally; migration and live acceptance pending.  
-**Evidence:** `20261008160000_sg_correction_integrity.sql:338-383`; `StudentRow.jsx:75-215`; `StudentRow.jsx:362-366`; `20261008180000_grading_authorization_hardening.sql:340-374`.
+**Status:** Resolved by the staged SG correction workflow; authenticated live acceptance remains required.
+**Evidence:** `20261023211000_staged_sg_score_corrections.sql`; `gradeCorrectionService.js`; `PostedGradesView.jsx`.
 
-Dean approval changes `posted_grades.is_locked` to false. The UI interprets that as permission to edit every score cell for the student, and each edit debounces directly into `student_term_scores` and `student_activity_scores`. Score RLS checks assigned-faculty ownership but does not enforce the official SG lock or bind the write to an approved request.
-
-Consequences:
-
-- score changes can persist even if the final SG repost fails;
-- the faculty can change more cells than the Dean reviewed;
-- the live score basis may diverge from the still-official SG during the revision window;
-- a direct API client can bypass the UI lock; and
-- canceling an approved request relocks the SG but does not roll back score edits already saved.
-
-**Required control:** Approval must leave the official row and live score ledger locked. Correction edits must be staged separately and submitted to one `apply_sg_correction_v2` transaction that validates the request, applies only the approved delta, recalculates, writes the new official revision, consumes approval, records history, and queues notifications atomically.
+Dean approval now leaves both the official SG and its live score basis locked. The approval authorizes one student-scoped transaction. Faculty enter the exact activity, examination, or character-rating changes in a staged editor; PostgreSQL validates and previews the delta in a rolled-back subtransaction, then applies the scores, recalculates SG/GWA, consumes the approval, records immutable history, and queues notifications atomically.
 
 ### P0-03 - The approved result is substituted, not recalculated
 
-**Status:** Implemented locally with containment: server recalculation is required and unstaged score-delta corrections are disabled.  
-**Evidence:** `PostedGradesView.jsx:1371-1398`; `sgCorrectionPosting.js:27-33`; `sgCorrectionPosting.js:73-78`; `20261014130000_admin_grade_override_audited.sql:97-124`.
+**Status:** Resolved by server preview and atomic application; authenticated live acceptance remains required.
+**Evidence:** `20261023211000_staged_sg_score_corrections.sql`; `gradeCorrectionService.js`; `PostedGradesView.jsx`; `RemarkOverrideRequests.jsx`.
 
-The UI tells faculty to enter values expected after the official engine recalculates corrected scores. At application time, however, `applyProposal` overwrites the locally calculated row with those manually entered values. The trigger proves only that the update equals the approved proposal; it does not prove that the proposal equals the score-derived result. `proposed_score_changes` exists in SQL, but the faculty UI does not send it.
-
-**Required control:** The request should describe the intended score delta and exceptional standing reason. The server should calculate the resulting SG/GWA. Dean approval should be tied to the baseline revision, proposed delta, and resulting server projection hash.
+The browser no longer substitutes an authoritative SG/GWA. Exact staged score deltas are sent to the secured correction RPC, which validates the locked baseline, applies the proposed values transaction-locally, runs the canonical server calculator, validates the Dean-approved final status, and writes the recalculated official result in the same transaction. The immutable correction history retains the canonical before/after score delta.
 
 ### P0-04 - Partial roster posting is accepted and can be reported as complete
 

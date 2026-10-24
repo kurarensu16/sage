@@ -1715,7 +1715,7 @@ export default function ScoreInput() {
   if (!classRecordId) {
     return (
       <>
-        <PageHeader title="Log Class Scores" breadcrumb="Faculty Portal" />
+        <PageHeader title="Scorebook" breadcrumb="Faculty Portal" />
         <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 text-left">
           <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-6 shadow-2xs space-y-1">
             <h2 className="text-base sm:text-lg font-bold text-slate-900 font-display">Select a Class to Input Scores</h2>
@@ -1850,15 +1850,15 @@ export default function ScoreInput() {
   return (
     <>
       {/* Header */}
-      <PageHeader title="Log Class Scores" breadcrumb="Faculty Portal">
+      <PageHeader title="Scorebook" breadcrumb="Faculty Portal">
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
           <button 
             onClick={() => navigate(`/faculty/postedgradesview?id=${classRecordId}`)}
             className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
           >
             <Lock className="h-3.5 w-3.5 text-slate-500" />
-            <span className="hidden sm:inline">Preview Grades</span>
-            <span className="sm:hidden">Preview</span>
+            <span className="hidden sm:inline">Posted Grades &amp; Corrections</span>
+            <span className="sm:hidden">Posted</span>
           </button>
           <button
             disabled={students.length === 0}
@@ -1866,8 +1866,8 @@ export default function ScoreInput() {
             className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-sage-200 bg-sage-50 hover:bg-sage-100 text-sage-700 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
           >
             <FileSpreadsheet className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Post Grades</span>
-            <span className="sm:hidden">Post</span>
+            <span className="hidden sm:inline">Review &amp; Post</span>
+            <span className="sm:hidden">Review</span>
           </button>
           <button 
             disabled={savingScores || students.length === 0 || isLocked}
@@ -1888,7 +1888,7 @@ export default function ScoreInput() {
           <div className="bg-slate-50 border border-slate-200 text-slate-700 p-3.5 rounded-xl text-xs font-medium flex items-start gap-2">
             <Lock className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
             <span>
-              This class is archived and its score sheet remains locked. An approved SG correction can be applied through the audited Post SG transaction.
+              This class is archived and its score sheet remains locked. Continue an approved SG correction from Posted Grades &amp; Corrections.
             </span>
           </div>
         )}

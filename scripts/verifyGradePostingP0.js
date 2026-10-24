@@ -18,16 +18,33 @@ const sgBasisLock = readFileSync(
   new URL('../supabase/migrations/20261023073500_enforce_sg_basis_lock.sql', import.meta.url),
   'utf8'
 );
+const stagedCorrections = readFileSync(
+  new URL('../supabase/migrations/20261023211000_staged_sg_score_corrections.sql', import.meta.url),
+  'utf8'
+);
+const correctedMilestones = readFileSync(
+  new URL('../supabase/migrations/20261024093000_cascade_corrected_grade_milestones.sql', import.meta.url),
+  'utf8'
+);
 const studentRow = readFileSync(new URL('../src/components/StudentRow.jsx', import.meta.url), 'utf8');
 const scoreInput = readFileSync(new URL('../src/pages/faculty/ScoreInput.jsx', import.meta.url), 'utf8');
+const postedGradesView = readFileSync(new URL('../src/pages/faculty/PostedGradesView.jsx', import.meta.url), 'utf8');
+const facultyNotifications = readFileSync(new URL('../src/pages/faculty/Notifications.jsx', import.meta.url), 'utf8');
+const studentGradeDetail = readFileSync(new URL('../src/pages/student/MyGradesDetail.jsx', import.meta.url), 'utf8');
+const deanCorrections = readFileSync(new URL('../src/pages/dean/RemarkOverrideRequests.jsx', import.meta.url), 'utf8');
+const adminOverride = readFileSync(new URL('../src/pages/admin/GradeOverride.jsx', import.meta.url), 'utf8');
 
 const assertPlpgsqlVariablesDeclared = (source, label) => {
   source.split(/(?=CREATE OR REPLACE FUNCTION)/g).forEach(block => {
     const functionName = block.match(/^CREATE OR REPLACE FUNCTION\s+([^\s(]+)/im)?.[1];
     if (!functionName) return;
-    const declarationBlock = block.match(/\bDECLARE\b([\s\S]*?)\bBEGIN\b/i)?.[1] || '';
+    // The final CREATE FUNCTION block can be followed by a DO migration block.
+    // Limit variable analysis to the function's own dollar-quoted body so the
+    // verifier does not attribute later DO-block variables to that function.
+    const functionBlock = block.match(/^[\s\S]*?\$\$;/)?.[0] || block;
+    const declarationBlock = functionBlock.match(/\bDECLARE\b([\s\S]*?)\bBEGIN\b/i)?.[1] || '';
     const declared = new Set(declarationBlock.match(/\bv_[a-zA-Z0-9_]+\b/g) || []);
-    const referenced = new Set(block.match(/\bv_[a-zA-Z0-9_]+\b/g) || []);
+    const referenced = new Set(functionBlock.match(/\bv_[a-zA-Z0-9_]+\b/g) || []);
     const missing = [...referenced].filter(variable => !declared.has(variable));
     assert.deepEqual(missing, [], `${label} ${functionName} has undeclared PL/pgSQL variables`);
   });
@@ -36,6 +53,8 @@ const assertPlpgsqlVariablesDeclared = (source, label) => {
 assertPlpgsqlVariablesDeclared(foundation, 'foundation');
 assertPlpgsqlVariablesDeclared(transaction, 'transaction');
 assertPlpgsqlVariablesDeclared(sgBasisLock, 'SG basis lock');
+assertPlpgsqlVariablesDeclared(stagedCorrections, 'staged SG corrections');
+assertPlpgsqlVariablesDeclared(correctedMilestones, 'corrected milestones');
 assert.doesNotMatch(
   transaction,
   /\bIS\s+DISTINCT\s+FROM\s+CASE\b/i,
@@ -105,6 +124,79 @@ assert.equal(preserved.postRows.length, 1);
   'Select a grade from the institutional transmutation ladder.',
   'a browser payload from granting a grace pass or suppressing FDA'
 ].forEach(fragment => assert.ok(transaction.includes(fragment), `Missing P0 transaction boundary: ${fragment}`));
+
+[
+  'DROP TRIGGER IF EXISTS trg_reject_unstaged_sg_score_correction',
+  'CREATE TABLE IF NOT EXISTS public.sg_correction_operations',
+  "CHECK (correction_scope IN ('result_only', 'student_score_row', 'admin_override'))",
+  'CREATE OR REPLACE FUNCTION public.aspire_apply_sg_score_changes',
+  'CREATE OR REPLACE FUNCTION public.preview_sg_score_correction',
+  'ASPIRE_SCORE_PREVIEW_ROLLBACK',
+  'CREATE OR REPLACE FUNCTION public.apply_approved_sg_correction_v2',
+  'ordinary SG reposting cannot consume it.',
+  "set_config('aspire.sg_correction_request_id'",
+  'applied_score_changes',
+  'sg_correction_requested:',
+  'sg_correction_reviewed:',
+  'The final academic status must match the outcome reviewed and approved by the Dean.',
+  'CREATE OR REPLACE FUNCTION public.apply_admin_grade_override_v3',
+  'p_new_computed_grade NUMERIC',
+  'The replacement SG, GWA, and academic status are not mutually consistent.'
+].forEach(fragment => assert.ok(stagedCorrections.includes(fragment), `Missing staged correction control: ${fragment}`));
+
+[
+  'ADD COLUMN IF NOT EXISTS applied_milestone_changes',
+  'CREATE OR REPLACE FUNCTION public.aspire_sync_corrected_progress_milestones',
+  'v_mr_locks VARCHAR[]',
+  "ARRAY['Prelim', 'Midterm', 'Midterm Rating']::VARCHAR[]",
+  "ARRAY['Semi-Final', 'Final', 'Tentative Final Rating']::VARCHAR[]",
+  "grade.grade_period::TEXT IN ('midterm_rating', 'tentative_final_rating', 'semestral_grade')",
+  "NEW.grade_period::TEXT <> 'semestral_grade'",
+  "set_config('aspire.sg_correction_milestone_changes'",
+  "jsonb_build_array('midterm_rating', 'tentative_final_rating', 'semestral_grade')",
+  "v_context = 'correction_repair'",
+  "NEW.type = 'override_approved'",
+  "COALESCE(NEW.link, '') LIKE '/faculty/%'",
+  'never reapply scores'
+].forEach(fragment => assert.ok(correctedMilestones.includes(fragment), `Missing corrected-milestone control: ${fragment}`));
+
+assert.doesNotMatch(
+  correctedMilestones,
+  /\|\|\s*[a-z_][a-z0-9_.]*->>/i,
+  'Parenthesize JSON text extraction when concatenating URLs; otherwise PostgreSQL may select JSON concatenation.'
+);
+
+assert.ok(
+  postedGradesView.includes('Edit Full Row &amp; Apply')
+    && postedGradesView.includes('handlePreviewApprovedCorrection')
+    && postedGradesView.includes('handleApplyApprovedCorrection')
+    && postedGradesView.includes('Recalculated MR %')
+    && postedGradesView.includes('Recalculated TFR %')
+    && postedGradesView.includes('Apply & Relock'),
+  'Faculty must receive a student-scoped full-row editor only after Dean approval.'
+);
+assert.ok(
+  deanCorrections.includes('Approve Student Correction')
+    && deanCorrections.includes('Authorized correction scope'),
+  'Dean review must describe the one-use student correction scope.'
+);
+assert.ok(
+  adminOverride.includes('Replacement SG Percentage')
+    && adminOverride.includes('Replacement Effective GWA')
+    && adminOverride.includes('Replacement Academic Status'),
+  'Administrative override must replace SG, GWA, and status together.'
+);
+assert.ok(
+  facultyNotifications.includes('/faculty/postedgradesview?id=')
+    && facultyNotifications.includes('payload: n.payload || {}'),
+  'Dean approval notifications must retain their payload and deep-link to the exact faculty correction.'
+);
+assert.ok(
+  studentGradeDetail.includes('Included in corrected official SG')
+    && studentGradeDetail.includes("mrIsCorrected ? 'Corrected'")
+    && studentGradeDetail.includes("tfrIsCorrected ? 'Corrected'"),
+  'The student detail must distinguish corrected official milestones from their original posting.'
+);
 
 assert.ok(!transaction.includes('SET is_locked = FALSE'), 'Dean approval must not unlock an official SG row.');
 assert.ok(

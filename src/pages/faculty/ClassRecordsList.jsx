@@ -128,6 +128,13 @@ export default function ClassRecordsList() {
         .select('class_record_id, grade_period, is_locked')
         .in('class_record_id', classIds);
 
+      const { data: correctionRequests } = await supabase
+        .from('remark_override_requests')
+        .select('request_id, class_record_id, status, correction_scope, requested_at')
+        .in('class_record_id', classIds)
+        .in('status', ['pending', 'approved'])
+        .order('requested_at', { ascending: false });
+
       // Auto-sync regular block section students into enrollments for current-term classes only
       const sectionIds = filterType === 'current'
         ? Array.from(new Set(classesData.map(c => c.section_id).filter(Boolean)))
@@ -212,6 +219,10 @@ export default function ClassRecordsList() {
       const mappedClasses = classesData.map((cls) => {
         const matchingCols = (gradingCols || []).filter(col => col.class_record_id === cls.class_record_id);
         const matchingPosted = (postedGrades || []).filter(g => g.class_record_id === cls.class_record_id);
+        const matchingCorrections = (correctionRequests || []).filter(request => request.class_record_id === cls.class_record_id);
+        const approvedCorrection = matchingCorrections.find(request => (
+          request.status === 'approved' && request.correction_scope === 'student_score_row'
+        ));
         const hasSetup = matchingCols.length > 0;
         
         let statusLabel = 'Active';
@@ -243,6 +254,8 @@ export default function ClassRecordsList() {
           schoolYear: cls.school_year,
           termState: cls.termState.state,
           daysLeft: cls.termState.daysLeft,
+          approvedCorrectionId: approvedCorrection?.request_id || null,
+          pendingCorrectionCount: matchingCorrections.filter(request => request.status === 'pending').length,
           joinCode: codes[cls.class_record_id] || 'Generating...'
         };
       });
@@ -412,6 +425,16 @@ export default function ClassRecordsList() {
                           {cls.gradingPeriod} Posted
                         </span>
                       )}
+                      {cls.approvedCorrectionId && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-200">
+                          Correction Approved
+                        </span>
+                      )}
+                      {!cls.approvedCorrectionId && cls.pendingCorrectionCount > 0 && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                          Awaiting Dean
+                        </span>
+                      )}
                       {cls.termState === 'pending' && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                           Pending · SG due in {cls.daysLeft} {cls.daysLeft === 1 ? 'day' : 'days'}
@@ -461,7 +484,16 @@ export default function ClassRecordsList() {
                             className="w-full text-left px-3.5 py-2 hover:bg-sage-50 hover:text-sage-700 flex items-center gap-2.5 transition-colors"
                           >
                             <FileText className="h-4 w-4 text-sage-600 shrink-0" />
-                            <span>Preview &amp; Post Grades</span>
+                            <span>Review &amp; Post Grades</span>
+                          </Link>
+
+                          <Link
+                            to={`/faculty/postedgradesview?id=${cls.id}`}
+                            onClick={() => setActiveMenuId(null)}
+                            className="w-full text-left px-3.5 py-2 hover:bg-violet-50 hover:text-violet-700 flex items-center gap-2.5 transition-colors"
+                          >
+                            <FileText className="h-4 w-4 text-violet-600 shrink-0" />
+                            <span>Posted Grades &amp; Corrections</span>
                           </Link>
 
                           {cls.termState === 'current' && (
@@ -539,19 +571,26 @@ export default function ClassRecordsList() {
                 
                 {/* Card Actions (Footer) - Streamlined Single Primary Action */}
                 <div className="p-3 bg-slate-50 border-t border-slate-100">
-                  {cls.termState === 'archived' ? (
+                  {cls.approvedCorrectionId ? (
+                    <Link
+                      to={`/faculty/postedgradesview?id=${cls.id}&request=${cls.approvedCorrectionId}`}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-md transition-all shadow-xs"
+                    >
+                      <Edit3 className="h-4 w-4" /> Continue Approved Correction
+                    </Link>
+                  ) : cls.termState === 'archived' || cls.status === 'Grades Posted' ? (
                     <Link
                       to={`/faculty/postedgradesview?id=${cls.id}`}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md transition-all shadow-xs"
                     >
-                      <FileText className="h-4 w-4" /> View Posted Grades
+                      <FileText className="h-4 w-4" /> Posted Grades &amp; Corrections
                     </Link>
                   ) : (
                     <Link
                       to={`/faculty/scoreinput?id=${cls.id}`}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold bg-sage-600 hover:bg-sage-700 text-white rounded-md transition-all shadow-xs"
                     >
-                      <Edit3 className="h-4 w-4" /> {cls.termState === 'current' ? 'Input Scores' : 'Finish Grading & Post SG'}
+                      <Edit3 className="h-4 w-4" /> {cls.termState === 'current' ? 'Open Scorebook' : 'Finish Grading & Post SG'}
                     </Link>
                   )}
                 </div>

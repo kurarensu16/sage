@@ -158,6 +158,8 @@ function App() {
               <Route path="/faculty/scoreinput" element={<FacultyScoreInput />} />
               <Route path="/faculty/gradecomputationpreview" element={<FacultyGradeComputationPreview />} />
               <Route path="/faculty/postedgradesview" element={<FacultyPostedGradesView />} />
+              {/* Backward-compatible target used by durable grade notifications. */}
+              <Route path="/faculty/postedgrades" element={<Navigate to="/faculty/classrecordslist" replace />} />
               <Route path="/faculty/atriskstudents" element={<LegacyStudentRiskRedirect />} />
               <Route path="/faculty/evaluatestudent" element={<FacultyStudentRisk mode="evaluate" />} />
               <Route path="/faculty/evaluatedstudents" element={<FacultyEvaluatedStudents />} />
@@ -175,6 +177,8 @@ function App() {
               <Route path="/student/dashboard" element={<StudentDashboard />} />
               <Route path="/student/mysubjects" element={<StudentMySubjects />} />
               <Route path="/student/mygradeslist" element={<StudentMyGradesList />} />
+              {/* Stable notification/email target retained independently of UI naming. */}
+              <Route path="/student/grades" element={<StudentMyGradesList />} />
               <Route path="/student/mygradesdetail" element={<StudentMyGradesDetail />} />
               <Route path="/student/advising-inbox" element={<StudentAdvisingInbox />} />
               <Route path="/student/academic-insights" element={<StudentAcademicInsights />} />

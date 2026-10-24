@@ -16,7 +16,7 @@ The reported correction failure is removed at its source: an SG repost no longer
 - Dean approval leaves `posted_grades.is_locked = TRUE`; it authorizes one transaction and never unlocks live autosave.
 - Score and grading-configuration triggers reject changes once an official SG exists, even if a stale legacy row incorrectly says `is_locked = false`.
 - Locked/read-only score rows never start the browser autosave pipeline, and stale `pendingSync` drafts cannot outrank the database after SG posting.
-- Unsupported score-delta SG correction JSON is explicitly rejected. The released correction workflow is remark/result correction against the locked, unchanged score basis; score-delta correction remains disabled until it has a staged review model.
+- The original P0 boundary explicitly rejected unsupported score-delta JSON. Migration `20261023211000_staged_sg_score_corrections.sql` supersedes that temporary restriction with a student-scoped, Dean-approved full-row correction transaction while keeping ordinary live autosave locked.
 - New `posted_grade_revisions` rows preserve every official result revision with provenance, engine version, input hash, actor, and correction link. Revision numbers are database-owned.
 - New `grade_posting_operations` rows provide durable idempotency evidence.
 - First or incomplete milestone posting must produce exactly one row for every active enrollee. Dean posting status now displays partial counts instead of treating one row as complete.
