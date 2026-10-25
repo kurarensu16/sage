@@ -35,7 +35,7 @@ const getOrCreateOperationId = (classRecordId, gradePeriod) => {
 };
 
 /**
- * Commits reviewed score substitutions and one roster milestone atomically.
+ * Commits reviewed score substitutions and one roster grading period atomically.
  * Client-computed values are previews only: the v2 RPC recalculates official
  * values from the frozen class COG and persisted score basis.
  */
@@ -48,7 +48,7 @@ export async function postGradeMilestoneAtomic({
   postedGradeRows
 }) {
   if (!classRecordId) throw new Error('A class record is required to post grades.');
-  if (!gradePeriod) throw new Error('A grade milestone is required to post grades.');
+  if (!gradePeriod) throw new Error('A grading period is required to post grades.');
   // Retained in the signature while callers migrate; the server intentionally
   // ignores caller snapshots and requires the frozen class snapshot instead.
   void gradingFormulaSnapshot;
@@ -57,7 +57,7 @@ export async function postGradeMilestoneAtomic({
   }
 
   const { key, operationId } = getOrCreateOperationId(classRecordId, gradePeriod);
-  const { data, error } = await supabase.rpc('post_grade_milestone_v2', {
+  const { data, error } = await supabase.rpc('post_grade_milestone_v3', {
     p_operation_id: operationId,
     p_class_record_id: classRecordId,
     p_grade_period: gradePeriod,

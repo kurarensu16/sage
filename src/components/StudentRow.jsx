@@ -7,7 +7,7 @@ import {
   calculateStoredTermRating,
   resolveGradingFormula
 } from '../lib/gradingMath';
-import { toDisplayRemark } from '../lib/academicPolicy';
+import { getAttendanceFlags, toDisplayRemark } from '../lib/academicPolicy';
 import { hasActiveAdminGradeOverride } from '../lib/sgCorrectionPosting';
 import { calculateAcademicRisk } from '../lib/riskEngine';
 import { isTermCoveredByPostedMilestone } from '../lib/gradeMilestones';
@@ -341,26 +341,32 @@ export default function StudentRow({
   // unwritten cache previously made this silently read 0 whenever this page was
   // opened without ScoreInput having run first in the same browser.
   const absences = Number.isFinite(student?.absences) ? student.absences : 0;
-  const isFDA = absences >= 4;
+  const isFdaRecommended = getAttendanceFlags(absences).isFda;
 
   const rawGrade = semestralCalc.sg !== null ? semestralCalc.gwa : '—';
-  const autoRemarks = isFDA ? 'FDA' : (semestralCalc.sg !== null ? (parseFloat(rawGrade) <= 3.00 ? 'Passed' : 'Failed') : '—');
-  // Passed/Failed and FDA are authoritative calculated outcomes. Only academic
-  // standings that cannot be inferred from scores remain explicit faculty input.
-  const exceptionalRemark = ['INC', 'Dropped'].includes(scores.customRemarks)
+  const autoRemarks = semestralCalc.sg !== null ? (parseFloat(rawGrade) <= 3.00 ? 'Passed' : 'Failed') : '—';
+  // Passed/Failed are score-derived. INC, Dropped, and an attendance-supported
+  // FDA decision remain explicit faculty input and require a written reason.
+  const exceptionalRemark = (
+    ['INC', 'Dropped'].includes(scores.customRemarks)
+    || (scores.customRemarks === 'FDA' && isFdaRecommended)
+  )
     ? scores.customRemarks
     : '';
-  const scoreDerivedRemarks = isFDA ? 'FDA' : (exceptionalRemark || autoRemarks);
+  const scoreDerivedRemarks = exceptionalRemark || autoRemarks;
   const officialAdminOverride = hasActiveAdminGradeOverride(student?.postedSemestralGrade)
     ? student.postedSemestralGrade
     : null;
-  const remarks = officialAdminOverride
-    ? toDisplayRemark(officialAdminOverride.remarks)
+  const officialSemestralGrade = isLocked && student?.postedSemestralGrade
+    ? student.postedSemestralGrade
+    : officialAdminOverride;
+  const remarks = officialSemestralGrade
+    ? toDisplayRemark(officialSemestralGrade.remarks)
     : scoreDerivedRemarks;
 
   const grade = (() => {
-    if (officialAdminOverride?.effective_grade !== null && officialAdminOverride?.effective_grade !== undefined) {
-      return Number(officialAdminOverride.effective_grade).toFixed(2);
+    if (officialSemestralGrade?.effective_grade !== null && officialSemestralGrade?.effective_grade !== undefined) {
+      return Number(officialSemestralGrade.effective_grade).toFixed(2);
     }
     if (remarks === 'FDA') return '5.00';
     if (remarks === 'INC') return rawGrade;
@@ -604,17 +610,17 @@ export default function StudentRow({
             <div className="flex flex-col gap-1 items-center">
               <select
                 value={remarks}
-                 disabled={isFDA || Boolean(officialAdminOverride)}
-                 onChange={(e) => {
-                   const val = e.target.value;
-                   editVersionRef.current += 1;
-                   setScores(prev => ({ ...prev, customRemarks: val }));
+                disabled={Boolean(officialAdminOverride)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  editVersionRef.current += 1;
+                  setScores(prev => ({ ...prev, customRemarks: val }));
                   setShowNoteInput(val !== autoRemarks);
                   if (val === autoRemarks) setScores(prev => ({ ...prev, remarksNote: '' }));
                 }}
                 className={cn(
                   "appearance-none border px-2 py-1 rounded text-[10px] font-extrabold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all w-full text-center",
-                  isFDA || officialAdminOverride
+                  officialAdminOverride
                     ? "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed"
                     : "bg-white border-slate-200 hover:border-sage-300 text-slate-700 cursor-pointer"
                 )}
@@ -623,6 +629,7 @@ export default function StudentRow({
                   <option value={remarks}>{remarks} (Official admin)</option>
                 )}
                 <option value={autoRemarks}>{autoRemarks} (Calculated)</option>
+                {isFdaRecommended && <option value="FDA">FDA (Faculty decision)</option>}
                 <option value="INC">INC</option>
                 <option value="Dropped">Dropped</option>
               </select>
@@ -636,9 +643,9 @@ export default function StudentRow({
                 </span>
               )}
 
-              {remarks === 'FDA' && (
-                <span className="block text-micro font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 mt-0.5 text-center" title="FDA Recommendation Alert.">
-                  FDA Advisory (4 Absences)
+              {isFdaRecommended && (
+                <span className="block text-micro font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 mt-0.5 text-center" title="Four absences require faculty review; FDA is not assigned automatically.">
+                  {remarks === 'FDA' ? 'FDA selected by faculty' : 'FDA review required'} ({absences} absences)
                 </span>
               )}
 

@@ -89,8 +89,8 @@ export async function getSectionIrregularEnrollees(sectionId) {
 }
 
 /**
- * Generates a clean, human-readable 6-8 character join code.
- * e.g., "CS3A-8X92"
+ * Generates eight alphanumeric symbols displayed as XXXX-XXXX.
+ * e.g., "CS3A-8X92" (the hyphen is a visual separator).
  */
 export function generateJoinCode(subjectCode = 'CLS', sectionName = 'A') {
   const prefix = (subjectCode.replace(/[^A-Za-z0-9]/g, '').slice(0, 3) || 'CLS').toUpperCase();
@@ -138,9 +138,6 @@ export async function getOrCreateJoinCode(classRecordId, subjectCode = 'CLS', se
   }
 }
 
-/**
- * Submits a join request from a student using a classroom join code (Instant Enrollment).
- */
 /**
  * Student requests to join a class by code. Creates a PENDING request for the
  * class's faculty to approve (request_class_join); the student is not enrolled

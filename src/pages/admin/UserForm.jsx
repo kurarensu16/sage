@@ -226,7 +226,7 @@ export default function UserForm() {
     }
     if (formData.role === 'student') {
       if (!activeTerm) {
-        setErrorMsg('No active term is set. Activate a term in Term Settings before assigning students to sections.');
+        setErrorMsg('No active term is set. Activate a term in Academic Terms before assigning students to sections.');
         return;
       }
       if (!formData.programId) {
@@ -472,7 +472,7 @@ export default function UserForm() {
               <p className="text-[11px] text-slate-500">
                 {activeTerm
                   ? <>Sections shown are for the active term: <strong className="text-slate-700">{activeTerm.school_year} · {activeTerm.semester}</strong>.</>
-                  : <strong className="text-rose-600">No active term is set. Activate a term in Term Settings first.</strong>}
+                  : <strong className="text-rose-600">No active term is set. Activate a term in Academic Terms first.</strong>}
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
                 <div className="flex flex-col gap-1.5">

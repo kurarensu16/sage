@@ -48,12 +48,11 @@ const PORTAL_NAVIGATION = {
     },
     {
       id: 'grades',
-      label: 'My Grades',
+      label: 'Courses & Grades',
       icon: BookOpen,
       items: [
         { to: '/student/mysubjects', label: 'My Subjects', icon: BookMarked },
-        { to: '/student/mygradeslist', label: 'Grade Report', icon: FileText },
-        { to: '/student/mygradesdetail', label: 'Score Breakdown', icon: Layers }
+        { to: '/student/mygradeslist', label: 'Grade Report', icon: FileText, activeOn: ['/student/grades'] }
       ]
     },
     {
@@ -78,7 +77,7 @@ const PORTAL_NAVIGATION = {
       label: 'Consultations',
       icon: MessageSquare,
       items: [
-        { to: '/student/consultations', label: 'Request a Consultation', icon: MessageSquare }
+        { to: '/student/consultations', label: 'Consultations', icon: MessageSquare }
       ]
     }
   ],
@@ -91,31 +90,22 @@ const PORTAL_NAVIGATION = {
       icon: LayoutDashboard
     },
     {
-      id: 'grades',
-      label: 'Grades',
-      icon: FileText,
-      items: [
-        { to: '/faculty/scoreinput', label: 'Scorebook', icon: FileText },
-        { to: '/faculty/gradecomputationpreview', label: 'Review & Post', icon: Layers }
-      ]
-    },
-    {
       id: 'classes',
       label: 'Classes',
       icon: GraduationCap,
       items: [
-        { to: '/faculty/classrecordslist', label: 'My Class Records', icon: BookOpen },
-        { to: '/faculty/classrecordslist?action=create', label: 'Create Classrooms', icon: PlusCircle },
+        { to: '/faculty/classrecordslist', label: 'My Classes', icon: BookOpen },
+        { to: '/faculty/classrecordslist?action=create', label: 'Create Classroom', icon: PlusCircle },
         { to: '/faculty/enrollmentrequests', label: 'Enrollment Requests', icon: Users }
       ]
     },
     {
-      id: 'student_risk',
-      label: 'Student Risk',
+      id: 'student_support',
+      label: 'Student Support',
       icon: AlertCircle,
       items: [
         { to: '/faculty/evaluatestudent', label: 'Evaluate Students', icon: ClipboardCheck },
-        { to: '/faculty/evaluatedstudents', label: 'Evaluated Students', icon: CheckCircle2 }
+        { to: '/faculty/evaluatedstudents', label: 'Intervention Records', icon: CheckCircle2 }
       ]
     },
     {
@@ -140,7 +130,7 @@ const PORTAL_NAVIGATION = {
       icon: BarChart2,
       items: [
         { to: '/faculty/reports/class-performance', label: 'Class Performance', icon: BarChart2 },
-        { to: '/faculty/reports/comparison', label: 'Performance Comparison', icon: TrendingUp }
+        { to: '/faculty/reports/comparison', label: 'Comparisons & Trends', icon: TrendingUp }
       ]
     }
   ],
@@ -164,12 +154,12 @@ const PORTAL_NAVIGATION = {
     },
     {
       id: 'student_risk',
-      label: 'Student Risk',
+      label: 'Risk & Interventions',
       icon: AlertCircle,
       items: [
         { to: '/dean/atriskstudents', label: 'Risk & Honors Overview', icon: AlertCircle },
-        { to: '/dean/escalatedcases', label: 'Escalated Cases', icon: Users },
-        { to: '/dean/interventionresults', label: 'Intervention Results', icon: CheckCircle2 }
+        { to: '/dean/escalatedcases', label: 'Escalated Cases', icon: Users, activeOn: ['/dean/atriskstudents?tab=discussion_queue'] },
+        { to: '/dean/interventionresults', label: 'Intervention Results', icon: CheckCircle2, activeOn: ['/dean/atriskstudents?tab=outcomes_tracker'] }
       ]
     },
     {
@@ -204,11 +194,11 @@ const PORTAL_NAVIGATION = {
       icon: BookMarked,
       items: [
         { to: '/admin/subjectlist', label: 'Subjects', icon: BookMarked },
-        { to: '/admin/gradecomputationslist', label: 'Grading Formulas', icon: Settings },
-        { to: '/admin/sectionlist', label: 'Sections', icon: Layers },
-        { to: '/admin/sectionmasterlist', label: 'Section Masterlist', icon: ClipboardList },
-        { to: '/admin/departmentslist', label: 'Departments & Programs', icon: Building2 },
-        { to: '/admin/classrooms', label: 'Classrooms', icon: GraduationCap }
+        { to: '/admin/gradecomputationslist', label: 'Grading Templates', icon: Settings },
+        { to: '/admin/sectionlist', label: 'Manage Sections', icon: Layers },
+        { to: '/admin/sectionmasterlist', label: 'Section Rosters', icon: ClipboardList },
+        { to: '/admin/departmentslist', label: 'Colleges & Departments', icon: Building2 },
+        { to: '/admin/classrooms', label: 'Classroom Provisioning', icon: GraduationCap }
       ]
     },
     {
@@ -216,33 +206,22 @@ const PORTAL_NAVIGATION = {
       label: 'System',
       icon: Shield,
       items: [
-        { to: '/admin/auditlog', label: 'Activity Logs', icon: Shield },
-        { to: '/admin/termmanagement', label: 'Term Settings', icon: Calendar },
+        { to: '/admin/auditlog', label: 'Audit Logs', icon: Shield },
+        { to: '/admin/termmanagement', label: 'Academic Terms', icon: Calendar },
         { to: '/admin/gradeoverride', label: 'Grade Override', icon: AlertCircle }
       ]
     }
   ]
 };
 
-// Helper to determine if a sub-item is active based on path and query parameters
-function isItemActive(item, location) {
-  const [targetPath, targetQuery] = item.to.split('?');
-  const [targetPathClean] = targetPath.split('#');
+function getActiveTargets(item) {
+  return [item.to, ...(item.activeOn || [])];
+}
 
-  if (location.pathname !== targetPathClean) return false;
-
-  if (!targetQuery) {
-    // If target has no query params, but location has specific distinct query params, don't match
-    if (location.search && (
-      location.search.includes('tab=consultations') ||
-      location.search.includes('action=import') ||
-      location.search.includes('tab=discussion_queue') ||
-      location.search.includes('tab=outcomes_tracker')
-    )) {
-      return false;
-    }
-    return true;
-  }
+function targetMatchesLocation(target, location) {
+  const [targetPathWithHash, targetQuery = ''] = target.split('?');
+  const [targetPath] = targetPathWithHash.split('#');
+  if (location.pathname !== targetPath) return false;
 
   const targetParams = new URLSearchParams(targetQuery);
   const currentParams = new URLSearchParams(location.search);
@@ -250,6 +229,19 @@ function isItemActive(item, location) {
     if (currentParams.get(key) !== val) return false;
   }
   return true;
+}
+
+// A base-path item stays active for ordinary query parameters, but yields to a
+// sibling with a matching query-specific target (for example action=create).
+function isItemActive(item, location, siblingItems = []) {
+  const targets = getActiveTargets(item);
+  const matchingTargets = targets.filter(target => targetMatchesLocation(target, location));
+  if (!matchingTargets.length) return false;
+  if (matchingTargets.some(target => target.includes('?'))) return true;
+
+  return !siblingItems.some(sibling => sibling !== item && getActiveTargets(sibling).some(target => (
+    target.includes('?') && targetMatchesLocation(target, location)
+  )));
 }
 
 export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
@@ -286,7 +278,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
   // Ensure the section containing the active route is always expanded
   useEffect(() => {
     groups.forEach(group => {
-      if (group.items?.some(item => isItemActive(item, location))) {
+      if (group.items?.some(item => isItemActive(item, location, group.items))) {
         setExpandedGroups(prev => {
           if (prev.has(group.id)) return prev;
           const next = new Set(prev);
@@ -397,7 +389,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
         {/* Grouped Collapsible Modules */}
         {regularGroups.map((group) => {
           const isExpanded = expandedGroups.has(group.id);
-          const hasActiveChild = group.items.some(item => isItemActive(item, location));
+          const hasActiveChild = group.items.some(item => isItemActive(item, location, group.items));
 
           if (isCollapsed && !mobileOpen) {
             // Icon-only view when collapsed on desktop: show first item or group icon
@@ -441,7 +433,7 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
               {isExpanded && (
                 <div className="pl-3 space-y-0.5">
                   {group.items.map((item) => {
-                    const active = isItemActive(item, location);
+                    const active = isItemActive(item, location, group.items);
                     return (
                       <NavLink
                         key={item.to}

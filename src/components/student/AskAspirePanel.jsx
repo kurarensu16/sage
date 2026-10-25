@@ -34,7 +34,7 @@ const SUGGESTED_QUESTIONS = {
   ]
 };
 
-export default function AskAspirePanel({ open, context, onClose, onRequestConsultation }) {
+export default function AskAspirePanel({ open, context, studentDisplayName, privateIdentityValues = [], onClose, onRequestConsultation }) {
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -47,6 +47,27 @@ export default function AskAspirePanel({ open, context, onClose, onRequestConsul
   const advisorHeadline = context?.deterministicAdvisor?.headline;
   const tabScope = context?.tabScope || 'default';
   const suggestedQuestions = SUGGESTED_QUESTIONS[tabScope] || SUGGESTED_QUESTIONS.default;
+  const localFirstName = String(studentDisplayName || '').trim().split(/\s+/)[0] || 'Student';
+  const personalizeLocally = value => `${localFirstName}, ${String(value || '').trim()}`;
+  const redactForProvider = value => {
+    let sanitized = String(value || '');
+    const identityTerms = [...new Set(
+      [studentDisplayName, ...privateIdentityValues]
+        .flatMap(item => [String(item || '').trim(), ...String(item || '').trim().split(/\s+/)])
+        .filter(item => item.length >= 3)
+    )].sort((left, right) => right.length - left.length);
+
+    for (const identity of identityTerms) {
+      const escaped = identity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      sanitized = sanitized.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), '[redacted]');
+    }
+
+    return sanitized
+      .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[redacted email]')
+      .replace(/\b\d{4}-\d{4,8}\b/g, '[redacted ID]')
+      .replace(/\b(?:\+?63|0)?9\d{9}\b/g, '[redacted phone]')
+      .trim();
+  };
 
   useEffect(() => {
     if (!open || !contextKey) return;
@@ -56,11 +77,11 @@ export default function AskAspirePanel({ open, context, onClose, onRequestConsul
     setMessages([{
       id: `welcome-${contextKey}`,
       role: 'assistant',
-      content: `I can explain the insight for ${subjectLabel}, show which records support it, and help you choose a practical next step. Current status: ${advisorHeadline || 'Reviewing available academic evidence'}.`
+      content: `${localFirstName}, I can explain the insight for ${subjectLabel}, show which records support it, and help you choose a practical next step. Current status: ${advisorHeadline || 'Reviewing available academic evidence'}.`
     }]);
     setQuestion('');
     setError('');
-  }, [open, contextKey, subjectCode, subjectName, advisorHeadline]);
+  }, [open, contextKey, subjectCode, subjectName, advisorHeadline, localFirstName]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -82,13 +103,16 @@ export default function AskAspirePanel({ open, context, onClose, onRequestConsul
 
     try {
       const answer = await getAskAspireResponse({
-        question: trimmed,
+        question: redactForProvider(trimmed),
         context,
-        history: priorMessages
+        history: priorMessages.map(message => ({
+          ...message,
+          content: redactForProvider(message.content)
+        }))
       });
       setMessages(previous => [
         ...previous,
-        { id: `assistant-${messageSequence}`, role: 'assistant', content: answer }
+        { id: `assistant-${messageSequence}`, role: 'assistant', content: personalizeLocally(answer) }
       ]);
     } catch (err) {
       console.warn('Ask ASPIRE response failed:', err);
@@ -144,7 +168,7 @@ export default function AskAspirePanel({ open, context, onClose, onRequestConsul
               <p className="truncate text-xs font-bold text-white">
                 {context.subject?.code ? `${context.subject.code} — ${context.subject.name}` : 'Overall academic standing'}
               </p>
-              <p className="text-[11px] text-sage-300">{context.periodLabel || 'Latest official milestones'}</p>
+              <p className="text-[11px] text-sage-300">{context.periodLabel || 'Latest official grading periods'}</p>
             </div>
           </div>
         </header>
@@ -246,7 +270,7 @@ export default function AskAspirePanel({ open, context, onClose, onRequestConsul
 
           <div className="mt-3 flex items-center justify-between gap-3">
             <p className="text-[10px] leading-relaxed text-slate-400">
-              ASPIRE explains records; it does not change grades or make official decisions.
+              ASPIRE filters direct identifiers before the AI request and adds your first name locally after the response. Avoid entering sensitive details.
             </p>
             <button
               type="button"

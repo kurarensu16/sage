@@ -211,7 +211,7 @@ Deno.serve(async request => {
       admin.from('users').select('user_id,role,status').eq('user_id', facultyId).single(),
       admin.from('class_records').select(`
         class_record_id,faculty_id,status,section_id,subject_id,term_id,school_year,semester,grading_formula_snapshot,
-        subjects(code,name,computation_id),sections(name)
+        subjects(code,name,computation_id)
       `).eq('class_record_id', classRecordId).single()
     ])
     if (!actor || actor.role !== 'faculty' || actor.status !== 'active') return json({ error: 'An active faculty account is required.' }, 403)
@@ -299,10 +299,13 @@ Deno.serve(async request => {
     const scoreMap = new Map((activityScores || []).map(row => [row.activity_id, row.score]))
     const evidence: Array<Record<string, unknown>> = []
 
-    for (const activity of activities || []) {
+    for (const [activityIndex, activity] of (activities || []).entries()) {
       const score = scoreMap.has(activity.activity_id) ? Number(scoreMap.get(activity.activity_id)) : null
       const maximum = Number(activity.max_score || 0)
-      const code = `activity:${activity.activity_id}`
+      // The provider only needs a stable evidence reference for this request,
+      // not the database UUID. Sequential aliases keep internal identifiers
+      // inside the authorized backend and stored audit record.
+      const code = `activity:${activityIndex + 1}`
       evidence.push({
         code, type: 'activity', term: activity.term, title: clean(activity.title || activity.name, 150),
         description: clean(activity.description, 500), topic: clean(activity.topic_tag, 100) || null,
@@ -336,7 +339,6 @@ Deno.serve(async request => {
     }
     const snapshot = {
       subject: { code: classRecord.subjects?.code, name: classRecord.subjects?.name },
-      section: classRecord.sections?.name,
       academic_period: { school_year: classRecord.school_year, semester: classRecord.semester, term },
       evidence_scope: { selected_term: term, included_terms: eligibleTerms, future_terms_excluded: true },
       grading_formula: gradingFormula,

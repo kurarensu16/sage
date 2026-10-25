@@ -31,7 +31,7 @@ export default function SectionForm() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [allDepartments, setAllDepartments] = useState([]);
-  // School year and semester come from Term Settings (admin setup audit 2026-10-11: M9).
+  // School year and semester come from Academic Terms (admin setup audit 2026-10-11: M9).
   const [terms, setTerms] = useState([]);
   const [allPrograms, setAllPrograms] = useState([]);
 
@@ -205,7 +205,7 @@ export default function SectionForm() {
 
         await notifyAdminActivity({
           type: 'system',
-          message: `Sections Database: Section "${formData.name}" (${formData.schoolYear}, ${formData.semester} Sem) was updated by ${actorName}.`,
+          message: `Manage Sections: Section "${formData.name}" (${formData.schoolYear}, ${formData.semester} Sem) was updated by ${actorName}.`,
           actorName
         });
       } else {
@@ -227,7 +227,7 @@ export default function SectionForm() {
 
         await notifyAdminActivity({
           type: 'system',
-          message: `Sections Database: New section "${formData.name}" (${formData.schoolYear}, ${formData.semester} Sem) was created by ${actorName}.`,
+          message: `Manage Sections: New section "${formData.name}" (${formData.schoolYear}, ${formData.semester} Sem) was created by ${actorName}.`,
           actorName
         });
       }
@@ -358,7 +358,7 @@ export default function SectionForm() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-            {/* Academic term (from Term Settings) */}
+            {/* Academic term (from Academic Terms) */}
             <div className="flex flex-col gap-1.5 md:col-span-2">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Academic Term <span className="text-rose-500">*</span></label>
               <select
@@ -370,9 +370,9 @@ export default function SectionForm() {
                 }}
                 className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
               >
-                <option value="">{terms.length ? '-- Select Term --' : 'No terms yet: create one in Term Settings'}</option>
+                <option value="">{terms.length ? '-- Select Term --' : 'No terms yet: create one in Academic Terms'}</option>
                 {formData.schoolYear && formData.semester && !terms.some(term => term.school_year === formData.schoolYear && term.semester === formData.semester) && (
-                  <option value={`${formData.schoolYear}|${formData.semester}`}>{formData.schoolYear} · {formData.semester} (not in Term Settings)</option>
+                  <option value={`${formData.schoolYear}|${formData.semester}`}>{formData.schoolYear} · {formData.semester} (not in Academic Terms)</option>
                 )}
                 {terms.map(term => (
                   <option key={term.term_id} value={`${term.school_year}|${term.semester}`}>
@@ -380,7 +380,7 @@ export default function SectionForm() {
                   </option>
                 ))}
               </select>
-              <span className="text-[10px] text-slate-400 mt-0.5">Sections belong to one term. Terms are managed in Term Settings.</span>
+              <span className="text-[10px] text-slate-400 mt-0.5">Sections belong to one term. Terms are managed in Academic Terms.</span>
             </div>
           </div>
 

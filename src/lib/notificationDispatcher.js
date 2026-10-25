@@ -535,7 +535,7 @@ export async function notifyUnlockRequested({
       list.push({
         recipient_id: deanId,
         type: 'grades_pending',
-        message: `Unlock Request: Prof. ${facultyName} requested permission to unlock ${milestone} grades for ${subjectName}.`
+        message: `Unlock Request: Prof. ${facultyName} requested permission to unlock the ${milestone} grading period for ${subjectName}.`
       });
     } else {
       const { data: deans } = await supabase
@@ -549,7 +549,7 @@ export async function notifyUnlockRequested({
           list.push({
             recipient_id: d.user_id,
             type: 'grades_pending',
-            message: `Unlock Request: Prof. ${facultyName} requested permission to unlock ${milestone} grades for ${subjectName}.`
+            message: `Unlock Request: Prof. ${facultyName} requested permission to unlock the ${milestone} grading period for ${subjectName}.`
           });
         });
       }
@@ -574,7 +574,7 @@ export async function notifyUnlockApproved({
     await dispatchNotifications([{
       recipient_id: facultyId,
       type: 'system',
-      message: `Grade Registry Unlocked: ${actorName} approved your unlock request for ${milestone} in ${subjectName}. You may now update score sheets.`
+      message: `Grade Registry Unlocked: ${actorName} approved your unlock request for the ${milestone} grading period in ${subjectName}. You may now update score sheets.`
     }]);
   } catch (err) {
     console.warn('Error in notifyUnlockApproved:', err);

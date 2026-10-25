@@ -13,6 +13,7 @@ import {
 } from '../../lib/evaluationTracking';
 import { getRiskDisplay } from '../../lib/academicPolicy';
 import RiskEducationNote from '../../components/faculty/RiskEducationNote';
+import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
 
 const field = 'rounded-lg border border-sage-200 bg-sage-50 px-3 py-2 text-sm text-sage-900 focus:ring-2 focus:ring-sage-400';
 const action = 'rounded-lg border border-sage-200 px-3 py-2 text-sm font-semibold text-sage-700 hover:bg-sage-100 disabled:opacity-50';
@@ -34,7 +35,7 @@ function followupBlock(item, facultyId, history, milestone, standing) {
   if (item.followup_snapshot) return 'Follow-up recorded';
   const blocked = managementBlock(item, facultyId, history);
   if (blocked) return blocked;
-  if (!milestone) return 'Available after the next MR, TFR, or SG is posted';
+  if (!milestone) return 'Available after the next grading period (MR, TFR, or SG) is posted';
   if (!standing) return 'Current standing unavailable';
   // Mirrors record_intervention_followup: reported tasks must be verified or returned first.
   const { reported, verified } = countTaskProgress(item.advising_plan);
@@ -68,18 +69,28 @@ function Tracker({ facultyId }) {
   const [recording, setRecording] = useState(false);
   const requestId = useRef(null);
   const dialogTrigger = useRef(null);
+  const skipLoadedQueryKey = useRef('');
   const [refresh, setRefresh] = useState(0);
   const [searchText, setSearchText] = useState(params.get('search') || '');
+  const [archiveMode, setArchiveMode] = useState(params.get('scope') === 'history');
+  const [appliedTerm, setAppliedTerm] = useState(null);
+  const [archiveError, setArchiveError] = useState('');
   const queryKey = params.toString();
   const filters = {
-    history: params.get('scope') === 'history', periodId: params.get('period') || '',
+    history: params.get('scope') === 'history', periodId: params.get('archiveTerm') || params.get('period') || '',
     classId: params.get('class') || '', term: params.get('term') || '',
     referral: params.get('referral') || '', search: params.get('search') || '',
     page: Math.max(0, Number.parseInt(params.get('page') || '0', 10) || 0)
   };
 
-  const allowedClasses = metadata?.classes.filter(item => filters.history || item.status === 'active') || [];
   const selectedPeriod = metadata?.periods.find(item => item.term_id === filters.periodId);
+  const allowedClasses = metadata?.classes.filter(item => {
+    if (!filters.history) return item.status === 'active';
+    return selectedPeriod
+      ? item.term_id === selectedPeriod.term_id
+        || (!item.term_id && item.school_year === selectedPeriod.school_year && item.semester === selectedPeriod.semester)
+      : false;
+  }) || [];
   const termOptions = getTermsForPeriod(selectedPeriod?.semester);
 
   function changeFilter(key, value) {
@@ -129,18 +140,83 @@ function Tracker({ facultyId }) {
 
   useEffect(() => {
     if (!metadata) return;
+    if (skipLoadedQueryKey.current === queryKey) {
+      skipLoadedQueryKey.current = '';
+      return;
+    }
+    if (filters.history && !filters.periodId) {
+      setResult(EMPTY_RESULT);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError('');
     const period = filters.periodId === 'all' ? '' : filters.periodId;
     getEvaluatedCases({ ...filters, periodId: period, facultyId,
       classIds: allowedClasses.map(item => item.class_record_id) }).then(data => {
-      if (!cancelled) { setResult(data); setLoading(false); }
-    }).catch(err => { if (!cancelled) { setError(err.message); setResult(EMPTY_RESULT); setLoading(false); } });
+      if (!cancelled) {
+        setResult(data);
+        setLoading(false);
+        setArchiveError('');
+        if (filters.history) setAppliedTerm(metadata.periods.find(item => item.term_id === filters.periodId) || null);
+      }
+    }).catch(err => { if (!cancelled) { setError(err.message); setArchiveError('The selected intervention archive could not be loaded. The last successfully loaded records remain displayed.'); setLoading(false); } });
     return () => { cancelled = true; };
     // queryKey includes every server filter, including pagination.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facultyId, metadata, queryKey]);
+
+  function handleArchiveModeChange(useArchive) {
+    setArchiveMode(useArchive);
+    setAppliedTerm(null);
+    setArchiveError('');
+    setResult(EMPTY_RESULT);
+    const next = new URLSearchParams(params);
+    next.delete('page');
+    next.delete('period');
+    next.delete('archiveTerm');
+    next.delete('class');
+    if (useArchive) next.set('scope', 'history');
+    else next.delete('scope');
+    setParams(next, { replace: true });
+  }
+
+  async function handleArchiveLoad(termToLoad) {
+    if (!termToLoad?.term_id || !metadata) return;
+    setArchiveMode(true);
+    setArchiveError('');
+    setLoading(true);
+    setError('');
+    try {
+      const archiveClasses = metadata.classes.filter(item => item.term_id === termToLoad.term_id
+        || (!item.term_id && item.school_year === termToLoad.school_year && item.semester === termToLoad.semester));
+      const data = await getEvaluatedCases({
+        ...filters,
+        history: true,
+        periodId: termToLoad.term_id,
+        classId: '',
+        page: 0,
+        facultyId,
+        classIds: archiveClasses.map(item => item.class_record_id)
+      });
+      setResult(data);
+      setAppliedTerm(termToLoad);
+      const next = new URLSearchParams(params);
+      next.set('scope', 'history');
+      next.set('archiveTerm', termToLoad.term_id);
+      next.delete('period');
+      next.delete('class');
+      next.delete('page');
+      skipLoadedQueryKey.current = next.toString();
+      setParams(next, { replace: true });
+    } catch (err) {
+      setError(err.message);
+      setArchiveError('The selected intervention archive could not be loaded. The last successfully loaded records remain displayed.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     const onFocus = () => setRefresh(value => value + 1);
@@ -224,16 +300,25 @@ function Tracker({ facultyId }) {
   const followupMilestone = followupCase ? result.followupMilestones?.[followupCase.evaluation_id] : null;
 
   return <>
-    <PageHeader title="Evaluated Students" breadcrumb="Faculty Portal" />
+    <PageHeader title="Intervention Records" breadcrumb="Faculty Portal" />
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-sage-900">
+      <AcademicPeriodFilter
+        terms={metadata?.periods || []}
+        archiveMode={archiveMode}
+        appliedTerm={appliedTerm}
+        loading={loading}
+        error={archiveError}
+        onModeChange={handleArchiveModeChange}
+        onLoad={handleArchiveLoad}
+        onRetry={handleArchiveLoad}
+      />
+      <div className={archiveMode && !filters.periodId ? 'hidden' : 'contents'}>
       <div className="flex flex-wrap justify-between gap-3">
-        <p className="text-sm">Track each evaluation by subject and term. Students report task completion; you verify or return each reported task and record the follow-up after the next posted milestone.</p>
+        <p className="text-sm">Track each evaluation by subject and term. Students report task completion; you verify or return each reported task and record the follow-up after the next posted grading period.</p>
         <Link className={action} to={`/faculty/evaluatestudent?${new URLSearchParams({ class: filters.classId, term: filters.term })}`}>Evaluate Students</Link>
       </div>
       <RiskEducationNote variant="evaluationHistory" />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 rounded-xl border border-sage-200 bg-sage-50 p-4">
-        <label className="text-xs font-semibold">Ownership<select className={`${field} block w-full mt-1`} value={filters.history ? 'history' : 'current'} onChange={e => changeFilter('scope', e.target.value)}><option value="current">Currently assigned classes</option><option value="history">Authored history (read-only)</option></select></label>
-        <label className="text-xs font-semibold">Academic period<select className={`${field} block w-full mt-1`} value={filters.periodId || 'all'} onChange={e => changeFilter('period', e.target.value)}><option value="all">All academic periods</option>{metadata?.periods.map(item => <option key={item.term_id} value={item.term_id}>{item.school_year} · {item.semester}{item.is_active ? ' (active)' : ' (Archive)'}</option>)}</select></label>
         <label className="text-xs font-semibold">Class<select className={`${field} block w-full mt-1`} value={filters.classId} onChange={e => changeFilter('class', e.target.value)}><option value="">All allowed classes</option>{allowedClasses.map(item => <option key={item.class_record_id} value={item.class_record_id}>{item.subjects?.code} · {item.sections?.name} · {item.school_year}</option>)}</select></label>
         <label className="text-xs font-semibold">Grading term<select className={`${field} block w-full mt-1`} value={filters.term} onChange={e => changeFilter('term', e.target.value)}><option value="">All Terms</option>{termOptions.map(term => <option key={term}>{term}</option>)}</select></label>
         <label className="text-xs font-semibold">Referral<select className={`${field} block w-full mt-1`} value={filters.referral} onChange={e => changeFilter('referral', e.target.value)}><option value="">All cases</option><option value="pending">Pending Dean referral</option><option value="none">No active referral</option></select></label>
@@ -312,6 +397,7 @@ function Tracker({ facultyId }) {
         </article>;
       })}
       <div className="flex items-center justify-end gap-3"><button className={action} disabled={loading || filters.page === 0} onClick={() => changeFilter('page', String(filters.page - 1))}>Previous</button><span className="text-sm">Page {filters.page + 1}</span><button className={action} disabled={loading || (filters.page + 1) * CASE_PAGE_SIZE >= result.count} onClick={() => changeFilter('page', String(filters.page + 1))}>Next</button></div>
+      </div>
     </div>
     {referralCase && <div className="fixed inset-0 z-50 bg-sage-950/60 p-4 flex items-center justify-center">
       <form onSubmit={submitReferral} onKeyDown={event => dialogKeys(event, closeReferral)} role="dialog" aria-modal="true" aria-labelledby="referral-title" className="rounded-xl bg-sage-50 border border-sage-200 p-5 w-full max-w-lg max-h-full overflow-y-auto space-y-4 text-sage-900">

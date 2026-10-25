@@ -830,13 +830,13 @@ export function compareCohortMetrics(current, previous, margin = SAME_MARGIN) {
   // 5. Generate plain-language summary with proactive AI suggestions
   let summary;
   if (passDiff > margin) {
-    summary = `Passing rate improved by ${passDiff}% compared to the reference term.`;
+    summary = `The recorded passing rate is ${passDiff} percentage points higher than in the reference term.`;
   } else if (passDiff < -margin) {
-    summary = `Passing rate decreased by ${Math.abs(passDiff)}%. Consider reviewing recent module difficulty, as this class is struggling more than the historical baseline.`;
+    summary = `The recorded passing rate is ${Math.abs(passDiff)} percentage points lower than in the reference term. Review the underlying class evidence before interpreting the difference.`;
   } else if (riskDiff < -margin) {
-    summary = `At-risk rate decreased by ${Math.abs(riskDiff)}% indicating improved academic retention.`;
+    summary = `The recorded at-risk rate is ${Math.abs(riskDiff)} percentage points lower than in the reference term.`;
   } else if (riskDiff > margin) {
-    summary = `At-risk rate increased by ${riskDiff}%, suggesting higher student difficulty. Consider proactive interventions for struggling students.`;
+    summary = `The recorded at-risk rate is ${riskDiff} percentage points higher than in the reference term. Review current student-class evidence for possible support needs.`;
   } else {
     summary = `Class performance is stable and consistent with the historical reference term (within ±${margin}% margin).`;
   }

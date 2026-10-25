@@ -47,6 +47,28 @@ export function getMilestoneForPostingTarget(targetMilestone) {
   return GRADE_MILESTONES.SEMESTRAL_GRADE;
 }
 
+/**
+ * Returns the user-facing reason a grading period cannot be posted yet.
+ * Posting follows one sequence: MR, then TFR, then SG.
+ */
+export function getGradePeriodSequenceBlock(targetPeriod, postedCoverage = []) {
+  const coverage = new Set(postedCoverage || []);
+  const hasMr = coverage.has('Midterm Rating');
+  const hasTfr = coverage.has('Tentative Final Rating');
+
+  if (targetPeriod === 'tfr' && !hasMr) {
+    return 'Post the Midterm Rating (MR) before posting the Tentative Final Rating (TFR).';
+  }
+  if (targetPeriod === 'semestral' && (!hasMr || !hasTfr)) {
+    const missing = [
+      !hasMr ? 'Midterm Rating (MR)' : null,
+      !hasTfr ? 'Tentative Final Rating (TFR)' : null
+    ].filter(Boolean).join(' and ');
+    return `Post the ${missing} before finalizing the Semestral Grade (SG).`;
+  }
+  return null;
+}
+
 export function isSummerClass(classInfo) {
   return [classInfo?.sections?.semester, classInfo?.semester]
     .some(value => String(value || '').trim().toLowerCase().includes('summer'));

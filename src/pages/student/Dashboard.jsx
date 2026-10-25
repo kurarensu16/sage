@@ -246,7 +246,7 @@ export default function Dashboard() {
         ]);
 
         // AI Standing: the verdict is the deterministic rule shared with the AI Study
-        // Tutor, computed live from the running GWA and per-subject FDA (no AI call).
+        // Tutor, computed live from the running GWA and per-subject FDA recommendation (no AI call).
         // Only the explanation text comes from the latest saved AI insight.
         const currentAttendance = (insightAttendance || [])
           .filter(record => classRecordIds.includes(record.class_record_id));
@@ -323,7 +323,7 @@ export default function Dashboard() {
               Welcome Back, {profile?.first_name || 'Student'}!
             </h1>
             <p className="text-xs sm:text-sm text-sage-200/90 max-w-xl leading-relaxed">
-              Track your real-time academic milestones, review faculty intervention checklists, and explore AI Study Tutor insights.
+              Track your real-time academic progress, review faculty intervention checklists, and explore AI Study Tutor insights.
             </p>
           </div>
           
@@ -332,7 +332,7 @@ export default function Dashboard() {
               to="/student/mygradeslist" 
               className="w-full md:w-auto justify-center px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-semibold bg-white text-sage-900 hover:bg-sage-50 rounded-xl transition-all shadow-md flex items-center gap-2 whitespace-nowrap cursor-pointer"
             >
-              <Award className="h-4 w-4" /> View My Grades
+              <Award className="h-4 w-4" /> View Grade Report
             </Link>
           </div>
         </div>
@@ -555,7 +555,7 @@ export default function Dashboard() {
             <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-sm space-y-3 sm:space-y-4">
               <div className="flex items-center gap-2">
                 <ListTodo className="h-4 w-4 sm:h-5 sm:w-5 text-sage-600" />
-                <h3 className="text-xs sm:text-sm font-bold text-slate-900">Faculty Advising Inbox</h3>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900">Advisories & Study Plans</h3>
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">
                 {pendingAdvisingCount > 0 
@@ -642,7 +642,7 @@ export default function Dashboard() {
                 <p>The total number of active subjects and enrolled units you are taking this semester. Only subjects marked as 'Active' or 'Grades Posted' contribute to your GWA.</p>
               )}
               {infoModalType === 'tasks' && (
-                <p>These are pending <strong>faculty advising interventions</strong> that require your attention. If you are marked as "CLEARED," you have no immediate required actions. If "PENDING," please check your Faculty Advising Inbox below for details.</p>
+                <p>These are pending <strong>faculty advising interventions</strong> that require your attention. If you are marked as "CLEARED," you have no immediate required actions. If "PENDING," please check Advisories & Study Plans below for details.</p>
               )}
               {infoModalType === 'ai' && (
                 <>

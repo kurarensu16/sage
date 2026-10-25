@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../lib/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { 
@@ -13,9 +14,15 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import PageHeader from '../../components/layout/PageHeader';
+import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
+import { fetchAcademicTerms, getActiveAcademicTerm } from '../../lib/termStatus';
+import { getCachedData, setCachedData } from '../../lib/dataCache';
 
 export default function Consultations() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedClassId = searchParams.get('class') || '';
+  const openedContextClass = useRef('');
   
   const [loading, setLoading] = useState(true);
   const [subjectsList, setSubjectsList] = useState([]);
@@ -34,12 +41,22 @@ export default function Consultations() {
   const [submittingConsult, setSubmittingConsult] = useState(false);
   const [consultFeedback, setConsultFeedback] = useState(null);
   const [acknowledgingId, setAcknowledgingId] = useState(null);
+  const [terms, setTerms] = useState([]);
+  const [archiveMode, setArchiveMode] = useState(false);
+  const [appliedTerm, setAppliedTerm] = useState(null);
+  const [archiveError, setArchiveError] = useState('');
+  const requestSequence = useRef(0);
 
   // 1. Fetch enrolled subjects
   useEffect(() => {
     async function fetchSubjects() {
       if (!user) return;
       try {
+        const activeTerm = getActiveAcademicTerm(terms);
+        if (!activeTerm) {
+          setSubjectsList([]);
+          return;
+        }
         const { data: enrolls } = await supabase
           .from('enrollments')
           .select('subject_id, section_id, subjects(subject_id, code, name)')
@@ -48,14 +65,22 @@ export default function Consultations() {
         const subjectIds = [...new Set((enrolls || []).map(e => e.subject_id).filter(Boolean))];
         const sectionIds = [...new Set((enrolls || []).map(e => e.section_id).filter(Boolean))];
 
-        const { data: crs } = subjectIds.length > 0 && sectionIds.length > 0
-          ? await supabase
-              .from('class_records')
-              .select('class_record_id, subject_id, section_id, faculty_id, sections(name), faculty:users!faculty_id(first_name, last_name, email)')
-              .in('subject_id', subjectIds)
-              .in('section_id', sectionIds)
-              .eq('status', 'active')
-          : { data: [] };
+        const classSelect = 'class_record_id,subject_id,section_id,faculty_id,term_id,school_year,semester,sections(name),faculty:users!faculty_id(first_name,last_name,email)';
+        let crs = [];
+        if (subjectIds.length > 0 && sectionIds.length > 0) {
+          const [exactResult, legacyResult] = await Promise.all([
+            supabase.from('class_records').select(classSelect)
+              .in('subject_id', subjectIds).in('section_id', sectionIds)
+              .eq('status', 'active').eq('term_id', activeTerm.term_id),
+            supabase.from('class_records').select(classSelect)
+              .in('subject_id', subjectIds).in('section_id', sectionIds)
+              .eq('status', 'active').is('term_id', null)
+              .eq('school_year', activeTerm.school_year).eq('semester', activeTerm.semester)
+          ]);
+          if (exactResult.error) throw exactResult.error;
+          if (legacyResult.error) throw legacyResult.error;
+          crs = [...(exactResult.data || []), ...(legacyResult.data || [])];
+        }
 
         // Only the student's own classes: each enrollment matches one class by
         // subject AND section (other sections of the same subject are excluded).
@@ -80,15 +105,48 @@ export default function Consultations() {
       }
     }
     fetchSubjects();
-  }, [user]);
+  }, [user, terms]);
+
+  // Contextual links from My Subjects retain the selected class and open the
+  // existing request form once that class is available to the student.
+  useEffect(() => {
+    if (archiveMode || !requestedClassId || !subjectsList.some(subject => subject.class_record_id === requestedClassId)) return;
+    if (openedContextClass.current === requestedClassId) return;
+    openedContextClass.current = requestedClassId;
+    setConsultForm(previous => ({ ...previous, classRecordId: requestedClassId }));
+    setIsConsultModalOpen(true);
+  }, [archiveMode, requestedClassId, subjectsList]);
 
   // 2. Fetch consultations
-  const fetchConsultationRequests = useCallback(async () => {
-    if (!user) return;
+  const fetchConsultationRequests = useCallback(async (term, { archive = false } = {}) => {
+    if (!user || !term) return false;
+    const requestId = ++requestSequence.current;
+    const cacheKey = `student_consultations_${user.id}_${archive ? 'archive' : 'current'}_${term.term_id}`;
+    const cached = getCachedData(cacheKey, 180000);
+    if (cached) {
+      setConsultationRequests(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+    setArchiveError('');
     try {
-      const { data, error } = await supabase
-        .from('student_consultation_requests')
-        .select(`
+      const classFields = 'class_record_id, term_id, school_year, semester';
+      const [exactClasses, legacyClasses] = await Promise.all([
+        supabase.from('class_records').select(classFields).eq('term_id', term.term_id),
+        supabase
+          .from('class_records')
+          .select(classFields)
+          .is('term_id', null)
+          .eq('school_year', term.school_year)
+          .eq('semester', term.semester)
+      ]);
+      if (exactClasses.error) throw exactClasses.error;
+      if (legacyClasses.error) throw legacyClasses.error;
+      const classRecordIds = [...(exactClasses.data || []), ...(legacyClasses.data || [])]
+        .map(record => record.class_record_id);
+
+      const requestFields = `
           consultation_id,
           class_record_id,
           concern_category,
@@ -103,6 +161,9 @@ export default function Consultations() {
           schedule_acknowledged_at,
           created_at,
           class_records:class_record_id (
+            term_id,
+            school_year,
+            semester,
             subjects:subject_id (code, name)
           ),
           faculty:users!faculty_id (
@@ -110,31 +171,131 @@ export default function Consultations() {
             last_name,
             email
           )
-        `)
-        .eq('student_id', user.id)
-        .order('created_at', { ascending: false });
+        `;
 
-      if (error) {
-        const local = localStorage.getItem(`sage_consultations_${user.id}`);
-        setConsultationRequests(local ? JSON.parse(local) : []);
+      let loadedRequests = [];
+      if (archive) {
+        if (classRecordIds.length > 0) {
+          const { data, error } = await supabase
+            .from('student_consultation_requests')
+            .select(requestFields)
+            .eq('student_id', user.id)
+            .in('class_record_id', classRecordIds)
+            .in('status', ['completed', 'declined', 'cancelled'])
+            .order('created_at', { ascending: false });
+          if (error) throw error;
+          loadedRequests = data || [];
+        }
       } else {
-        setConsultationRequests(data || []);
+        const queries = [
+          supabase
+            .from('student_consultation_requests')
+            .select(requestFields)
+            .eq('student_id', user.id)
+            .in('status', ['pending', 'scheduled'])
+            .order('created_at', { ascending: false })
+        ];
+        if (classRecordIds.length > 0) {
+          queries.push(
+            supabase
+              .from('student_consultation_requests')
+              .select(requestFields)
+              .eq('student_id', user.id)
+              .in('class_record_id', classRecordIds)
+              .order('created_at', { ascending: false })
+          );
+        }
+        const results = await Promise.all(queries);
+        const failed = results.find(result => result.error);
+        if (failed?.error) throw failed.error;
+        const unique = new Map();
+        results.flatMap(result => result.data || []).forEach(item => unique.set(item.consultation_id, item));
+        loadedRequests = [...unique.values()].sort((left, right) => new Date(right.created_at) - new Date(left.created_at));
       }
-    } catch {
-      const local = localStorage.getItem(`sage_consultations_${user.id}`);
-      setConsultationRequests(local ? JSON.parse(local) : []);
+
+      if (requestId !== requestSequence.current) return false;
+      setConsultationRequests(loadedRequests);
+      setCachedData(cacheKey, loadedRequests);
+      return true;
+    } catch (err) {
+      console.error('Could not load consultation requests:', err);
+      if (requestId === requestSequence.current && archive) {
+        setArchiveError(err.message || 'Archived consultations could not be loaded. Please try again.');
+      }
+      return false;
     } finally {
-      setLoading(false);
+      if (requestId === requestSequence.current) setLoading(false);
     }
   }, [user]);
 
   useEffect(() => {
-    fetchConsultationRequests();
-  }, [fetchConsultationRequests]);
+    if (!user) return;
+    let cancelled = false;
+
+    async function initializePeriod() {
+      setLoading(true);
+      try {
+        const loadedTerms = await fetchAcademicTerms();
+        if (cancelled) return;
+        setTerms(loadedTerms);
+        const requestedTermId = searchParams.get('archiveTerm');
+        const requestedTerm = loadedTerms.find(term => !term.is_active && term.term_id === requestedTermId) || null;
+        if (requestedTerm) {
+          setArchiveMode(true);
+          setAppliedTerm(requestedTerm);
+          await fetchConsultationRequests(requestedTerm, { archive: true });
+          return;
+        }
+        const activeTerm = getActiveAcademicTerm(loadedTerms);
+        setArchiveMode(false);
+        setAppliedTerm(null);
+        if (activeTerm) await fetchConsultationRequests(activeTerm);
+        else setLoading(false);
+      } catch (err) {
+        if (!cancelled) {
+          setArchiveError(err.message || 'Academic periods could not be loaded.');
+          setLoading(false);
+        }
+      }
+    }
+
+    initializePeriod();
+    return () => {
+      cancelled = true;
+      requestSequence.current += 1;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, fetchConsultationRequests]);
+
+  const handleArchiveModeChange = async (nextArchiveMode) => {
+    setArchiveError('');
+    setArchiveMode(nextArchiveMode);
+    setIsConsultModalOpen(false);
+    if (nextArchiveMode) return;
+    requestSequence.current += 1;
+    setAppliedTerm(null);
+    setConsultationFilter('all');
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('archiveTerm');
+    setSearchParams(nextParams, { replace: true });
+    const activeTerm = getActiveAcademicTerm(terms);
+    if (activeTerm) await fetchConsultationRequests(activeTerm);
+  };
+
+  const handleArchiveLoad = async (term) => {
+    if (!term) return;
+    const succeeded = await fetchConsultationRequests(term, { archive: true });
+    if (!succeeded) return;
+    setAppliedTerm(term);
+    setConsultationFilter('all');
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('archiveTerm', term.term_id);
+    setSearchParams(nextParams, { replace: true });
+  };
 
   // The faculty's decision is final, so this records only that the student has seen it.
   const handleAcknowledgeSchedule = async (consultationId) => {
-    if (!user) return;
+    if (!user || archiveMode) return;
     setAcknowledgingId(consultationId);
     const acknowledgedAt = new Date().toISOString();
     try {
@@ -158,7 +319,7 @@ export default function Consultations() {
 
   const handleSubmitConsultation = async (e) => {
     e.preventDefault();
-    if (!user || !consultForm.classRecordId || !consultForm.message.trim() || !consultForm.schedule.trim()) return;
+    if (archiveMode || !user || !consultForm.classRecordId || !consultForm.message.trim() || !consultForm.schedule.trim()) return;
     setSubmittingConsult(true);
     setConsultFeedback(null);
 
@@ -240,7 +401,7 @@ export default function Consultations() {
     return acc;
   }, {});
 
-  if (loading) {
+  if (loading && terms.length === 0) {
     return (
       <div className="flex h-[50vh] items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -257,25 +418,39 @@ export default function Consultations() {
         title="Consultations"
         breadcrumb="Student Portal"
       >
-        <button
-          onClick={() => {
-            setConsultForm({
-              classRecordId: subjectsList[0]?.class_record_id || '',
-              category: 'Grade Clarification',
-              schedule: '',
-              message: ''
-            });
-            setConsultFeedback(null);
-            setIsConsultModalOpen(true);
-          }}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Consultation</span>
-        </button>
+        {!archiveMode && (
+          <button
+            onClick={() => {
+              setConsultForm({
+                classRecordId: subjectsList[0]?.class_record_id || '',
+                category: 'Grade Clarification',
+                schedule: '',
+                message: ''
+              });
+              setConsultFeedback(null);
+              setIsConsultModalOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Consultation</span>
+          </button>
+        )}
       </PageHeader>
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-5 sm:space-y-6">
-      
+        <AcademicPeriodFilter
+          terms={terms}
+          archiveMode={archiveMode}
+          appliedTerm={appliedTerm}
+          loading={loading}
+          error={archiveError}
+          onModeChange={handleArchiveModeChange}
+          onLoad={handleArchiveLoad}
+          onRetry={handleArchiveLoad}
+        />
+
+      {(!archiveMode || appliedTerm) && (
+      <>
       {/* Consultations Header Hero */}
       <div className="bg-gradient-to-r from-slate-900 via-sage-950 to-slate-900 rounded-2xl p-5 sm:p-6 text-white shadow-md border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -322,7 +497,7 @@ export default function Consultations() {
       {/* Requests List */}
       <div className="space-y-4">
         <div className="flex gap-2 pb-3 border-b border-slate-200">
-          {['all', 'pending', 'scheduled', 'completed', 'declined'].map(status => (
+          {(archiveMode ? ['all', 'completed', 'declined', 'cancelled'] : ['all', 'pending', 'scheduled', 'completed', 'declined']).map(status => (
             <button
               key={status}
               onClick={() => setConsultationFilter(status)}
@@ -347,24 +522,26 @@ export default function Consultations() {
                 </div>
                 <h4 className="text-base font-bold text-slate-900 font-display">No {consultationFilter !== 'all' ? consultationFilter : ''} Requests</h4>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  Have questions regarding your grades, catch-up tasks, or exam performance? Reach out to your instructor directly for a 1-on-1 consultation session.
+                  {archiveMode ? 'No completed, declined, or cancelled consultations were found for this academic period.' : 'Have questions regarding your grades, catch-up tasks, or exam performance? Reach out to your instructor directly for a 1-on-1 consultation session.'}
                 </p>
-                <button
-                  onClick={() => {
-                    setConsultForm({
-                      classRecordId: subjectsList[0]?.class_record_id || '',
-                      category: 'Grade Clarification',
-                      schedule: '',
-                      message: ''
-                    });
-                    setConsultFeedback(null);
-                    setIsConsultModalOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Request Consultation Now</span>
-                </button>
+                {!archiveMode && (
+                  <button
+                    onClick={() => {
+                      setConsultForm({
+                        classRecordId: subjectsList[0]?.class_record_id || '',
+                        category: 'Grade Clarification',
+                        schedule: '',
+                        message: ''
+                      });
+                      setConsultFeedback(null);
+                      setIsConsultModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Request Consultation Now</span>
+                  </button>
+                )}
               </div>
             );
           }
@@ -414,7 +591,7 @@ export default function Consultations() {
                                   req.status === 'pending' && "bg-amber-50 text-amber-800 border-amber-200",
                                   req.status === 'scheduled' && "bg-indigo-50 text-indigo-800 border-indigo-200",
                                   req.status === 'completed' && "bg-emerald-50 text-emerald-800 border-emerald-200",
-                                  req.status === 'declined' && "bg-rose-50 text-rose-800 border-rose-200"
+                                  ['declined', 'cancelled'].includes(req.status) && "bg-rose-50 text-rose-800 border-rose-200"
                                 )}>
                                   {req.status === 'pending' ? 'Pending Confirmation' : req.status}
                                 </span>
@@ -449,6 +626,8 @@ export default function Consultations() {
                                       <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                                       You confirmed you have seen this schedule.
                                     </p>
+                                  ) : archiveMode ? (
+                                    <p className="text-[10px] font-bold text-slate-500">Archived schedule · read-only</p>
                                   ) : (
                                     <button
                                       type="button"
@@ -489,9 +668,11 @@ export default function Consultations() {
           );
         })()}
       </div>
+      </>
+      )}
 
       {/* New Consultation Modal */}
-      {isConsultModalOpen && (
+      {!archiveMode && isConsultModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 my-auto">
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
@@ -557,7 +738,7 @@ export default function Consultations() {
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white text-xs font-medium text-slate-900 focus:outline-none focus:border-sage-600"
                 >
                   <option value="Grade Clarification">Grade Clarification & Computation</option>
-                  <option value="Catch-Up Plan Guidance">Catch-Up Plan & Milestone Guidance</option>
+                  <option value="Catch-Up Plan Guidance">Catch-Up Plan & Progress Guidance</option>
                   <option value="Exam & Assessment Review">Exam & Assessment Review</option>
                   <option value="Attendance & FDA Advisory">Attendance / FDA Advisory Inquiry</option>
                   <option value="General Academic Counseling">General Academic Counseling</option>

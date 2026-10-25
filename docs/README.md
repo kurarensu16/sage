@@ -29,7 +29,7 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 
 | Document | Status | Notes |
 |---|---|---|
-| [overview/ASPIRE_SYSTEM_SCOPE.md](01-system/overview/ASPIRE_SYSTEM_SCOPE.md) | Current (v5.0) | System scope and technical specification. |
+| [overview/ASPIRE_SYSTEM_SCOPE.md](01-system/overview/ASPIRE_SYSTEM_SCOPE.md) | Current (v5.3) | System scope and technical specification, including all-role navigation, the unified faculty class workflow, and explicit selected-period read-only archives. |
 | [overview/ASPIRE_CONTEXT.md](01-system/overview/ASPIRE_CONTEXT.md) | Needs update | Agent context; still describes fixed 50/10/40 weights (now dynamic COG templates). |
 | [overview/capstone-system-design-v2.md](01-system/overview/capstone-system-design-v2.md) | Reference | Master capstone design doc. |
 | [database/ASPIRE_DATABASE_SCHEMA.md](01-system/database/ASPIRE_DATABASE_SCHEMA.md) | Needs update | Says "21 tables". `supabase/migrations/` is the source of truth. |
@@ -65,6 +65,8 @@ Do not add `.md` files to the repository root. The root holds only `README.md`, 
 
 | Document | Status | Notes |
 |---|---|---|
+| [audits/NAVIGATION_AND_ACADEMIC_ARCHIVES_IMPLEMENTATION_PLAN_2026-10-25.md](03-development/audits/NAVIGATION_AND_ACADEMIC_ARCHIVES_IMPLEMENTATION_PLAN_2026-10-25.md) | Phase 2 implemented and Word-synchronized; authenticated browser acceptance pending | Two-phase all-role plan: Phase 1 navigation is complete; Phase 2 adds explicit school-year/semester archive loading, read-only historical views, current-term AI evidence, and correct handling of unresolved prior-term work. |
+| [audits/PAPER_SYSTEM_ALIGNMENT_IMPLEMENTATION_PLAN_2026-10-25.md](03-development/audits/PAPER_SYSTEM_ALIGNMENT_IMPLEMENTATION_PLAN_2026-10-25.md) | Implemented locally; migration and manual QA pending | Paper-to-system remediation plan for class-join approval wording, faculty-controlled FDA decisions, true intervention counts, four-factor Dean risk, neutral faculty outcome reporting, and non-causal intervention language. |
 | [audits/GRADE_POSTING_WORKFLOW_MAJOR_AUDIT_2026-10-22.md](03-development/audits/GRADE_POSTING_WORKFLOW_MAJOR_AUDIT_2026-10-22.md) | Current (P0 code complete; live QA pending) | End-to-end audit of score entry, MR/TFR/SG posting, corrections, admin overrides, locks/archive, audit/notifications, reports/exports, RLS, failure recovery, and tests; P0 implementation is linked below, while P1 remains planned. |
 | [audits/SERVER_AUTHORITATIVE_GRADING_MAJOR_AUDIT_2026-10-21.md](03-development/audits/SERVER_AUTHORITATIVE_GRADING_MAJOR_AUDIT_2026-10-21.md) | Current (design audit) | Major Phase 2 architecture and impact audit for server-calculated tentative, MR, TFR, and official SG results; includes database/API/files, rollout, rollback, risks, and approval decisions. |
 | [audits/PHASED_QA_AND_CODEBASE_REMEDIATION_PLAN_2026-10-21.md](03-development/audits/PHASED_QA_AND_CODEBASE_REMEDIATION_PLAN_2026-10-21.md) | Phase 1 code ready | QA defects implemented locally; migration application and live Maritime/IT acceptance QA remain before release. |

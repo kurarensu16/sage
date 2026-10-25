@@ -16,7 +16,7 @@ import {
   resolveGradingFormula,
   toEffectiveGradeForPosting
 } from '../../lib/gradingMath';
-import { getPersistentRemarkOverride, getRemarks } from '../../lib/academicPolicy';
+import { evaluateFdaDecision, getPersistentRemarkOverride, getRemarks } from '../../lib/academicPolicy';
 import { triggerExcelExport } from '../../lib/excelExport';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import ErrorModal from '../../components/ErrorModal';
@@ -25,10 +25,12 @@ import { cn } from '../../lib/utils';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import { getClassPriorityRoster, getEnrollmentType } from '../../lib/classRoomService';
 import RiskEducationNote from '../../components/faculty/RiskEducationNote';
+import ClassWorkflowNav from '../../components/faculty/ClassWorkflowNav';
 import {
   GRADE_MILESTONES,
   collectPostedMilestoneCoverage,
   getCanonicalGradePeriod,
+  getGradePeriodSequenceBlock,
   getGradePostingAuditAction,
   getMilestonePostingPresentation,
   getRequiredTermsForPostingTarget,
@@ -1040,7 +1042,7 @@ export default function ScoreInput() {
       
       // Show success
       setPopupTitle('Activity Saved');
-      setPopupDesc(`"${trimmedTitle}" is visible to enrolled students. Scores remain tentative until the applicable milestone is posted.`);
+      setPopupDesc(`"${trimmedTitle}" is visible to enrolled students. Scores remain tentative until the applicable grading period is posted.`);
       setShowPopup(true);
     } catch (err) {
       console.error('Error saving activity config:', err);
@@ -1291,7 +1293,7 @@ export default function ScoreInput() {
       const first = postedTermEmptyCells[0];
       setPostedTermEmptyNotice({
         title: 'Posted term score required',
-        message: `${first.studentName}'s ${first.term} ${first.field} cannot be empty because this term is already covered by a posted milestone. Enter a numeric replacement before saving.${postedTermEmptyCells.length > 1 ? ` ${postedTermEmptyCells.length - 1} additional posted-term cell(s) also require a score.` : ''}`
+        message: `${first.studentName}'s ${first.term} ${first.field} cannot be empty because this term is already covered by a posted grading period. Enter a numeric replacement before saving.${postedTermEmptyCells.length > 1 ? ` ${postedTermEmptyCells.length - 1} additional posted-term cell(s) also require a score.` : ''}`
       });
       return;
     }
@@ -1454,6 +1456,11 @@ export default function ScoreInput() {
 
   const handlePostGrades = async (targetMilestone = 'semestral', acceptNullsAsZero = false) => {
     if (!classRecordId || students.length === 0) return;
+    const sequenceBlock = getGradePeriodSequenceBlock(targetMilestone, postedMilestones);
+    if (sequenceBlock) {
+      alert(sequenceBlock);
+      return;
+    }
     if (isArchivedClass && targetMilestone !== 'semestral') {
       alert(ARCHIVED_NOTICE);
       return;
@@ -1576,14 +1583,25 @@ export default function ScoreInput() {
           && !String(draft.remarksNote || '').trim()) {
           throw new Error(`${stud.name}: a reason is required for the ${draftRemarks} remark.`);
         }
+        const fdaDecision = evaluateFdaDecision({
+          absences: stud.absences,
+          selected: targetMilestone === 'semestral' && remarksLabel === 'fda',
+          reason: draft.remarksNote
+        });
+        if (!fdaDecision.ok) {
+          throw new Error(`${stud.name}: ${fdaDecision.error}`);
+        }
         
         let computedGWA = rawGWA;
+        if (fdaDecision.selected) {
+          computedGWA = fdaDecision.effectiveGrade;
+        }
         if (remarksLabel === 'passed' && rawGWA > 3.00) {
           computedGWA = 3.00;
         }
 
         const effectiveGrade = targetMilestone === 'semestral' ? computedGWA : toEffectiveGradeForPosting(computedTermGrade);
-        if (effectiveGrade === null) throw new Error(`${stud.name}: no complete rating is available for this milestone.`);
+        if (effectiveGrade === null) throw new Error(`${stud.name}: no complete rating is available for this grading period.`);
         const dbEffectiveGrade = targetMilestone === 'semestral' ? effectiveGrade : null;
 
         const payloadRow = {
@@ -1812,7 +1830,6 @@ export default function ScoreInput() {
   }
 
   const subjectCode = classInfo?.subjects?.code || '';
-  const subjectName = classInfo?.subjects?.name || '';
   const sectionName = classInfo?.sections?.name || '';
 
   // Archived score inputs stay read-only. A Dean approval authorizes the
@@ -1840,7 +1857,7 @@ export default function ScoreInput() {
   const renderActivityVisibilityStatus = () => (
     <span
       className="inline-flex items-center gap-0.5 rounded-full border border-sage-200 bg-sage-50 px-1 py-0.5 font-sans text-micro font-bold leading-none text-sage-700"
-      title="Visible to students; recorded scores remain tentative until milestone posting"
+      title="Visible to students; recorded scores remain tentative until grading-period posting"
     >
       <Eye className="h-2 w-2" />
       Visible
@@ -1852,23 +1869,6 @@ export default function ScoreInput() {
       {/* Header */}
       <PageHeader title="Scorebook" breadcrumb="Faculty Portal">
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
-          <button 
-            onClick={() => navigate(`/faculty/postedgradesview?id=${classRecordId}`)}
-            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-          >
-            <Lock className="h-3.5 w-3.5 text-slate-500" />
-            <span className="hidden sm:inline">Posted Grades &amp; Corrections</span>
-            <span className="sm:hidden">Posted</span>
-          </button>
-          <button
-            disabled={students.length === 0}
-            onClick={() => navigate(`/faculty/gradecomputationpreview?id=${classRecordId}`)}
-            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-sage-200 bg-sage-50 hover:bg-sage-100 text-sage-700 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Review &amp; Post</span>
-            <span className="sm:hidden">Review</span>
-          </button>
           <button 
             disabled={savingScores || students.length === 0 || isLocked}
             onClick={handleBulkSave}
@@ -1884,6 +1884,13 @@ export default function ScoreInput() {
       {/* Content */}
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6">
 
+        <ClassWorkflowNav
+          activeStep="scorebook"
+          classRecordId={classRecordId}
+          subjectCode={subjectCode}
+          sectionName={sectionName}
+        />
+
         {isArchivedClass && (
           <div className="bg-slate-50 border border-slate-200 text-slate-700 p-3.5 rounded-xl text-xs font-medium flex items-start gap-2">
             <Lock className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
@@ -1892,17 +1899,6 @@ export default function ScoreInput() {
             </span>
           </div>
         )}
-
-        {/* Navigation Breadcrumb */}
-        <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-slate-500">
-          <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/faculty/classrecordslist')}>
-            Class Records
-          </span>
-          <ChevronRight className="h-3 w-3 text-slate-400" />
-          <span className="font-medium text-slate-900 truncate">
-            Score Spreadsheet — {subjectCode} ({sectionName}){subjectName ? ` - ${subjectName}` : ''}
-          </span>
-        </div>
 
         {/* Data Table Card */}
         {isFullScreen && <div className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsFullScreen(false)} />}
@@ -2505,7 +2501,7 @@ export default function ScoreInput() {
                               onPostedTermEmptyAttempt={({ term, field, studentName, restored }) => {
                                 setPostedTermEmptyNotice({
                                   title: 'Posted term score required',
-                                  message: `${studentName}'s ${term} ${field} cannot be empty because the term is already posted. ${restored ? 'The previous recorded value was restored.' : 'Enter a numeric replacement before leaving this cell.'} Re-post the applicable milestone after completing the correction.`
+                                  message: `${studentName}'s ${term} ${field} cannot be empty because the term is already posted. ${restored ? 'The previous recorded value was restored.' : 'Enter a numeric replacement before leaving this cell.'} Re-post the applicable grading period after completing the correction.`
                                 });
                               }}
                             />
@@ -2641,7 +2637,7 @@ export default function ScoreInput() {
               <div className="flex items-start gap-2.5 rounded-xl border border-sage-200 bg-sage-50 p-3 text-sage-900">
                 <Eye className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sage-600" />
                 <p className="text-micro leading-relaxed">
-                  Visible to enrolled students once saved. An unrecorded score shows as Pending; a saved score stays Tentative until the milestone is posted, and may be used as live advising evidence.
+                  Visible to enrolled students once saved. An unrecorded score shows as Pending; a saved score stays Tentative until the applicable grading period is posted, and may be used as live advising evidence.
                 </p>
               </div>
 
@@ -2967,7 +2963,7 @@ export default function ScoreInput() {
                   <Eye className="mt-0.5 h-4 w-4 shrink-0 text-sage-600" />
                   <div>
                     <p className="text-xs font-bold text-sage-900">Visible after saving</p>
-                    <p className="mt-1 text-[10px] leading-relaxed text-sage-700">Students see Pending until a score is saved, then Tentative until milestone posting.</p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-sage-700">Students see Pending until a score is saved, then Tentative until grading-period posting.</p>
                   </div>
                 </div>
               </div>
@@ -3006,7 +3002,7 @@ export default function ScoreInput() {
                   <span>Post Grades for Student Consultation</span>
                 </h3>
                 <p className="text-[11px] text-slate-500 font-sans mt-0.5">
-                  Publish recorded scores gradually by milestone step to poke students for consultation. Scores remain editable if adjustments are needed.
+                  Release each grading period in order—MR, then TFR, then SG—so students can review their standing and consult their instructor.
                 </p>
               </div>
               <button 
@@ -3149,7 +3145,7 @@ export default function ScoreInput() {
                       </div>
                       <button
                         type="button"
-                        disabled={postingGrades || isLocked}
+                        disabled={postingGrades || isLocked || Boolean(getGradePeriodSequenceBlock('tfr', postedMilestones))}
                         onClick={() => setPendingPostMilestone('tfr')}
                         className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                       >
@@ -3184,7 +3180,7 @@ export default function ScoreInput() {
                       </div>
                       <button
                         type="button"
-                        disabled={postingGrades}
+                        disabled={postingGrades || Boolean(getGradePeriodSequenceBlock('semestral', postedMilestones))}
                         onClick={() => setPendingPostMilestone('semestral')}
                         className="px-3 py-1.5 text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                       >
@@ -3199,7 +3195,7 @@ export default function ScoreInput() {
             
             <div className="px-4 sm:px-6 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
               <span className="text-[11px] text-slate-500 font-mono">
-                {lockedMilestones.length > 0 ? `${lockedMilestones.length} milestone(s) active` : 'No milestones posted yet'}
+                {lockedMilestones.length > 0 ? `${lockedMilestones.length} grading-period item(s) active` : 'No grading periods posted yet'}
               </span>
               <button
                 type="button"

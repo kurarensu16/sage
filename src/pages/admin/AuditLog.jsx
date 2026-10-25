@@ -259,7 +259,7 @@ export default function AuditLog() {
 
   return (
     <>
-      <PageHeader title="System Audit Logs" breadcrumb="Admin Portal">
+      <PageHeader title="Audit Logs" breadcrumb="Admin Portal">
         <div className="flex items-center gap-2">
           <button
             onClick={handleExportCSV}
