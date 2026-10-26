@@ -24,14 +24,9 @@ import {
   Clock, 
   AlertTriangle, 
   MessageSquare,
-  Calendar,
-  Send,
   CheckCircle2,
-  X,
-  Plus,
   Lock,
   TrendingUp,
-  ChevronDown,
   Info
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -56,6 +51,7 @@ import {
   INSIGHT_FORMAT_VERSION,
   shouldAutoRegenerateOverallInsight,
 } from '../../lib/insightFreshness';
+import { fetchAcademicTerms, getActiveAcademicTerm } from '../../lib/termStatus';
 
 const readStoredAiCache = (userId) => {
   if (!userId) return {};
@@ -243,6 +239,13 @@ export default function AcademicInsights() {
       if (!user) return;
       setLoading(true);
       try {
+        const activeTerm = getActiveAcademicTerm(await fetchAcademicTerms());
+        if (!activeTerm) {
+          setHasEnrolledSubjects(false);
+          setHasOfficialMilestone(false);
+          setInsight(null);
+          return;
+        }
         // 1. Fetch pre-generated insights from Supabase database if any
         const { data: pregenData } = await supabase
           .from('student_academic_insights')
@@ -259,25 +262,6 @@ export default function AcademicInsights() {
           .eq('student_id', user.id);
 
         const activeSectionId = profile?.section_id || (enrollsCheck && enrollsCheck.length > 0 ? enrollsCheck[0].section_id : null);
-        const enrolledSubjectsCount = enrollsCheck?.length || 0;
-        setHasEnrolledSubjects(enrolledSubjectsCount > 0);
-
-        // 3. Fetch attendance history
-        const { data: attendanceData } = await supabase
-          .from('attendance_records')
-          .select('*')
-          .eq('student_id', user.id);
-
-        const attendanceSummary = countAttendance(attendanceData || []);
-        const attendanceByClass = Object.values((attendanceData || []).reduce((groups, record) => {
-          const key = record.class_record_id || 'unassigned';
-          groups[key] ||= [];
-          groups[key].push(record);
-          return groups;
-        }, {}));
-        const absentAtt = attendanceSummary.absences;
-        const fdaFlags = attendanceByClass.filter(records => getAttendanceFlags(countAttendance(records).absences).isFda).length;
-        const attendanceRate = attendanceSummary.attendanceRate;
 
         if (activeSectionId && enrollsCheck && enrollsCheck.length > 0) {
           const subjectIds = enrollsCheck.map(e => e.subject_id).filter(Boolean);
@@ -287,16 +271,44 @@ export default function AcademicInsights() {
             // class joined by code from another section is included.
             const enrolledSectionIds = [...new Set(enrollsCheck.map(e => e.section_id).filter(Boolean))];
             const enrolledPairs = new Set(enrollsCheck.map(e => `${e.subject_id}:${e.section_id}`));
-            const { data: candidateClassRecords } = await supabase
-              .from('class_records')
-              .select('class_record_id, subject_id, section_id, faculty_id, faculty:users!faculty_id(first_name, last_name)')
-              .in('section_id', enrolledSectionIds.length > 0 ? enrolledSectionIds : [activeSectionId])
-              .in('subject_id', subjectIds)
-              .eq('status', 'active');
-            const classRecords = (candidateClassRecords || [])
+            const classSelect = 'class_record_id,subject_id,section_id,faculty_id,term_id,school_year,semester,faculty:users!faculty_id(first_name,last_name)';
+            const sectionIds = enrolledSectionIds.length > 0 ? enrolledSectionIds : [activeSectionId];
+            const [exactResult, legacyResult] = await Promise.all([
+              supabase.from('class_records').select(classSelect)
+                .in('section_id', sectionIds).in('subject_id', subjectIds)
+                .eq('status', 'active').eq('term_id', activeTerm.term_id),
+              supabase.from('class_records').select(classSelect)
+                .in('section_id', sectionIds).in('subject_id', subjectIds)
+                .eq('status', 'active').is('term_id', null)
+                .eq('school_year', activeTerm.school_year).eq('semester', activeTerm.semester)
+            ]);
+            if (exactResult.error) throw exactResult.error;
+            if (legacyResult.error) throw legacyResult.error;
+            const exactClasses = exactResult.data;
+            const legacyClasses = legacyResult.data;
+            const candidateClassRecords = [...(exactClasses || []), ...(legacyClasses || [])];
+            const classRecords = candidateClassRecords
               .filter(cr => enrolledPairs.has(`${cr.subject_id}:${cr.section_id}`));
 
             const classRecordIds = classRecords?.map(cr => cr.class_record_id) || [];
+            setHasEnrolledSubjects(classRecordIds.length > 0);
+
+            // AI Study Tutor is intentionally current-term only. Attendance is
+            // restricted to the exact active class records before any summary is built.
+            const { data: attendanceData } = classRecordIds.length > 0
+              ? await supabase.from('attendance_records').select('*')
+                  .eq('student_id', user.id).in('class_record_id', classRecordIds)
+              : { data: [] };
+            const attendanceSummary = countAttendance(attendanceData || []);
+            const attendanceByClass = Object.values((attendanceData || []).reduce((groups, record) => {
+              const key = record.class_record_id || 'unassigned';
+              groups[key] ||= [];
+              groups[key].push(record);
+              return groups;
+            }, {}));
+            const absentAtt = attendanceSummary.absences;
+            const fdaFlags = attendanceByClass.filter(records => getAttendanceFlags(countAttendance(records).absences).isFda).length;
+            const attendanceRate = attendanceSummary.attendanceRate;
 
             // Fetch activities with topics / descriptions
             const { data: classActs } = await supabase
@@ -655,9 +667,10 @@ export default function AcademicInsights() {
             let trajectoryVerdict = 'Awaiting Grade Posting';
             let trajectoryType = 'good'; // 'honors' | 'good' | 'warning' | 'critical'
 
-            // FDA is per subject: only a subject with 4+ absences of its own triggers it.
+            // FDA review is per subject: four absences create a recommendation,
+            // not an automatic official grade.
             if (fdaFlags > 0) {
-              trajectoryVerdict = 'FDA Advisory Risk';
+              trajectoryVerdict = 'FDA Review Required';
               trajectoryType = 'critical';
             } else if (computedGwa !== null) {
               gwaStanding = getGwaBand(computedGwa)?.label || 'Academic Warning';
@@ -683,7 +696,7 @@ export default function AcademicInsights() {
             // canonical source of truth, unchanged here) — only the wording around the result
             // scales with completeness, never the eligibility determination.
             let dlCategory = 'Pending Official Grades';
-            let dlMessage = 'President\'s List eligibility will be determined once official milestones are available.';
+            let dlMessage = 'President\'s List eligibility will be determined once official grading-period results are available.';
             let dlRequirements = ['Pending official grades.'];
             let dlDistance = null;
 
@@ -748,6 +761,7 @@ export default function AcademicInsights() {
             const savedEvidenceFingerprint = pregenData?.basis_snapshot?.evidenceFingerprint || null;
             const postedMilestoneKey = createPostedMilestoneKey(posted || []);
             const savedInsightUsable = Boolean(pregenData?.summary)
+              && pregenData?.basis_snapshot?.academicTermId === activeTerm.term_id
               && !shouldAutoRegenerateOverallInsight(pregenData, postedMilestoneKey);
 
             // Seeding the cache with the current fingerprint keeps automatic
@@ -756,6 +770,9 @@ export default function AcademicInsights() {
 
             const activeInsightData = {
               studentName: `${profile?.first_name || 'Student'} ${profile?.last_name || ''}`.trim(),
+              academicTermId: activeTerm.term_id,
+              schoolYear: activeTerm.school_year,
+              semester: activeTerm.semester,
               gwa: computedGwa,
               standing: gwaStanding,
               officialGwa: computeStudentGwa(postedOnlyGwas).gwa,
@@ -971,15 +988,16 @@ export default function AcademicInsights() {
     contextKey: askAspireSubject
       ? `${askAspireSubject.class_record_id}:${selectedPeriod}`
       : `overall:${studentStats.gwa ?? 'pending'}`,
-    student: {
-      firstName: profile?.first_name || 'Student'
-    },
+    // The external generative provider does not need a student's identity to
+    // explain academic evidence. Keep the provider-bound context generic even
+    // though the authenticated UI can still display the student's own name.
+    student: { label: 'Student' },
     tabScope: scope,
     scope: askAspireSubject ? 'course' : 'overall',
     periodLabel: askAspireSubject
       ? PERIODS_MAPPING[selectedPeriod]
       : hasOfficialMilestone
-        ? 'Latest official milestones'
+        ? 'Latest official grading periods'
         : 'Pending and tentative activity evidence',
     officialStanding: {
       gwa: studentStats.gwa,
@@ -994,7 +1012,6 @@ export default function AcademicInsights() {
       ? {
           code: askAspireSubject.code,
           name: askAspireSubject.name,
-          instructor: askAspireSubject.instructor,
           runningGwa: askAspireSubject.runningGwa,
           gradeBasis: askAspireSubject.gradeBasis,
           milestoneStage: askAspireSubject.milestoneStage,
@@ -1004,7 +1021,6 @@ export default function AcademicInsights() {
           periods: askAspireSubject.periods || null,
           gradingFormula: askAspireSubject.gradingFormula || null,
           diagnostics: askAspireSubject.diagnostics,
-          sharedAcademicFeedback: askRiskEvaluation?.shared_academic_feedback || null,
           activities: (askAspireSubject.activities || []).map(activity => ({
             title: activity.title || activity.name,
             description: activity.description || null,
@@ -1105,7 +1121,6 @@ export default function AcademicInsights() {
 
       payload = {
         type: 'overall',
-        studentName: studentStats.studentName,
         gwa: studentStats.gwa !== null ? studentStats.gwa.toFixed(2) : '—',
         standing: studentStats.standing,
         trajectoryVerdict: studentStats.trajectoryVerdict,
@@ -1126,11 +1141,9 @@ export default function AcademicInsights() {
 
       payload = {
         type: 'subject',
-        studentName: studentStats.studentName,
         subjectCode: currentSubject.code,
         subjectName: currentSubject.name,
         credits: currentSubject.credits,
-        instructor: currentSubject.instructor,
         periodLabel: PERIODS_MAPPING[selectedPeriod],
         rating: periodObj.rating || 0,
         gwa: periodObj.gwa || '—',
@@ -1160,6 +1173,9 @@ export default function AcademicInsights() {
               dlEligibility: studentStats.dlEligibility,
               diagnostics: studentStats.diagnostics,
               hasOfficialMilestone,
+              academicTermId: studentStats.academicTermId,
+              schoolYear: studentStats.schoolYear,
+              semester: studentStats.semester,
               evidenceFingerprint: currentEvidenceFingerprint,
               postedMilestoneKey: studentStats.postedMilestoneKey || null,
               formatVersion: INSIGHT_FORMAT_VERSION,
@@ -1189,7 +1205,6 @@ export default function AcademicInsights() {
       cacheKey = 'overall';
       payload = {
         type: 'overall',
-        studentName: studentStats.studentName,
         gwa: studentStats.gwa !== null ? studentStats.gwa.toFixed(2) : '—',
         standing: studentStats.standing,
         trajectoryVerdict: studentStats.trajectoryVerdict,
@@ -1205,11 +1220,9 @@ export default function AcademicInsights() {
       const periodObj = currentSubject.periods?.[selectedPeriod] || {};
       payload = {
         type: 'subject',
-        studentName: studentStats.studentName,
         subjectCode: currentSubject.code,
         subjectName: currentSubject.name,
         credits: currentSubject.credits,
-        instructor: currentSubject.instructor,
         periodLabel: PERIODS_MAPPING[selectedPeriod],
         rating: periodObj.rating || 0,
         gwa: periodObj.gwa || '—',
@@ -1237,6 +1250,9 @@ export default function AcademicInsights() {
             dlEligibility: studentStats.dlEligibility,
             diagnostics: studentStats.diagnostics,
             hasOfficialMilestone,
+            academicTermId: studentStats.academicTermId,
+            schoolYear: studentStats.schoolYear,
+            semester: studentStats.semester,
             evidenceFingerprint: currentEvidenceFingerprint,
             postedMilestoneKey: studentStats.postedMilestoneKey || null,
             formatVersion: INSIGHT_FORMAT_VERSION,
@@ -1401,7 +1417,7 @@ export default function AcademicInsights() {
                 </span>
               </div>
               {studentStats.gwa === null ? (
-                <p className="mt-4 rounded-xl border border-dashed border-slate-200 p-4 text-xs text-slate-500">Insufficient evidence — official milestone grades are still pending.</p>
+                <p className="mt-4 rounded-xl border border-dashed border-slate-200 p-4 text-xs text-slate-500">Insufficient evidence — official grading-period results are still pending.</p>
               ) : (
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
                   <div className="rounded-xl bg-slate-50 p-3">
@@ -1435,7 +1451,7 @@ export default function AcademicInsights() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-slate-900">Proactive academic guidance</h3>
-                    <p className="text-[11px] text-slate-400">Tentative activities, attendance, and official milestone evidence</p>
+                    <p className="text-[11px] text-slate-400">Tentative activities, attendance, and official grading-period evidence</p>
                   </div>
                 </div>
 
@@ -1630,7 +1646,7 @@ export default function AcademicInsights() {
                     <span className="text-2xl font-extrabold font-mono text-slate-800">
                       {studentStats.diagnostics.examAvg > 0 ? `${studentStats.diagnostics.examAvg}%` : '—'}
                     </span>
-                    <span className="text-xs text-slate-400 font-medium">Major Milestone Tests</span>
+                    <span className="text-xs text-slate-400 font-medium">Major Examinations</span>
                   </div>
                   <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                     <div 
@@ -1651,7 +1667,7 @@ export default function AcademicInsights() {
                 {/* Metric 3: Attendance Reliability */}
                 <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2 shadow-2xs">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attendance (FDA Risk)</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attendance (FDA Review)</span>
                     <span className={cn(
                       "text-[10px] font-bold px-2 py-0.5 rounded-full border",
                       studentStats.diagnostics.absentCount >= 3 
@@ -1676,7 +1692,7 @@ export default function AcademicInsights() {
                   </div>
                   <p className="text-[11px] text-slate-500 leading-tight">
                     {studentStats.diagnostics.absentCount >= 4 
-                      ? "⚠️ FDA Flagged: Exceeded 4 institutional absences." 
+                        ? "FDA review required: four or more absences are recorded; the instructor makes the official decision."
                       : "Attendance is compliant with institutional regulations."}
                   </p>
                 </div>
@@ -1746,7 +1762,7 @@ export default function AcademicInsights() {
               {/* Target Grade Selector Buttons */}
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Select Target Semestral GWA Milestone:
+                  Select Target Semestral GWA:
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
                   {GWA_TARGET_BENCHMARKS.slice(0, 6).map((b) => (
@@ -1788,7 +1804,7 @@ export default function AcademicInsights() {
                 </div>
 
                 <div className="space-y-1 border-t md:border-t-0 md:border-l md:border-r border-slate-200 pt-3 md:pt-0 md:px-4">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Target Term Milestone</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Target Period Result</span>
                   <div className="flex items-baseline gap-2">
                     <span className="text-xl font-extrabold font-mono text-slate-800">
                       {simResult.requiredFinalTermRating}%
@@ -1868,7 +1884,7 @@ export default function AcademicInsights() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">Your courses</h3>
-                  <p className="mt-0.5 text-[11px] text-slate-500">Open a course to review tentative activity evidence and official milestones.</p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">Open a course to review tentative activity evidence and official grading-period results.</p>
                 </div>
                 <button
                   type="button"
@@ -1951,7 +1967,7 @@ export default function AcademicInsights() {
               <div className="p-8 text-center text-slate-400 text-xs bg-white rounded-2xl border border-dashed border-slate-200">
                 <BookOpen className="h-8 w-8 text-slate-300 mx-auto mb-2" />
                 <p className="font-semibold text-slate-700 text-sm">No Courses Available</p>
-                <p className="text-xs text-slate-400 mt-1">Enroll in subjects to view course-by-course milestone breakdowns and diagnostics.</p>
+                <p className="text-xs text-slate-400 mt-1">Enroll in subjects to view course-by-course grading-period breakdowns and diagnostics.</p>
               </div>
             ) : (
               <>
@@ -2016,7 +2032,7 @@ export default function AcademicInsights() {
                           <BookOpen className="h-4 w-4 text-sage-600" />
                           <div>
                             <h4 className="text-xs font-bold text-slate-900">Activity evidence</h4>
-                            <p className="text-[10px] text-slate-500">Activities are Pending before scoring, Tentative after saving, and Official when included in a posted milestone.</p>
+                            <p className="text-[10px] text-slate-500">Activities are Pending before scoring, Tentative after saving, and Official when included in a posted grading period.</p>
                           </div>
                         </div>
                         <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-600">
@@ -2088,7 +2104,7 @@ export default function AcademicInsights() {
 
                     {/* Milestone Progression Selector */}
                     <div className="space-y-2">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Official grading milestones</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Official grading periods</span>
                       <div className="grid grid-cols-3 gap-1.5 sm:max-w-md">
                         {['midtermRating', 'tentativeFinalRating', 'semestralGrade'].map((key) => {
                           const periodData = currentSubject.periods?.[key];
@@ -2156,7 +2172,7 @@ export default function AcademicInsights() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 text-sage-700">
                               <BrainCircuit className="h-4 w-4" />
-                              <h4 className="text-xs font-bold uppercase tracking-wider">Milestone Diagnostic Insight</h4>
+                              <h4 className="text-xs font-bold uppercase tracking-wider">Grading-Period Diagnostic Insight</h4>
                             </div>
                             <div className="flex items-center gap-1.5">
                               <button
@@ -2177,7 +2193,7 @@ export default function AcademicInsights() {
                                 Analyzing subject performance via AI...
                               </div>
                             ) : (
-                              <p>"{subjectAiText || currentSubject.periods[selectedPeriod].insight || 'No qualitative data compiled for this milestone.'}"</p>
+                              <p>"{subjectAiText || currentSubject.periods[selectedPeriod].insight || 'No qualitative data compiled for this grading period.'}"</p>
                             )}
                           </div>
                         </div>
@@ -2258,7 +2274,7 @@ export default function AcademicInsights() {
                       <div className="p-8 text-center text-slate-400 text-xs space-y-1 bg-slate-50 rounded-xl border border-dashed border-slate-200">
                         <AlertCircle className="h-6 w-6 text-slate-300 mx-auto" />
                         <p className="font-semibold text-slate-600">No evaluation data encoded for {PERIODS_MAPPING[selectedPeriod]}</p>
-                        <p className="text-[11px]">Milestone scores will appear once graded by your instructor.</p>
+                        <p className="text-[11px]">Period scores will appear once graded by your instructor.</p>
                       </div>
                     )}
 
@@ -2361,6 +2377,8 @@ export default function AcademicInsights() {
       <AskAspirePanel
         open={askAspireOpen}
         context={askAspireContext}
+        studentDisplayName={`${profile?.first_name || 'Student'} ${profile?.middle_name || ''} ${profile?.last_name || ''}`.replace(/\s+/g, ' ').trim()}
+        privateIdentityValues={[profile?.email, profile?.user_number, profile?.student_number, user?.email].filter(Boolean)}
         onClose={() => setAskAspireOpen(false)}
         onRequestConsultation={openConsultationFromAskAspire}
       />

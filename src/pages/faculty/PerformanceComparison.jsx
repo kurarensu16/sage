@@ -223,13 +223,13 @@ export default function PerformanceComparison() {
     const riskDiff = end.atRiskRate - start.atRiskRate;
     
     if (passDiff > 5 && riskDiff < -5) {
-      return `Over the selected ${trendChartData.length} terms, passing rates improved by ${passDiff}% while at-risk students dropped by ${Math.abs(riskDiff)}%. This indicates a strong positive trajectory in student mastery.`;
+      return `Across the selected ${trendChartData.length} terms, the recorded passing rate increased by ${passDiff} percentage points while the recorded at-risk proportion decreased by ${Math.abs(riskDiff)} points.`;
     } else if (passDiff < -5 && riskDiff > 5) {
-      return `Over the selected ${trendChartData.length} terms, passing rates declined by ${Math.abs(passDiff)}% while at-risk students increased by ${riskDiff}%. Consider reviewing curriculum pacing across this timeframe.`;
+      return `Across the selected ${trendChartData.length} terms, the recorded passing rate decreased by ${Math.abs(passDiff)} percentage points while the recorded at-risk proportion increased by ${riskDiff} points. Consider reviewing the underlying class evidence for this timeframe.`;
     } else if (passDiff > 2) {
-      return `Passing rates have trended positively, improving by ${passDiff}% from the start of the selected period.`;
+      return `The recorded passing rate is ${passDiff} percentage points higher than at the start of the selected period.`;
     } else if (passDiff < -2) {
-      return `Passing rates have decreased by ${Math.abs(passDiff)}% across the selected period.`;
+      return `The recorded passing rate is ${Math.abs(passDiff)} percentage points lower than at the start of the selected period.`;
     } else {
       return `Performance has remained relatively stable across the selected ${trendChartData.length} terms.`;
     }
@@ -238,8 +238,8 @@ export default function PerformanceComparison() {
   return (
     <div className="space-y-4 text-left">
       <PageHeader
-        title={comparisonMode === 'range' ? 'Performance Trend Range' : 'Performance Comparison'}
-        breadcrumb="Faculty Reports"
+        title="Comparisons & Trends"
+        breadcrumb="Faculty Portal"
       >
         {comparisonMode === 'ab' && targetMetrics && referenceMetrics && (
           <button

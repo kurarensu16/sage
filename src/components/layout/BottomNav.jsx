@@ -9,7 +9,8 @@ import {
   BookMarked,
   AlertCircle,
   ClipboardList,
-  BarChart3,
+  FileDown,
+  Shield,
   MoreHorizontal
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -19,27 +20,27 @@ import { cn } from '../../lib/utils';
 const PRIMARY_TABS = {
   student: [
     { to: '/student/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/student/dashboard' || p === '/student' },
-    { to: '/student/mygradeslist', label: 'Grades', icon: FileText, match: (p) => p.startsWith('/student/mygrades') },
-    { to: '/student/advising-inbox', label: 'Advising', icon: ClipboardList, match: (p) => p.startsWith('/student/advising-inbox') },
-    { to: '/student/academic-insights', label: 'Insights', icon: BrainCircuit, match: (p) => p.startsWith('/student/academic-insights') || p.startsWith('/student/airecommendation') },
+    { to: '/student/mysubjects', label: 'Subjects', icon: BookMarked, match: (p) => p.startsWith('/student/mysubjects') },
+    { to: '/student/mygradeslist', label: 'Grades', icon: FileText, match: (p) => p.startsWith('/student/mygrades') || p === '/student/grades' },
+    { to: '/student/advising-inbox', label: 'Support', icon: BrainCircuit, match: (p) => p.startsWith('/student/advising-inbox') || p.startsWith('/student/academic-insights') || p.startsWith('/student/airecommendation') || p.startsWith('/student/consultations') },
   ],
   faculty: [
     { to: '/faculty/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/faculty/dashboard' || p === '/faculty' },
-    { to: '/faculty/classrecordslist', label: 'Classes', icon: BookOpen, match: (p) => p.startsWith('/faculty/classrecords') || p.startsWith('/faculty/gradecomponents') || p.startsWith('/faculty/postedgrades') },
-    { to: '/faculty/scoreinput', label: 'Scores', icon: FileText, match: (p) => p.startsWith('/faculty/scoreinput') || p.startsWith('/faculty/gradecomputation') },
+    { to: '/faculty/classrecordslist', label: 'Classes', icon: BookOpen, match: (p) => p.startsWith('/faculty/classrecords') || p.startsWith('/faculty/gradecomponents') || p.startsWith('/faculty/scoreinput') || p.startsWith('/faculty/gradecomputation') || p.startsWith('/faculty/postedgrades') },
+    { to: '/faculty/evaluatestudent', label: 'Support', icon: ClipboardList, match: (p) => p.startsWith('/faculty/evaluate') || p.startsWith('/faculty/consultations') },
     { to: '/faculty/classattendance', label: 'Attendance', icon: Calendar, match: (p) => p.startsWith('/faculty/classattendance') },
   ],
   dean: [
     { to: '/dean/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/dean/dashboard' || p === '/dean' },
-    { to: '/dean/gradepostingstatus', label: 'Grading', icon: BookOpen, match: (p) => p.startsWith('/dean/gradeposting') },
-    { to: '/dean/atriskstudents', label: 'At-Risk Matrix', icon: AlertCircle, match: (p) => p.startsWith('/dean/atriskstudents') },
-    { to: '/dean/gradedistribution', label: 'Analytics', icon: BarChart3, match: (p) => p.startsWith('/dean/gradedistribution') },
+    { to: '/dean/gradepostingstatus', label: 'Grades', icon: BookOpen, match: (p) => p.startsWith('/dean/gradeposting') || p.startsWith('/dean/remarkoverride') || p.startsWith('/dean/gradedistribution') },
+    { to: '/dean/atriskstudents', label: 'Risk', icon: AlertCircle, match: (p) => p.startsWith('/dean/atriskstudents') || p.startsWith('/dean/escalatedcases') || p.startsWith('/dean/interventionresults') },
+    { to: '/dean/summaryreports', label: 'Reports', icon: FileDown, match: (p) => p.startsWith('/dean/summaryreports') },
   ],
   admin: [
     { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/admin/dashboard' || p === '/admin' },
     { to: '/admin/userlist', label: 'Users', icon: Users, match: (p) => p.startsWith('/admin/user') },
-    { to: '/admin/subjectlist', label: 'Subjects', icon: BookMarked, match: (p) => p.startsWith('/admin/subject') },
-    { to: '/admin/gradeoverride', label: 'Overrides', icon: AlertCircle, match: (p) => p.startsWith('/admin/gradeoverride') },
+    { to: '/admin/subjectlist', label: 'Setup', icon: BookMarked, match: (p) => p.startsWith('/admin/subject') || p.startsWith('/admin/gradecomputations') || p.startsWith('/admin/section') || p.startsWith('/admin/departments') || p.startsWith('/admin/classrooms') },
+    { to: '/admin/auditlog', label: 'System', icon: Shield, match: (p) => p.startsWith('/admin/auditlog') || p.startsWith('/admin/termmanagement') || p.startsWith('/admin/gradeoverride') },
   ],
 };
 

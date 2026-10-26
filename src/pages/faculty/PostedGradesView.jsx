@@ -1,9 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import StudentRow from '../../components/StudentRow';
 import { 
-  ChevronRight, 
   ChevronDown,
   Lock, 
   Search, 
@@ -48,6 +47,7 @@ import {
   previewSgScoreCorrection,
   submitSgCorrectionRequest
 } from '../../lib/gradeCorrectionService';
+import ClassWorkflowNav from '../../components/faculty/ClassWorkflowNav';
 
 const REMARK_TO_DB = Object.freeze({
   Passed: 'passed',
@@ -66,7 +66,6 @@ const DB_REMARK_TO_DISPLAY = Object.freeze({
 });
 
 export default function PostedGradesView() {
-  const navigate = useNavigate();
   const location = useLocation();
   const { user, profile } = useAuth();
   const classRecordId = new URLSearchParams(location.search).get('id');
@@ -1149,14 +1148,6 @@ export default function PostedGradesView() {
       <PageHeader title="Posted Grades & Corrections" breadcrumb="Faculty Portal">
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
           <button 
-            onClick={() => navigate(`/faculty/scoreinput?id=${classRecordId}`)}
-            className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-slate-200 bg-white text-slate-700 hover:border-sage-300 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 font-sans cursor-pointer"
-          >
-            <Edit3 className="h-3.5 w-3.5 text-slate-500" />
-            <span className="hidden sm:inline">Input Scores</span>
-            <span className="sm:hidden">Scores</span>
-          </button>
-          <button 
             disabled={students.length === 0}
             onClick={() => setShowExportModal(true)}
             className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
@@ -1169,15 +1160,13 @@ export default function PostedGradesView() {
       </PageHeader>
 
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6">
-        
-        {/* Navigation Breadcrumb */}
-        <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-slate-500">
-          <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/faculty/classrecordslist')}>
-            Class Records
-          </span>
-          <ChevronRight className="h-3 w-3 text-slate-400" />
-          <span className="font-medium text-slate-900 truncate">{subjectCode} ({sectionName}) — Locked Grades</span>
-        </div>
+
+        <ClassWorkflowNav
+          activeStep="posted"
+          classRecordId={classRecordId}
+          subjectCode={subjectCode}
+          sectionName={sectionName}
+        />
 
         {/* Dynamic Registry Management Banner with Dean's Override Panel */}
         <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 sm:p-5 space-y-3.5 sm:space-y-4 shadow-2xs text-left">

@@ -1,14 +1,18 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, Plus, Edit2, Trash2, Layers, Upload, X, Check, FileSpreadsheet, AlertCircle, CheckCircle, SlidersHorizontal } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import * as XLSX from 'xlsx';
+import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
+import { fetchAcademicTerms, getActiveAcademicTerm } from '../../lib/termStatus';
+import { getCachedData, invalidateCache, setCachedData } from '../../lib/dataCache';
 
 // Program names and codes are read from the programs table, never from a map in code.
 
 export default function SectionList() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [sections, setSections] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -16,6 +20,12 @@ export default function SectionList() {
   const [filterProgram, setFilterProgram] = useState('');
   const [filterYearLevel, setFilterYearLevel] = useState('');
   const [semFilter, setSemFilter] = useState('');
+  const [terms, setTerms] = useState([]);
+  const [archiveMode, setArchiveMode] = useState(Boolean(searchParams.get('archiveTerm')));
+  const [appliedTerm, setAppliedTerm] = useState(null);
+  const [archiveError, setArchiveError] = useState('');
+  const periodRequest = useRef(0);
+  const isReadOnlyArchive = archiveMode && Boolean(appliedTerm);
 
   // Batch CSV Import Modal State
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -39,9 +49,12 @@ export default function SectionList() {
 
   const [loading, setLoading] = useState(true);
 
-  const loadSections = async () => {
+  const loadSections = async (term, { archive = false } = {}) => {
+    if (!term?.term_id) return false;
+    const sequence = ++periodRequest.current;
     try {
       setLoading(true);
+      setArchiveError('');
 
       const { data: progs } = await supabase
         .from('programs')
@@ -49,12 +62,20 @@ export default function SectionList() {
         .order('name');
       if (progs) setPrograms(progs);
 
-      const { data, error } = await supabase
-        .from('sections')
-        .select('*, departments(name)')
-        .order('name', { ascending: true });
-
-      if (error) throw error;
+      const cacheKey = `admin_sections_${term.term_id}`;
+      let data = getCachedData(cacheKey, 5 * 60 * 1000);
+      if (!data) {
+        const [{ data: exact, error: exactError }, { data: legacy, error: legacyError }] = await Promise.all([
+          supabase.from('sections').select('*, departments(name)').eq('term_id', term.term_id).order('name', { ascending: true }),
+          supabase.from('sections').select('*, departments(name)').is('term_id', null)
+            .eq('school_year', term.school_year).eq('semester', term.semester).order('name', { ascending: true })
+        ]);
+        if (exactError) throw exactError;
+        if (legacyError) throw legacyError;
+        data = [...(exact || []), ...(legacy || [])];
+        setCachedData(cacheKey, data);
+      }
+      if (sequence !== periodRequest.current) return false;
       
       const mappedSections = data.map(sec => {
         const sectionName = sec.name || '';
@@ -73,16 +94,69 @@ export default function SectionList() {
         };
       });
       setSections(mappedSections);
+      if (archive) {
+        setAppliedTerm(term);
+        setSearchParams(previous => {
+          const next = new URLSearchParams(previous);
+          next.set('archiveTerm', term.term_id);
+          return next;
+        }, { replace: true });
+      }
+      return true;
     } catch (err) {
       console.error('Failed to load sections:', err);
+      if (sequence === periodRequest.current) setArchiveError('The selected section archive could not be loaded. Please retry.');
+      return false;
     } finally {
-      setLoading(false);
+      if (sequence === periodRequest.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadSections();
+    async function initialize() {
+      try {
+        const availableTerms = await fetchAcademicTerms();
+        setTerms(availableTerms);
+        const requested = availableTerms.find(term => term.term_id === searchParams.get('archiveTerm'));
+        if (requested && !requested.is_active) {
+          setArchiveMode(true);
+          await loadSections(requested, { archive: true });
+        } else {
+          const active = getActiveAcademicTerm(availableTerms);
+          setArchiveMode(false);
+          if (active) await loadSections(active);
+          else setLoading(false);
+        }
+      } catch (error) {
+        console.error('Academic periods could not be loaded:', error);
+        setArchiveError('Academic periods could not be loaded.');
+        setLoading(false);
+      }
+    }
+    initialize();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleModeChange = async (useArchive) => {
+    periodRequest.current += 1;
+    setArchiveMode(useArchive);
+    setAppliedTerm(null);
+    setArchiveError('');
+    setSections([]);
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.delete('archiveTerm');
+      return next;
+    }, { replace: true });
+    if (!useArchive) {
+      const active = getActiveAcademicTerm(terms);
+      if (active) await loadSections(active);
+    } else setLoading(false);
+  };
+
+  const handleArchiveLoad = async (term) => {
+    if (term) await loadSections(term, { archive: true });
+  };
 
   // A section that is already in use is never deleted: deleting it would remove its
   // classes, grades, and enrollments, and silently unassign its students.
@@ -93,6 +167,7 @@ export default function SectionList() {
   };
 
   const handleDeleteSection = async (id, name) => {
+    if (isReadOnlyArchive) return;
     let usage;
     try {
       const [classes, enrollments, students, history] = await Promise.all([
@@ -122,7 +197,8 @@ export default function SectionList() {
       if (error) {
         alert('Failed to delete section: ' + error.message);
       } else {
-        loadSections();
+        invalidateCache('admin_sections_');
+        setSections(previous => previous.filter(section => section.id !== id));
       }
     }
   };
@@ -270,7 +346,7 @@ export default function SectionList() {
   };
 
   const handleSaveImport = async () => {
-    if (parsedSections.length === 0) return;
+    if (isReadOnlyArchive || parsedSections.length === 0) return;
 
     alert("Batch CSV import will be enabled for Supabase in a future update.");
     setIsImportOpen(false);
@@ -278,8 +354,8 @@ export default function SectionList() {
 
   return (
     <>
-      <PageHeader title="Sections Database" breadcrumb="Admin Portal">
-        <div className="flex gap-2">
+      <PageHeader title="Manage Sections" breadcrumb="Admin Portal">
+        {!isReadOnlyArchive && <div className="flex gap-2">
           <button 
             onClick={() => setIsImportOpen(true)}
             className="px-4 py-2 text-sm font-medium border border-slate-200 hover:border-sage-350 text-slate-700 bg-white hover:bg-slate-50 rounded-lg transition-all shadow-sm flex items-center gap-2"
@@ -292,10 +368,21 @@ export default function SectionList() {
           >
             <Plus className="h-4 w-4" /> Pre-load Section
           </Link>
-        </div>
+        </div>}
       </PageHeader>
 
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6">
+        <AcademicPeriodFilter
+          terms={terms}
+          archiveMode={archiveMode}
+          appliedTerm={appliedTerm}
+          loading={loading}
+          error={archiveError}
+          onModeChange={handleModeChange}
+          onLoad={handleArchiveLoad}
+          onRetry={handleArchiveLoad}
+        />
+        <div className={archiveMode && !appliedTerm ? 'hidden' : 'contents'}>
         <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 flex gap-3">
           <Layers className="h-5 w-5 text-sage-600 mt-0.5 flex-shrink-0" />
           <div>
@@ -446,7 +533,7 @@ export default function SectionList() {
                     {sec.department}
                   </span>
 
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  {!isReadOnlyArchive && <div className="flex items-center gap-1 flex-shrink-0">
                     <button 
                       onClick={() => navigate(`/admin/sectionform?id=${sec.id}`)}
                       title="Edit Section"
@@ -462,7 +549,7 @@ export default function SectionList() {
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
-                  </div>
+                  </div>}
                 </div>
               </div>
             ))
@@ -484,7 +571,7 @@ export default function SectionList() {
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Semester</th>
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">College</th>
                   <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Program</th>
-                  <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                  {!isReadOnlyArchive && <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-100 font-sans">
@@ -506,7 +593,7 @@ export default function SectionList() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-655 font-medium">
                         {sec.program || programNameForPrefix(sec.programPrefix)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      {!isReadOnlyArchive && <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex justify-end gap-2">
                           <button 
                             onClick={() => navigate(`/admin/sectionform?id=${sec.id}`)}
@@ -524,12 +611,12 @@ export default function SectionList() {
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
-                      </td>
+                      </td>}
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="6" className="px-6 py-10 text-center text-slate-400 text-sm">
+                    <td colSpan={isReadOnlyArchive ? 5 : 6} className="px-6 py-10 text-center text-slate-400 text-sm">
                       No sections registered. Click "Pre-load Section" or "Import CSV" to create one.
                     </td>
                   </tr>
@@ -540,10 +627,11 @@ export default function SectionList() {
         </div>
         </>
         )}
+        </div>
       </div>
 
       {/* CSV Import Modal */}
-      {isImportOpen && (
+      {!isReadOnlyArchive && isImportOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center sm:p-4">
           <div className="bg-white rounded-t-3xl sm:rounded-2xl border border-slate-200 max-w-2xl w-full shadow-2xl flex flex-col overflow-hidden max-h-[88vh] sm:max-h-[90vh] animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
             

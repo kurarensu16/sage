@@ -234,7 +234,7 @@ export default function GradeComputationsList() {
 
   return (
     <>
-      <PageHeader title="Grade Computation Templates" breadcrumb="Admin Portal">
+      <PageHeader title="Grading Templates" breadcrumb="Admin Portal">
         <button 
           onClick={handleOpenNew}
           className="px-4 py-2 text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-lg transition-all shadow-sm flex items-center gap-2"

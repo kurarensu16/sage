@@ -369,7 +369,7 @@ export default function ClassroomProvisioning() {
   const handleProvisionSubmit = async (e) => {
     e.preventDefault();
     if (!activeTerm) {
-      setModalError('No active term is set. Activate a term in Term Settings first.');
+      setModalError('No active term is set. Activate a term in Academic Terms first.');
       return;
     }
     if (!selectedSubjectId || !selectedSectionId || !selectedFacultyId) {
@@ -501,7 +501,7 @@ export default function ClassroomProvisioning() {
 
   return (
     <>
-      <PageHeader title="Classroom Provisioning & Faculty Loading" breadcrumb="Admin Portal">
+      <PageHeader title="Classroom Provisioning" breadcrumb="Admin Portal">
         {activeTerm && (
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-sage-50 border border-sage-200 rounded-lg text-xs font-mono font-medium text-sage-800">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />

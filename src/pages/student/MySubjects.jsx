@@ -379,7 +379,7 @@ export default function MySubjects() {
     <>
       {/* Page Header */}
       <PageHeader 
-        title="My Enrolled Subjects" 
+        title="My Subjects"
         breadcrumb="Student Portal"
       >
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
@@ -663,7 +663,7 @@ export default function MySubjects() {
                     </div>
 
                     <Link
-                      to="/student/academic-insights?tab=consultations"
+                      to={`/student/consultations?class=${sub.class_record_id}`}
                       title="Request Academic Consultation"
                       className="p-1.5 text-slate-400 hover:text-sage-700 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-200"
                     >
@@ -687,7 +687,7 @@ export default function MySubjects() {
                     className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-sage-700 bg-white hover:bg-sage-50 border border-sage-200 hover:border-sage-300 rounded-xl transition-colors shadow-2xs"
                   >
                     <FileText className="h-3.5 w-3.5 text-sage-600" />
-                    <span>Score Sheet</span>
+                    <span>Score Breakdown</span>
                   </Link>
                 </div>
               </div>
@@ -720,7 +720,7 @@ export default function MySubjects() {
               </div>
 
               <p className="text-xs text-slate-500 leading-relaxed">
-                Enter the unique 6–8 character classroom join code (e.g. <span className="font-mono font-bold text-slate-700">CS3A-8X92</span>) provided by your professor. Your instructor approves the request before you are added to the class.
+                Enter the 8-character alphanumeric classroom code, displayed as <span className="font-mono font-bold text-slate-700">XXXX-XXXX</span>, provided by your professor. Your instructor approves the request before you are added to the class.
               </p>
 
               <form onSubmit={handleJoinClassSubmit} className="space-y-4">

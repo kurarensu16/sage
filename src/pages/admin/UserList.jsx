@@ -13,6 +13,30 @@ import { notifyUserStatusChange, notifyAdminActivity } from '../../lib/notificat
 import { showLocalNotification } from '../../lib/notificationService';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import { formatPhilippineTimestamp } from '../../lib/dateTime';
+import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
+
+const GRADE_PERIOD_ORDER = Object.freeze({
+  [GRADE_MILESTONES.MIDTERM_RATING]: 0,
+  [GRADE_MILESTONES.TENTATIVE_FINAL_RATING]: 1,
+  [GRADE_MILESTONES.SEMESTRAL_GRADE]: 2
+});
+
+const GRADE_PERIOD_LABELS = Object.freeze({
+  [GRADE_MILESTONES.MIDTERM_RATING]: 'Midterm Rating (MR)',
+  [GRADE_MILESTONES.TENTATIVE_FINAL_RATING]: 'Tentative Final Rating (TFR)',
+  [GRADE_MILESTONES.SEMESTRAL_GRADE]: 'Semestral Grade (SG)'
+});
+
+const getGradePeriodLabel = grade => {
+  const period = getCanonicalGradePeriod(grade);
+  return GRADE_PERIOD_LABELS[period] || String(grade?.grade_period || 'Unknown period');
+};
+
+const formatGradeNumber = (value, decimals = 0) => {
+  if (value === null || value === undefined || value === '') return '—';
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(decimals) : '—';
+};
 
 // Custom styled premium checkbox matching SAGE design language
 const CustomCheckbox = ({ checked, onChange }) => {
@@ -646,8 +670,17 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         
         const { data: gradeData } = await supabase
           .from('posted_grades')
-          .select('class_record_id, computed_grade, effective_grade, remarks, posted_at, class_records(subjects(code, name))')
+          .select('posted_grade_id, class_record_id, grade_period, computed_grade, effective_grade, remarks, posted_at, class_records(subjects(code, name))')
           .eq('student_id', targetUser.id);
+
+        const sortedGrades = [...(gradeData || [])].sort((a, b) => {
+          const subjectOrder = String(a.class_records?.subjects?.code || '')
+            .localeCompare(String(b.class_records?.subjects?.code || ''));
+          if (subjectOrder !== 0) return subjectOrder;
+          const aPeriod = getCanonicalGradePeriod(a);
+          const bPeriod = getCanonicalGradePeriod(b);
+          return (GRADE_PERIOD_ORDER[aPeriod] ?? 99) - (GRADE_PERIOD_ORDER[bPeriod] ?? 99);
+        });
           
         const { data: guardianData } = await supabase
           .from('guardians')
@@ -659,7 +692,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         setProfileDetails({
           enrollments: enrollData || [],
           classes: [],
-          grades: gradeData || [],
+          grades: sortedGrades,
           guardian: guardianData || null
         });
       } else {
@@ -878,7 +911,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           const sectionYear = yearDigit ? `${yearDigit}${{ 1: 'st', 2: 'nd', 3: 'rd' }[yearDigit] || 'th'} Year` : '';
           if (!activeTerm) {
             importStatus = 'error';
-            importMessage = 'No active term is set. Set the active term in Term Settings before importing students.';
+            importMessage = 'No active term is set. Set the active term in Academic Terms before importing students.';
           } else if (!section) {
             importStatus = 'error';
             importMessage = 'Section is required for students.';
@@ -1615,7 +1648,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => fetchUserLogs(user)}
-                        title="Activity Logs"
+                        title="User Audit Logs"
                         className="p-1.5 text-slate-500 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 cursor-pointer"
                       >
                         <FileText className="h-3.5 w-3.5" />
@@ -1787,7 +1820,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                                 className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                               >
                                 <FileText className="h-3.5 w-3.5 text-slate-400" />
-                                View Activity Logs
+                                View User Audit Logs
                               </button>
 
                               <button
@@ -2664,24 +2697,26 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                         {profileDetails.grades.length === 0 ? (
                           <p className="text-xs text-slate-400 italic bg-slate-50 p-4 rounded-lg border border-slate-100 text-left">No academic grades have been posted.</p>
                         ) : (
-                          <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                          <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-2xs">
                             <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
                               <thead className="bg-slate-50">
                                 <tr>
                                   <th className="px-4 py-2.5 font-bold text-slate-500">Code</th>
                                   <th className="px-4 py-2.5 font-bold text-slate-500">Subject Name</th>
-                                  <th className="px-4 py-2.5 font-bold text-slate-500 text-center">Term Rating</th>
+                                  <th className="px-4 py-2.5 font-bold text-slate-500">Period</th>
+                                  <th className="px-4 py-2.5 font-bold text-slate-500 text-center">Period Rating</th>
                                   <th className="px-4 py-2.5 font-bold text-slate-500 text-center">Final Grade</th>
                                   <th className="px-4 py-2.5 font-bold text-slate-500">Remarks</th>
                                 </tr>
                               </thead>
                               <tbody className="bg-white divide-y divide-slate-100 font-medium">
                                 {profileDetails.grades.map((gr, index) => (
-                                  <tr key={gr.class_record_id || index} className="hover:bg-slate-50/50">
+                                  <tr key={gr.posted_grade_id || `${gr.class_record_id}:${gr.grade_period || index}`} className="hover:bg-slate-50/50">
                                     <td className="px-4 py-2.5 font-mono text-slate-900 font-bold">{gr.class_records?.subjects?.code}</td>
                                     <td className="px-4 py-2.5 text-slate-650">{gr.class_records?.subjects?.name}</td>
-                                    <td className="px-4 py-2.5 text-center text-slate-650 font-mono">{gr.computed_grade}</td>
-                                    <td className="px-4 py-2.5 text-center text-slate-900 font-mono font-bold">{gr.effective_grade}</td>
+                                    <td className="px-4 py-2.5 text-slate-650 whitespace-nowrap">{getGradePeriodLabel(gr)}</td>
+                                    <td className="px-4 py-2.5 text-center text-slate-650 font-mono">{formatGradeNumber(gr.computed_grade)}</td>
+                                    <td className="px-4 py-2.5 text-center text-slate-900 font-mono font-bold">{formatGradeNumber(gr.effective_grade, 2)}</td>
                                     <td className="px-4 py-2.5 text-left">
                                       <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold ${
                                         gr.remarks?.toLowerCase() === 'passed' 

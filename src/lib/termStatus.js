@@ -23,6 +23,34 @@ export async function fetchAcademicTerms() {
 
 export const formatTermLabel = (term) => (term ? `${term.school_year} · ${term.semester}` : '');
 
+const SEMESTER_ORDER = Object.freeze({ '1st': 1, '2nd': 2, Summer: 3 });
+
+export function sortAcademicTerms(terms = []) {
+  return [...terms].sort((left, right) => {
+    const yearCompare = String(right.school_year || '').localeCompare(String(left.school_year || ''));
+    if (yearCompare !== 0) return yearCompare;
+    return (SEMESTER_ORDER[right.semester] || 0) - (SEMESTER_ORDER[left.semester] || 0);
+  });
+}
+
+export function getActiveAcademicTerm(terms = []) {
+  return terms.find(term => term.is_active) || null;
+}
+
+export function getArchivedAcademicTerms(terms = []) {
+  return sortAcademicTerms(terms.filter(term => !term.is_active));
+}
+
+export function recordMatchesAcademicTerm(record, term) {
+  if (!record || !term) return false;
+  const classRecord = record.class_record || record.class_records || record;
+  if (classRecord.term_id) return classRecord.term_id === term.term_id;
+  const section = classRecord.sections || classRecord.section || null;
+  const schoolYear = classRecord.school_year || section?.school_year;
+  const semester = classRecord.semester || section?.semester;
+  return schoolYear === term.school_year && semester === term.semester;
+}
+
 export function findClassTerm(terms, cls) {
   if (!cls) return null;
   return (cls.term_id && terms.find(t => t.term_id === cls.term_id))

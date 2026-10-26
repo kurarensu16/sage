@@ -1,39 +1,41 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Calendar, CheckCircle2, Clock, AlertTriangle, ChevronRight, MessageSquare, ShieldAlert } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { CardListSkeleton } from '../../components/common/Skeleton';
+import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
+import { fetchAcademicTerms, getActiveAcademicTerm } from '../../lib/termStatus';
 
 export default function Attendance() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [attendanceData, setAttendanceData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedClass, setSelectedClass] = useState(null);
+  const [terms, setTerms] = useState([]);
+  const [archiveMode, setArchiveMode] = useState(false);
+  const [appliedTerm, setAppliedTerm] = useState(null);
+  const [archiveError, setArchiveError] = useState('');
+  const requestSequence = useRef(0);
 
-  useEffect(() => {
-    if (user) {
-      loadAttendance();
-    }
-  }, [user]);
-
-  const loadAttendance = async () => {
-    if (!user) return;
-    const cacheKey = `student_attendance_${user.id}`;
+  const loadAttendance = useCallback(async (term, { archive = false } = {}) => {
+    if (!user || !term) return false;
+    const requestId = ++requestSequence.current;
+    const cacheKey = `student_attendance_${user.id}_${term.term_id}`;
     const cached = getCachedData(cacheKey, 180000);
     if (cached) {
       setAttendanceData(cached);
-      if (cached.length > 0 && !selectedClass) {
-        setSelectedClass(cached[0]);
-      }
+      setSelectedClass(previous => cached.find(item => item.classRecordId === previous?.classRecordId) || cached[0] || null);
       setLoading(false);
     } else {
       setLoading(true);
     }
+    setArchiveError('');
 
     try {
-      
       // 1. Fetch student's enrollments to find enrolled subjects & section
       const { data: enrolls, error: enrollErr } = await supabase
         .from('enrollments')
@@ -56,13 +58,26 @@ export default function Attendance() {
       if (uniqueEnrollMap.size > 0) {
         const subjectIds = [...new Set([...uniqueEnrollMap.values()].map(e => e.subject_id))];
         const sectionIds = [...new Set([...uniqueEnrollMap.values()].map(e => e.section_id))];
-        const { data: crData, error: crErr } = await supabase
-          .from('class_records')
-          .select('class_record_id, subject_id, section_id, faculty:users!faculty_id(first_name, last_name)')
-          .in('section_id', sectionIds)
-          .in('subject_id', subjectIds);
-        if (crErr) throw crErr;
-        classRecords = crData || [];
+        const selectFields = 'class_record_id, subject_id, section_id, term_id, school_year, semester, status, faculty:users!faculty_id(first_name, last_name)';
+        const [exactResult, legacyResult] = await Promise.all([
+          supabase
+            .from('class_records')
+            .select(selectFields)
+            .in('section_id', sectionIds)
+            .in('subject_id', subjectIds)
+            .eq('term_id', term.term_id),
+          supabase
+            .from('class_records')
+            .select(selectFields)
+            .in('section_id', sectionIds)
+            .in('subject_id', subjectIds)
+            .is('term_id', null)
+            .eq('school_year', term.school_year)
+            .eq('semester', term.semester)
+        ]);
+        if (exactResult.error) throw exactResult.error;
+        if (legacyResult.error) throw legacyResult.error;
+        classRecords = [...(exactResult.data || []), ...(legacyResult.data || [])];
       }
 
       // Each enrollment matched to its own class by subject and section.
@@ -71,13 +86,19 @@ export default function Attendance() {
       ));
 
       // 2. Fetch all attendance records for this student from attendance_records table
-      const { data: logs, error: logsErr } = await supabase
-        .from('attendance_records')
-        .select('*')
-        .eq('student_id', user.id)
-        .order('date', { ascending: false });
+      const classRecordIds = classRecords.map(record => record.class_record_id);
+      let logs = [];
+      if (classRecordIds.length > 0) {
+        const { data, error: logsErr } = await supabase
+          .from('attendance_records')
+          .select('*')
+          .eq('student_id', user.id)
+          .in('class_record_id', classRecordIds)
+          .order('date', { ascending: false });
 
-      if (logsErr) throw logsErr;
+        if (logsErr) throw logsErr;
+        logs = data || [];
+      }
 
       // 3. Map records into enrollments
       const mapped = uniqueEnrolls.map(e => {
@@ -100,36 +121,122 @@ export default function Attendance() {
           lates,
           absents,
           excused,
-          isFDA: absents >= 4,
+          isFdaRecommended: absents >= 4,
           isWarning: absents >= 2 && absents < 4,
           logs: displayLogs
         };
       });
 
+      if (requestId !== requestSequence.current) return false;
       setAttendanceData(mapped);
       if (mapped.length > 0) {
         setSelectedClass(prev => prev ? (mapped.find(c => c.classRecordId === prev.classRecordId) || mapped[0]) : mapped[0]);
+      } else {
+        setSelectedClass(null);
       }
       setCachedData(cacheKey, mapped);
+      return true;
     } catch (err) {
       console.error('Failed to load attendance records:', err);
+      if (requestId === requestSequence.current && archive) {
+        setArchiveError(err.message || 'Archived attendance could not be loaded. Please try again.');
+      }
+      return false;
     } finally {
-      setLoading(false);
+      if (requestId === requestSequence.current) setLoading(false);
     }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    async function initializePeriod() {
+      setLoading(true);
+      try {
+        const loadedTerms = await fetchAcademicTerms();
+        if (cancelled) return;
+        setTerms(loadedTerms);
+        const requestedTermId = searchParams.get('archiveTerm');
+        const requestedTerm = loadedTerms.find(term => !term.is_active && term.term_id === requestedTermId) || null;
+        if (requestedTerm) {
+          setArchiveMode(true);
+          setAppliedTerm(requestedTerm);
+          await loadAttendance(requestedTerm, { archive: true });
+          return;
+        }
+
+        const activeTerm = getActiveAcademicTerm(loadedTerms);
+        setArchiveMode(false);
+        setAppliedTerm(null);
+        if (activeTerm) await loadAttendance(activeTerm);
+        else setLoading(false);
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to initialize attendance period:', err);
+          setArchiveError(err.message || 'Academic periods could not be loaded.');
+          setLoading(false);
+        }
+      }
+    }
+
+    initializePeriod();
+    return () => {
+      cancelled = true;
+      requestSequence.current += 1;
+    };
+    // URL state is read on initialization; subsequent changes are controlled below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, loadAttendance]);
+
+  const handleArchiveModeChange = async (nextArchiveMode) => {
+    setArchiveError('');
+    setArchiveMode(nextArchiveMode);
+    if (nextArchiveMode) return;
+
+    requestSequence.current += 1;
+    setAppliedTerm(null);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('archiveTerm');
+    setSearchParams(nextParams, { replace: true });
+    const activeTerm = getActiveAcademicTerm(terms);
+    if (activeTerm) await loadAttendance(activeTerm);
   };
 
-  if (loading) {
+  const handleArchiveLoad = async (term) => {
+    if (!term) return;
+    const succeeded = await loadAttendance(term, { archive: true });
+    if (!succeeded) return;
+    setAppliedTerm(term);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('archiveTerm', term.term_id);
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  if (loading && terms.length === 0) {
     return <CardListSkeleton count={4} />;
   }
 
   return (
     <>
-      <PageHeader title="My Attendance Registry" breadcrumb="Student Portal" />
+      <PageHeader title="Attendance & Warnings" breadcrumb="Student Portal" />
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
+        <AcademicPeriodFilter
+          terms={terms}
+          archiveMode={archiveMode}
+          appliedTerm={appliedTerm}
+          loading={loading}
+          error={archiveError}
+          onModeChange={handleArchiveModeChange}
+          onLoad={handleArchiveLoad}
+          onRetry={handleArchiveLoad}
+        />
         
-        {attendanceData.length === 0 ? (
+        {loading ? (
+          <CardListSkeleton count={4} />
+        ) : archiveMode && !appliedTerm ? null : attendanceData.length === 0 ? (
           <div className="text-center py-16 bg-white border border-slate-200 rounded-2xl text-slate-400 p-6 text-sm">
-             You are not currently enrolled in any active classes this term.
+             {archiveMode ? 'No attendance records were found for the loaded academic period.' : 'You are not currently enrolled in any active classes this term.'}
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
@@ -151,10 +258,10 @@ export default function Attendance() {
                     <div className="space-y-1 truncate pr-2">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-sm text-slate-900">{item.subjectCode}</span>
-                        {item.isFDA && (
-                          <span className="px-1.5 py-0.5 rounded text-micro font-extrabold bg-rose-50 text-rose-600 border border-rose-100 uppercase animate-pulse">FDA Risk</span>
+                        {item.isFdaRecommended && (
+                          <span className="px-1.5 py-0.5 rounded text-micro font-extrabold bg-rose-50 text-rose-600 border border-rose-100 uppercase animate-pulse">FDA Review</span>
                         )}
-                        {!item.isFDA && item.isWarning && (
+                        {!item.isFdaRecommended && item.isWarning && (
                           <span className="px-1.5 py-0.5 rounded text-micro font-extrabold bg-amber-50 text-amber-600 border border-amber-100 uppercase">Warning</span>
                         )}
                       </div>
@@ -172,13 +279,13 @@ export default function Attendance() {
               <div className="lg:col-span-2 space-y-6">
                 
                 {/* FDA Warning Advisory */}
-                {selectedClass.isFDA ? (
+                {selectedClass.isFdaRecommended ? (
                   <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-3.5 text-left">
                     <ShieldAlert className="h-5.5 w-5.5 text-rose-500 mt-0.5 flex-shrink-0 animate-bounce" />
                     <div>
-                      <h4 className="text-xs font-extrabold text-rose-800 uppercase tracking-wider font-display">FDA Absence Advisory Triggered</h4>
+                      <h4 className="text-xs font-extrabold text-rose-800 uppercase tracking-wider font-display">FDA Review Required</h4>
                       <p className="text-xs text-rose-700 mt-1 leading-relaxed">
-                        You have accumulated <strong>{selectedClass.absents} absences</strong> in {selectedClass.subjectCode}. Under institutional compliance policies, exceeding the 20% limit (4 or more absences) leads to a <strong>Failure due to Absences (FDA)</strong> designation. Please consult your instructor immediately.
+                        You have accumulated <strong>{selectedClass.absents} absences</strong> in {selectedClass.subjectCode}. Four or more recorded absences trigger an <strong>FDA recommendation for instructor review</strong>. This warning does not automatically change your grade; please consult your instructor immediately.
                       </p>
                     </div>
                   </div>
@@ -188,7 +295,7 @@ export default function Attendance() {
                     <div>
                       <h4 className="text-xs font-extrabold text-amber-800 uppercase tracking-wider font-display">Absence Caution Warning</h4>
                       <p className="text-xs text-amber-800 mt-1 leading-relaxed">
-                        You have <strong>{selectedClass.absents}/3 recorded absences</strong> in {selectedClass.subjectCode}. Reaching 4 absences will trigger an official FDA warning.
+                        You have <strong>{selectedClass.absents}/3 recorded absences</strong> in {selectedClass.subjectCode}. Reaching 4 absences will trigger an FDA recommendation for instructor review.
                       </p>
                     </div>
                   </div>
@@ -212,9 +319,9 @@ export default function Attendance() {
 
                   <div className="bg-white border border-slate-200/90 p-3.5 sm:p-4 rounded-2xl shadow-2xs text-left">
                     <div className="flex items-center gap-1.5 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
-                      <AlertTriangle className={`h-3.5 w-3.5 ${selectedClass.isFDA ? 'text-rose-500' : 'text-slate-400'}`} /> Absent
+                      <AlertTriangle className={`h-3.5 w-3.5 ${selectedClass.isFdaRecommended ? 'text-rose-500' : 'text-slate-400'}`} /> Absent
                     </div>
-                    <div className={`font-mono text-xl sm:text-2xl font-bold mt-1.5 ${selectedClass.isFDA ? 'text-rose-600' : 'text-slate-800'}`}>{selectedClass.absents}</div>
+                    <div className={`font-mono text-xl sm:text-2xl font-bold mt-1.5 ${selectedClass.isFdaRecommended ? 'text-rose-600' : 'text-slate-800'}`}>{selectedClass.absents}</div>
                   </div>
 
                   <div className="bg-white border border-slate-200/90 p-3.5 sm:p-4 rounded-2xl shadow-2xs text-left">

@@ -167,6 +167,8 @@ export default function Dashboard() {
             risk_score,
             refer_to_dean,
             status,
+            published_to_student_at,
+            followup_snapshot,
             created_at,
             student:users!student_id ( first_name, last_name, email ),
             class_record:class_records ( subjects ( code ), sections ( name ) )
@@ -174,7 +176,12 @@ export default function Dashboard() {
           .eq('faculty_id', user.id)
           .order('created_at', { ascending: false });
 
-        const interventionsCount = evaluationsData?.length || 0;
+        const activeInterventions = (evaluationsData || []).filter(evaluation => (
+          Boolean(evaluation.published_to_student_at)
+          && !evaluation.followup_snapshot
+          && ['submitted', 'acknowledged_by_student'].includes(evaluation.status)
+        ));
+        const interventionsCount = activeInterventions.length;
         const deanReferralsCount = (evaluationsData || []).filter(ev => ev.refer_to_dean === true).length;
         setRecentEvaluations((evaluationsData || []).slice(0, 4));
 
@@ -227,7 +234,7 @@ export default function Dashboard() {
         setStats({
           handledClassesCount: classesData?.length || 0,
           pendingGradesCount: classesData?.length || 0, // Ongoing terms
-          interventionsCount: interventionsCount > 0 ? interventionsCount : combinedStudents.length,
+          interventionsCount,
           deanReferralsCount,
           notificationsCount: notificationsCount || 0,
           atRiskCount: atRiskStudents.length,
@@ -567,12 +574,12 @@ export default function Dashboard() {
           <div 
             className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-indigo-300 transition-all flex flex-col justify-between cursor-pointer group"
             onClick={() => setInfoModalData({
-              title: "Interventions",
-              message: "The number of students whose risk level has triggered an intervention, such as a Dean referral or an evaluated improvement plan."
+              title: "Active Intervention Cases",
+              message: "Published faculty evaluations that do not yet have a recorded follow-up. A true zero is displayed as zero."
             })}
           >
             <div className="flex justify-between items-start">
-              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider group-hover:text-indigo-600 transition-colors">Interventions</span>
+              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider group-hover:text-indigo-600 transition-colors">Active Intervention Cases</span>
               <div className="p-1.5 sm:p-2 bg-indigo-50 text-indigo-600 rounded-xl group-hover:bg-indigo-100 transition-colors">
                 <Target className="h-4 w-4" />
               </div>
@@ -580,7 +587,7 @@ export default function Dashboard() {
             <div className="mt-3 sm:mt-4">
               <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono">{String(stats.interventionsCount).padStart(2, '0')}</h3>
               <p className="text-micro sm:text-[10px] text-slate-500 mt-0.5 truncate">
-                {stats.deanReferralsCount > 0 ? `${stats.deanReferralsCount} Dean referral${stats.deanReferralsCount > 1 ? 's' : ''}` : 'Evaluated students'}
+                {stats.deanReferralsCount > 0 ? `${stats.deanReferralsCount} Dean referral${stats.deanReferralsCount > 1 ? 's' : ''}` : 'Awaiting follow-up'}
               </p>
             </div>
           </div>

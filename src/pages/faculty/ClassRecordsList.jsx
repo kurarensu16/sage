@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   Search, 
@@ -16,7 +16,6 @@ import {
   TrendingDown, 
   TrendingUp,
   Plus,
-  PlusCircle,
   CheckCircle2,
   MoreVertical
 } from 'lucide-react';
@@ -32,17 +31,22 @@ import { RISK_TIERS } from '../../lib/academicPolicy';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
 import FacultyCreateClassroomModal from './FacultyCreateClassroomModal';
 import { cn } from '../../lib/utils';
-import { fetchAcademicTerms, getClassTermState } from '../../lib/termStatus';
+import { fetchAcademicTerms, getActiveAcademicTerm, getClassTermState } from '../../lib/termStatus';
 import RiskEducationNote from '../../components/faculty/RiskEducationNote';
+import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
 
 export default function ClassRecordsList() {
   const { user } = useAuth();
-  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [classes, setClasses] = useState([]);
+  const [terms, setTerms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState('current'); // 'current' or 'past'
+  const [archiveMode, setArchiveMode] = useState(Boolean(searchParams.get('archiveTerm')));
+  const [appliedTerm, setAppliedTerm] = useState(null);
+  const [archiveError, setArchiveError] = useState('');
   const [copiedCode, setCopiedCode] = useState(null);
+  const periodRequest = useRef(0);
 
   // Faculty Classroom Self-Service Creation Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -71,47 +75,66 @@ export default function ClassRecordsList() {
   }, []);
 
   useEffect(() => {
-    if (location.search.includes('action=create')) {
+    if (searchParams.get('action') === 'create') {
       setIsCreateModalOpen(true);
+      setSearchParams(previous => {
+        const next = new URLSearchParams(previous);
+        next.delete('action');
+        return next;
+      }, { replace: true });
     }
-  }, [location.search]);
+  }, [searchParams, setSearchParams]);
 
-  const fetchClasses = async () => {
-    if (!user) return;
+  const loadClassesForTerm = async (term, { archive = false, availableTerms = terms } = {}) => {
+    if (!user?.id || !term?.term_id) return false;
+    const requestId = ++periodRequest.current;
     setLoading(true);
+    setArchiveError('');
     try {
-      const [{ data: allClassesData, error: classesError }, terms] = await Promise.all([
+      const classSelect = `
+        class_record_id,
+        status,
+        term_id,
+        school_year,
+        semester,
+        subject_id,
+        section_id,
+        subjects ( subject_id, code, name, units, computation_id ),
+        sections ( section_id, name, school_year, semester )
+      `;
+      const [exactResult, legacyResult] = await Promise.all([
         supabase
           .from('class_records')
-          .select(`
-            class_record_id,
-            status,
-            term_id,
-            school_year,
-            semester,
-            subject_id,
-            section_id,
-            subjects ( subject_id, code, name, units, computation_id ),
-            sections ( section_id, name, school_year, semester )
-          `)
-          .eq('faculty_id', user.id),
-        fetchAcademicTerms()
+          .select(classSelect)
+          .eq('faculty_id', user.id)
+          .eq('term_id', term.term_id),
+        supabase
+          .from('class_records')
+          .select(classSelect)
+          .eq('faculty_id', user.id)
+          .is('term_id', null)
+          .eq('school_year', term.school_year)
+          .eq('semester', term.semester)
       ]);
 
-      if (classesError) throw classesError;
+      if (exactResult.error) throw exactResult.error;
+      if (legacyResult.error) throw legacyResult.error;
+      if (requestId !== periodRequest.current) return false;
 
-      // Current Term: open classes of the active term. Past Archives: archived classes and
-      // previous-term classes still waiting for their SG (Pending / Overdue).
-      const classesData = (allClassesData || [])
-        .map(cls => ({ ...cls, termState: getClassTermState(terms, cls) }))
-        .filter(cls => (filterType === 'current'
-          ? cls.termState.state === 'current'
-          : cls.termState.state !== 'current'));
+      const classesData = [...(exactResult.data || []), ...(legacyResult.data || [])]
+        .map(cls => ({ ...cls, termState: getClassTermState(availableTerms, cls) }));
 
-      if (!classesData || classesData.length === 0) {
+      if (classesData.length === 0) {
         setClasses([]);
-        setLoading(false);
-        return;
+        if (archive) {
+          setAppliedTerm(term);
+          setSearchParams(previous => {
+            const next = new URLSearchParams(previous);
+            next.set('archiveTerm', term.term_id);
+            return next;
+          }, { replace: true });
+        }
+        return true;
       }
 
       const classIds = classesData.map(c => c.class_record_id);
@@ -136,7 +159,7 @@ export default function ClassRecordsList() {
         .order('requested_at', { ascending: false });
 
       // Auto-sync regular block section students into enrollments for current-term classes only
-      const sectionIds = filterType === 'current'
+      const sectionIds = !archive
         ? Array.from(new Set(classesData.map(c => c.section_id).filter(Boolean)))
         : [];
       if (sectionIds.length > 0) {
@@ -260,17 +283,89 @@ export default function ClassRecordsList() {
         };
       });
 
+      if (requestId !== periodRequest.current) return false;
       setClasses(mappedClasses);
+      if (archive) {
+        setAppliedTerm(term);
+        setSearchParams(previous => {
+          const next = new URLSearchParams(previous);
+          next.set('archiveTerm', term.term_id);
+          return next;
+        }, { replace: true });
+      }
+      return true;
     } catch (err) {
-      console.error('Error fetching classes:', err);
+      if (requestId === periodRequest.current) {
+        console.error('Error fetching classes:', err);
+        setArchiveError(archive
+          ? 'The selected class archive could not be loaded. Please retry.'
+          : 'Current-term classes could not be loaded. Please retry.');
+      }
+      return false;
     } finally {
-      setLoading(false);
+      if (requestId === periodRequest.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchClasses();
-  }, [user, filterType]);
+    async function initializePeriods() {
+      if (!user?.id) return;
+      try {
+        const availableTerms = await fetchAcademicTerms();
+        setTerms(availableTerms);
+        const requestedArchive = availableTerms.find(term => (
+          term.term_id === searchParams.get('archiveTerm') && !term.is_active
+        ));
+        if (requestedArchive) {
+          setArchiveMode(true);
+          await loadClassesForTerm(requestedArchive, { archive: true, availableTerms });
+          return;
+        }
+
+        const activeTerm = getActiveAcademicTerm(availableTerms);
+        setArchiveMode(false);
+        setAppliedTerm(null);
+        setSearchParams(previous => {
+          const next = new URLSearchParams(previous);
+          next.delete('archiveTerm');
+          return next;
+        }, { replace: true });
+        if (activeTerm) await loadClassesForTerm(activeTerm, { availableTerms });
+        else setLoading(false);
+      } catch (err) {
+        console.error('Academic periods could not be loaded:', err);
+        setArchiveError('Academic periods could not be loaded.');
+        setLoading(false);
+      }
+    }
+    initializePeriods();
+    // Initialization is intentionally tied to the authenticated faculty member.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  const handlePeriodModeChange = async (useArchive) => {
+    periodRequest.current += 1;
+    setArchiveMode(useArchive);
+    setArchiveError('');
+    setClasses([]);
+    setSearchTerm('');
+    setAppliedTerm(null);
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.delete('archiveTerm');
+      return next;
+    }, { replace: true });
+    if (useArchive) {
+      setLoading(false);
+      return;
+    }
+    const activeTerm = getActiveAcademicTerm(terms);
+    if (activeTerm) await loadClassesForTerm(activeTerm);
+  };
+
+  const handleArchiveLoad = async (term) => {
+    if (term) await loadClassesForTerm(term, { archive: true });
+  };
 
   const handleCopyCode = (code) => {
     navigator.clipboard.writeText(code);
@@ -303,16 +398,32 @@ export default function ClassRecordsList() {
     );
   });
 
-  if (loading) {
-    return <CardListSkeleton count={4} />;
-  }
-
   return (
     <>
-      <PageHeader title="My Class Records" breadcrumb="Faculty Portal" />
+      <PageHeader title="My Classes" breadcrumb="Faculty Portal">
+        <button
+          type="button"
+          onClick={() => setIsCreateModalOpen(true)}
+          className="px-3.5 py-2 bg-sage-800 hover:bg-sage-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition-all"
+        >
+          <Plus className="h-4 w-4" />
+          <span>Create Classroom</span>
+        </button>
+      </PageHeader>
       
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6">
         <RiskEducationNote variant="roster" />
+
+        <AcademicPeriodFilter
+          terms={terms}
+          archiveMode={archiveMode}
+          appliedTerm={appliedTerm}
+          loading={loading}
+          error={archiveError}
+          onModeChange={handlePeriodModeChange}
+          onLoad={handleArchiveLoad}
+          onRetry={handleArchiveLoad}
+        />
         
         {/* Success Creation Banner */}
         {creationBanner && (
@@ -333,7 +444,11 @@ export default function ClassRecordsList() {
           </div>
         )}
 
-        {/* Toolbar: Search, Semester Filter & Create Room Action */}
+        {archiveMode && !appliedTerm ? null : loading ? (
+          <CardListSkeleton count={4} />
+        ) : (
+        <>
+        {/* Toolbar: Search within the loaded academic period */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           <div className="relative max-w-md w-full">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
@@ -356,37 +471,11 @@ export default function ClassRecordsList() {
             )}
           </div>
           
-          <div className="flex items-center gap-2 overflow-x-auto pb-0.5 no-scrollbar">
-            <div className="flex items-center gap-1.5 p-0.5 bg-slate-100 border border-slate-200 rounded-lg">
-              <button 
-                onClick={() => setFilterType('current')}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer whitespace-nowrap",
-                  filterType === 'current' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                )}
-              >
-                Current Term
-              </button>
-              <button 
-                onClick={() => setFilterType('past')}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer whitespace-nowrap",
-                  filterType === 'past' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                )}
-              >
-                Past Archives
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIsCreateModalOpen(true)}
-              className="px-3.5 py-1.5 bg-sage-800 hover:bg-sage-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition-all shrink-0"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Create Classrooms</span>
-            </button>
-          </div>
+          {archiveMode && appliedTerm && (
+            <span className="text-[11px] font-semibold text-slate-500">
+              Showing A.Y. {appliedTerm.school_year} · {appliedTerm.semester} Semester
+            </span>
+          )}
         </div>
 
         {/* Classes Grid */}
@@ -397,8 +486,8 @@ export default function ClassRecordsList() {
             <p className="text-xs sm:text-sm text-slate-500 mt-1">
               {searchTerm
                 ? "No classes match your search query."
-                : filterType === 'past'
-                  ? "No previous-term classes yet. After a term ends, its classes appear here: Pending or Overdue until the SG is posted, then Archived (view only)."
+                : archiveMode
+                  ? "No classes were found for the selected archived academic period."
                   : "No assigned classrooms provisioned by the Academic Administrator for this semester."}
             </p>
           </div>
@@ -598,6 +687,8 @@ export default function ClassRecordsList() {
             ))}
           </div>
         )}
+        </>
+        )}
       </div>
 
 
@@ -770,8 +861,8 @@ export default function ClassRecordsList() {
       <FacultyCreateClassroomModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        onSuccess={({ count, results }) => {
-          fetchClasses();
+        onSuccess={async ({ count, results }) => {
+          await handlePeriodModeChange(false);
           const listStr = results.map(r => `${r.subject?.code} (${r.section?.name}) [Join Code: ${r.join_code}]`).join(', ');
           setCreationBanner({
             message: `Created ${count} active classroom(s): ${listStr}`

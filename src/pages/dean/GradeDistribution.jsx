@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { BarChart3, Filter, CheckCircle, XCircle, AlertTriangle, Building2, GraduationCap, Layers } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { resolveOfficialGradeState, resolveOfficialGwa } from '../../lib/academicPolicy';
+import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
+import { fetchAcademicTerms, getActiveAcademicTerm } from '../../lib/termStatus';
+import { getCachedData, setCachedData } from '../../lib/dataCache';
 
 // Program codes are read from programs.abbreviation, never from a map in code.
 
@@ -30,6 +34,7 @@ function getYearFromSection(sectionName) {
 
 export default function GradeDistribution() {
   const { profile } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const deanCollege = profile?.departments?.name || '—';
 
   const [classrooms, setClassrooms] = useState([]);
@@ -39,6 +44,11 @@ export default function GradeDistribution() {
   const [loading, setLoading] = useState(true);
   const [gradesLoading, setGradesLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [terms, setTerms] = useState([]);
+  const [archiveMode, setArchiveMode] = useState(Boolean(searchParams.get('archiveTerm')));
+  const [appliedTerm, setAppliedTerm] = useState(null);
+  const [archiveError, setArchiveError] = useState('');
+  const periodRequest = useRef(0);
 
   // Program & Year Level Filters loaded from Database
   const [dbPrograms, setDbPrograms] = useState([]);
@@ -59,52 +69,107 @@ export default function GradeDistribution() {
   });
 
   // ── Load active classrooms from Supabase scoped to Dean's department ────────
-  useEffect(() => {
-    async function loadClassrooms() {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error: err } = await supabase
-          .from('class_records')
-          .select(`
-            class_record_id,
-            school_year,
-            semester,
-            subjects ( subject_id, code, name ),
-            sections ( section_id, name, department_id ),
-            faculty:users!class_records_faculty_id_fkey ( first_name, last_name )
-          `)
-          .eq('status', 'active')
-          .order('class_record_id');
-
-        if (err) throw err;
-
-        const mapped = (data || [])
-          .filter(c => c.sections && c.sections.department_id === profile?.department_id)
-          .map(c => ({
-            id: c.class_record_id,
-            subjectCode: c.subjects?.code || '',
-            subjectName: c.subjects?.name || '',
-            section: c.sections?.name || '',
-            facultyName: c.faculty ? `${c.faculty.last_name}, ${c.faculty.first_name}` : 'Unassigned',
-            semester: c.semester,
-            schoolYear: c.school_year,
-          }));
-
-        setClassrooms(mapped);
-        if (mapped.length > 0) setSelectedClassId(mapped[0].id);
-      } catch (e) {
+  const loadClassrooms = async (term, { archive = false } = {}) => {
+    if (!profile?.department_id || !term?.term_id) return false;
+    const sequence = ++periodRequest.current;
+    const cacheKey = `dean_grade_distribution_${profile.department_id}_${term.term_id}`;
+    setLoading(true);
+    setError(null);
+    setArchiveError('');
+    try {
+      let rows = getCachedData(cacheKey, 5 * 60 * 1000);
+      if (!rows) {
+        const select = `class_record_id,term_id,school_year,semester,subjects(subject_id,code,name),sections(section_id,name,department_id),faculty:users!class_records_faculty_id_fkey(first_name,last_name)`;
+        const [{ data: exact, error: exactError }, { data: legacy, error: legacyError }] = await Promise.all([
+          supabase.from('class_records').select(select).eq('term_id', term.term_id),
+          supabase.from('class_records').select(select).is('term_id', null)
+            .eq('school_year', term.school_year).eq('semester', term.semester)
+        ]);
+        if (exactError) throw exactError;
+        if (legacyError) throw legacyError;
+        rows = [...(exact || []), ...(legacy || [])];
+        setCachedData(cacheKey, rows);
+      }
+      if (sequence !== periodRequest.current) return false;
+      const mapped = rows.filter(c => c.sections?.department_id === profile.department_id).map(c => ({
+        id: c.class_record_id,
+        subjectCode: c.subjects?.code || '',
+        subjectName: c.subjects?.name || '',
+        section: c.sections?.name || '',
+        facultyName: c.faculty ? `${c.faculty.last_name}, ${c.faculty.first_name}` : 'Unassigned',
+        semester: c.semester,
+        schoolYear: c.school_year
+      }));
+      setClassrooms(mapped);
+      setSelectedClassId(mapped[0]?.id || '');
+      if (archive) {
+        setAppliedTerm(term);
+        setSearchParams(previous => {
+          const next = new URLSearchParams(previous);
+          next.set('archiveTerm', term.term_id);
+          return next;
+        }, { replace: true });
+      }
+      return true;
+    } catch (e) {
+      if (sequence === periodRequest.current) {
         console.error('Failed to load classrooms:', e);
-        setError('Could not load classrooms from the database.');
-      } finally {
+        setArchiveError('The selected grade-distribution archive could not be loaded. Please retry.');
+      }
+      return false;
+    } finally {
+      if (sequence === periodRequest.current) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    async function initializePeriods() {
+      if (!profile?.department_id) return;
+      try {
+        const availableTerms = await fetchAcademicTerms();
+        setTerms(availableTerms);
+        const requested = availableTerms.find(term => term.term_id === searchParams.get('archiveTerm'));
+        if (requested && !requested.is_active) {
+          setArchiveMode(true);
+          await loadClassrooms(requested, { archive: true });
+        } else {
+          const active = getActiveAcademicTerm(availableTerms);
+          setArchiveMode(false);
+          if (active) await loadClassrooms(active);
+          else setLoading(false);
+        }
+      } catch (e) {
+        console.error('Academic periods could not be loaded:', e);
+        setArchiveError('Academic periods could not be loaded.');
         setLoading(false);
       }
     }
-    
-    if (profile?.department_id) {
-      loadClassrooms();
-    }
-  }, [profile]);
+    initializePeriods();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.department_id]);
+
+  const handleModeChange = async (useArchive) => {
+    periodRequest.current += 1;
+    setArchiveMode(useArchive);
+    setAppliedTerm(null);
+    setArchiveError('');
+    setClassrooms([]);
+    setSelectedClassId('');
+    setGradesList([]);
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.delete('archiveTerm');
+      return next;
+    }, { replace: true });
+    if (!useArchive) {
+      const active = getActiveAcademicTerm(terms);
+      if (active) await loadClassrooms(active);
+    } else setLoading(false);
+  };
+
+  const handleArchiveLoad = async (term) => {
+    if (term) await loadClassrooms(term, { archive: true });
+  };
 
   // ── Load academic programs from database ────────────────────────────────────
   useEffect(() => {
@@ -290,6 +355,17 @@ export default function GradeDistribution() {
       <PageHeader title="Grade Distribution Analysis" breadcrumb="Dean Portal" />
 
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
+        <AcademicPeriodFilter
+          terms={terms}
+          archiveMode={archiveMode}
+          appliedTerm={appliedTerm}
+          loading={loading}
+          error={archiveError}
+          onModeChange={handleModeChange}
+          onLoad={handleArchiveLoad}
+          onRetry={handleArchiveLoad}
+        />
+        <div className={archiveMode && !appliedTerm ? 'hidden' : 'contents'}>
 
         {/* ── Error banner ── */}
         {error && (
@@ -539,6 +615,7 @@ export default function GradeDistribution() {
           </div>
         )}
 
+        </div>
       </div>
     </>
   );

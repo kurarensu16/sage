@@ -26,6 +26,9 @@
 - [x] Apply `20261011130000_term_rollover_grace.sql`. Applied 2026-10-11 (Batch 2B: safe rollover, SG grace period and labels, `term_id`, `get_term_sg_status`).
 - [x] Apply `20261011140000_admin_batch3_atomic_saves.sql`. Applied 2026-10-11; `save_grade_template` and `assign_department_dean` confirmed.
 - [x] Apply `20261011150000_unique_subjects.sql`. Applied 2026-10-11 (no duplicate subject codes, or names within a college).
+- [ ] Apply `20261025120000_fda_faculty_discretion.sql` together with the compatible frontend. This migration changes four absences from an automatic FDA/5.00 result to a recommendation and adds the faculty-decision posting RPC. The device owner must apply it manually; it has not been run by Codex.
+- [x] Apply `20261025130000_grading_period_sequence_and_backfill.sql` after the FDA migration. Applied 2026-10-25; its safe audit identified 19 legacy SG rows without MR/TFR across ITC113 and NAV113. None were reconstructed without matching snapshot evidence.
+- [x] Apply `20261025140500_reconstruct_verified_legacy_periods.sql`. Applied 2026-10-25. It reconstructed the nine verified NAV113 / BSMARE-1B legacy sequences; together with one sequence that was already complete, the class now has 10 of 10 SG students with MR and TFR. The ten ITC113 / BSIT-1A mismatches remained untouched for faculty/Dean review.
 - [x] Confirm the new functions exist (verified 2026-10-10): `acknowledge_student_evaluation`, `verify_intervention_task`, `record_intervention_followup`, `update_own_contact_number`, and `set_own_avatar_path`.
 - [x] Confirm the new columns exist (verified 2026-10-10):
   - `student_risk_evaluations.acknowledged_at`, `followup_recorded_at`, `followup_recorded_by`
@@ -62,7 +65,7 @@
   - a CSV with **5 new student accounts** in the block section (EN-03)
   - a second faculty account **not** assigned to the class (EJ-10)
   - one class with a **posted MR** (from Part A posting) for the late-join hint (EJ-12)
-  - the class code of each test class (*My Class Records*)
+  - the class code of each test class (*My Classes*)
 - [ ] Use separate browser profiles or private windows per role. Never switch roles in one session.
 - [ ] Capture baseline screenshots or exports before changing grades. For database-sensitive cases, record row values before and after.
 - [ ] Never use the Supabase service-role key for role tests.
@@ -252,7 +255,7 @@ Seed and step-by-step stages: `docs/05-operations/database/TEST_YEAR_SEED_2026-2
 - [ ] ACK-01 Faculty publishes an evaluation. The student's Advisories & Study Plans card shows a "Please acknowledge this plan" banner with an **Acknowledge plan** button.
 - [ ] ACK-02 Before acknowledging, the task checkboxes are disabled, and the hint reads "Acknowledge the plan to start reporting progress".
 - [ ] ACK-03 Click **Acknowledge plan**. The card shows "You acknowledged this plan on [date]", and the checkboxes become usable.
-- [ ] ACK-04 Faculty → Evaluated Students shows "Acknowledged by student · [date and time]". Before acknowledgment it shows "Not yet acknowledged by student".
+- [ ] ACK-04 Faculty → Intervention Records shows "Acknowledged by student · [date and time]". Before acknowledgment it shows "Not yet acknowledged by student".
 - [ ] ACK-05 Dean → Intervention Results shows the acknowledgment under the student name. The Generate Reports intervention export has a "Student Acknowledged" column.
 - [ ] ACK-06 Faculty reopens the evaluation and changes a task, a due date, or the student-visible guidance, then republishes. The acknowledgment is cleared, and the student must acknowledge again.
 - [ ] ACK-07 Faculty changes **only** the private faculty note and republishes. The acknowledgment is kept.
@@ -263,7 +266,7 @@ Seed and step-by-step stages: `docs/05-operations/database/TEST_YEAR_SEED_2026-2
 ### B2. Task verification and return
 
 - [ ] TV-01 The student checks a task. It shows "Reported done on [date]" and "Awaiting instructor verification". The card heading reads "(1/N reported · 0 verified)", and the top-right badge reads "0/N verified" (it counts verified tasks only, matching the faculty view).
-- [ ] TV-02 Faculty → Evaluated Students shows "Tasks: 0 verified · 1 awaiting review · N total", and the button reads "Tasks and referrals (1 to review)".
+- [ ] TV-02 Faculty → Intervention Records shows "Tasks: 0 verified · 1 awaiting review · N total", and the button reads "Tasks and referrals (1 to review)".
 - [ ] TV-03 Faculty clicks **Verify**. The task shows "Verified by instructor" and the verified time, and the notice confirms it counts toward the verified completion rate.
 - [ ] TV-04 The student's verified task is locked; the checkbox cannot be unchecked.
 - [ ] TV-05 Faculty clicks **Return to student**. Return is disabled until a note is entered, and the note is limited to 500 characters.
@@ -294,7 +297,7 @@ Seed and step-by-step stages: `docs/05-operations/database/TEST_YEAR_SEED_2026-2
 - [ ] FU-16 Database check: calling `record_intervention_followup` while a reported task is unreviewed fails with "Review every task the student reported (verify or return it) before recording the follow-up…".
 - [ ] FU-17 **N/A for this run:** the legacy record it needed (Caleb Tolentino · ITP113 · Midterm) was removed by the 2026-10-10 evaluation data reset (§0.1). FU-15 and FU-16 now prevent new records from reaching this state. *(Original case: the student sees the unreviewed task of a plan closed before this fix as "Not verified before the plan closed".)*
 - [ ] FU-11 Re-evaluation, same term (closed): on **Evaluate Students**, select the term whose follow-up was recorded. That student's button reads **Closed** (disabled), the line below reads "Follow-up recorded · evaluate again in a later term", and hovering explains why.
-- [ ] FU-12 Re-evaluation note: on **Evaluated Students**, the closed case reads "Closed for {term}. If the student still needs support, evaluate again in a later grading term." The link opens Evaluate Students. Both pages' help notes include a **Re-evaluation** entry.
+- [ ] FU-12 Re-evaluation note: on **Intervention Records**, the closed case reads "Closed for {term}. If the student still needs support, evaluate again in a later grading term." The link opens Evaluate Students. Both pages' help notes include a **Re-evaluation** entry.
 - [ ] FU-13 Re-evaluation, later term: select the next grading term (e.g., Semi-Final) for the same class. The student shows **Evaluate** (or appears in Needs evaluation if Moderate or higher). Publish it; the new case has its own baseline (the current standing), and the earlier closed case remains unchanged in history.
 - [ ] FU-14 Re-evaluation, same term, before follow-up: **Review / edit** reopens the existing evaluation. Change a task and republish: the baseline stays the same, and the student must acknowledge the plan again.
 
@@ -340,7 +343,7 @@ Seed and step-by-step stages: `docs/05-operations/database/TEST_YEAR_SEED_2026-2
 - [ ] PW-05 The reset page's "Sign out of all other devices" checkbox is **checked by default**.
 - [ ] PW-06 With the checkbox checked: sign in on browser B, reset the password from browser A's recovery link, then refresh browser B. Browser B is signed out. The success screen says other devices were signed out.
 - [ ] PW-07 With the checkbox unchecked, browser B stays signed in, and the success screen says so.
-- [ ] PW-08 Admin → Activity Logs records the reset and which sign-out choice was made.
+- [ ] PW-08 Admin → Audit Logs records the reset and which sign-out choice was made.
 - [ ] PW-09 Creating a user with the default temporary password still works, and that user must change it on first login.
 
 ### B8. Profile photo and contact number
@@ -366,10 +369,11 @@ Seed and step-by-step stages: `docs/05-operations/database/TEST_YEAR_SEED_2026-2
 - [ ] LB-03 The insight notification title reads "AI Study Tutor Insight Ready".
 - [ ] LB-04 The Log Class Scores activity hint reads "(Required for AI Study Tutor)".
 - [ ] LB-05 The Admin sidebar **Import Users (CSV/Excel)** opens the import. Both a `.csv` and an `.xlsx` file import successfully.
-- [ ] LB-06 Faculty menu labels match the thesis: My Class Records, Preview & Post Grades, Evaluate Students, Evaluated Students, Performance Reports.
-- [ ] LB-07 Mobile menu (phone width, each of the 4 roles): the bottom bar shows 4 shortcuts plus **More**. Tapping **More** opens the full sidebar menu with every group and page, plus Settings, the install button, and Sign Out. Tapping a page opens it and closes the menu; tapping the backdrop or ✕ closes it. On a page with no shortcut (e.g., Faculty → Evaluated Students), **More** is highlighted.
+- [ ] LB-06 Faculty menu labels match the verified hierarchy: My Classes, Create Classroom, Enrollment Requests, Evaluate Students, Intervention Records, Attendance Monitoring, Consultation Requests, Class Performance, and Comparisons & Trends. Scorebook, Review & Post, and Posted Grades & Corrections appear inside a selected class workspace.
+- [ ] LB-07 Mobile menu (phone width, each of the 4 roles): the bottom bar shows 4 shortcuts plus **More**. Tapping **More** opens the full sidebar menu with every group and page, plus Settings, the install button, and Sign Out. Tapping a page opens it and closes the menu; tapping the backdrop or ✕ closes it. A page with no shortcut highlights **More**.
 - [ ] LB-09 Settings on a phone: the card reads **Install ASPIRE App** with a "Detected: Android/iPhone/Desktop" chip, and the button uses the theme color. Tapping it opens the install guide, where the Android APK, iPhone, and desktop tabs are all selectable. The sign-out button reads "Sign Out of ASPIRE".
-- [ ] LB-08 Student mobile: Attendance & Warnings, Score Breakdown, AI Study Tutor, and Request a Consultation are reachable through **More**.
+- [ ] LB-08 Student mobile: Attendance & Warnings, AI Study Tutor, and Consultations are reachable through **More**. Score Breakdown opens contextually from My Subjects or Grade Report and is not a global sidebar item.
+- [ ] LB-09 Query-aware navigation: `/faculty/classrecordslist?action=create` highlights only Create Classroom; `/admin/userlist?action=import` highlights only Import Users; Dean risk overview, escalated, and intervention-result links highlight the correct desktop item.
 
 ### B10. Removed class-wide unlock path
 
@@ -424,7 +428,10 @@ Test with a block-section student and an irregular student (home section differe
 - [ ] AS-11 **Email locked (M11):** in edit mode the email is read-only with the note that it's the login.
 - [ ] AS-12 **User numbers (M8):** create two students in a row → consecutive, unique numbers (no "duplicate key" error).
 - [ ] AS-13 Assigning a section to a student (create or edit) **auto-enrolls** them in that section's active classes, and those classes' professors get a *Class Roster Update* (EN cases).
-- [ ] AS-14 **Sections form (M9):** Add Section → the *Academic Term* dropdown lists the terms from Term Settings, defaults to the **active term**, and the saved section shows that school year and semester.
+- [ ] AS-14 **Manage Sections form (M9):** Add Section → the *Academic Term* dropdown lists the terms from Academic Terms, defaults to the **active term**, and the saved section shows that school year and semester.
+- [ ] AS-14A **Section roster print:** select a section with home-assigned and irregular students, click **Print**, and confirm the preview contains the institution/section heading, complete official masterlist, and subject-grouped irregular-enrollee companion roster rather than a blank page.
+- [ ] AS-14B **Section roster PDF:** click **Download PDF** for the same selection and confirm the portrait PDF contains the same students, IDs, year levels, statuses, academic-period labels, and irregular-subject grouping shown on screen. Table rows must not be cut across pages.
+- [ ] AS-14C Print and PDF controls remain disabled until a section is selected and while its roster is loading; each successful export creates a **File Export** audit event.
 
 ### B10d. Admin setup fixes, Batch 2 (data safety; term rollover with SG grace period)
 
@@ -445,7 +452,7 @@ Run migrations `20261011120000_restrict_destructive_deletes.sql` and `2026101113
 
 **Batch 2B: term rollover and unposted SGs** (do on test data; a rollover cannot be undone)
 - [ ] AS-26 **term_id saved (R2):** create a section and a class → both rows have `term_id` set (SQL: `select name, term_id from sections order by created_at desc limit 3`).
-- [ ] AS-27 **Pre-check:** Term Settings → Start Next Semester → lists every active-term class whose SG is not posted for all enrolled students (subject, section, instructor, `SG x/y`). No sample/demo classes ever appear.
+- [ ] AS-27 **Pre-check:** Academic Terms → Start Next Semester → lists every active-term class whose SG is not posted for all enrolled students (subject, section, instructor, `SG x/y`). No sample/demo classes ever appear.
 - [ ] AS-28 **Reminders:** *Send SG Reminder* → each listed instructor gets one **Grade Submission Reminder** naming their classes; it opens My Class Records.
 - [ ] AS-29 **Next term must exist:** if the next term does not exist, the wizard offers *Create AY … (…)*; after creating it, Term History shows it as *Next / Not started* and it appears in Add Section → Academic Term.
 - [ ] AS-30 **No sections → refused (R1):** with the next term created but no sections, *Next Step* is disabled with a link to Sections. (The database also refuses the rollover.)
@@ -457,8 +464,8 @@ Run migrations `20261011120000_restrict_destructive_deletes.sql` and `2026101113
 - [ ] AS-36 **On time:** an SG posted before the rollover shows *Posted · On time* to the Dean.
 - [ ] AS-37 **Archived = view only:** open an archived class's score sheet → banner *archived … view only*; Save, add activity, and MR/TFR posting are refused.
 - [ ] AS-38 **SG correction still works on archived classes:** submit an SG correction for an archived class → Dean approves → the faculty applies and reposts it → the corrected SG is saved, the label stays as first recorded, and the class stays archived.
-- [ ] AS-39 **Student history:** in My Subjects, select the previous term → unposted subjects show *Grade not yet posted*; posted ones show *Completed · Grade posted*. My Grades for that term shows the posted SGs (archived classes are not hidden).
-- [ ] AS-40 **Dean term selector:** Grade Posting Status → choose any school year/semester from Term Settings (Summer works) → classes of that term, archived included, with their labels.
+- [ ] AS-39 **Student history:** in My Subjects, select the previous term → unposted subjects show *Grade not yet posted*; posted ones show *Completed · Grade posted*. Grade Report for that term shows the posted SGs (archived classes are not hidden).
+- [ ] AS-40 **Dean term selector:** Grade Submission Status → choose any school year/semester from Academic Terms (Summer works) → classes of that term, archived included, with their labels.
 
 ### B10e. Admin setup fixes, Batch 3 (run migration `20261011140000_admin_batch3_atomic_saves.sql` first)
 - [ ] AS-41 **Grade Override, pick the student (H2):** search a common surname → every match is listed with ID number, college, and section; the grades shown are those of the student you click. A unique match opens directly. Searching by ID number works.
@@ -467,7 +474,7 @@ Run migrations `20261011120000_restrict_destructive_deletes.sql` and `2026101113
 - [ ] AS-44 **COG create (M3):** create a template whose weights total 100% → template and components appear together. Weights totalling 99% → refused, nothing saved.
 - [ ] AS-45 **COG edit (M3):** change weights of an existing template (total 100%) → all saved; the structure (component count and names) cannot change.
 - [ ] AS-46 **COG delete (M3):** delete a template used by subjects → *used by N subjects and can't be deleted*. An unused template → deleted after the confirm.
-- [ ] AS-47 **Activity Logs (M5):** the page loads all entries (more than 1,000 if present); search and filters find older entries; the export includes them.
+- [ ] AS-47 **Audit Logs (M5):** the page loads all entries (more than 1,000 if present); search and filters find older entries; the export includes them.
 - [ ] AS-48 **Classroom log entries (M5):** create and delete a classroom → the logs show action *Classroom Provisioning* / *Classroom Deletion*, the admin's name as actor, and a readable message.
 - [ ] AS-50 **Subjects, no duplicates (migration `20261011150000_unique_subjects.sql`):** add a subject whose name already exists in the same college (e.g. a second "Data Structures and Algorithms" in the Technology college) → refused, naming the existing code. A code already in use (any case) → refused. The same name in a **different** college → allowed.
 - [ ] AS-51 **Subjects, edit:** renaming a subject to another subject's name in the same college → refused with the same message.
@@ -494,7 +501,72 @@ Run migrations `20261011120000_restrict_destructive_deletes.sql` and `2026101113
 - [ ] RG-02 Faculty: Log Class Scores autosave, Preview & Post Grades, and Evaluate Students still work.
 - [ ] RG-03 Dean: Risk & Honors Overview, Escalated Cases (referral review and resolution), Grade Corrections, and Generate Reports still work.
 - [ ] RG-04 Student: grades, attendance, AI Study Tutor (including the fallback when the AI is unavailable), and consultations still work.
-- [ ] RG-05 Admin: Manage Users, subjects and sections import, Grading Formulas, Classrooms, Activity Logs, Term Settings, and Grade Override still work.
+- [ ] RG-05 Admin: Manage Users, subject and section import, Grading Templates, Classroom Provisioning, Audit Logs, Academic Terms, and Grade Override still work.
+
+---
+
+## C. Paper-System Alignment, 2026-10-25
+
+Run these cases after deploying the compatible frontend and applying `20261025120000_fda_faculty_discretion.sql`. Do not mark them passed from source review or automated checks alone.
+
+### C1. Classroom join approval wording
+
+- [ ] PA-JOIN-01 My Subjects describes an 8-character alphanumeric code displayed as `XXXX-XXXX` and says that instructor approval is required. Grade Report does not duplicate the join workflow.
+- [ ] PA-JOIN-02 Submitting a valid code creates one pending request and does not create an enrollment.
+- [ ] PA-JOIN-03 Faculty approval creates enrollment exactly once; a duplicate pending submission creates neither a second request nor an enrollment.
+
+### C2. Faculty-controlled FDA decision
+
+- [ ] PA-FDA-01 A passing student with exactly four recorded absences shows **FDA Review Required** while the score-derived GWA and Passed/Failed result remain unchanged.
+- [ ] PA-FDA-02 Posting SG without selecting FDA stores the score-derived result; it does not store FDA or force 5.00.
+- [ ] PA-FDA-03 Selecting FDA at four or more absences requires a written reason and stores FDA/5.00 after server validation.
+- [ ] PA-FDA-04 Selecting FDA below four absences or without a reason is rejected without changing an official grade.
+- [ ] PA-FDA-05 Three absences show a near-threshold warning only. Existing historical official FDA records remain unchanged.
+
+### C3. Counts and four-factor Dean risk
+
+- [ ] PA-COUNT-01 A faculty member with enrolled students but no published evaluation awaiting follow-up sees **0 Active Intervention Cases**.
+- [ ] PA-COUNT-02 A published evaluation without follow-up adds one active case; recording follow-up removes it from the active count but not history.
+- [ ] PA-RISK-01 For the same student and class, Faculty and Dean show the same composite score, tier, GWA contribution, absences, recorded-zero count, and Prelim-to-Midterm trajectory.
+- [ ] PA-RISK-02 A student with an acceptable GWA but four absences is reflected in Dean monitoring through the attendance factor.
+- [ ] PA-RISK-03 A recorded numeric zero contributes to risk, while a null/ungraded activity does not.
+- [ ] PA-RISK-04 College dashboard totals count each student once using the highest active course risk. Detailed and exported records preserve the responsible subject and all factor evidence.
+
+### C4. Neutral and descriptive reports
+
+- [ ] PA-REPORT-01 **Faculty Class Outcome Summary** contains no rank, award, winner, *leads*, or faculty-effectiveness wording.
+- [ ] PA-REPORT-02 Faculty pass rate uses graded records as its denominator and separately discloses Enrolled, Graded, and Pending / Not Yet Graded counts.
+- [ ] PA-OUTCOME-01 Intervention screen, chart, table, PDF, and Excel consistently use Improved, Unchanged, Worsened, In intervention, Follow-up due, and Escalated to Dean.
+- [ ] PA-OUTCOME-02 Follow-up changes are described as recorded observations; no screen or export claims that ASPIRE caused GWA improvement, mastery, retention, or faculty effectiveness.
+
+### C5. Grading-period sequence and historical repair
+
+- [ ] PA-GRADE-01 TFR controls remain disabled until the complete active roster has an official MR, and a direct RPC attempt is rejected by the database.
+- [ ] PA-GRADE-02 SG controls remain disabled until the complete active roster has both MR and TFR, and a direct RPC attempt is rejected by the database.
+- [ ] PA-GRADE-03 Applying `20261025130000_grading_period_sequence_and_backfill.sql` reconstructs only missing MR/TFR rows whose complete locked score basis matches the SG input snapshot.
+- [ ] PA-GRADE-04 Reconstructed rows use `system_backfill`, the actual reconstruction time, and an explanatory note; they do not send historical grade-posted notifications.
+- [x] PA-GRADE-05 The migration's final audit documented the returned legacy rows before any targeted repair: nine verifiable NAV113 rows and ten ITC113 mismatches requiring manual review.
+- [x] PA-GRADE-06 The targeted legacy migration reconstructed MR and TFR for exactly nine verified NAV113 / BSMARE-1B students. Database evidence on 2026-10-25 showed 10 SG students, 10 complete sequences, and zero unresolved sequences; one sequence had already been complete.
+- [x] PA-GRADE-07 Database evidence on 2026-10-25 showed that all ten ITC113 / BSIT-1A mismatches remained unresolved and explicitly classified for faculty/Dean review.
+
+### C6. Selected-period academic archives
+
+- [x] AR-01 Static verification confirms the shared archive control keeps school-year and semester selections local until **Load Archive** is clicked; loading is indeterminate and duplicate submission is disabled.
+- [ ] AR-02 Student: Previous Terms sends no historical query before **Load Archive**. Loaded attendance, advisories/study plans, and terminal consultation history show the applied period and contain no controls that mutate archived records.
+- [ ] AR-03 Student: AI Study Tutor has no archive UI and uses only active-term classes, grades, and attendance evidence.
+- [ ] AR-04 Faculty: archived attendance opens a recorded session and disables initialization, mark-all, status editing, and saving.
+- [ ] AR-05 Faculty: Evaluate Students contains only authorized active-term classes; Intervention Records and completed consultation history load by selected period and remain read-only.
+- [ ] AR-06 Faculty: unresolved prior-term consultations remain visible and actionable in the current operational queue.
+- [ ] AR-07 Dean: Grade Distribution and Risk & Honors data contain only the applied academic period. Grades, attendance, recorded zeroes, trajectory, and intervention evidence do not cross term boundaries.
+- [ ] AR-08 Dean: unresolved referrals remain actionable in the operational queue; loaded prior-term escalations and intervention outcomes are read-only.
+- [ ] AR-09 Dean: Generate Reports performs no report query when only draft school-year/semester selections change. **Load Report** applies the period, and screen/export period labels and rows agree.
+- [ ] AR-10 Admin: Manage Sections loads previous terms only after **Load Archive** and hides create, import, edit, and delete controls; Section Rosters, Audit Logs, and Academic Terms retain their established historical access.
+- [ ] AR-11 Failure and retry: a failed request preserves the last successful applied period and results, identifies the failure, and retries the selected period without mixing labels.
+- [ ] AR-12 Refresh and navigation: a successfully applied `archiveTerm` URL restores the same term where supported; a draft selection never changes the applied URL.
+- [x] AR-13 Automated regression: production build, grading verification, insights verification, grade-posting P0 verification, and evaluation-tracking verification passed locally on 2026-10-25.
+- [ ] AR-14 Evaluation-referral verification runs after installing its optional PGlite test dependency under `scratch/referral-validation`.
+- [x] AR-15 Both thesis Word documents were synchronized with the selected-period archive coverage and limitations and passed DOCX package-integrity and required-text checks on 2026-10-25.
+- [ ] AR-16 Faculty My Classes: opening **Previous Terms** performs no class-record query; selecting a school year and semester still performs no query; **Load Archive** retrieves only the applied term (including matching legacy null-`term_id` classes), preserves the applied period in `archiveTerm`, and returning to Current Term reloads only the active term.
 
 ---
 
@@ -541,6 +613,12 @@ These cases depend on row-level access rules. Run them after the user applies RL
 - [ ] Block-section students are enrolled **immediately** on section assignment, and professors receive one roster notice per class with the correct count, including new classes; approvals send none (B10b, EN-01 to EN-08).
 - [ ] New enrollment notifications are in-app and device alerts only: no email, no student names in faculty notices (EJ-06, EN-02).
 - [ ] Every page is reachable on a phone through **More**, and the install card is device-neutral (LB-07 to LB-09).
+
+**Paper-system alignment:**
+- [ ] Four absences create an FDA recommendation; only a documented, attendance-supported faculty decision can post official FDA/5.00 (PA-FDA-01 to PA-FDA-05).
+- [ ] Faculty and Dean views agree on the same four-factor student-class risk evidence (PA-RISK-01 to PA-RISK-04).
+- [ ] True-zero intervention counts, neutral faculty summaries, current outcome statuses, and non-causal report language pass screen and export checks (PA-COUNT-01 to PA-OUTCOME-02).
+- [ ] Grade posting follows MR → TFR → SG in both faculty screens and at the database boundary; historical SG-only records pass the controlled repair audit (PA-GRADE-01 to PA-GRADE-05).
 
 **Sign-off:**
 - [ ] Human testers manually verified the deployed frontend. Automated and AI-assisted checks were supplementary only.

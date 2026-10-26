@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
@@ -16,8 +16,10 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
-import { fetchAcademicTerms, getClassTermState } from '../../lib/termStatus';
+import { fetchAcademicTerms, getActiveAcademicTerm } from '../../lib/termStatus';
 import ConfirmModal from '../../components/ConfirmModal';
+import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
+import { getCachedData, setCachedData } from '../../lib/dataCache';
 
 export default function ClassAttendance() {
   const navigate = useNavigate();
@@ -27,75 +29,140 @@ export default function ClassAttendance() {
   // Class selection state
   const [selectedClass, setSelectedClass] = useState(searchParams.get('classId') || '');
   const [classesList, setClassesList] = useState([]);
+  const [terms, setTerms] = useState([]);
+  const [archiveMode, setArchiveMode] = useState(Boolean(searchParams.get('archiveTerm')));
+  const [appliedTerm, setAppliedTerm] = useState(null);
+  const [archiveError, setArchiveError] = useState('');
+  const [periodLoading, setPeriodLoading] = useState(true);
+  const periodRequest = useRef(0);
+  const isReadOnlyArchive = archiveMode && Boolean(appliedTerm);
   
   // Update query param when class selection changes
   useEffect(() => {
     if (selectedClass) {
-      setSearchParams({ classId: selectedClass });
+      setSearchParams(previous => {
+        const next = new URLSearchParams(previous);
+        next.set('classId', selectedClass);
+        return next;
+      }, { replace: true });
     }
   }, [selectedClass, setSearchParams]);
 
-  // Fetch classes assigned to this faculty member
-  useEffect(() => {
-    async function fetchClasses() {
-      try {
-        if (!user) {
-          setClassesList([]);
-          return;
-        }
-
-        const [{ data: classRows, error }, terms] = await Promise.all([
-          supabase
-            .from('class_records')
-            .select(`
-              class_record_id,
-              status,
-              term_id,
-              school_year,
-              semester,
-              subjects ( subject_id, code, name, units ),
-              sections ( section_id, name )
-            `)
-            .eq('faculty_id', user.id)
-            .eq('status', 'active'),
-          fetchAcademicTerms()
+  const loadClassesForTerm = async (term, { archive = false } = {}) => {
+    if (!user?.id || !term?.term_id) return false;
+    const requestId = ++periodRequest.current;
+    const cacheKey = `faculty_attendance_classes_${user.id}_${term.term_id}`;
+    setPeriodLoading(true);
+    setArchiveError('');
+    try {
+      let rows = getCachedData(cacheKey, 5 * 60 * 1000);
+      if (!rows) {
+        const select = `class_record_id,status,term_id,school_year,semester,subjects(subject_id,code,name,units),sections(section_id,name)`;
+        const [{ data: exact, error: exactError }, { data: legacy, error: legacyError }] = await Promise.all([
+          supabase.from('class_records').select(select).eq('faculty_id', user.id).eq('term_id', term.term_id),
+          supabase.from('class_records').select(select).eq('faculty_id', user.id).is('term_id', null)
+            .eq('school_year', term.school_year).eq('semester', term.semester)
         ]);
+        if (exactError) throw exactError;
+        if (legacyError) throw legacyError;
+        rows = [...(exact || []), ...(legacy || [])];
+        setCachedData(cacheKey, rows);
+      }
+      if (requestId !== periodRequest.current) return false;
+      const mapped = rows.map(c => ({
+        id: c.class_record_id,
+        code: c.subjects?.code || 'N/A',
+        section: c.sections?.name || 'N/A',
+        name: c.subjects?.name || 'N/A',
+        units: c.subjects?.units || 3,
+        term_id: c.term_id || term.term_id
+      }));
+      setClassesList(mapped);
+      const requestedClass = searchParams.get('classId');
+      setSelectedClass(requestedClass && mapped.some(c => c.id === requestedClass) ? requestedClass : (mapped[0]?.id || ''));
+      if (archive) {
+        setAppliedTerm(term);
+        setSearchParams(previous => {
+          const next = new URLSearchParams(previous);
+          next.set('archiveTerm', term.term_id);
+          if (mapped[0]?.id && !mapped.some(c => c.id === next.get('classId'))) next.set('classId', mapped[0].id);
+          return next;
+        }, { replace: true });
+      }
+      return true;
+    } catch (err) {
+      if (requestId === periodRequest.current) {
+        console.error('Attendance period load failed:', err);
+        setArchiveError('The selected attendance archive could not be loaded. Please retry.');
+      }
+      return false;
+    } finally {
+      if (requestId === periodRequest.current) setPeriodLoading(false);
+    }
+  };
 
-        if (error) throw error;
-
-        // Attendance is taken only for the active term; previous-term classes waiting for
-        // their SG are closed for new attendance.
-        const data = (classRows || []).filter(c => getClassTermState(terms, c).state === 'current');
-
-        if (data && data.length > 0) {
-          const mapped = data.map(c => ({
-            id: c.class_record_id,
-            code: c.subjects?.code || 'N/A',
-            section: c.sections?.name || 'N/A',
-            name: c.subjects?.name || 'N/A',
-            units: c.subjects?.units || 3,
-            term_id: c.term_id
-          }));
-          setClassesList(mapped);
-          
-          // If no current selected class, default to first one
-          const paramClassId = searchParams.get('classId');
-          if (paramClassId && mapped.some(c => c.id === paramClassId)) {
-            setSelectedClass(paramClassId);
-          } else {
-            setSelectedClass(mapped[0].id);
-          }
+  useEffect(() => {
+    async function initializePeriods() {
+      if (!user?.id) return;
+      try {
+        const availableTerms = await fetchAcademicTerms();
+        setTerms(availableTerms);
+        const requestedArchive = availableTerms.find(term => term.term_id === searchParams.get('archiveTerm'));
+        if (requestedArchive && !requestedArchive.is_active) {
+          setArchiveMode(true);
+          await loadClassesForTerm(requestedArchive, { archive: true });
         } else {
-          setClassesList([]);
-          setSelectedClass('');
+          const activeTerm = getActiveAcademicTerm(availableTerms);
+          setArchiveMode(false);
+          setAppliedTerm(null);
+          if (activeTerm) await loadClassesForTerm(activeTerm);
+          else setPeriodLoading(false);
         }
       } catch (err) {
-        console.error('Database query failed:', err);
-        setClassesList([]);
+        console.error('Academic periods could not be loaded:', err);
+        setArchiveError('Academic periods could not be loaded.');
+        setPeriodLoading(false);
       }
     }
-    fetchClasses();
-  }, [user]);
+    initializePeriods();
+    // Initialization is intentionally tied to the authenticated faculty member.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  const handlePeriodModeChange = async (useArchive) => {
+    periodRequest.current += 1;
+    setArchiveMode(useArchive);
+    setArchiveError('');
+    setRoster([]);
+    setPreviousSessions([]);
+    setIsInitialized(false);
+    if (useArchive) {
+      setAppliedTerm(null);
+      setClassesList([]);
+      setSelectedClass('');
+      setSearchParams(previous => {
+        const next = new URLSearchParams(previous);
+        next.delete('archiveTerm');
+        next.delete('classId');
+        return next;
+      }, { replace: true });
+      setPeriodLoading(false);
+      return;
+    }
+    setAppliedTerm(null);
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.delete('archiveTerm');
+      next.delete('classId');
+      return next;
+    }, { replace: true });
+    const activeTerm = getActiveAcademicTerm(terms);
+    if (activeTerm) await loadClassesForTerm(activeTerm);
+  };
+
+  const handleArchiveLoad = async (term) => {
+    if (term) await loadClassesForTerm(term, { archive: true });
+  };
 
   // Active class details
   const activeClass = classesList.find(c => c.id === selectedClass) || null;
@@ -121,7 +188,7 @@ export default function ClassAttendance() {
   const [previousSessions, setPreviousSessions] = useState([]);
 
   // Fetch unique recorded attendance dates for this class
-  const fetchPreviousSessions = async () => {
+  const fetchPreviousSessions = useCallback(async () => {
     if (!selectedClass) return;
     try {
       if (!user) {
@@ -137,15 +204,18 @@ export default function ClassAttendance() {
       if (data) {
         const uniqueDates = [...new Set(data.map(item => item.date))].sort((a, b) => new Date(b) - new Date(a));
         setPreviousSessions(uniqueDates);
+        if (isReadOnlyArchive && uniqueDates.length > 0) {
+          setSelectedDate(currentDate => uniqueDates.includes(currentDate) ? currentDate : uniqueDates[0]);
+        }
       }
     } catch (err) {
       console.warn('Error fetching sessions:', err);
     }
-  };
+  }, [selectedClass, user, isReadOnlyArchive]);
 
   useEffect(() => {
     fetchPreviousSessions();
-  }, [selectedClass, user]);
+  }, [fetchPreviousSessions]);
 
   // State for active roster
   const [roster, setRoster] = useState([]);
@@ -330,7 +400,7 @@ export default function ClassAttendance() {
       isFirstRender.current = false;
       return;
     }
-    if (roster.length === 0 || !isInitialized) return;
+    if (isReadOnlyArchive || roster.length === 0 || !isInitialized) return;
 
     // Check if the actionable data (status/remarks) actually changed from last saved
     const currentState = JSON.stringify(roster.map(s => ({ id: s.id, status: s.status, remarks: s.remarks })));
@@ -348,10 +418,11 @@ export default function ClassAttendance() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [roster, isInitialized]);
+  }, [roster, isInitialized, isReadOnlyArchive]);
 
   // Handle marking status in UI
   const handleStatusChange = (studentId, newStatus) => {
+    if (isReadOnlyArchive) return;
     setRoster(prev => prev.map(student => {
       if (student.id === studentId) {
         let newAbsences = student.absences;
@@ -369,6 +440,7 @@ export default function ClassAttendance() {
 
   // Handle remarks change
   const handleRemarksChange = (studentId, remarksVal) => {
+    if (isReadOnlyArchive) return;
     setRoster(prev => prev.map(student => {
       if (student.id === studentId) {
         return { ...student, remarks: remarksVal };
@@ -379,6 +451,7 @@ export default function ClassAttendance() {
 
   // Mark all present helper
   const handleMarkAllPresent = () => {
+    if (isReadOnlyArchive) return;
     setRoster(prev => prev.map(student => {
       let newAbsences = student.absences;
       if (student.status === 'Absent') {
@@ -391,7 +464,7 @@ export default function ClassAttendance() {
 
   // Silent Save logic for Auto-save
   const handleSaveAttendanceSilent = async () => {
-    if (!selectedClass || roster.length === 0) return;
+    if (isReadOnlyArchive || !selectedClass || roster.length === 0) return;
     try {
       const termId = activeClass?.term_id || null;
       const upsertRows = roster.map(student => ({
@@ -432,7 +505,7 @@ export default function ClassAttendance() {
 
   // Save attendance log manually (explicit Save Button)
   const handleSaveAttendance = async () => {
-    if (!selectedClass || roster.length === 0) return;
+    if (isReadOnlyArchive || !selectedClass || roster.length === 0) return;
     setSaveStatus('saving');
     try {
       await handleSaveAttendanceSilent();
@@ -448,7 +521,7 @@ export default function ClassAttendance() {
     if (absences >= 4) {
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 animate-pulse">
-          <AlertCircle className="h-3 w-3" /> FDA ({absences} Absences)
+          <AlertCircle className="h-3 w-3" /> FDA Review ({absences} Absences)
         </span>
       );
     }
@@ -514,7 +587,7 @@ export default function ClassAttendance() {
           >
             <ArrowLeft className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Back</span>
           </button>
-          {isInitialized && (
+          {isInitialized && !isReadOnlyArchive && (
             <button 
               onClick={handleMarkAllPresent}
               className="px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-semibold border border-slate-200 text-slate-700 hover:border-sage-300 rounded-xl transition-colors bg-white flex items-center gap-1.5 cursor-pointer shadow-2xs"
@@ -522,7 +595,7 @@ export default function ClassAttendance() {
               <UserCheck className="h-3.5 w-3.5 text-sage-600" /> <span className="hidden sm:inline">Mark All Present</span><span className="sm:hidden">All Present</span>
             </button>
           )}
-          {isInitialized && (
+          {isInitialized && !isReadOnlyArchive && (
             <button 
               onClick={handleSaveAttendance}
               className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-white bg-sage-600 hover:bg-sage-700 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
@@ -548,6 +621,28 @@ export default function ClassAttendance() {
       )}
 
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6">
+
+        <AcademicPeriodFilter
+          terms={terms}
+          archiveMode={archiveMode}
+          appliedTerm={appliedTerm}
+          loading={periodLoading}
+          error={archiveError}
+          onModeChange={handlePeriodModeChange}
+          onLoad={handleArchiveLoad}
+          onRetry={handleArchiveLoad}
+        />
+
+        {archiveMode && !appliedTerm ? null : periodLoading ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+            Loading attendance classes...
+          </div>
+        ) : classesList.length === 0 ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+            No attendance classes were found for this academic period.
+          </div>
+        ) : (
+        <>
 
         {/* Selectors Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 bg-white shadow-2xs">
@@ -579,6 +674,7 @@ export default function ClassAttendance() {
                 type="date" 
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
+                max={isReadOnlyArchive ? undefined : new Date().toISOString().split('T')[0]}
                 className="w-full bg-white border border-slate-200 hover:border-sage-300 px-3 py-2 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-all text-slate-700 shadow-2xs"
               />
             </div>
@@ -634,9 +730,9 @@ export default function ClassAttendance() {
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 sm:p-4 text-amber-900 text-xs flex items-start gap-3 shadow-2xs text-left">
           <AlertTriangle className="h-4.5 w-4.5 text-amber-600 flex-shrink-0 mt-0.5" />
           <div className="space-y-0.5">
-            <span className="font-bold text-xs sm:text-sm text-amber-950 font-display">Failure Due to Absences (FDA) Policy:</span>
+            <span className="font-bold text-xs sm:text-sm text-amber-950 font-display">FDA Review Policy:</span>
             <p className="text-[11px] sm:text-xs text-amber-800 leading-relaxed">
-              Students exceeding 20% unexcused absences trigger mandatory FDA status. For standard 3-unit courses, reaching <strong>4 or more absences</strong> locks the final grade to 5.00.
+              For standard 3-unit courses, reaching <strong>4 or more recorded absences</strong> triggers an FDA recommendation for instructor review. It does not automatically change or lock the student's final grade; the assigned faculty makes and documents the official decision.
             </p>
           </div>
         </div>
@@ -676,7 +772,7 @@ export default function ClassAttendance() {
                   { id: 'Absent', label: `Absent (${absentCount})` },
                   { id: 'Late', label: `Late (${lateCount})` },
                   { id: 'Excused', label: `Excused (${excusedCount})` },
-                  { id: 'fda', label: `FDA (${fdaCount})`, icon: ShieldAlert }
+                  { id: 'fda', label: `FDA Review (${fdaCount})`, icon: ShieldAlert }
                 ].map(filter => {
                   const isSelected = statusFilter === filter.id;
                   const Icon = filter.icon;
@@ -704,6 +800,10 @@ export default function ClassAttendance() {
             <div className="p-12 text-center text-sm text-slate-500 flex flex-col items-center justify-center gap-2">
               <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-sage-600"></div>
               <span>Loading class roster...</span>
+            </div>
+          ) : !isInitialized && isReadOnlyArchive ? (
+            <div className="p-8 sm:p-12 text-center text-sm text-slate-500">
+              No attendance was recorded for this class on the selected date.
             </div>
           ) : !isInitialized ? (
             <div className="p-8 sm:p-12 text-center max-w-md mx-auto space-y-4">
@@ -776,8 +876,9 @@ export default function ClassAttendance() {
                         return (
                           <button
                             key={statusOption}
+                            disabled={isReadOnlyArchive}
                             onClick={() => handleStatusChange(student.id, statusOption)}
-                            className={`py-2 rounded-lg text-xs transition-all cursor-pointer text-center ${activeStyles}`}
+                            className={`py-2 rounded-lg text-xs transition-all text-center disabled:cursor-default ${activeStyles}`}
                           >
                             {statusOption}
                           </button>
@@ -790,6 +891,7 @@ export default function ClassAttendance() {
                       <input
                         type="text"
                         value={student.remarks}
+                        disabled={isReadOnlyArchive}
                         onChange={(e) => handleRemarksChange(student.id, e.target.value)}
                         placeholder="Add notes / remarks..."
                         className="w-full text-xs border border-slate-200 px-3 py-2 rounded-xl outline-none focus:border-sage-400 focus:ring-1 focus:ring-sage-400 transition-colors bg-slate-50/50 shadow-2xs"
@@ -852,8 +954,9 @@ export default function ClassAttendance() {
                               return (
                                 <button
                                   key={statusOption}
+                                  disabled={isReadOnlyArchive}
                                   onClick={() => handleStatusChange(student.id, statusOption)}
-                                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${activeStyles}`}
+                                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-all disabled:cursor-default ${activeStyles}`}
                                 >
                                   {statusOption}
                                 </button>
@@ -872,6 +975,7 @@ export default function ClassAttendance() {
                           <input
                             type="text"
                             value={student.remarks}
+                            disabled={isReadOnlyArchive}
                             onChange={(e) => handleRemarksChange(student.id, e.target.value)}
                             placeholder="Add notes..."
                             className="w-full text-xs border border-slate-200 px-3 py-1.5 rounded-lg outline-none focus:border-sage-400 focus:ring-1 focus:ring-sage-400 transition-colors"
@@ -886,10 +990,13 @@ export default function ClassAttendance() {
           )}
         </div>
 
+        </>
+        )}
+
       </div>
 
       <ConfirmModal
-        isOpen={showInitConfirm}
+        isOpen={showInitConfirm && !isReadOnlyArchive}
         title="Initialize Attendance Sheet?"
         message={`Are you sure you want to create a new attendance record for ${new Date(selectedDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}?`}
         onConfirm={confirmInitialize}

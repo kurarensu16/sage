@@ -115,12 +115,12 @@ export function evaluateAcademicAdvising({
       state: 'action_required',
       severity: 'critical',
       signalType: 'official_grade_nonpassing',
-      headline: 'An official milestone requires a recovery discussion',
-      summary: `Your latest official cumulative GWA is ${Number(officialGwa).toFixed(2)}. Review the posted course results with the relevant instructor before the next grading milestone.`,
+      headline: 'An official grading-period result requires a recovery discussion',
+      summary: `Your latest official cumulative GWA is ${Number(officialGwa).toFixed(2)}. Review the posted course results with the relevant instructor before the next grading period.`,
       evidence: [{ label: 'Official cumulative GWA', value: Number(officialGwa).toFixed(2) }],
       focusTopics: ['Official grade recovery'],
       actions: [
-        action('review-official-record', 'Review the official grade breakdown', 'Identify which posted course milestone needs the earliest recovery work.'),
+        action('review-official-record', 'Review the official grade breakdown', 'Identify which posted grading-period result needs the earliest recovery work.'),
         action('request-consultation', 'Request a faculty consultation', 'Confirm the available remediation steps and their deadlines.')
       ],
       reviewTrigger: 'next_official_grade_release',
@@ -227,7 +227,7 @@ export function evaluateAcademicAdvising({
   }
 
   if (hasOfficialMilestone && officialGwa !== null && Number(officialGwa) <= 3) {
-    const milestoneText = latestMilestone ? latestMilestone : 'Official milestone';
+    const milestoneText = latestMilestone ? latestMilestone : 'Official grading period';
     let summaryText = `Your latest official cumulative GWA is ${Number(officialGwa).toFixed(2)}, which is a passing standing. ASPIRE will continue to monitor your progress.`;
     
     if (latestMilestone === 'Tentative Final Rating') {
@@ -285,7 +285,7 @@ export function evaluateAcademicAdvising({
       severity: 'low',
       signalType: 'awaiting_activity_score',
       headline: 'Waiting for tentative academic evidence',
-      summary: 'No saved activity score is available yet. ASPIRE will begin with activity-level guidance before an official milestone grade when enough evidence exists.',
+      summary: 'No saved activity score is available yet. ASPIRE will begin with activity-level guidance before an official grading-period result when enough evidence exists.',
       evidence: [],
       focusTopics: [],
       actions: [action('continue-coursework', 'Continue current coursework', 'Complete upcoming activities and review faculty feedback when scores are saved.')],

@@ -86,7 +86,7 @@ $$\text{MR} = \text{ROUND}(\text{Midterm}, 0)$$
 $$\text{TFR} = \text{ROUND}(\text{Final}, 0)$$
 $$\text{SG} = \text{ROUND}(\text{AVERAGE}(\text{MR}, \text{TFR}), 0)$$
 
-Posting MR or TFR writes the complete selected milestone atomically for the class. Reposting the same milestone updates the existing unique row rather than creating a duplicate, using the class's effective snapshot. Posting fails and rolls back when required scores remain missing. A posted term also rejects an accidental attempt to clear a previously saved score.
+Posting follows a strict grading-period sequence: MR → TFR → SG. Each selected period is written atomically for the complete active roster. TFR cannot be posted before MR, and SG cannot be posted before both MR and TFR. Reposting MR or TFR updates the existing unique row rather than creating a duplicate, using the class's effective snapshot. Posting fails and rolls back when required scores remain missing. A posted period also rejects an accidental attempt to clear a previously saved score.
 
 #### SG correction workflow
 

@@ -33,8 +33,8 @@ export async function getEvaluationDetails(evaluationId) {
   return data;
 }
 
-export async function getEvaluatedCases({ facultyId, classIds, history, periodId, classId, term, referral, search, page }) {
-  if (!facultyId || (!history && !classIds.length)) return { cases: [], count: 0, standings: {}, followupMilestones: {} };
+export async function getEvaluatedCases({ facultyId, classIds, history, classId, term, referral, search, page }) {
+  if (!facultyId || !classIds?.length) return { cases: [], count: 0, standings: {}, followupMilestones: {} };
   let query = supabase.from('student_risk_evaluations').select(`
     evaluation_id,class_record_id,student_id,faculty_id,term,status,created_at,updated_at,
     risk_level,risk_score,advising_plan,baseline_snapshot,refer_to_dean,
@@ -43,8 +43,9 @@ export async function getEvaluatedCases({ facultyId, classIds, history, periodId
     class_record:class_records!inner(${CLASS_FIELDS}),
     referrals:student_evaluation_referrals(referral_id,state,legacy,referred_at,resolved_at)
   `, { count: 'exact' });
-  query = history ? query.eq('faculty_id', facultyId) : query.in('class_record_id', classIds);
-  if (periodId) query = query.eq('class_records.term_id', periodId);
+  query = history
+    ? query.eq('faculty_id', facultyId).in('class_record_id', classIds)
+    : query.in('class_record_id', classIds);
   if (classId) query = query.eq('class_record_id', classId);
   if (term) query = query.eq('term', term);
   if (referral) query = query.eq('refer_to_dean', referral === 'pending');

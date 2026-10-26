@@ -13,13 +13,15 @@ import { showLocalNotification } from '../../lib/notificationService';
 import { resolveGradingFormula } from '../../lib/gradingMath';
 import { computeStudentGwa, getRiskDisplay, HONORS, resolveOfficialGradeState } from '../../lib/academicPolicy';
 import {
-  computeTentativeGrade,
-  computeUnifiedRisk
+  computeTentativeGrade
 } from '../../lib/riskEngine';
 import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
 import { getFollowupMilestoneMap } from '../../lib/evaluationService';
 import { FOLLOWUP_MILESTONE_LABELS, isAcknowledged, summarizeInterventionOutcome } from '../../lib/evaluationTracking';
+import { getCollegeRiskRecords, getHighestRiskByStudent } from '../../lib/collegeRiskService';
 import { cn } from '../../lib/utils';
+import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
+import { fetchAcademicTerms, getActiveAcademicTerm } from '../../lib/termStatus';
 
 function SeverityBadge({ severity, score }) {
   if (severity === 'critical' || severity === 'high') {
@@ -56,7 +58,7 @@ export default function AtRiskStudents(props) {
 
 function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
   const { user, profile } = useAuth();
-  const [queryParams] = useSearchParams();
+  const [queryParams, setQueryParams] = useSearchParams();
   const linkedEvaluationId = queryParams.get('evaluation_id');
   const handledLink = useRef(null);
   const [refresh, setRefresh] = useState(0);
@@ -69,6 +71,13 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [alertSentMap, setAlertSentMap] = useState({});
+  const [terms, setTerms] = useState([]);
+  const [archiveMode, setArchiveMode] = useState(Boolean(queryParams.get('archiveTerm')));
+  const [appliedTerm, setAppliedTerm] = useState(null);
+  const [pendingTerm, setPendingTerm] = useState(null);
+  const [archiveError, setArchiveError] = useState('');
+  const periodRequest = useRef(0);
+  const lastLoadedPeriodKey = useRef('');
 
   // ASPIRE v3.1 Navigation Tabs:
   // 'tier1_at_risk' | 'tier2_pl_risk' | 'discussion_queue' | 'outcomes_tracker'
@@ -87,7 +96,54 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
   const [deanActionType, setDeanActionType] = useState('conference');
   const [isSubmittingAction, setIsSubmittingAction] = useState(false);
 
+  useEffect(() => {
+    async function initializePeriods() {
+      try {
+        const availableTerms = await fetchAcademicTerms();
+        setTerms(availableTerms);
+        const requested = availableTerms.find(term => term.term_id === queryParams.get('archiveTerm'));
+        if (requested && !requested.is_active) {
+          setArchiveMode(true);
+          setAppliedTerm(requested);
+        } else {
+          setArchiveMode(false);
+          setAppliedTerm(getActiveAcademicTerm(availableTerms));
+        }
+      } catch (error) {
+        console.error('Risk academic periods could not be loaded:', error);
+        setArchiveError('Academic periods could not be loaded.');
+        setLoading(false);
+      }
+    }
+    initializePeriods();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.department_id]);
+
+  const handlePeriodModeChange = (useArchive) => {
+    periodRequest.current += 1;
+    lastLoadedPeriodKey.current = '';
+    setArchiveMode(useArchive);
+    setPendingTerm(null);
+    setArchiveError('');
+    setStudents([]);
+    setRawEvaluations([]);
+    setAppliedTerm(useArchive ? null : getActiveAcademicTerm(terms));
+    setQueryParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.delete('archiveTerm');
+      return next;
+    }, { replace: true });
+  };
+
+  const handleArchiveLoad = (term) => {
+    if (!term?.term_id) return;
+    periodRequest.current += 1;
+    setArchiveError('');
+    setPendingTerm(term);
+  };
+
   const handleAlertStudent = async (student) => {
+    if (archiveMode) return;
     try {
       const gwaText = student.runningGwa !== null ? student.runningGwa.toFixed(2) : 'Under Evaluation';
       
@@ -119,6 +175,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
   };
 
   const handleOpenReview = (item) => {
+    if (archiveMode) return;
     setSelectedQueueItem(item);
     setDeanNotes('');
     setDeanActionType('conference');
@@ -126,7 +183,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
   };
 
   const handleSaveDeanReview = async () => {
-    if (!selectedQueueItem || isSubmittingAction) return;
+    if (archiveMode || !selectedQueueItem || isSubmittingAction) return;
     setIsSubmittingAction(true);
     try {
       const isResolving = deanActionType === 'resolved';
@@ -193,28 +250,69 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
   };
 
   useEffect(() => {
-    if (!profile?.department_id) return;
+    const targetTerm = pendingTerm || appliedTerm;
+    if (!profile?.department_id || !targetTerm?.term_id) return;
+    const periodLoadKey = `${targetTerm.term_id}:${refresh}`;
+    if (!pendingTerm && lastLoadedPeriodKey.current === periodLoadKey) return;
     let cancelled = false;
     setLoading(true);
 
     async function load() {
       try {
         // Step 1: Sections in dean's college
-        const { data: deptSections, error: secErr } = await supabase
-          .from('sections')
-          .select('section_id, name')
-          .eq('department_id', profile.department_id)
-          .order('name');
-
-        if (secErr) throw secErr;
+        const [{ data: exactSections, error: exactSectionError }, { data: legacySections, error: legacySectionError }] = await Promise.all([
+          supabase.from('sections').select('section_id,name,term_id,school_year,semester')
+            .eq('department_id', profile.department_id).eq('term_id', targetTerm.term_id).order('name'),
+          supabase.from('sections').select('section_id,name,term_id,school_year,semester')
+            .eq('department_id', profile.department_id).is('term_id', null)
+            .eq('school_year', targetTerm.school_year).eq('semester', targetTerm.semester).order('name')
+        ]);
+        if (exactSectionError) throw exactSectionError;
+        if (legacySectionError) throw legacySectionError;
+        const deptSections = [...(exactSections || []), ...(legacySections || [])];
 
         const sectionIds = (deptSections || []).map(s => s.section_id);
-        if (!cancelled) setSections(deptSections || []);
-
         if (sectionIds.length === 0) {
-          if (!cancelled) { setStudents([]); setRawEvaluations([]); setLoading(false); }
+          if (!cancelled) {
+            setSections([]);
+            setStudents([]);
+            setRawEvaluations([]);
+            setFollowupMilestones({});
+            setError(null);
+            lastLoadedPeriodKey.current = periodLoadKey;
+            if (pendingTerm) {
+              setAppliedTerm(pendingTerm);
+              setPendingTerm(null);
+              setQueryParams(previous => {
+                const next = new URLSearchParams(previous);
+                next.set('archiveTerm', pendingTerm.term_id);
+                return next;
+              }, { replace: true });
+            }
+          }
           return;
         }
+
+        const collegeRiskRecords = await getCollegeRiskRecords({
+          departmentId: profile.department_id,
+          schoolYear: targetTerm.school_year,
+          semester: targetTerm.semester,
+          activeOnly: !archiveMode
+        });
+        const highestRiskMap = new Map(
+          getHighestRiskByStudent(collegeRiskRecords).map(record => [record.student_id, record])
+        );
+        const courseRisksByStudent = {};
+        collegeRiskRecords.forEach(record => {
+          courseRisksByStudent[record.student_id] ||= [];
+          courseRisksByStudent[record.student_id].push(record);
+        });
+
+        const { data: departmentClasses, error: classError } = await supabase.from('class_records')
+          .select('class_record_id').in('section_id', sectionIds);
+        if (classError) throw classError;
+        const departmentClassIds = (departmentClasses || []).map(record => record.class_record_id);
+        const safeClassIds = departmentClassIds.length > 0 ? departmentClassIds : ['00000000-0000-0000-0000-000000000000'];
 
         // Step 2: Students in the college
         const { data: studentData, error: stuErr } = await supabase
@@ -232,7 +330,20 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
           .order('last_name');
 
         if (stuErr) throw stuErr;
-        const studentIds = (studentData || []).map(s => s.user_id);
+        const scopedStudentsById = new Map((studentData || []).map(student => [student.user_id, student]));
+        collegeRiskRecords.forEach(record => {
+          if (scopedStudentsById.has(record.student_id)) return;
+          scopedStudentsById.set(record.student_id, {
+            user_id: record.student_id,
+            first_name: record.first_name,
+            last_name: record.last_name,
+            email: record.email,
+            section_id: record.home_section_id,
+            sections: { name: record.section_name, department_id: profile.department_id }
+          });
+        });
+        const scopedStudents = [...scopedStudentsById.values()];
+        const studentIds = scopedStudents.map(s => s.user_id);
 
         // Step 3: Posted grades
         const { data: gradeData, error: gErr } = await supabase
@@ -249,7 +360,8 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
               subjects ( code, name )
             )
           `)
-          .in('student_id', studentIds.length > 0 ? studentIds : ['00000000-0000-0000-0000-000000000000']);
+          .in('student_id', studentIds.length > 0 ? studentIds : ['00000000-0000-0000-0000-000000000000'])
+          .in('class_record_id', safeClassIds);
 
         if (gErr) throw gErr;
 
@@ -257,7 +369,8 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
         const { data: scoreData } = await supabase
           .from('student_term_scores')
           .select('student_id, class_record_id, term, act1, act2, act3, act4, act5, act6, char_rating, exam')
-          .in('student_id', studentIds.length > 0 ? studentIds : ['00000000-0000-0000-0000-000000000000']);
+          .in('student_id', studentIds.length > 0 ? studentIds : ['00000000-0000-0000-0000-000000000000'])
+          .in('class_record_id', safeClassIds);
 
         const scoreClassRecordIds = [...new Set((scoreData || []).map(score => score.class_record_id).filter(Boolean))];
         const { data: scoreClassRecords } = scoreClassRecordIds.length > 0
@@ -324,7 +437,8 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
 
         const { data: colData } = await supabase
           .from('class_grading_columns')
-          .select('class_record_id, term, act1_max, act2_max, act3_max, act4_max, act5_max, act6_max, exam_max');
+          .select('class_record_id, term, act1_max, act2_max, act3_max, act4_max, act5_max, act6_max, exam_max')
+          .in('class_record_id', safeClassIds);
 
         const colMap = {};
         (colData || []).forEach(c => {
@@ -356,11 +470,9 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
           scoresMap[score.student_id][activity.class_record_id][activity.term][score.activity_id] = Number(score.score) || 0;
         });
 
-        // Step 4: AI Insights
-        const { data: aiData } = await supabase
-          .from('student_academic_insights')
-          .select('student_id, verdict, summary')
-          .in('student_id', studentIds.length > 0 ? studentIds : ['00000000-0000-0000-0000-000000000000']);
+        // AI insight rows do not carry an academic-term key, so they are excluded from
+        // this period-specific Dean view instead of risking cross-term evidence mixing.
+        const aiData = [];
 
         const aiMap = {};
         (aiData || []).forEach(r => { 
@@ -372,13 +484,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
         });
 
         // Step 4.5: ASPIRE v3.1 Student Risk Evaluations with faculty and class info
-        const { data: departmentClasses, error: classError } = await supabase.from('class_records')
-          .select('class_record_id').in('section_id', sectionIds);
-        if (classError) throw classError;
-        const departmentClassIds = (departmentClasses || []).map(record => record.class_record_id);
-        const { data: evalRecords, error: evalErr } = await supabase
-          .from('student_risk_evaluations')
-          .select(`
+        const evaluationSelect = `
             *,
             private_notes:student_risk_private_notes (
               note_text,
@@ -394,19 +500,43 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
               subjects ( code, name ),
               sections ( name )
             )
-          `)
-          .in('class_record_id', departmentClassIds.length > 0 ? departmentClassIds : ['00000000-0000-0000-0000-000000000000'])
+          `;
+        const { data: selectedEvaluations, error: evalErr } = await supabase
+          .from('student_risk_evaluations')
+          .select(evaluationSelect)
+          .in('class_record_id', safeClassIds)
           .order('created_at', { ascending: false });
 
         if (evalErr) throw evalErr;
-        const milestoneMap = await getFollowupMilestoneMap(evalRecords || []);
-        if (!cancelled) {
-          setRawEvaluations(evalRecords || []);
-          setFollowupMilestones(milestoneMap);
+        let operationalEvaluations = [];
+        if (!archiveMode) {
+          const { data: collegeSections } = await supabase.from('sections')
+            .select('section_id').eq('department_id', profile.department_id);
+          const allSectionIds = (collegeSections || []).map(section => section.section_id);
+          if (allSectionIds.length > 0) {
+            const { data: collegeClasses } = await supabase.from('class_records')
+              .select('class_record_id').in('section_id', allSectionIds);
+            const allClassIds = (collegeClasses || []).map(item => item.class_record_id);
+            if (allClassIds.length > 0) {
+              const { data: pendingEvaluations, error: pendingError } = await supabase
+                .from('student_risk_evaluations').select(evaluationSelect)
+                .in('class_record_id', allClassIds).eq('refer_to_dean', true)
+                .order('created_at', { ascending: false });
+              if (pendingError) throw pendingError;
+              operationalEvaluations = pendingEvaluations || [];
+            }
+          }
         }
-
+        const carryovers = operationalEvaluations.map(item => ({
+          ...item,
+          _operationalCarryover: !safeClassIds.includes(item.class_record_id)
+        }));
+        const evalRecords = [...new Map([...(selectedEvaluations || []), ...carryovers]
+          .map(item => [item.evaluation_id, item])).values()]
+          .sort((left, right) => new Date(right.created_at) - new Date(left.created_at));
+        const milestoneMap = await getFollowupMilestoneMap(evalRecords || []);
         const evalByStudent = {};
-        (evalRecords || []).forEach(ev => {
+        (selectedEvaluations || []).forEach(ev => {
           if (!evalByStudent[ev.student_id]) evalByStudent[ev.student_id] = [];
           evalByStudent[ev.student_id].push(ev);
         });
@@ -418,7 +548,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
           gradesByStudent[g.student_id].push(g);
         });
 
-        const enriched = (studentData || []).map(s => {
+        const enriched = scopedStudents.map(s => {
           const myGrades = gradesByStudent[s.user_id] || [];
           const postedClassRecordIds = new Set(myGrades.map(g => g.class_record_id));
           const postedRowsByClass = {};
@@ -482,14 +612,13 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
           const failingItems = subjectGradeList.filter(item => item.isFailing ?? item.val > 3.00);
           const failingCount = failingItems.length;
 
-          // Unified Risk Assessment via centralized ASPIRE 7-Rule Matrix (single source of truth)
-          const riskAssessment = computeUnifiedRisk({
-            avgGwa,
-            isComplete: !containsTentative
-          });
-
-          const severity = riskAssessment.risk_level;
-          const riskScore = riskAssessment.composite_score;
+          // College monitoring uses the highest active student-class result. Each
+          // result already contains GWA, attendance, recorded zeros, and trajectory
+          // for one subject, so evidence is never combined across unrelated classes.
+          const courseRiskRecords = courseRisksByStudent[s.user_id] || [];
+          const highestRiskCourse = highestRiskMap.get(s.user_id) || null;
+          const severity = highestRiskCourse?.risk_level || 'low';
+          const riskScore = highestRiskCourse?.risk_score || 0;
 
           // AI override advisory if available
           const ai = aiMap[s.user_id];
@@ -538,6 +667,8 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
             failingItems,
             severity,
             riskScore,
+            courseRiskRecords,
+            highestRiskCourse,
             advisory: aiAdvisory,
             hasGrades: subjectGradeList.length > 0,
             hasAi: !!ai,
@@ -553,12 +684,32 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
         });
 
         if (!cancelled) {
+          setSections(deptSections || []);
+          setRawEvaluations(evalRecords || []);
+          setFollowupMilestones(milestoneMap);
           setStudents(enriched);
           setError(null);
+          setArchiveError('');
+          lastLoadedPeriodKey.current = periodLoadKey;
+          if (pendingTerm) {
+            setAppliedTerm(pendingTerm);
+            setPendingTerm(null);
+            setQueryParams(previous => {
+              const next = new URLSearchParams(previous);
+              next.set('archiveTerm', pendingTerm.term_id);
+              return next;
+            }, { replace: true });
+          }
         }
       } catch (err) {
         console.error('Database query failed:', err);
-        if (!cancelled) setError('Failed to load at-risk students data from database.');
+        if (!cancelled) {
+          setError('Failed to load at-risk students data from database.');
+          if (pendingTerm) {
+            setArchiveError('The selected risk archive could not be loaded. The last successfully loaded records remain displayed.');
+            setPendingTerm(null);
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -566,7 +717,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
 
     load();
     return () => { cancelled = true; };
-  }, [profile?.department_id, user?.id, refresh]);
+  }, [profile?.department_id, user?.id, refresh, appliedTerm, pendingTerm, archiveMode, setQueryParams]);
 
   useEffect(() => {
     const onFocus = () => setRefresh(value => value + 1);
@@ -631,7 +782,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
 
   // Outcomes Tracker Items (evaluations with baseline snapshot)
   const outcomesList = rawEvaluations
-    .filter(ev => ev.published_to_student_at && ev.baseline_snapshot && Object.keys(ev.baseline_snapshot).length > 0)
+    .filter(ev => !ev._operationalCarryover && ev.published_to_student_at && ev.baseline_snapshot && Object.keys(ev.baseline_snapshot).length > 0)
     .map(ev => {
       const studentMatch = students.find(s => s.id === ev.student_id);
       const milestone = followupMilestones[ev.evaluation_id] || null;
@@ -692,6 +843,17 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
       />
 
       <div className="p-8 overflow-y-auto flex-1 space-y-6">
+        <AcademicPeriodFilter
+          terms={terms}
+          archiveMode={archiveMode}
+          appliedTerm={appliedTerm}
+          loading={loading}
+          error={archiveError}
+          onModeChange={handlePeriodModeChange}
+          onLoad={handleArchiveLoad}
+          onRetry={handleArchiveLoad}
+        />
+        <div className={archiveMode && !appliedTerm ? 'hidden' : 'contents'}>
         <button type="button" disabled={loading} onClick={() => setRefresh(value => value + 1)} className="rounded-lg border border-sage-200 px-3 py-2 text-sm text-sage-700 disabled:opacity-50"><RefreshCw className="inline h-4 w-4 mr-1" />Refresh cases</button>
         {reviewNotice && <p role="status" className="rounded-lg border border-sage-200 bg-sage-50 p-3 text-sm text-sage-900">{reviewNotice}</p>}
 
@@ -907,7 +1069,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                       <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Running GWA</th>
                       <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Failing Subjects</th>
                       <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Explainable Risk</th>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">AI Diagnostic Insight</th>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Highest-Risk Course Evidence</th>
                       <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Advisory Notice</th>
                     </tr>
                   </thead>
@@ -968,12 +1130,24 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                           </td>
 
                           <td className="px-6 py-4 text-xs text-slate-600 max-w-xs">
-                            <div>
-                              <span className="text-[11px] leading-relaxed line-clamp-2">{s.advisory}</span>
-                            </div>
+                            {s.highestRiskCourse ? (
+                              <div className="space-y-1">
+                                <p className="font-bold text-slate-800">
+                                  {s.highestRiskCourse.subject_code} · {s.highestRiskCourse.standing_source}
+                                </p>
+                                <p className="font-mono text-[10px] text-slate-500">
+                                  GWA {s.highestRiskCourse.current_gwa?.toFixed(2) ?? '—'} · Abs {s.highestRiskCourse.absences} · Zeros {s.highestRiskCourse.recorded_zero_count} · Δ {s.highestRiskCourse.trajectory_delta > 0 ? '+' : ''}{s.highestRiskCourse.trajectory_delta?.toFixed(1) ?? '—'}
+                                </p>
+                                <p className="text-[10px] text-slate-500">
+                                  {s.courseRiskRecords.length} active course risk record{s.courseRiskRecords.length === 1 ? '' : 's'} reviewed
+                                </p>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">No active class evidence</span>
+                            )}
                           </td>
 
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                          {!archiveMode && <td className="px-6 py-4 whitespace-nowrap text-center">
                             <button
                               type="button"
                               onClick={() => handleAlertStudent(s)}
@@ -988,7 +1162,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                               {alertSentMap[s.id] ? <Check className="h-3 w-3 text-emerald-600" /> : <Bell className="h-3 w-3 text-amber-600" />}
                               <span>{alertSentMap[s.id] ? 'Alerted' : 'Notify'}</span>
                             </button>
-                          </td>
+                          </td>}
                         </tr>
                       ))
                     ) : (
@@ -1055,11 +1229,11 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                             </span>
                           </td>
 
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                          {!archiveMode && <td className="px-6 py-4 whitespace-nowrap text-center">
                             <span className="text-sm font-mono font-extrabold text-amber-700">
                               {s.runningGwa ? s.runningGwa.toFixed(2) : '1.50'}
                             </span>
-                          </td>
+                          </td>}
 
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <span className={cn(
@@ -1086,7 +1260,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                             )}
                           </td>
 
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                          {!archiveMode && <td className="px-6 py-4 whitespace-nowrap text-center">
                             <button
                               type="button"
                               onClick={() => handleAlertStudent(s)}
@@ -1101,7 +1275,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                               {alertSentMap[s.id] ? <Check className="h-3 w-3 text-emerald-600" /> : <Bell className="h-3 w-3 text-amber-600" />}
                               <span>{alertSentMap[s.id] ? 'Notified' : 'Honor Advisory'}</span>
                             </button>
-                          </td>
+                          </td>}
                         </tr>
                       ))
                     ) : (
@@ -1167,14 +1341,14 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                           <AlertOctagon className="h-3 w-3 text-rose-500" />
                           <span>Flagged for Dean</span>
                         </span>
-                        <button
+                        {!archiveMode && <button
                           type="button"
                           onClick={() => handleOpenReview(item)}
                           className="px-3 py-1.5 bg-sage-800 hover:bg-sage-900 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-all"
                         >
                           <FileText className="h-3.5 w-3.5" />
                           <span>Open Dean Review</span>
-                        </button>
+                        </button>}
                       </div>
                     </div>
 
@@ -1241,9 +1415,9 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
               <div className="flex items-start gap-2.5">
                 <TrendingUp className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-bold block">Intervention Outcomes &amp; Baseline Recovery Tracker</span>
+                  <span className="font-bold block">Intervention Baseline-to-Follow-up Outcome Tracker</span>
                   <p className="text-emerald-800/90 text-[11px] mt-0.5">
-                    Compares each frozen baseline with the follow-up the faculty records after the next posted milestone. GWA change is follow-up minus baseline (negative is better). Task completion counts faculty-verified tasks only.
+                    Compares each frozen baseline with the follow-up the faculty records after the next posted milestone. GWA change is follow-up minus baseline (negative is more favorable). Task completion counts faculty-verified tasks only. Recorded changes are descriptive and do not establish that ASPIRE caused the outcome.
                   </p>
                 </div>
               </div>
@@ -1357,10 +1531,11 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
           </div>
         )}
 
+        </div>
       </div>
 
       {/* DEAN REVIEW & DIRECTIVES MODAL */}
-      {isModalOpen && selectedQueueItem && (
+      {!archiveMode && isModalOpen && selectedQueueItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
             

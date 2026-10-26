@@ -130,6 +130,24 @@ export const getRiskTierForScore = (score) => Object.values(RISK_TIERS).find(tie
 export const normalizeAttendanceStatus = (status) => ATTENDANCE.statuses.find(item => item.toLowerCase() === String(status || '').trim().toLowerCase()) || null;
 export function countAttendance(records = []) { const statuses = records.map(record => normalizeAttendanceStatus(record?.status ?? record)).filter(Boolean); const absences = statuses.filter(status => status === 'Absent').length; return { total: statuses.length, absences, attendanceRate: statuses.length ? Math.round(((statuses.length - absences) / statuses.length) * 100) : 100 }; }
 export const getAttendanceFlags = (absences) => { const count = Number(absences) || 0; return { isWarning: count >= ATTENDANCE.warningAbsences, isNearFda: count >= ATTENDANCE.nearFdaAbsences, isFda: count >= ATTENDANCE.fdaAbsences }; };
+export function evaluateFdaDecision({ absences = 0, selected = false, reason = '' } = {}) {
+  const absenceCount = Math.max(0, Number(absences) || 0);
+  const recommended = absenceCount >= ATTENDANCE.fdaAbsences;
+  if (!selected) return { ok: true, recommended, selected: false, effectiveGrade: null, error: null };
+  if (!recommended) {
+    return {
+      ok: false,
+      recommended,
+      selected: true,
+      effectiveGrade: null,
+      error: `FDA requires at least ${ATTENDANCE.fdaAbsences} recorded absences in the subject.`
+    };
+  }
+  if (!String(reason || '').trim()) {
+    return { ok: false, recommended, selected: true, effectiveGrade: null, error: 'A written faculty reason is required for FDA.' };
+  }
+  return { ok: true, recommended, selected: true, effectiveGrade: GRADE_SCALE.failedValue, error: null };
+}
 // Number of subjects whose own absences reach the FDA threshold (FDA is per subject, never combined).
 export const countFdaSubjects = (attendanceRecords = []) => { const byClass = {}; attendanceRecords.forEach(record => { const key = record?.class_record_id; if (!key) return; (byClass[key] ||= []).push(record); }); return Object.values(byClass).filter(records => getAttendanceFlags(countAttendance(records).absences).isFda).length; };
 

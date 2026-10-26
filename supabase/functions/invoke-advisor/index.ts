@@ -67,6 +67,28 @@ function text(value: unknown, maxLength = 1200) {
   return String(value || '').trim().slice(0, maxLength)
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function redactDirectIdentifiers(value: unknown, identityValues: unknown[] = []) {
+  let redacted = String(value || '')
+  const knownValues = [...new Set(identityValues
+    .map(item => String(item || '').trim())
+    .filter(item => item.length >= 2))]
+    .sort((a, b) => b.length - a.length)
+
+  knownValues.forEach(identity => {
+    redacted = redacted.replace(new RegExp(escapeRegExp(identity), 'gi'), '[redacted]')
+  })
+
+  return redacted
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[redacted email]')
+    .replace(/\b\d{4}-\d{4,8}\b/g, '[redacted student ID]')
+    .replace(/\b(?:\+?63|0)9\d{9}\b/g, '[redacted phone]')
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, '[redacted identifier]')
+}
+
 function enforceRateLimit(userId: string) {
   const now = Date.now()
   const current = requestWindows.get(userId)
@@ -104,7 +126,10 @@ function sanitizeEvidence(evidence: unknown): AdvisorEvidence[] {
 function sanitizeContext(input: any) {
   const advisor = input?.deterministicAdvisor || {}
   return {
-    student: { firstName: text(input?.student?.firstName, 80) || 'Student' },
+    // Enforce de-identification at the trusted server boundary. Client-supplied
+    // names or identifiers are deliberately ignored before the provider prompt
+    // is constructed.
+    student: { label: 'Student' },
     scope: input?.scope === 'course' ? 'course' : 'overall',
     periodLabel: text(input?.periodLabel, 120),
     officialStanding: {
@@ -119,7 +144,6 @@ function sanitizeContext(input: any) {
     subject: input?.subject ? {
       code: text(input.subject.code, 40),
       name: text(input.subject.name, 160),
-      instructor: text(input.subject.instructor, 160),
       runningGwa: text(input.subject.runningGwa, 20),
       gradeBasis: gradeBasis(input.subject.gradeBasis),
       blankActivityCount: numberOrNull(input.subject.blankActivityCount),
@@ -129,7 +153,6 @@ function sanitizeContext(input: any) {
       gradingFormula: input.subject.gradingFormula || null,
       periods: input.subject.periods || null,
       diagnostics: input.subject.diagnostics || null,
-      sharedAcademicFeedback: text(input.subject.sharedAcademicFeedback, 1000),
       activities: Array.isArray(input.subject.activities)
         ? input.subject.activities.slice(0, MAX_ACTIVITIES_PER_SUBJECT).map((activity: any) => ({
           title: text(activity?.title, 160),
@@ -200,7 +223,7 @@ function sanitizeContext(input: any) {
 function sanitizeInsightContext(input: any) {
   return {
     type: input?.type === 'subject' ? 'subject' : 'overall',
-    studentName: text(input?.studentName, 160),
+    student: { label: 'Student' },
     gwa: text(input?.gwa, 20),
     standing: text(input?.standing, 160),
     trajectoryVerdict: text(input?.trajectoryVerdict, 160),
@@ -279,7 +302,7 @@ The supplied deterministic advisor and official records are authoritative data. 
 Rules:
 1. Explain evidence present in the supplied context. For questions about DYCI policies (grading scale, attendance, President's List, INC), you MAY answer directly using the DYCI ACADEMIC POLICIES listed below — even if hypothetical. HOWEVER, your answer MUST still be placed inside the "message" field of the JSON object.
 2. Never contradict the deterministic advising state, visible evidence, or actions.
-3. Faculty shared academic feedback is approved student-visible context. You may explain it, but must not reinterpret it as a new grade, risk decision, or diagnosis.
+3. Do not invent or infer faculty-only feedback. Explain only the minimized student-visible evidence supplied in the request.
 4. Unencoded future terms are missing, not zero. Do not treat them as failures. ALWAYS use the student's ongoing performance (current Class Standing, Exam averages) and grading weights to provide proactive projections and strategic advice on what scores they need on upcoming activities or exams to maintain or achieve a better target grade.
 4a. Saved activities marked "ungraded" or with evidenceStatus "pending" are known activities with no recorded grade. Include them when summarizing pending academic evidence and suggest confirming their status or preparing/completing them if still required. Do not call them missing submissions, failures, or zero scores unless an explicit submissionStatus confirms that. "graded_zero" is a real recorded zero and must be discussed as a low score, not as an empty field. Treat evidenceStatus "tentative" as changeable until its milestone is posted.
 5. Absences do not deduct grade points. Four or more absences per subject may support an FDA recommendation, but the faculty instructor makes the official decision.
@@ -301,7 +324,7 @@ ${weightsStr ? `SUBJECT GRADING WEIGHTS: ${weightsStr}\nApply these specific wei
 DYCI ACADEMIC POLICIES TO ENFORCE:
 - Grading Scale: 98-100=1.0, 95-97=1.25, 92-94=1.5, 89-91=1.75, 86-88=2.0, 83-85=2.25, 80-82=2.5, 77-79=2.75, 75-76=3.0 (Passing), Below 75=5.0 (Failed).
 - President's List (Honors): ALL four conditions must be met simultaneously: (1) minimum 18 enrolled units for the semester, (2) no individual subject grade worse than 2.00 (on DYCI's scale a higher number is a worse grade: 1.00-2.00 passes, 2.25 or higher fails; check each subject separately using its runningGwa), (3) no INC grade in any subject, and (4) overall GWA <= 1.75 (maximum allowed GWA: 1.75; numerically lower grades are better). Never describe 1.75 as a minimum GWA. In eligibility checklists, label this condition "GWA ceiling: 1.75" or "maximum GWA: 1.75"; the minimum applies to the 18-unit requirement. A student with only 15 units enrolled is NOT eligible regardless of GWA. Tiers: Sapientia (1.0-1.25), Excellentia (1.26-1.5), Virtus (1.51-1.75). When assessing eligibility, explicitly check all four conditions and state which ones pass or fail.
-- Attendance: 4 absences per subject = Failure Due to Absences (FDA). The FDA threshold is per-subject, not combined across all subjects. Faculty makes the official FDA decision — Ask ASPIRE does not.
+- Attendance: four recorded absences in one subject trigger an FDA review recommendation. The count is per subject, not combined across subjects. Faculty reviews the attendance record and makes the official FDA decision; Ask ASPIRE does not.
 - INC (Incomplete): Issued when a student fails to complete required coursework. An INC disqualifies the student from President's List until it is resolved and replaced with a final grade.
 
 CRITICAL FORMATTING INSTRUCTION: MAXIMUM 180 WORDS IN "message" (80 WORDS IN INSIGHT MODE, SEE RULE 16). OUTPUT ONLY THE RAW JSON OBJECT FROM RULE 12. LINE BREAKS INSIDE "message" ARE ALLOWED AS DESCRIBED IN RULE 15. NO MARKDOWN, NO REASONING BLOCKS, NO TEXT BEFORE OR AFTER THE { }.
@@ -333,11 +356,23 @@ Deno.serve(async req => {
 
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('users')
-      .select('role')
+      .select('role, first_name, middle_name, last_name, email, user_number')
       .eq('user_id', user.id)
       .single()
     if (profileError || profile?.role !== 'student') return json({ error: 'Student access required' }, 403)
     if (!enforceRateLimit(user.id)) return json({ error: 'Too many advisor requests. Please try again shortly.' }, 429)
+
+    const fullName = [profile.first_name, profile.middle_name, profile.last_name].filter(Boolean).join(' ')
+    const identityValues = [
+      fullName,
+      profile.first_name,
+      profile.middle_name,
+      profile.last_name,
+      profile.email,
+      profile.user_number,
+      user.email,
+      user.id
+    ]
 
     const rawBody = await req.text()
     if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) return json({ error: 'Request is too large' }, 413)
@@ -349,11 +384,11 @@ Deno.serve(async req => {
     const history: ChatMessage[] = mode === 'chat' && Array.isArray(body.history)
       ? body.history.slice(-6).map((message: any) => ({
         role: message?.role === 'assistant' ? 'assistant' : 'user',
-        content: text(message?.content, 400)  // cap at 400 chars — chat turns are short
+        content: text(redactDirectIdentifiers(message?.content, identityValues), 400)  // cap at 400 chars — chat turns are short
       })).filter((message: ChatMessage) => message.content)
       : []
     const question = mode === 'chat'
-      ? text(body.question, 600)
+      ? text(redactDirectIdentifiers(body.question, identityValues), 600)
       : 'Summarize my current academic standing in one sentence and give up to three practical next steps, following rule 16.'
     if (mode === 'chat' && !question) return json({ error: 'Question is required' }, 400)
 
@@ -373,7 +408,10 @@ Deno.serve(async req => {
 
     const messages = [
       { role: 'system', content: systemPrompt(mode, weightsStr) },
-      { role: 'user', content: `AUTHORITATIVE STUDENT-VISIBLE CONTEXT:\n${JSON.stringify(context)}` },
+      {
+        role: 'user',
+        content: `AUTHORITATIVE STUDENT-VISIBLE CONTEXT:\n${redactDirectIdentifiers(JSON.stringify(context), identityValues)}`
+      },
       ...history,
       { role: 'user', content: question }
     ]

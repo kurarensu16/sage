@@ -130,7 +130,11 @@ function EvaluationRoster({ facultyId, needsByDefault }) {
   useEffect(() => {
     let cancelled = false;
     getEvaluationClasses(facultyId).then(data => {
-      if (!cancelled) { setClasses(data.classes); if (!data.classes.length) setLoading(false); }
+      const activeTerm = data.periods.find(item => item.is_active);
+      const actionableClasses = data.classes.filter(item => item.status === 'active'
+        && (!activeTerm || item.term_id === activeTerm.term_id
+          || (!item.term_id && item.school_year === activeTerm.school_year && item.semester === activeTerm.semester)));
+      if (!cancelled) { setClasses(actionableClasses); if (!actionableClasses.length) setLoading(false); }
     }).catch(err => { if (!cancelled) { setError(err.message); setLoading(false); } });
     return () => { cancelled = true; };
   }, [facultyId]);
@@ -154,8 +158,8 @@ function EvaluationRoster({ facultyId, needsByDefault }) {
     <PageHeader title="Evaluate Students" breadcrumb="Faculty Portal" />
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 text-sage-900">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div><h2 className="text-base font-bold font-display">Student evaluation roster</h2><p className="text-xs text-sage-500 mt-1">Review academic concerns and record advising for a specific grading term.</p></div>
-        <Link className={secondaryButton} to={`/faculty/evaluatedstudents?${new URLSearchParams({ class: classId, term, period: selectedClass?.term_id || 'all' })}`}><ClipboardCheck className="h-4 w-4" />Evaluated Students<ArrowRight className="h-4 w-4" /></Link>
+        <div><h2 className="text-base font-bold font-display">Student evaluation roster</h2><p className="text-xs text-sage-500 mt-1">Review active-term concerns and record advising for a specific grading period. Use Intervention Records for read-only previous-term evidence.</p></div>
+        <Link className={secondaryButton} to={`/faculty/evaluatedstudents?${new URLSearchParams({ class: classId, term, period: selectedClass?.term_id || 'all' })}`}><ClipboardCheck className="h-4 w-4" />Intervention Records<ArrowRight className="h-4 w-4" /></Link>
       </div>
 
       <RiskEducationNote variant="evaluationRoster" />

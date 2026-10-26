@@ -293,7 +293,7 @@ export default function TermManagement() {
 
   return (
     <>
-      <PageHeader title="School Term & Semester Transition" breadcrumb="Admin Portal" />
+      <PageHeader title="Academic Terms" breadcrumb="Admin Portal" />
 
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
 

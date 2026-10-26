@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { 
   Inbox, 
@@ -18,18 +18,58 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { cn } from '../../lib/utils';
 import { countTaskProgress, isAcknowledged, isStudentVisibleEvaluation, taskVerification } from '../../lib/evaluationTracking';
+import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
+import { fetchAcademicTerms, getActiveAcademicTerm } from '../../lib/termStatus';
+import { getCachedData, setCachedData } from '../../lib/dataCache';
 
 export default function FacultyAdvisingInbox() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [evaluations, setEvaluations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
   const [acknowledgingId, setAcknowledgingId] = useState(null);
+  const [terms, setTerms] = useState([]);
+  const [archiveMode, setArchiveMode] = useState(false);
+  const [appliedTerm, setAppliedTerm] = useState(null);
+  const [archiveError, setArchiveError] = useState('');
+  const requestSequence = useRef(0);
 
-  const fetchEvaluations = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
+  const fetchEvaluations = useCallback(async (term, { archive = false } = {}) => {
+    if (!user || !term) return false;
+    const requestId = ++requestSequence.current;
+    const cacheKey = `student_advisories_${user.id}_${term.term_id}`;
+    const cached = getCachedData(cacheKey, 180000);
+    if (cached) {
+      setEvaluations(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+    setArchiveError('');
     try {
+      const selectFields = 'class_record_id, term_id, school_year, semester';
+      const [exactClasses, legacyClasses] = await Promise.all([
+        supabase.from('class_records').select(selectFields).eq('term_id', term.term_id),
+        supabase
+          .from('class_records')
+          .select(selectFields)
+          .is('term_id', null)
+          .eq('school_year', term.school_year)
+          .eq('semester', term.semester)
+      ]);
+      if (exactClasses.error) throw exactClasses.error;
+      if (legacyClasses.error) throw legacyClasses.error;
+      const classRecordIds = [...(exactClasses.data || []), ...(legacyClasses.data || [])]
+        .map(record => record.class_record_id);
+
+      if (classRecordIds.length === 0) {
+        if (requestId !== requestSequence.current) return false;
+        setEvaluations([]);
+        setCachedData(cacheKey, []);
+        return true;
+      }
+
       const { data, error } = await supabase
         .from('student_risk_evaluations')
         .select(`
@@ -49,6 +89,7 @@ export default function FacultyAdvisingInbox() {
           created_at,
           updated_at,
           class_records (
+            term_id,
             school_year,
             semester,
             subjects ( code, name ),
@@ -61,24 +102,92 @@ export default function FacultyAdvisingInbox() {
           )
         `)
         .eq('student_id', user.id)
+        .in('class_record_id', classRecordIds)
         .in('status', ['submitted', 'acknowledged_by_student'])
         .not('published_to_student_at', 'is', null)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setEvaluations((data || []).filter(isStudentVisibleEvaluation));
+      if (requestId !== requestSequence.current) return false;
+      const visibleEvaluations = (data || []).filter(isStudentVisibleEvaluation);
+      setEvaluations(visibleEvaluations);
+      setCachedData(cacheKey, visibleEvaluations);
+      return true;
     } catch (err) {
       console.error('Error loading advising evaluations:', err);
+      if (requestId === requestSequence.current && archive) {
+        setArchiveError(err.message || 'Archived advisories could not be loaded. Please try again.');
+      }
+      return false;
     } finally {
-      setLoading(false);
+      if (requestId === requestSequence.current) setLoading(false);
     }
   }, [user]);
 
   useEffect(() => {
-    fetchEvaluations();
-  }, [fetchEvaluations]);
+    if (!user) return;
+    let cancelled = false;
+
+    async function initializePeriod() {
+      setLoading(true);
+      try {
+        const loadedTerms = await fetchAcademicTerms();
+        if (cancelled) return;
+        setTerms(loadedTerms);
+        const requestedTermId = searchParams.get('archiveTerm');
+        const requestedTerm = loadedTerms.find(term => !term.is_active && term.term_id === requestedTermId) || null;
+        if (requestedTerm) {
+          setArchiveMode(true);
+          setAppliedTerm(requestedTerm);
+          await fetchEvaluations(requestedTerm, { archive: true });
+          return;
+        }
+        const activeTerm = getActiveAcademicTerm(loadedTerms);
+        setArchiveMode(false);
+        setAppliedTerm(null);
+        if (activeTerm) await fetchEvaluations(activeTerm);
+        else setLoading(false);
+      } catch (err) {
+        if (!cancelled) {
+          setArchiveError(err.message || 'Academic periods could not be loaded.');
+          setLoading(false);
+        }
+      }
+    }
+
+    initializePeriod();
+    return () => {
+      cancelled = true;
+      requestSequence.current += 1;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, fetchEvaluations]);
+
+  const handleArchiveModeChange = async (nextArchiveMode) => {
+    setArchiveError('');
+    setArchiveMode(nextArchiveMode);
+    if (nextArchiveMode) return;
+    requestSequence.current += 1;
+    setAppliedTerm(null);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('archiveTerm');
+    setSearchParams(nextParams, { replace: true });
+    const activeTerm = getActiveAcademicTerm(terms);
+    if (activeTerm) await fetchEvaluations(activeTerm);
+  };
+
+  const handleArchiveLoad = async (term) => {
+    if (!term) return;
+    const succeeded = await fetchEvaluations(term, { archive: true });
+    if (!succeeded) return;
+    setAppliedTerm(term);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('archiveTerm', term.term_id);
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const handleAcknowledge = async (evaluationId) => {
+    if (archiveMode) return;
     setAcknowledgingId(evaluationId);
     try {
       const { data, error } = await supabase
@@ -97,7 +206,7 @@ export default function FacultyAdvisingInbox() {
 
   // Toggle checklist task completion
   const handleToggleTask = async (evaluationId, taskId, currentStatus, isLocked) => {
-    if (isLocked) return;
+    if (isLocked || archiveMode) return;
     setUpdatingTaskId(taskId);
     try {
       const targetEval = evaluations.find(e => e.evaluation_id === evaluationId);
@@ -124,9 +233,19 @@ export default function FacultyAdvisingInbox() {
 
   return (
     <>
-      <PageHeader title="Faculty Advising Inbox" breadcrumb="Student Portal" />
+      <PageHeader title="Advisories & Study Plans" breadcrumb="Student Portal" />
 
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 text-left font-sans">
+        <AcademicPeriodFilter
+          terms={terms}
+          archiveMode={archiveMode}
+          appliedTerm={appliedTerm}
+          loading={loading}
+          error={archiveError}
+          onModeChange={handleArchiveModeChange}
+          onLoad={handleArchiveLoad}
+          onRetry={handleArchiveLoad}
+        />
         
         {/* Header Notice */}
         <div className="p-4 bg-white border border-slate-200 rounded-lg shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -136,7 +255,7 @@ export default function FacultyAdvisingInbox() {
               <span>Official Academic Intervention & Catch-Up Plans</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Review personal action plans and complete assigned recovery milestones assigned by your course professors.
+              Review personal action plans and complete the recovery tasks assigned by your course professors.
             </p>
           </div>
           <Link
@@ -154,12 +273,12 @@ export default function FacultyAdvisingInbox() {
             <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-sage-600" />
             <p className="text-xs">Loading advising inbox...</p>
           </div>
-        ) : evaluations.length === 0 ? (
+        ) : archiveMode && !appliedTerm ? null : evaluations.length === 0 ? (
           <div className="bg-white rounded-lg border border-slate-200 p-8 sm:p-12 text-center max-w-xl mx-auto shadow-xs">
             <CheckCircle2 className="h-10 w-10 text-emerald-500 mx-auto mb-3" />
-            <h3 className="text-base font-bold text-slate-900 font-display">No Pending Advising Plans</h3>
+            <h3 className="text-base font-bold text-slate-900 font-display">{archiveMode ? 'No Archived Advisories' : 'No Pending Advising Plans'}</h3>
             <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              You are currently on track with no formal intervention plans assigned by your professors.
+              {archiveMode ? 'No published advisories or study plans were found for the loaded academic period.' : 'You are currently on track with no formal intervention plans assigned by your professors.'}
             </p>
           </div>
         ) : (
@@ -255,7 +374,7 @@ export default function FacultyAdvisingInbox() {
                       </div>
                     )}
 
-                    {!isDraft && !isClosed && (
+                    {!archiveMode && !isDraft && !isClosed && (
                       acknowledged ? (
                         <div className="flex items-center gap-2 text-[11px] text-slate-500">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -296,7 +415,7 @@ export default function FacultyAdvisingInbox() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                          Assigned Catch-Up Milestones ({completedCount}/{totalCount} reported · {verifiedCount} verified)
+                          Assigned Catch-Up Tasks ({completedCount}/{totalCount} reported · {verifiedCount} verified)
                         </span>
                         <span className="text-[11px] text-slate-400">
                           {isDraft ? 'Actionable once published by professor' : isClosed ? 'Plan closed after your instructor recorded the follow-up' : !acknowledged ? 'Acknowledge the plan to start reporting progress' : 'Check off items as you complete them; your instructor verifies each one'}
@@ -325,7 +444,7 @@ export default function FacultyAdvisingInbox() {
                       <div className="space-y-2 pt-1">
                         {tasks.map((task) => {
                           const verification = taskVerification(task);
-                          const isLocked = isDraft || isClosed || !acknowledged || verification === 'verified';
+                          const isLocked = archiveMode || isDraft || isClosed || !acknowledged || verification === 'verified';
                           return (
                           <div
                             key={task.task_id}

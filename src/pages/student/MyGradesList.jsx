@@ -4,13 +4,12 @@ import { loadStudentRunningGrades } from '../../lib/studentRunningGrade';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { ChevronDown, Eye, CheckCircle, Award, ChevronRight, ShieldCheck, Clock, Plus, X, Printer } from 'lucide-react';
+import { ChevronDown, Eye, CheckCircle, Award, ChevronRight, ShieldCheck, Printer } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { TableSkeleton } from '../../components/common/Skeleton';
-import { submitJoinRequest } from '../../lib/classRoomService';
 import { GRADE_MILESTONES, findPostedMilestone } from '../../lib/gradeMilestones';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 
@@ -52,35 +51,12 @@ export default function MyGradesList() {
   const [tentativeStanding, setTentativeStanding] = useState('No grades posted yet');
   const [runningSummary, setRunningSummary] = useState(null);
 
-  // Classroom Join Code State
-  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
-  const [joinCodeInput, setJoinCodeInput] = useState('');
-  const [joining, setJoining] = useState(false);
-  const [joinFeedback, setJoinFeedback] = useState(null);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-
-  const handleJoinClassSubmit = async (e) => {
-    e.preventDefault();
-    if (!joinCodeInput.trim()) return;
-    setJoining(true);
-    setJoinFeedback(null);
-    try {
-      const res = await submitJoinRequest(user.id, joinCodeInput);
-      setJoinFeedback({
-        type: 'success',
-        message: `${res.message} Track it on My Subjects.`
-      });
-      setJoinCodeInput('');
-      setRefreshTrigger(prev => prev + 1);
-    } catch (err) {
-      setJoinFeedback({
-        type: 'error',
-        message: err.message || 'Failed to join classroom. Please check your code and try again.'
-      });
-    } finally {
-      setJoining(false);
-    }
-  };
+  const middleName = String(profile?.middle_name || '').trim();
+  const middleInitial = middleName ? `${middleName.charAt(0).toUpperCase()}.` : '';
+  const printStudentName = [profile?.first_name, middleInitial, profile?.last_name]
+    .filter(Boolean)
+    .join(' ') || 'Student';
+  const officialStudentNumber = profile?.user_number || profile?.student_id_number || 'Not assigned';
 
   useEffect(() => {
     async function loadSemesters() {
@@ -191,7 +167,7 @@ export default function MyGradesList() {
     }
 
     loadSemesters();
-  }, [user, profile, refreshTrigger]);
+  }, [user, profile]);
 
   useEffect(() => {
     async function loadGradesForSem() {
@@ -370,7 +346,7 @@ export default function MyGradesList() {
     }
 
     loadGradesForSem();
-  }, [user, selectedSemLabel, semestersList, refreshTrigger]);
+  }, [user, selectedSemLabel, semestersList]);
 
   if (loading) {
     return <TableSkeleton rows={5} />;
@@ -379,7 +355,7 @@ export default function MyGradesList() {
   return (
     <>
       <div className="print:hidden">
-        <PageHeader title="My Grades" breadcrumb="Student Portal">
+        <PageHeader title="Grade Report" breadcrumb="Student Portal">
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <div className="relative flex-1 sm:flex-initial">
               <select 
@@ -407,17 +383,6 @@ export default function MyGradesList() {
               <span className="sm:hidden">Print</span>
             </button>
 
-            <button
-              onClick={() => {
-                setIsJoinModalOpen(true);
-                setJoinFeedback(null);
-                setJoinCodeInput('');
-              }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors cursor-pointer whitespace-nowrap"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Join Class with Code</span>
-            </button>
           </div>
         </PageHeader>
       </div>
@@ -425,7 +390,7 @@ export default function MyGradesList() {
       {/* ========================================================================= */}
       {/* PRINT-ONLY UNOFFICIAL GRADE SLIP (DYCI Standard)                         */}
       {/* ========================================================================= */}
-      <div className="hidden print:block p-8 bg-white text-slate-900 font-sans text-xs">
+      <div id="print-container" className="hidden print:block p-8 bg-white text-slate-900 font-sans text-xs">
         <div className="text-center border-b-2 border-slate-900 pb-4 mb-6">
           <h1 className="text-base font-bold uppercase tracking-wider text-slate-900">Dr. Yanga's Colleges, Inc.</h1>
           <p className="text-xs text-slate-600">Wakas, Bocaue, Bulacan • Office of the College Registrar</p>
@@ -435,8 +400,8 @@ export default function MyGradesList() {
 
         <div className="grid grid-cols-2 gap-4 mb-6 text-xs border border-slate-200 rounded-lg p-3 bg-slate-50/50">
           <div>
-            <p><span className="font-bold text-slate-600">Student Name:</span> {profile?.first_name} {profile?.last_name}</p>
-            <p className="mt-1"><span className="font-bold text-slate-600">Student ID:</span> {profile?.student_id || user?.id?.substring(0, 8).toUpperCase()}</p>
+            <p><span className="font-bold text-slate-600">Student Name:</span> {printStudentName}</p>
+            <p className="mt-1"><span className="font-bold text-slate-600">Student Number:</span> {officialStudentNumber}</p>
           </div>
           <div>
             <p><span className="font-bold text-slate-600">Program / Degree:</span> {profile?.course || 'BS Information Technology'}</p>
@@ -495,7 +460,7 @@ export default function MyGradesList() {
         <div className="grid grid-cols-2 gap-12 pt-6 text-center text-xs">
           <div>
             <div className="border-b border-slate-400 pb-1 mb-1 font-bold text-slate-800">
-              {profile?.first_name} {profile?.last_name}
+              {printStudentName}
             </div>
             <span className="text-[10px] text-slate-500 uppercase tracking-wider">Student Signature</span>
           </div>
@@ -521,7 +486,7 @@ export default function MyGradesList() {
             </div>
             <div>
               <h4 className="font-bold text-xs sm:text-sm text-slate-900 font-display">
-                Academic Milestone Ledger
+                Academic Grading-Period Ledger
               </h4>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 Posted Midterm Rating (MR), Tentative Final Rating (TFR), and Semestral Grade (SG) are official. Values marked Tentative are computed live from recorded scores until your instructor posts them.
@@ -740,80 +705,6 @@ export default function MyGradesList() {
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* JOIN CLASSROOM WITH CODE MODAL                                            */}
-      {/* ========================================================================= */}
-      {isJoinModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs text-left animate-in fade-in duration-150">
-          <div className="bg-white rounded-lg border border-slate-200 shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
-            <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-bold font-display text-slate-900 flex items-center gap-2">
-                <Plus className="w-4 h-4 text-sage-600" />
-                <span>Join Classroom with Code</span>
-              </h3>
-              <button
-                onClick={() => setIsJoinModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-md transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleJoinClassSubmit} className="p-5 space-y-4 text-xs font-sans">
-              {joinFeedback && (
-                <div className={cn(
-                  "p-3 rounded-md text-xs flex items-center gap-2",
-                  joinFeedback.type === 'success' 
-                    ? "bg-emerald-50 border border-emerald-200 text-emerald-800"
-                    : "bg-rose-50 border border-rose-200 text-rose-700"
-                )}>
-                  {joinFeedback.type === 'success' ? (
-                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                  ) : (
-                    <Clock className="w-4 h-4 text-rose-500 shrink-0" />
-                  )}
-                  <span>{joinFeedback.message}</span>
-                </div>
-              )}
-
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-[11px] text-slate-600 leading-relaxed">
-                Enter the official <strong>Classroom Code</strong> provided by your professor. Regular block students and irregular students will be immediately enrolled into the official class record.
-              </div>
-
-              <div className="space-y-1">
-                <label className="block font-semibold text-slate-700 uppercase tracking-wider text-[11px]">
-                  Classroom Code <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={joinCodeInput}
-                  onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                  placeholder="e.g. CS3A-8X92"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md bg-white text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-sage-600 tracking-wider"
-                />
-              </div>
-
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsJoinModalOpen(false)}
-                  className="px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-md transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={joining || !joinCodeInput.trim()}
-                  className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-sage-600 hover:bg-sage-700 active:bg-sage-800 disabled:opacity-50 rounded-md shadow-xs transition-colors cursor-pointer"
-                >
-                  {joining ? 'Enrolling...' : 'Enroll with Code'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </>
   );
 }

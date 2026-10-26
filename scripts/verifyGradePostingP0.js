@@ -5,6 +5,7 @@ import {
   toDisplayRemark
 } from '../src/lib/academicPolicy.js';
 import { planSgCorrectionPosting } from '../src/lib/sgCorrectionPosting.js';
+import { getGradePeriodSequenceBlock } from '../src/lib/gradeMilestones.js';
 
 const foundation = readFileSync(
   new URL('../supabase/migrations/20261022120000_grade_posting_p0_foundation.sql', import.meta.url),
@@ -26,7 +27,16 @@ const correctedMilestones = readFileSync(
   new URL('../supabase/migrations/20261024093000_cascade_corrected_grade_milestones.sql', import.meta.url),
   'utf8'
 );
+const gradingPeriodSequence = readFileSync(
+  new URL('../supabase/migrations/20261025130000_grading_period_sequence_and_backfill.sql', import.meta.url),
+  'utf8'
+);
+const verifiedLegacyPeriods = readFileSync(
+  new URL('../supabase/migrations/20261025140500_reconstruct_verified_legacy_periods.sql', import.meta.url),
+  'utf8'
+);
 const studentRow = readFileSync(new URL('../src/components/StudentRow.jsx', import.meta.url), 'utf8');
+const gradeComputationPreview = readFileSync(new URL('../src/pages/faculty/GradeComputationPreview.jsx', import.meta.url), 'utf8');
 const scoreInput = readFileSync(new URL('../src/pages/faculty/ScoreInput.jsx', import.meta.url), 'utf8');
 const postedGradesView = readFileSync(new URL('../src/pages/faculty/PostedGradesView.jsx', import.meta.url), 'utf8');
 const facultyNotifications = readFileSync(new URL('../src/pages/faculty/Notifications.jsx', import.meta.url), 'utf8');
@@ -55,10 +65,48 @@ assertPlpgsqlVariablesDeclared(transaction, 'transaction');
 assertPlpgsqlVariablesDeclared(sgBasisLock, 'SG basis lock');
 assertPlpgsqlVariablesDeclared(stagedCorrections, 'staged SG corrections');
 assertPlpgsqlVariablesDeclared(correctedMilestones, 'corrected milestones');
+assertPlpgsqlVariablesDeclared(gradingPeriodSequence, 'grading-period sequence');
 assert.doesNotMatch(
   transaction,
   /\bIS\s+DISTINCT\s+FROM\s+CASE\b/i,
   'Parenthesize or precompute CASE expressions used with IS DISTINCT FROM in PL/pgSQL IF conditions.'
+);
+
+// MR has no predecessor. TFR requires MR, and SG requires both MR and TFR.
+// Re-posting MR/TFR remains valid before SG because existing coverage does not
+// block the same period; the official SG lock is enforced separately.
+assert.equal(getGradePeriodSequenceBlock('midterm', []), null);
+assert.match(getGradePeriodSequenceBlock('tfr', []), /Midterm Rating/);
+assert.equal(getGradePeriodSequenceBlock('midterm', ['Midterm Rating']), null);
+assert.equal(getGradePeriodSequenceBlock('tfr', ['Midterm Rating']), null);
+assert.match(
+  getGradePeriodSequenceBlock('semestral', ['Midterm Rating']),
+  /Tentative Final Rating/
+);
+assert.equal(
+  getGradePeriodSequenceBlock('semestral', ['Midterm Rating', 'Tentative Final Rating']),
+  null
+);
+
+assert.match(
+  gradeComputationPreview,
+  /disabled=\{postingGrades \|\| isComputingDiff \|\| isLocked\}\s*onClick=\{\(\) => computeChangedStudents\('midterm'\)\}/,
+  'Grade preview must keep MR available for first posting and updates before SG.'
+);
+assert.match(
+  gradeComputationPreview,
+  /disabled=\{postingGrades \|\| isComputingDiff \|\| isLocked \|\| Boolean\(getGradePeriodSequenceBlock\('tfr', lockedMilestones\)\)\}\s*onClick=\{\(\) => computeChangedStudents\('tfr'\)\}/,
+  'Grade preview must require MR before first posting or updating TFR.'
+);
+assert.match(
+  scoreInput,
+  /disabled=\{postingGrades \|\| isLocked\}\s*onClick=\{\(\) => setPendingPostMilestone\('midterm'\)\}/,
+  'Score input must keep MR available for first posting and updates before SG.'
+);
+assert.match(
+  scoreInput,
+  /disabled=\{postingGrades \|\| isLocked \|\| Boolean\(getGradePeriodSequenceBlock\('tfr', postedMilestones\)\)\}\s*onClick=\{\(\) => setPendingPostMilestone\('tfr'\)\}/,
+  'Score input must require MR before first posting or updating TFR.'
 );
 
 // Official exceptional remarks are never collapsed back to numeric pass/fail.
@@ -159,6 +207,41 @@ assert.equal(preserved.postRows.length, 1);
   "COALESCE(NEW.link, '') LIKE '/faculty/%'",
   'never reapply scores'
 ].forEach(fragment => assert.ok(correctedMilestones.includes(fragment), `Missing corrected-milestone control: ${fragment}`));
+
+[
+  'CREATE OR REPLACE FUNCTION public.aspire_assert_grade_period_sequence',
+  'Post the Midterm Rating (MR) for the complete active roster before posting TFR.',
+  'Post MR and TFR for the complete active roster before finalizing SG.',
+  "official_source IN ('faculty_post', 'dean_correction', 'admin_override', 'system_backfill')",
+  'REVOKE EXECUTE ON FUNCTION public.post_grade_milestone_v2',
+  'REVOKE EXECUTE ON FUNCTION public.post_grade_milestone_atomic',
+  "v_sg.input_snapshot_hash IS DISTINCT FROM (v_projection->>'input_snapshot_hash')",
+  "ARRAY['Prelim', 'Midterm', 'Midterm Rating']::VARCHAR[]",
+  "ARRAY['Semi-Final', 'Final', 'Tentative Final Rating']::VARCHAR[]",
+  "v_class.grading_formula_snapshot, 'system_backfill'",
+  'CREATE TRIGGER trg_enforce_posted_grade_period_sequence',
+  'Post-migration audit: this must return no rows'
+].forEach(fragment => assert.ok(
+  gradingPeriodSequence.includes(fragment),
+  `Missing grading-period sequence control: ${fragment}`
+));
+
+[
+  "v_class_id CONSTANT UUID := 'a44d7775-a0a2-429b-a5db-b3acd6440299'",
+  "v_subject_code IS DISTINCT FROM 'NAV113'",
+  "v_section_name IS DISTINCT FROM 'BSMARE-1B'",
+  'v_sg_count <> CARDINALITY(v_student_ids)',
+  "v_sg.input_snapshot_hash IS NOT NULL",
+  "v_sg.computed_grade IS DISTINCT FROM NULLIF(v_projection->>'sg', '')::NUMERIC",
+  "ARRAY['Prelim', 'Midterm', 'Midterm Rating']::VARCHAR[]",
+  "ARRAY['Semi-Final', 'Final', 'Tentative Final Rating']::VARCHAR[]",
+  "v_class.grading_formula_snapshot, 'system_backfill'",
+  'NAV113 reconstruction did not produce a complete MR/TFR sequence',
+  'Manual faculty/Dean review: stored SG differs from current score basis'
+].forEach(fragment => assert.ok(
+  verifiedLegacyPeriods.includes(fragment),
+  `Missing verified legacy-period repair control: ${fragment}`
+));
 
 assert.doesNotMatch(
   correctedMilestones,

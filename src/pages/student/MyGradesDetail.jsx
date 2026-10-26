@@ -425,7 +425,7 @@ export default function MyGradesDetail() {
   if (!classRecordId || !classInfo) {
     return (
       <>
-        <PageHeader title="Grade Breakdown" breadcrumb="Student Portal" />
+        <PageHeader title="Score Breakdown" breadcrumb="Student Portal" />
         <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 text-left">
           <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center max-w-lg mx-auto space-y-4 shadow-xs">
             <div className="w-12 h-12 rounded-2xl bg-sage-50 text-sage-600 flex items-center justify-center mx-auto">
@@ -472,14 +472,14 @@ export default function MyGradesDetail() {
 
   return (
     <>
-      <PageHeader title="Grade Breakdown" breadcrumb="Student Portal" />
+      <PageHeader title="Score Breakdown" breadcrumb="Student Portal" />
       
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 md:space-y-8">
         
         {/* Navigation Breadcrumb detail */}
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <span className="hover:text-sage-600 cursor-pointer transition-colors" onClick={() => navigate('/student/mygradeslist')}>
-            My Grades
+            Grade Report
           </span>
           <ChevronRight className="h-3 w-3" />
           <span className="font-medium text-slate-900">{subjectCode} Breakdown</span>
@@ -611,7 +611,7 @@ export default function MyGradesDetail() {
                                                   : 'border-sage-200 bg-sage-50 text-sage-700'
                                             )}>
                                               {act.scoreStatus === 'official_context'
-                                                ? 'Included in posted milestone'
+                                                ? 'Included in posted grading period'
                                                 : act.isRecordedZero ? 'Tentative · Recorded Zero' : 'Tentative'}
                                             </span>
                                           )}
@@ -832,10 +832,10 @@ export default function MyGradesDetail() {
                 {selectedActivity.obtained === null
                   ? 'No score has been recorded for this activity yet.'
                   : selectedActivity.scoreStatus === 'official_context'
-                    ? 'This result was included in a posted grading milestone.'
+                    ? 'This result was included in a posted grading period.'
                     : selectedActivity.isRecordedZero
-                      ? 'This is a recorded numeric zero. It is tentative until the applicable milestone is posted.'
-                      : 'This saved score is tentative and may change until the applicable milestone is posted.'}
+                      ? 'This is a recorded numeric zero. It is tentative until the applicable grading period is posted.'
+                      : 'This saved score is tentative and may change until the applicable grading period is posted.'}
               </div>
             </div>
 

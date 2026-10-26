@@ -10,6 +10,7 @@ import {
 import {
   computeStudentGwa,
   countAttendance,
+  evaluateFdaDecision,
   getAttendanceFlags,
   getPersistentRemarkOverride,
   getHonorTier,
@@ -26,6 +27,7 @@ import {
   findMostAdvancedPostedGrade,
   findPostedTermGrade,
   getCanonicalGradePeriod,
+  getGradePeriodSequenceBlock,
   getMilestonePostingPresentation,
   getPostedMilestoneCoverage,
   getRequiredTermsForPostingTarget,
@@ -56,6 +58,14 @@ assert.deepEqual(
   getUpdatedMilestoneLocks([], 'midterm', { isSummer: true }),
   ['Midterm', 'Midterm Rating'],
   'summer milestone locks must not introduce regular-semester periods'
+);
+assert.equal(getGradePeriodSequenceBlock('midterm', []), null);
+assert.match(getGradePeriodSequenceBlock('tfr', []), /Midterm Rating/);
+assert.match(getGradePeriodSequenceBlock('semestral', ['Midterm Rating']), /Tentative Final Rating/);
+assert.equal(
+  getGradePeriodSequenceBlock('semestral', ['Midterm Rating', 'Tentative Final Rating']),
+  null,
+  'SG must become available only after both prior grading periods are posted'
 );
 
 const periodDisplayRows = [
@@ -336,6 +346,18 @@ assert.equal(calculateAcademicRisk({ absenceCount: 3 }).composite_score, 25, '3 
 assert.equal(calculateAcademicRisk({ absenceCount: 4 }).composite_score, 50, '4 absences triggers the FDA recommendation (50 pts, HIGH)');
 assert.equal(getAttendanceFlags(4).isFda, true, 'FDA threshold is >= 4 unexcused absences');
 assert.equal(getAttendanceFlags(2).isWarning, true, '2 absences crosses the early-warning flag');
+assert.deepEqual(
+  evaluateFdaDecision({ absences: 4, selected: false }),
+  { ok: true, recommended: true, selected: false, effectiveGrade: null, error: null },
+  'four absences must remain a recommendation until faculty explicitly selects FDA'
+);
+assert.equal(evaluateFdaDecision({ absences: 3, selected: true, reason: 'Reviewed' }).ok, false, 'FDA cannot be selected below the threshold');
+assert.equal(evaluateFdaDecision({ absences: 4, selected: true, reason: '' }).ok, false, 'FDA requires a faculty reason');
+assert.deepEqual(
+  evaluateFdaDecision({ absences: 4, selected: true, reason: 'Attendance reviewed with the student.' }),
+  { ok: true, recommended: true, selected: true, effectiveGrade: 5, error: null },
+  'an attendance-supported, documented faculty decision may produce FDA'
+);
 
 // ── calculateWeightedTermRating: missingComponents field (completeness, not just isComplete) ──
 {

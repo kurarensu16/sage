@@ -260,7 +260,7 @@ export function FacultyPerformanceTrajectoryChart({ trajectoryData = [] }) {
             }}
           >
             <span className="font-bold font-display text-[10px] uppercase text-slate-300">
-              {points[hoveredIdx].term} Milestone
+              {points[hoveredIdx].term} Period
             </span>
             <span className="font-mono font-bold text-xs text-white">
               {points[hoveredIdx].val}

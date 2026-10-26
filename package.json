@@ -11,6 +11,7 @@
     "verify:excel-export": "node scripts/verifyExcelGradeExport.js",
     "verify:csv": "node scripts/verifyCsvExport.js",
     "verify:insights": "node scripts/verifyInsightFreshness.js",
+    "verify:ai-privacy": "node scripts/verifyAiPrivacyBoundaries.js",
     "verify:sg-correction": "node scripts/verifySgCorrectionPosting.js",
     "verify:grade-posting-p0": "node scripts/verifyGradePostingP0.js",
     "verify:audit-timezone": "node scripts/verifyAuditTimezone.js",
