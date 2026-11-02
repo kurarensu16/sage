@@ -23,7 +23,11 @@ import ErrorModal from '../../components/ErrorModal';
 import html2pdf from 'html2pdf.js';
 import { cn } from '../../lib/utils';
 import { TableSkeleton } from '../../components/common/Skeleton';
-import { getClassPriorityRoster, getEnrollmentType } from '../../lib/classRoomService';
+import {
+  getClassPriorityRoster, getEnrollmentType, loadClassActivities,
+  ACTIVITY_TYPES, DEFAULT_ACTIVITY_TYPE
+} from '../../lib/classRoomService';
+import { fetchWindowsForClass, frozenTermsFromWindows } from '../../lib/gradeConsultationService';
 import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 import ClassWorkflowNav from '../../components/faculty/ClassWorkflowNav';
 import {
@@ -42,6 +46,10 @@ import { postGradeMilestoneAtomic, preflightSgCorrectionPosting } from '../../li
 import { collectBlankScoreReview, prepareReviewedBlankScores } from '../../lib/gradeScoreReview';
 import { fetchApprovedSgCorrections } from '../../lib/gradeCorrectionService';
 import { planSgCorrectionPosting, requireAuthorizedSgCorrectionPlan } from '../../lib/sgCorrectionPosting';
+import ActivityResourceFields from '../../components/faculty/ActivityResourceFields';
+import {
+  fetchActivityResources, saveActivityResources, firstResourceProblem
+} from '../../lib/activityResourceService';
 
 const ARCHIVED_NOTICE = 'This class is archived (its SG is posted and its term has ended), so it is view only. To change an official SG, submit an SG correction request for the Dean to approve.';
 
@@ -59,9 +67,21 @@ export default function ScoreInput() {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lockedMilestones, setLockedMilestones] = useState([]);
   const [postedMilestones, setPostedMilestones] = useState([]);
+  // Terms behind a finalized milestone. The database refuses writes to these
+  // (trg_block_frozen_term_scores); this is what stops the cell inviting one.
+  const [frozenTerms, setFrozenTerms] = useState([]);
+  // A finalized milestone cannot be re-posted. The way back is an approved
+  // grade change request, applied through the existing chain.
+  const mrFinalized = frozenTerms.includes('Midterm');
+  const tfrFinalized = frozenTerms.includes('Final');
+  // The SG has no consultation window to close, so posting it IS finalizing it.
+  // post_grade_milestone_v2 already refuses to touch an existing SG row without
+  // an approved request; this is the screen catching up with the database.
+  const sgFinalized = lockedMilestones.includes('Semestral Grade');
   const [studentLocks, setStudentLocks] = useState({});
   const [savingScores, setSavingScores] = useState(false);
-  const [autoSaveStatus, setAutoSaveStatus] = useState('saved'); // 'saving' | 'saved'
+  const [autoSaveStatus, setAutoSaveStatus] = useState('saved'); // 'saving' | 'saved' | 'error'
+  const [autoSaveError, setAutoSaveError] = useState('');
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [classesList, setClassesList] = useState([]);
 
@@ -96,6 +116,8 @@ export default function ScoreInput() {
   const [configTitle, setConfigTitle] = useState('');
   const [configDescription, setConfigDescription] = useState('');
   const [configTopicTag, setConfigTopicTag] = useState('');
+  const [configActivityType, setConfigActivityType] = useState(DEFAULT_ACTIVITY_TYPE);
+  const [configResources, setConfigResources] = useState([]);
   const [configComponentId, setConfigComponentId] = useState('');
   const [configMaxScore, setConfigMaxScore] = useState(20);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -108,6 +130,10 @@ export default function ScoreInput() {
   const [newActivityMax, setNewActivityMax] = useState(20);
   const [newActivityDescription, setNewActivityDescription] = useState('');
   const [newActivityTopicTag, setNewActivityTopicTag] = useState('');
+  const [newActivityType, setNewActivityType] = useState(DEFAULT_ACTIVITY_TYPE);
+  // Learning resources for the AI Study Tutor. Optional, and never a condition
+  // of saving an activity.
+  const [newActivityResources, setNewActivityResources] = useState([]);
   const [newActivityComponentId, setNewActivityComponentId] = useState('');
 
 
@@ -563,59 +589,24 @@ export default function ScoreInput() {
         }
         setMaxItems(newMax);
 
-        // Fetch dynamic custom activities from Supabase class_activities table
-        let fetchedDbActs = [];
+        // Shared with Posted Grades: one loader means the two screens cannot
+        // disagree about how many activity columns a class has.
+        const loadedActs = await loadClassActivities(classRecordId, cr.semester);
+        setActivities(loadedActs);
+
         try {
-          const { data: dbActs } = await supabase
-            .from('class_activities')
-            .select('*')
-            .eq('class_record_id', classRecordId)
-            .order('created_at', { ascending: true });
-
-          fetchedDbActs = dbActs || [];
-
-          const loadedActivities = { Prelim: [], Midterm: [], 'Semi-Final': [], Final: [] };
-          ['Prelim', 'Midterm', 'Semi-Final', 'Final'].forEach(t => {
-            const termActs = fetchedDbActs.filter(a => a.term === t);
-            if (termActs.length > 0) {
-              loadedActivities[t] = termActs.map((a, idx) => ({
-                id: a.activity_id,
-                dbId: a.activity_id,
-                slotKey: `act${idx + 1}`,
-                name: a.name || a.title || '',
-                max: parseFloat(a.max_score) || 20,
-                description: a.description || '',
-                topicTag: a.topic_tag || '',
-                releasedAt: a.released_at || null,
-                releasedBy: a.released_by || null,
-                createdAt: a.created_at || null,
-                componentId: a.component_id || null
-              }));
-            } else {
-              loadedActivities[t] = [{
-                id: 'act1',
-                name: '', // Empty means unconfigured
-                max: 20,
-                description: '',
-                placeholder: 'Activity 1'
-              }];
-            }
-          });
-          setActivities(loadedActivities);
-        } catch (actErr) {
-          console.warn('Could not query class_activities:', actErr);
-          const loadedActivities = { Prelim: [], Midterm: [], 'Semi-Final': [], Final: [] };
-          periodsList.forEach(t => {
-            loadedActivities[t] = [{
-              id: 'act1',
-              name: '',
-              max: 20,
-              description: '',
-              placeholder: 'Activity 1'
-            }];
-          });
-          setActivities(loadedActivities);
+          setFrozenTerms([...frozenTermsFromWindows(await fetchWindowsForClass(classRecordId))]);
+        } catch (winErr) {
+          // Leaving it empty keeps the cells editable; the trigger still
+          // refuses a frozen write, so the floor holds either way.
+          console.warn('Could not read consultation windows:', winErr);
         }
+        // Score loading below still needs the raw rows (activity_id + term).
+        // Rebuilt from the loader's output rather than queried a second time;
+        // placeholder slots carry no dbId and are skipped.
+        const fetchedDbActs = Object.entries(loadedActs).flatMap(([term, list]) =>
+          (list || []).filter(a => a.dbId).map(a => ({ activity_id: a.dbId, term }))
+        );
 
         // Fetch actual absences count from Supabase and merge into state directly —
         // was previously written to localStorage and re-read by StudentRow / here /
@@ -926,12 +917,22 @@ export default function ScoreInput() {
     setConfigTitle(act.name || '');
     setConfigDescription(act.description || '');
     setConfigTopicTag(act.topicTag || '');
+    setConfigActivityType(act.activityType || DEFAULT_ACTIVITY_TYPE);
     setConfigComponentId(
       act.componentId
       || (repeatableGradingComponents.length === 1 ? repeatableGradingComponents[0].componentId : '')
       || ''
     );
     setConfigMaxScore(act.max || 20);
+    // Loaded in the background. An unsaved activity has no id yet and nothing
+    // to load, and a failure here must not stop the modal opening -- the rest
+    // of the form is what the instructor came for.
+    setConfigResources([]);
+    if (act.dbId) {
+      fetchActivityResources(act.dbId)
+        .then(setConfigResources)
+        .catch((err) => console.error('[ASPIRE] could not load activity resources:', err));
+    }
     setIsConfigModalOpen(true);
   };
 
@@ -961,6 +962,15 @@ export default function ScoreInput() {
       return;
     }
 
+    // Checked before anything is written, so a mistyped link is caught while
+    // the instructor is still looking at it rather than after the activity has
+    // already saved.
+    const resourceProblem = firstResourceProblem(configResources);
+    if (resourceProblem) {
+      alert(resourceProblem);
+      return;
+    }
+
     setSavingConfig(true);
     try {
       const isNew = !configActivityId || configActivityId.length <= 10;
@@ -974,6 +984,9 @@ export default function ScoreInput() {
         max_score: configMaxScore,
         description: trimmedDesc,
         topic_tag: configTopicTag.trim() || null,
+        // Sent on every upsert. Omitting it would let the column default
+        // overwrite a type the instructor had already chosen.
+        activity_type: configActivityType,
         component_id: configComponentId || null,
         // Compatibility fields remain populated while the legacy release column
         // is phased out. Every saved activity is student-visible by policy.
@@ -994,6 +1007,8 @@ export default function ScoreInput() {
 
       if (saveErr) throw saveErr;
 
+      await saveActivityResources(savedAct.activity_id, configResources);
+
       // Update state
       const slotKey = `act${configSlotIndex + 1}`;
       const actId = savedAct.activity_id;
@@ -1006,6 +1021,7 @@ export default function ScoreInput() {
         max: parseFloat(savedAct.max_score),
         description: savedAct.description || '',
         topicTag: savedAct.topic_tag || '',
+        activityType: savedAct.activity_type || DEFAULT_ACTIVITY_TYPE,
         componentId: savedAct.component_id || null,
         releasedAt: savedAct.released_at || null,
         releasedBy: savedAct.released_by || null,
@@ -1145,6 +1161,13 @@ export default function ScoreInput() {
       alert('Select the grading component this activity belongs to.');
       return;
     }
+    // Checked before the activity is written, so a mistyped link is caught
+    // while the instructor is still looking at it.
+    const newResourceProblem = firstResourceProblem(newActivityResources);
+    if (newResourceProblem) {
+      alert(newResourceProblem);
+      return;
+    }
 
     const term = newActivityTerm;
     const list = activities[term] || [];
@@ -1176,6 +1199,7 @@ export default function ScoreInput() {
           max_score: Number(newActivityMax) || 20,
           description: trimmedDesc,
           topic_tag: newActivityTopicTag.trim() || null,
+          activity_type: newActivityType,
           component_id: newActivityComponentId
             || (repeatableGradingComponents.length === 1 ? repeatableGradingComponents[0].componentId : null)
             || null,
@@ -1190,6 +1214,8 @@ export default function ScoreInput() {
 
       if (error) throw error;
 
+      await saveActivityResources(savedAct.activity_id, newActivityResources);
+
       const actId = savedAct.activity_id;
       const nextIndex = validList.length + 1;
       const actKey = `act${nextIndex}`;
@@ -1202,6 +1228,7 @@ export default function ScoreInput() {
         max: parseFloat(savedAct.max_score) || Number(newActivityMax) || 20,
         description: savedAct.description || trimmedDesc,
         topicTag: savedAct.topic_tag || '',
+        activityType: savedAct.activity_type || DEFAULT_ACTIVITY_TYPE,
         componentId: savedAct.component_id || null,
         releasedAt: savedAct.released_at || null,
         releasedBy: savedAct.released_by || null,
@@ -1236,6 +1263,7 @@ export default function ScoreInput() {
       setNewActivityName('');
       setNewActivityDescription('');
       setNewActivityTopicTag('');
+      setNewActivityResources([]);
       setNewActivityComponentId('');
       
       setPopupTitle('Activity Added');
@@ -1919,6 +1947,17 @@ export default function ScoreInput() {
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200/80 animate-pulse ml-2 shadow-2xs">
                     <CloudUpload className="h-3 w-3 text-amber-500 animate-spin" /> Saving grades...
                   </span>
+                ) : autoSaveStatus === 'error' ? (
+                  /* This branch exists because there was none: every state that
+                     was not 'saving' fell through to the green badge below, so
+                     a save the database refused still read "All grades saved". */
+                  <span
+                    role="alert"
+                    title={autoSaveError}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200/80 ml-2 shadow-2xs"
+                  >
+                    <AlertTriangle className="h-3 w-3 text-rose-600" /> Not saved
+                  </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 ml-2 shadow-2xs">
                     <Check className="h-3 w-3 text-emerald-600" />
@@ -2493,10 +2532,13 @@ export default function ScoreInput() {
                               showCharacter={gradingPresentation.hasCharacter}
                               postedMilestones={postedMilestones}
                               studentLocked={studentLocks[student.id]}
+                              frozenTerms={frozenTerms}
                               periodsList={periodsList}
-                              onSaveStatusChange={(st) => {
+                              onSaveStatusChange={(st, message) => {
                                 setAutoSaveStatus(st);
                                 if (st === 'saved') setLastSavedAt(new Date());
+                                if (st === 'error') setAutoSaveError(message || 'These scores could not be saved.');
+                                else if (st === 'saving') setAutoSaveError('');
                               }}
                               onPostedTermEmptyAttempt={({ term, field, studentName, restored }) => {
                                 setPostedTermEmptyNotice({
@@ -2674,7 +2716,7 @@ export default function ScoreInput() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between">
                   <span>Lesson Topic Scope / Description <span className="text-rose-500">*</span></span>
-                  <span className="text-[11px] font-normal text-slate-500 lowercase">(Required for AI Study Tutor)</span>
+                  <span className="text-[11px] font-normal text-slate-500 lowercase">(Required for AI Study Advising)</span>
                 </label>
                 <textarea
                   required
@@ -2684,6 +2726,28 @@ export default function ScoreInput() {
                   rows={3}
                   className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all resize-none font-sans"
                 />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                  Activity Type
+                </label>
+                <select
+                  value={configActivityType}
+                  onChange={(e) => setConfigActivityType(e.target.value)}
+                  className="block w-full px-3.5 py-2 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-lg text-sm outline-none transition-all cursor-pointer"
+                >
+                  {ACTIVITY_TYPES.map((type) => (
+                    <option key={type.value} value={type.value}>{type.label}</option>
+                  ))}
+                  {/* An activity created before the field existed holds 'formative'.
+                      Offered only while it is the current value, so the panel can
+                      show the truth without inviting anyone to pick it again. */}
+                  {configActivityType === 'formative' && (
+                    <option value="formative">Formative (legacy)</option>
+                  )}
+                </select>
+                <p className="text-[10px] text-slate-400">Describes the work only. The weight comes from its grading component.</p>
               </div>
 
               <div className="flex flex-col gap-1.5">
@@ -2700,6 +2764,12 @@ export default function ScoreInput() {
                 />
                 <p className="text-[10px] text-slate-400">Used to connect related assessment results without exposing an unofficial term grade.</p>
               </div>
+
+              <ActivityResourceFields
+                value={configResources}
+                onChange={setConfigResources}
+                disabled={savingConfig}
+              />
 
               {repeatableGradingComponents.length > 1 && (
                 <div className="flex flex-col gap-1.5">
@@ -2893,7 +2963,7 @@ export default function ScoreInput() {
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between">
                     <span>Lesson Topic Scope / Description <span className="text-rose-500">*</span></span>
-                    <span className="text-[11px] font-normal text-slate-500 lowercase">(Required for AI Study Tutor)</span>
+                    <span className="text-[11px] font-normal text-slate-500 lowercase">(Required for AI Study Advising)</span>
                   </label>
                   <textarea
                     disabled={isTermFull}
@@ -2904,6 +2974,29 @@ export default function ScoreInput() {
                     rows={2}
                     className="block w-full px-3.5 py-2.5 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all resize-none font-sans disabled:bg-slate-50 disabled:text-slate-450 shadow-2xs"
                   />
+                </div>
+
+                {/* What the work IS. Its COG component decides what it is WORTH --
+                    these two must not be confused, or the type becomes a second
+                    grading formula. Carried into the AI's intervention context,
+                    which until now saw 'formative' on every activity ever set. */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                    Activity Type
+                  </label>
+                  <select
+                    disabled={isTermFull}
+                    value={newActivityType}
+                    onChange={(e) => setNewActivityType(e.target.value)}
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all disabled:bg-slate-50 disabled:text-slate-450 shadow-2xs cursor-pointer"
+                  >
+                    {ACTIVITY_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
+                  </select>
+                  <span className="text-[11px] text-slate-400">
+                    Describes the work only. The weight comes from its grading component.
+                  </span>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
@@ -2920,6 +3013,12 @@ export default function ScoreInput() {
                     className="block w-full px-3.5 py-2.5 border border-slate-200 hover:border-slate-300 focus:border-sage-500 rounded-xl text-xs sm:text-sm outline-none transition-all disabled:bg-slate-50 disabled:text-slate-450 shadow-2xs"
                   />
                 </div>
+
+                <ActivityResourceFields
+                  value={newActivityResources}
+                  onChange={setNewActivityResources}
+                  disabled={isTermFull}
+                />
 
                 {repeatableGradingComponents.length > 1 && (
                   <div className="flex flex-col gap-1.5">
@@ -3101,18 +3200,21 @@ export default function ScoreInput() {
                           )}
                         </div>
                         <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                          {isSummer 
-                            ? 'Posts Midterm scores for consultation. Faculty may revise and re-post this rating until SG is finalized.'
-                            : 'Posts Prelim and Midterm scores with MR for consultation. Faculty may revise and re-post until SG is finalized.'}
+                          {mrFinalized
+                            ? 'This rating is final. Prelim and Midterm scores are closed; a change now needs an approved grade change request.'
+                            : isSummer
+                              ? 'Posts Midterm scores for consultation. Faculty may revise and re-post this rating until the consultation is finalized.'
+                              : 'Posts Prelim and Midterm scores with MR for consultation. Faculty may revise and re-post until the consultation is finalized.'}
                         </p>
                       </div>
                       <button
                         type="button"
-                        disabled={postingGrades || isLocked}
+                        disabled={postingGrades || isLocked || mrFinalized}
+                        title={mrFinalized ? 'This rating is final. Use a grade change request to correct it.' : undefined}
                         onClick={() => setPendingPostMilestone('midterm')}
                         className="px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                       >
-                        {(lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')) ? 'Update MR' : 'Post MR'}
+                        {mrFinalized ? 'MR Final' : (lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')) ? 'Update MR' : 'Post MR'}
                       </button>
                     </div>
                   </div>
@@ -3139,17 +3241,18 @@ export default function ScoreInput() {
                         </div>
                         <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
                           {isSummer
-                            ? 'Posts Final scores for consultation. Faculty may revise and re-post TFR until SG is finalized.'
-                            : 'Posts Semi-Final and Final scores with TFR for consultation. Faculty may revise and re-post until SG is finalized.'}
+                            ? 'Posts Final scores for consultation. Faculty may revise and re-post TFR until the consultation is finalized.'
+                            : 'Posts Semi-Final and Final scores with TFR for consultation. Faculty may revise and re-post until the consultation is finalized.'}
                         </p>
                       </div>
                       <button
                         type="button"
-                        disabled={postingGrades || isLocked || Boolean(getGradePeriodSequenceBlock('tfr', postedMilestones))}
+                        disabled={postingGrades || isLocked || tfrFinalized || Boolean(getGradePeriodSequenceBlock('tfr', postedMilestones))}
+                        title={tfrFinalized ? 'This rating is final. Use a grade change request to correct it.' : undefined}
                         onClick={() => setPendingPostMilestone('tfr')}
                         className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                       >
-                        {(lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')) ? 'Update TFR' : 'Post TFR'}
+                        {tfrFinalized ? 'TFR Final' : (lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')) ? 'Update TFR' : 'Post TFR'}
                       </button>
                     </div>
                   </div>
@@ -3175,16 +3278,18 @@ export default function ScoreInput() {
                           )}
                         </div>
                         <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                          Finalizes overall Semestral Grade (SG) & Transmuted GWA. Submits official grade sheet to Dean & Registrar.
+                          {sgFinalized
+                            ? 'This grade is final and has been submitted to the Dean and Registrar. A change now needs an approved grade change request.'
+                            : 'Finalizes overall Semestral Grade (SG) & Transmuted GWA. Submits official grade sheet to Dean & Registrar.'}
                         </p>
                       </div>
                       <button
                         type="button"
-                        disabled={postingGrades || Boolean(getGradePeriodSequenceBlock('semestral', postedMilestones))}
+                        disabled={sgFinalized || postingGrades || Boolean(getGradePeriodSequenceBlock('semestral', postedMilestones))}
                         onClick={() => setPendingPostMilestone('semestral')}
                         className="px-3 py-1.5 text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                       >
-                        {lockedMilestones.includes('Semestral Grade') ? 'Update SG' : 'Finalize SG'}
+                        {sgFinalized ? 'SG Final' : 'Finalize SG'}
                       </button>
                     </div>
                   </div>

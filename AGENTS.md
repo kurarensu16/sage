@@ -66,7 +66,8 @@
 ## Supabase
 
 - Remote project: `ettnwknyhdhehoclrwwh.supabase.co` (configured in `.env.local`)
-- `supabase/migrations/` holds 52 migration files. Add new ones as `YYYYMMDDHHMMSS_description.sql`. The owner runs them manually in the SQL editor.
+- `supabase/migrations/` holds 84 migration files (this count drifts; `ls supabase/migrations/*.sql | wc -l` is authoritative). Add new ones as `YYYYMMDDHHMMSS_description.sql`. The owner runs them manually in the SQL editor.
+- **Some tables predate the tracked migrations** — `users`, `departments`, `sections`, and `subjects` were created outside `supabase/migrations/`, so their column definitions and constraints are not in version control. Grepping the migrations can never prove a constraint is absent on those tables; query the live catalog instead.
 - Edge functions (Deno, `supabase/functions/`):
   - `create-admin-user`
   - `delete-admin-user`
@@ -80,14 +81,16 @@
   - DB reset and manual seeding: `docs/05-operations/database/`.
 - Demo users all use the password `DemoPassword123!`:
   - admin: `admin@sage.edu.ph`
+  - registrar: `registrar@sage.edu.ph`
   - dean: `c.valdes@sage.edu.ph`
   - faculty: `a.rivera@sage.edu.ph`
   - student: `s.jenkins@student.sage.edu`
 
 ## Architecture
 
-- **4 portals** under `src/pages/`:
-  - `admin/`
+- **5 portals** under `src/pages/`:
+  - `admin/` (accounts and system maintenance only)
+  - `registrar/` (academic setup, academic terms, student records, grade override)
   - `dean/`
   - `faculty/`
   - `student/`

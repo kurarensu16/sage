@@ -1,9 +1,18 @@
 erDiagram
-%% ===== Figure 2.17 — ERD Layer 5: System & Notifications (updated 2026-10-10) =====
-%% Adds NOTIFICATION_DELIVERIES, NOTIFICATION_PREFERENCES, USER_PUSH_TOKENS, GUARDIANS.
+%% ===== Figure 2.17 — ERD Layer 5: System & Notifications (updated 2026-10-30) =====
+%% Adds the system tables that now exist and were absent from this layer:
+%%   SYSTEM_SETTINGS       single-row configuration, including the AI call budget and daily cap
+%%   BACKUP_RUNS           encrypted backup history; there is no plain-text option
+%%   HOSTING_PLAN_TIERS    the capacity ceilings Storage Health meters against
+%%   MAINTENANCE_REASONS, MAINTENANCE_NOTE_PRESETS   scheduled maintenance windows
     USERS ||--o{ NOTIFICATIONS : "receives"
     NOTIFICATIONS ||--o{ NOTIFICATION_DELIVERIES : "delivered via"
     USERS ||--o{ NOTIFICATION_PREFERENCES : "sets device / email choices"
     USERS ||--o{ USER_PUSH_TOKENS : "registers device"
     USERS ||--o{ GUARDIANS : "student guardian"
-    ACTIVITY_LOGS
+    USERS ||--o{ ACTIVITY_LOGS : "actor of"
+    USERS ||--o{ STUDENT_ACCOUNT_REQUESTS : "requested / reviewed by"
+    SYSTEM_SETTINGS ||--o| HOSTING_PLAN_TIERS : "capacity ceilings"
+    USERS ||--o{ BACKUP_RUNS : "run by (admin)"
+    MAINTENANCE_REASONS ||--o{ MAINTENANCE_NOTE_PRESETS : "suggested wording"
+    SYSTEM_SETTINGS ||--o| MAINTENANCE_REASONS : "active window reason"

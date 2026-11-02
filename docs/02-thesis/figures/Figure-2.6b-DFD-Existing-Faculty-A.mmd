@@ -1,0 +1,34 @@
+flowchart LR
+%% ===== Level 1 DFD: Existing Manual System — Faculty (new, 2026-10-30) =====
+%% Decomposes the Faculty side of Figure 2.6's single manual process.
+%% ---
+%% Against the proposed Faculty Portal DFD, the contrasts worth reading off this figure:
+%%   - the COG template is a spreadsheet file on one instructor's machine, so weights can be
+%%     edited by whoever holds the file; in ASPIRE the template is assigned and frozen
+%%   - computation happens once, at period end, by hand; there is no preview and no check
+%%   - risk is an observation the instructor carries in their head, with no record and no
+%%     prioritisation across a roster
+%%   - a correction is a paper form and a re-submitted sheet, with no trail tying the new
+%%     grade to the old one
+%% ---
+%% Layout: External entity (left) -> Process (middle) -> Data store (right)
+
+%% COLUMN A of 2. Split from Figure-2.6b-DFD-Existing-Faculty.mmd so the figure fits a page; compose with
+%% compose_columns.py. Edit the halves, not a merged copy.
+  %% ---------- 1.0 ----------
+  F1["Faculty"] <-- "raw scores from papers /<br/>running column totals" --> P1(("1.0<br/>Enter Raw Scores<br/>in the Excel<br/>COG Template"))
+  P1 <-- "per-activity scores, typed by hand" --> D1@{ shape: lin-rect, label: "D1&nbsp; School-provided Excel<br/>COG template (local file)" }
+
+  %% ---------- 2.0 ----------
+  F2["Faculty"] <-- "class roster from the registrar /<br/>working class record" --> P2(("2.0<br/>Maintain the<br/>Class Record"))
+  P2 <-- "enrolled students, late additions<br/>written in by hand" --> D2@{ shape: lin-rect, label: "D2&nbsp; Paper class record<br/>/ printed roster" }
+
+  %% ---------- 3.0 ----------
+  F3["Faculty"] <-- "attendance called in class /<br/>absence tally, FDA judged by eye" --> P3(("3.0<br/>Take Attendance<br/>on Paper"))
+  P3 <-- "daily marks" --> D3@{ shape: lin-rect, label: "D3&nbsp; Paper attendance sheet" }
+
+  %% ---------- 4.0 ----------
+  F4["Faculty"] <-- "none; computed at period end /<br/>grading-period result per student" --> P4(("4.0<br/>Compute Grades<br/>at Period End"))
+  P4 <-- "formula applied in the spreadsheet,<br/>weights editable by the holder" --> D1d@{ shape: lin-rect, label: "D1&nbsp; School-provided Excel<br/>COG template (local file)" }
+  P4 -- "printed grading sheet" --> D4@{ shape: lin-rect, label: "D4&nbsp; Paper grade sheet" }
+

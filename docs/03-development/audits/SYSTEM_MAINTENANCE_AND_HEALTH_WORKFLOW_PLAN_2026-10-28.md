@@ -1,6 +1,6 @@
 # System Maintenance Mode & System Health (R2) Workflow Plan - 2026-10-28
 
-**Status:** Proposed design. No code, migration, or edge function exists yet. Every file listed under "Suggested build order" still requires its own developer confirmation before it is created or edited, per `AGENTS.md`.
+**Status:** Design confirmed 2026-10-29 — all open decisions resolved (see "Decisions" below). No code, migration, or edge function exists yet. Every file listed under "Suggested build order" still requires its own per-file confirmation before it is created or edited, per `AGENTS.md`.
 **Scope:** Three independent additions, all under Admin's new "System Maintenance" nav group: (1) an admin-only maintenance-mode toggle with a soft cutover, (2) a read-only System Health view for Supabase/database status, and (3) a read-only Storage Health view plus the groundwork for adopting Cloudflare R2 as a file-storage backend. Does **not** change any grading, risk, evaluation, or consultation logic.
 **Trigger:** Roadmap item #2 of `PRE_DEFENSE_IMPLEMENTATION_ROADMAP_2026-10-28.md`. Admin's scope is narrowing to system maintenance (role split in item #1); this plan is the maintenance tooling that narrowing implies admin actually needs.
 
@@ -37,6 +37,8 @@ CREATE TABLE public.system_settings (
 );
 INSERT INTO public.system_settings (id) VALUES (1);
 ```
+
+Per decision #6 below, `system_settings` holds only maintenance-mode config — it is not shared with any future storage/R2 config table. R2 credentials live in `supabase/.env` (server-only, read by the edge function directly), not in this table at all, so no second settings table is actually needed for Part 3's groundwork.
 
 - RLS: readable by every authenticated role (everyone needs to know the flag); writable only by `admin`, enforced the same way other admin-only writes are gated in this codebase (a SECURITY DEFINER RPC, e.g. `set_maintenance_mode(p_enabled boolean, p_message text)`, checking the caller's role server-side rather than trusting a client-side admin check).
 - `AuthContext.jsx` (or a new small `MaintenanceContext`, provider-wrapped alongside `AuthProvider` in `src/App.jsx`) subscribes to `postgres_changes` on `system_settings` the same way the notifications channel already does, plus an initial `select` on mount — so every open tab learns about a flip within the same latency the notification poller already achieves (that poller also runs a 4-second `setInterval` fallback; maintenance mode should do the same low-cost fallback rather than relying on Realtime alone, consistent with the existing dual-path pattern).
@@ -95,14 +97,14 @@ That decision belongs to whichever plan actually needs R2 first — `GRADE_CHANG
 4. Admin, also attempting to open the app fresh, loads normally — `role === 'admin'` bypasses the check entirely.
 5. Admin flips the toggle off once the work is done. The banner-trigger logic only fires on `false -> true` transitions (not on every row update), so turning it off does not pop a second banner at anyone — confirm this behavior is desired, see Open Decisions.
 
-## Open decisions (confirm before any file is touched)
+## Decisions (confirmed 2026-10-29 — developer sign-off, ready to build)
 
-1. **R2 scope (A vs. B above)** — the single biggest undecided question in this plan. Recommend deferring the final call to `GRADE_CHANGE_REQUEST_WORKFLOW_PLAN_2026-10-28.md` since that's the first concrete consumer, but confirm this plan should build only the shared wrapper/health view and not touch avatars either way.
-2. Should turning maintenance mode **off** also notify active sessions ("maintenance has ended"), or stay silent as assumed in the walkthrough above?
-3. System Health thresholds (500ms/2s illustrative bands) — confirm or adjust.
-4. Does the maintenance pop-up need to be dismissible-and-gone, or should it persist (e.g. a persistent top banner) for the duration the flag stays `true`, rather than a one-time toast?
-5. R2 access pattern — signed URLs minted by an edge function (recommended, keeps credentials server-side) vs. any other approach — confirm before `r2Storage.js`/`_shared/r2.ts` is drafted in detail by item #6.
-6. Confirm `system_settings` as a shared single-row table is acceptable, versus two separate tables/flags for maintenance vs. storage config — a single row was chosen here for simplicity, not because storage config logically belongs with the maintenance flag.
+1. **R2 scope:** Decided — R2 is adopted **only** for Grade Change Request evidence uploads (roadmap item #6). It never replaces or touches the `avatars` bucket; avatars stay on Supabase Storage permanently. This also resolves the roadmap's cross-plan R2 question.
+2. **Maintenance off:** Stays silent. Only the `false -> true` transition triggers a notice; turning maintenance off does not pop anything.
+3. **System Health thresholds:** Keep as proposed — green under 500ms, amber under 2s, red/unreachable beyond that or on error.
+4. **Maintenance pop-up behavior:** On `false -> true`, show **both** a one-time dismissible toast **and** a persistent top banner. The banner stays up for the duration of the session unless maintenance ends while the user is still active, in which case it clears automatically and silently (per decision #2 — no "maintenance ended" notice is shown).
+5. **R2 access pattern:** Server-side signed URLs, minted by an edge function after checking the caller's identity/ownership — credentials stay server-side, mirrors `createSignedUrl`'s guarantee on Supabase Storage today. R2 account/bucket setup notes (credentials, env vars, URL access pattern) to be drafted when this reaches build time.
+6. **`system_settings` table shape:** Normalized, not a single shared row — maintenance-mode config and (future) storage/R2 config live in separate tables rather than one combined settings row.
 
 ## Suggested build order
 

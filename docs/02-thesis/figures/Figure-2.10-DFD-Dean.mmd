@@ -3,6 +3,13 @@ flowchart LR
 %% Each process now corresponds 1:1 with a module in Figure 2.12 (VTOC) and the Scope and Delimitation.
 %% Decide Grade Corrections broadens into 3.0 Grades (adds submission-status and distribution reads).
 %% Risk and Honors Overview / Resolve Escalated Cases / Intervention Results merge into 4.0 Student Risk.
+%% Updated 2026-10-30:
+%%   + 3.0 Faculty Loading. The Dean loads faculty for their OWN college through the same workspace
+%%     the Registrar uses. Schedule conflicts are checked institution-wide, but a clash in another
+%%     college discloses only that college and program -- never its subject, section or faculty.
+%%   + 4.0 Grades now also decides the grade change request chain: within the dispute window the
+%%     Dean's approval authorizes the correction, and once the window has closed the request passes
+%%     to the Registrar instead.
 %% Layout: External entity (left) -> Process (middle) -> Data stores (right)
 
   %% ---------- 1.0 ----------
@@ -15,26 +22,35 @@ flowchart LR
   P2 <-- "open evaluations" --> D16b@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
 
   %% ---------- 3.0 ----------
-  C3["College Dean"] <-- "submission status, grade distribution /<br/>SG correction proposals / approve or reject" --> P3(("3.0<br/>Grades"))
-  P3 <-- "handled sections,<br/>submission status" --> D7c@{ shape: lin-rect, label: "D7&nbsp; class_records" }
-  P3 <-- "grade distribution" --> D12c@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
-  P3 <-- "proposed SG, remark, evidence,<br/>decision" --> D14c@{ shape: lin-rect, label: "D14&nbsp; remark_override_requests" }
-  P3 -- "audit entry" --> D25c@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+  CL["College Dean"] <-- "subject, section, faculty, meeting schedule /<br/>conflict refusal (college and program only) /<br/>drafted and finalized load" --> PL(("3.0<br/>Faculty<br/>Loading"))
+  PL <-- "exclusive per-college edit lock" --> D52l@{ shape: lin-rect, label: "D52&nbsp; provisioning_locks" }
+  PL <-- "draft, superseded, finalized" --> D53l@{ shape: lin-rect, label: "D53&nbsp; faculty_load_drafts" }
+  PL <-- "offered subjects" --> D5l@{ shape: lin-rect, label: "D5&nbsp; subjects" }
+  PL <-- "sections of the college" --> D3l@{ shape: lin-rect, label: "D3&nbsp; sections" }
+  PL -- "provisioned class, meeting pattern" --> D7l@{ shape: lin-rect, label: "D7&nbsp; class_records" }
 
   %% ---------- 4.0 ----------
-  C4["College Dean"] <-- "dual-tier rosters, evaluation status /<br/>escalated cases / recommendation,<br/>disposition / GWA change, risk transition,<br/>verified completion, follow-up due" --> P4(("4.0<br/>Student<br/>Risk"))
+  C3["College Dean"] <-- "submission status, grade distribution /<br/>SG correction proposals, grade change requests /<br/>approve, reject or pass to the Registrar" --> P3(("4.0<br/>Grades"))
+  P3 <-- "handled sections,<br/>submission status" --> D7c@{ shape: lin-rect, label: "D7&nbsp; class_records" }
+  P3 <-- "grade distribution" --> D12c@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P3 <-- "proposed SG, remark, decision /<br/>student dispute, decision at this step" --> D14c@{ shape: lin-rect, label: "D14&nbsp; remark_override_requests" }
+  P3 <-- "required evidence files" --> D46c@{ shape: lin-rect, label: "D46&nbsp; grade_change_evidence<br/>(private storage)" }
+  P3 -- "audit entry" --> D25c@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+
+  %% ---------- 5.0 ----------
+  C4["College Dean"] <-- "dual-tier rosters, evaluation status /<br/>escalated cases / recommendation,<br/>disposition / GWA change, risk transition,<br/>verified completion, follow-up due" --> P4(("5.0<br/>Student<br/>Risk"))
   P4 <-- "GWA, honors eligibility,<br/>milestones posted after publication" --> D12d@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
   P4 <-- "risk tier, evaluation status,<br/>frozen baseline, follow-up snapshot,<br/>verified tasks, acknowledgment" --> D16d@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
   P4 <-- "referral, reason,<br/>review note, resolution" --> D31d@{ shape: lin-rect, label: "D31&nbsp; student_evaluation_referrals" }
   P4 -- "audit entry" --> D25d@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
 
-  %% ---------- 5.0 ----------
-  C5["College Dean"] <-- "report parameters / exportable reports" --> P5(("5.0<br/>Reports"))
+  %% ---------- 6.0 ----------
+  C5["College Dean"] <-- "report parameters / exportable reports" --> P5(("6.0<br/>Reports"))
   P5 <-- "grade distribution" --> D12e@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
   P5 <-- "evaluations and outcomes" --> D16e@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
 
-  %% ---------- 6.0 ----------
-  C6["College Dean"] <-- "photo, contact number,<br/>password, alert choices / profile" --> P6(("6.0<br/>Account"))
+  %% ---------- 7.0 ----------
+  C6["College Dean"] <-- "photo, contact number,<br/>password, alert choices / profile" --> P6(("7.0<br/>Account"))
   P6 <-- "contact number, photo reference" --> D1f@{ shape: lin-rect, label: "D1&nbsp; users" }
   P6 <-- "profile photo file" --> D30f@{ shape: lin-rect, label: "D30&nbsp; avatars (private storage)" }
   P6 <-- "device and email choices" --> D29f@{ shape: lin-rect, label: "D29&nbsp; notification_preferences" }

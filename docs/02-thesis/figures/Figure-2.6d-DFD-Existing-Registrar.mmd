@@ -1,0 +1,43 @@
+flowchart LR
+%% ===== Level 1 DFD: Existing Manual System — Registrar (new, 2026-10-30) =====
+%% Decomposes the Registrar side of Figure 2.6's single manual process.
+%% ---
+%% The Registrar is MISSING from the published Figure 2.6, which shows only Student, Faculty and
+%% Dean. The role already exists at DYCI and already does this work on paper; the proposed system
+%% gives it a portal rather than inventing it.
+%% ---
+%% Against the proposed Registrar Portal DFD, the contrasts worth reading off this figure:
+%%   - the subject catalogue, section lists and term calendar live in separate files that are
+%%     re-typed into every document that needs them
+%%   - enrolment is a list; a student added to a class outside their block is a handwritten note
+%%   - a late grade change has no window and no authority recorded, only a signature
+%%   - nothing connects a released grade to the sheet it came from
+%% ---
+%% Layout: External entity (left) -> Process (middle) -> Data store (right)
+
+  %% ---------- 1.0 ----------
+  R1["Registrar"] <-- "enrolment forms /<br/>official enrolment list" --> P1(("1.0<br/>Enrol Students<br/>and Build Sections"))
+  P1 <-- "names typed into a section list" --> D8@{ shape: lin-rect, label: "D8&nbsp; Enrolment and<br/>section lists (files)" }
+  P1 <-- "irregular students written in by hand" --> D9@{ shape: lin-rect, label: "D9&nbsp; Handwritten roster notes" }
+
+  %% ---------- 2.0 ----------
+  R2["Registrar"] <-- "curriculum and offerings /<br/>subject catalogue, printed" --> P2(("2.0<br/>Maintain the<br/>Subject Catalogue"))
+  P2 <-- "codes, titles, units, re-typed<br/>into each document that needs them" --> D10@{ shape: lin-rect, label: "D10&nbsp; Subject and program files" }
+
+  %% ---------- 3.0 ----------
+  R3["Registrar"] <-- "academic calendar /<br/>term dates circulated on paper" --> P3(("3.0<br/>Open and Close<br/>Academic Terms"))
+  P3 <-- "school year and semester,<br/>with no system to enforce them" --> D11@{ shape: lin-rect, label: "D11&nbsp; Academic calendar file" }
+
+  %% ---------- 4.0 ----------
+  R4["Registrar"] <-- "grade sheets forwarded by the Dean /<br/>filed student record" --> P4(("4.0<br/>File Submitted<br/>Grade Sheets"))
+  P4 <-- "sheets filed per student,<br/>nothing links a grade to its source" --> D4d@{ shape: lin-rect, label: "D4&nbsp; Paper grade sheets" }
+  P4 -- "permanent record" --> D12@{ shape: lin-rect, label: "D12&nbsp; Student record folder" }
+
+  %% ---------- 5.0 ----------
+  R5["Registrar"] <-- "request after the term has closed /<br/>approval or refusal, signed" --> P5(("5.0<br/>Approve Late<br/>Grade Changes"))
+  P5 <-- "no window, no authority recorded,<br/>only a signature" --> D6e@{ shape: lin-rect, label: "D6&nbsp; Paper correction form" }
+  P5 -- "amended record" --> D12e@{ shape: lin-rect, label: "D12&nbsp; Student record folder" }
+
+  %% ---------- 6.0 ----------
+  R6["Registrar"] <-- "request for records /<br/>grade report, transcript" --> P6(("6.0<br/>Issue Records<br/>on Request"))
+  P6 <-- "copied by hand from the folder" --> D12f@{ shape: lin-rect, label: "D12&nbsp; Student record folder" }

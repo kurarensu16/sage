@@ -11,6 +11,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import { GRADE_MILESTONES, findPostedMilestone } from '../../lib/gradeMilestones';
+import { fetchWindowsForClasses, resolveMilestoneState } from '../../lib/gradeConsultationService';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 
 // ASPIRE v3.1: Transparent Official Milestone Ledger (No clearance locks)
@@ -27,14 +28,31 @@ function isEnrollmentInTerm(enrollment, termOption) {
   return !termOption?.section_id || enrollment?.section_id === termOption.section_id;
 }
 
-// A posted milestone shows as official; an unposted one shows the live value marked Tentative.
-function MilestoneValue({ value, isPosted }) {
+// Three states, in increasing finality:
+//
+//   Tentative   nothing posted yet -- the live computed value
+//   Not Final   posted, but the consultation window is still open, so the
+//               instructor can still correct it directly
+//   (plain)     finalized -- a change now needs a formal request
+//
+// Finalized carries no sub-label on purpose: it is the resting state, and
+// labelling every settled grade would bury the two that still need attention.
+// Semestral grade has no window, so it reads finalized the moment it posts.
+const MILESTONE_STATE_STYLES = Object.freeze({
+  tentative: { value: 'text-amber-700', label: 'text-amber-600', text: 'Tentative' },
+  posted: { value: 'text-sky-700', label: 'text-sky-600', text: 'Not Final' }
+});
+
+function MilestoneValue({ value, state }) {
   if (value === '—') return <span className="text-slate-350">—</span>;
-  if (isPosted) return <span className="font-bold text-slate-800">{value}</span>;
+  const style = MILESTONE_STATE_STYLES[state?.state];
+  if (!style) return <span className="font-bold text-slate-800">{value}</span>;
   return (
     <span className="inline-flex flex-col items-center leading-tight">
-      <span className="font-bold text-amber-700">{value}</span>
-      <span className="text-micro font-sans font-bold uppercase tracking-wide text-amber-600">Tentative</span>
+      <span className={cn('font-bold', style.value)}>{value}</span>
+      <span className={cn('text-micro font-sans font-bold uppercase tracking-wide', style.label)}>
+        {style.text}
+      </span>
     </span>
   );
 }
@@ -252,6 +270,20 @@ export default function MyGradesList() {
           postedMap[p.class_record_id].push(p);
         });
 
+        // Consultation windows drive the Posted-vs-Finalized distinction. A
+        // failure here must not break the grade report, so it degrades to no
+        // windows -- which reads as Finalized, the pre-Phase-5 behaviour.
+        let windowMap = {};
+        try {
+          const wins = await fetchWindowsForClasses((classRecords || []).map(c => c.class_record_id));
+          wins.forEach(w => {
+            if (!windowMap[w.class_record_id]) windowMap[w.class_record_id] = [];
+            windowMap[w.class_record_id].push(w);
+          });
+        } catch (winErr) {
+          console.warn('Consultation windows unavailable:', winErr?.message);
+        }
+
         const postedGwaText = (row) => (row.effective_grade !== null
           ? Number(row.effective_grade).toFixed(2)
           : getTransmutedGrade(parseFloat(row.computed_grade)).toFixed(2));
@@ -265,6 +297,9 @@ export default function MyGradesList() {
             const subj = subMap[cr.subject_id];
             const crPosted = postedMap[cr.class_record_id] || [];
             const running = runningBySubject[cr.class_record_id] || null;
+
+            const crWindows = windowMap[cr.class_record_id] || [];
+            const windowFor = (period) => crWindows.find((w) => w.grade_period === period) || null;
 
             const mrPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.MIDTERM_RATING);
             const tfrPostedRow = findPostedMilestone(crPosted, GRADE_MILESTONES.TENTATIVE_FINAL_RATING);
@@ -294,6 +329,12 @@ export default function MyGradesList() {
               mrPostedGwa,
               tfrPostedGwa,
               sgPostedGwa,
+              // Three-state status, derived rather than stored. SG has no window,
+              // so it reads Finalized as soon as it is posted -- which is accurate,
+              // it locks on posting.
+              mrState: resolveMilestoneState({ posted: !!mrPostedRow, window: windowFor(GRADE_MILESTONES.MIDTERM_RATING), gradePeriod: GRADE_MILESTONES.MIDTERM_RATING }),
+              tfrState: resolveMilestoneState({ posted: !!tfrPostedRow, window: windowFor(GRADE_MILESTONES.TENTATIVE_FINAL_RATING), gradePeriod: GRADE_MILESTONES.TENTATIVE_FINAL_RATING }),
+              sgState: resolveMilestoneState({ posted: !!sgPostedRow, window: null, gradePeriod: GRADE_MILESTONES.SEMESTRAL_GRADE }),
               runningGwa: running?.gwa != null ? running.gwa.toFixed(2) : '—',
               isOfficial: Boolean(running?.isOfficial),
               remarks
@@ -571,15 +612,15 @@ export default function MyGradesList() {
                 <div className="grid grid-cols-3 gap-2 py-2 border-y border-slate-100 text-center text-xs">
                   <div className="bg-slate-50 rounded-lg p-1.5">
                     <span className="text-micro font-bold text-slate-400 uppercase block">Midterm (MR)</span>
-                    <span className="font-mono"><MilestoneValue value={item.mrGwa} isPosted={item.mrIsPosted} /></span>
+                    <span className="font-mono"><MilestoneValue value={item.mrGwa} state={item.mrState} /></span>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-1.5">
                     <span className="text-micro font-bold text-slate-400 uppercase block">Tent. Final (TFR)</span>
-                    <span className="font-mono"><MilestoneValue value={item.tfrGwa} isPosted={item.tfrIsPosted} /></span>
+                    <span className="font-mono"><MilestoneValue value={item.tfrGwa} state={item.tfrState} /></span>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-1.5">
                     <span className="text-micro font-bold text-slate-400 uppercase block">Sem. Grade (SG)</span>
-                    <span className="font-mono"><MilestoneValue value={item.sgGwa} isPosted={item.sgIsPosted} /></span>
+                    <span className="font-mono"><MilestoneValue value={item.sgGwa} state={item.sgState} /></span>
                   </div>
                 </div>
 
@@ -652,13 +693,13 @@ export default function MyGradesList() {
                       <td className="px-4 py-4 text-slate-600 font-medium">{item.instructor}</td>
                       <td className="px-3 py-4 text-center font-mono text-slate-650">{item.credits.toFixed(1)}</td>
                       <td className="px-3 py-4 text-center font-mono text-slate-700">
-                        <MilestoneValue value={item.mrGwa} isPosted={item.mrIsPosted} />
+                        <MilestoneValue value={item.mrGwa} state={item.mrState} />
                       </td>
                       <td className="px-3 py-4 text-center font-mono text-slate-700">
-                        <MilestoneValue value={item.tfrGwa} isPosted={item.tfrIsPosted} />
+                        <MilestoneValue value={item.tfrGwa} state={item.tfrState} />
                       </td>
                       <td className="px-3 py-4 text-center font-mono text-slate-700">
-                        <MilestoneValue value={item.sgGwa} isPosted={item.sgIsPosted} />
+                        <MilestoneValue value={item.sgGwa} state={item.sgState} />
                       </td>
                       <td className="px-4 py-4 text-center">
                         <span className={cn(

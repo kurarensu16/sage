@@ -10,8 +10,6 @@ import {
   Edit3, 
   FileText,
   X, 
-  Copy, 
-  Check, 
   Target, 
   TrendingDown, 
   TrendingUp,
@@ -23,13 +21,11 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { CardListSkeleton } from '../../components/common/Skeleton';
 import { 
-  getOrCreateJoinCode, 
   getClassPriorityRoster 
 } from '../../lib/classRoomService';
 import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
 import { RISK_TIERS } from '../../lib/academicPolicy';
 import StudentRiskEvaluationModal from './StudentRiskEvaluationModal';
-import FacultyCreateClassroomModal from './FacultyCreateClassroomModal';
 import { cn } from '../../lib/utils';
 import { fetchAcademicTerms, getActiveAcademicTerm, getClassTermState } from '../../lib/termStatus';
 import RiskEducationNote from '../../components/faculty/RiskEducationNote';
@@ -45,7 +41,6 @@ export default function ClassRecordsList() {
   const [archiveMode, setArchiveMode] = useState(Boolean(searchParams.get('archiveTerm')));
   const [appliedTerm, setAppliedTerm] = useState(null);
   const [archiveError, setArchiveError] = useState('');
-  const [copiedCode, setCopiedCode] = useState(null);
   const periodRequest = useRef(0);
 
   // Faculty Classroom Self-Service Creation Modal State
@@ -74,9 +69,11 @@ export default function ClassRecordsList() {
     return () => document.removeEventListener('click', handleOutsideClick);
   }, []);
 
+  // Faculty self-provisioning was removed: classes are opened by the Registrar
+  // or the Dean through Faculty Loading & Provisioning. An old ?action=create
+  // link is stripped rather than left to do nothing silently.
   useEffect(() => {
     if (searchParams.get('action') === 'create') {
-      setIsCreateModalOpen(true);
       setSearchParams(previous => {
         const next = new URLSearchParams(previous);
         next.delete('action');
@@ -221,23 +218,6 @@ export default function ClassRecordsList() {
         }
       });
 
-      // Load join codes
-      const codes = {};
-      await Promise.all(
-        classesData.filter(cls => cls.termState.state === 'current').map(async (cls) => {
-          try {
-            const code = await getOrCreateJoinCode(
-              cls.class_record_id, 
-              cls.subjects?.code || 'CLS', 
-              cls.sections?.name || 'A'
-            );
-            codes[cls.class_record_id] = code;
-          } catch (e) {
-            console.warn('Error loading join code for class:', cls.class_record_id, e);
-          }
-        })
-      );
-
       // Map classes
       const mappedClasses = classesData.map((cls) => {
         const matchingCols = (gradingCols || []).filter(col => col.class_record_id === cls.class_record_id);
@@ -278,8 +258,7 @@ export default function ClassRecordsList() {
           termState: cls.termState.state,
           daysLeft: cls.termState.daysLeft,
           approvedCorrectionId: approvedCorrection?.request_id || null,
-          pendingCorrectionCount: matchingCorrections.filter(request => request.status === 'pending').length,
-          joinCode: codes[cls.class_record_id] || 'Generating...'
+          pendingCorrectionCount: matchingCorrections.filter(request => request.status === 'pending').length
         };
       });
 
@@ -367,12 +346,6 @@ export default function ClassRecordsList() {
     if (term) await loadClassesForTerm(term, { archive: true });
   };
 
-  const handleCopyCode = (code) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCode(code);
-    setTimeout(() => setCopiedCode(null), 2500);
-  };
-
   // Open Student Priority Roster
   const handleOpenRiskReview = async (cls) => {
     setActiveClassForReview(cls);
@@ -393,8 +366,7 @@ export default function ClassRecordsList() {
     return (
       cls.subjectCode.toLowerCase().includes(searchLower) ||
       cls.subjectName.toLowerCase().includes(searchLower) ||
-      cls.section.toLowerCase().includes(searchLower) ||
-      (cls.joinCode && cls.joinCode.toLowerCase().includes(searchLower))
+      cls.section.toLowerCase().includes(searchLower)
     );
   });
 
@@ -618,33 +590,10 @@ export default function ClassRecordsList() {
                     <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{cls.subjectName}</p>
                   </div>
 
-                  {/* Classroom Join Code Display Bar (current-term classes only) */}
-                  {cls.termState === 'current' && (
-                  <div className="flex items-center justify-between p-2.5 bg-sage-50/70 border border-sage-200/80 rounded-md">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold text-sage-800 uppercase tracking-wide">Classroom Code:</span>
-                      <span className="font-mono text-xs font-bold text-sage-950 tracking-wider bg-white px-2 py-0.5 rounded border border-sage-200 shadow-2xs">{cls.joinCode}</span>
-                    </div>
-                    <button
-                      onClick={() => handleCopyCode(cls.joinCode)}
-                      className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-sage-800 bg-white hover:bg-sage-100/60 border border-sage-200 rounded transition-colors cursor-pointer"
-                      title="Copy Classroom Code for students to self-enroll"
-                    >
-                      {copiedCode === cls.joinCode ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
-                          <span className="text-emerald-700 font-semibold">Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5 text-sage-700" />
-                          <span>Copy Code</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                  )}
-                </div>
+                  {/* The classroom join code display was removed with the self-join
+                      path: Registrar and Dean now place students on a roster, so a
+                      code nobody can redeem would only invite support questions. */}
+                                  </div>
                 
                 {/* Card Body */}
                 <div className="p-4 space-y-2 bg-white text-xs text-slate-600">
@@ -858,18 +807,6 @@ export default function ClassRecordsList() {
       {/* ========================================================================= */}
       {/* 5. FACULTY CLASSROOM SELF-SERVICE CREATION MODAL                           */}
       {/* ========================================================================= */}
-      <FacultyCreateClassroomModal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        onSuccess={async ({ count, results }) => {
-          await handlePeriodModeChange(false);
-          const listStr = results.map(r => `${r.subject?.code} (${r.section?.name}) [Join Code: ${r.join_code}]`).join(', ');
-          setCreationBanner({
-            message: `Created ${count} active classroom(s): ${listStr}`
-          });
-          setTimeout(() => setCreationBanner(null), 8000);
-        }}
-      />
     </>
   );
 }

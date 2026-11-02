@@ -1,0 +1,29 @@
+flowchart LR
+%% ===== Level 1 DFD: Existing Manual System — Faculty (new, 2026-10-30) =====
+%% Decomposes the Faculty side of Figure 2.6's single manual process.
+%% ---
+%% Against the proposed Faculty Portal DFD, the contrasts worth reading off this figure:
+%%   - the COG template is a spreadsheet file on one instructor's machine, so weights can be
+%%     edited by whoever holds the file; in ASPIRE the template is assigned and frozen
+%%   - computation happens once, at period end, by hand; there is no preview and no check
+%%   - risk is an observation the instructor carries in their head, with no record and no
+%%     prioritisation across a roster
+%%   - a correction is a paper form and a re-submitted sheet, with no trail tying the new
+%%     grade to the old one
+%% ---
+%% Layout: External entity (left) -> Process (middle) -> Data store (right)
+
+%% COLUMN B of 2. Split from Figure-2.6b-DFD-Existing-Faculty.mmd so the figure fits a page; compose with
+%% compose_columns.py. Edit the halves, not a merged copy.
+  %% ---------- 5.0 ----------
+  F5["Faculty"] <-- "students noticed to be struggling /<br/>verbal advice, remembered not recorded" --> P5(("5.0<br/>Observe Risk<br/>Informally"))
+  P5 <-- "nothing is stored; no roster,<br/>no tier, no follow-up date" --> D5@{ shape: lin-rect, label: "D5&nbsp; No record kept" }
+
+  %% ---------- 6.0 ----------
+  F6["Faculty"] <-- "signed sheet /<br/>receipt or return for revision" --> P6(("6.0<br/>Submit Grade<br/>Sheets"))
+  P6 -- "submitted to the Dean,<br/>then forwarded to the Registrar" --> D4f@{ shape: lin-rect, label: "D4&nbsp; Paper grade sheet" }
+
+  %% ---------- 7.0 ----------
+  F7["Faculty"] <-- "correction request, written /<br/>approval or refusal, by hand" --> P7(("7.0<br/>Request a Grade<br/>Correction"))
+  P7 <-- "recomputed by hand" --> D1g@{ shape: lin-rect, label: "D1&nbsp; School-provided Excel<br/>COG template (local file)" }
+  P7 <-- "form routed physically,<br/>no link to the original grade" --> D6@{ shape: lin-rect, label: "D6&nbsp; Paper correction form" }

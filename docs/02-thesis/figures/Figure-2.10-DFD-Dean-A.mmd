@@ -1,0 +1,41 @@
+flowchart LR
+%% ===== Figure 2.10 — Level 1 DFD: Dean Portal (consolidated to module-level processes, 2026-10-14) =====
+%% Each process now corresponds 1:1 with a module in Figure 2.12 (VTOC) and the Scope and Delimitation.
+%% Decide Grade Corrections broadens into 3.0 Grades (adds submission-status and distribution reads).
+%% Risk and Honors Overview / Resolve Escalated Cases / Intervention Results merge into 4.0 Student Risk.
+%% Updated 2026-10-30:
+%%   + 3.0 Faculty Loading. The Dean loads faculty for their OWN college through the same workspace
+%%     the Registrar uses. Schedule conflicts are checked institution-wide, but a clash in another
+%%     college discloses only that college and program -- never its subject, section or faculty.
+%%   + 4.0 Grades now also decides the grade change request chain: within the dispute window the
+%%     Dean's approval authorizes the correction, and once the window has closed the request passes
+%%     to the Registrar instead.
+%% Layout: External entity (left) -> Process (middle) -> Data stores (right)
+
+%% COLUMN A of 2. Split from Figure-2.10-DFD-Dean.mmd so the figure fits a page; compose with
+%% compose_columns.py. Edit the halves, not a merged copy.
+  %% ---------- 1.0 ----------
+  C1["College Dean"] <-- "credentials / access session" --> P1(("1.0<br/>Authenticate<br/>User"))
+  P1 <-- "account record" --> D1@{ shape: lin-rect, label: "D1&nbsp; users" }
+
+  %% ---------- 2.0 ----------
+  C2["College Dean"] <-- "submission compliance,<br/>active interventions" --> P2(("2.0<br/>Dashboard"))
+  P2 <-- "college-wide grades" --> D12b@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P2 <-- "open evaluations" --> D16b@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
+
+  %% ---------- 3.0 ----------
+  CL["College Dean"] <-- "subject, section, faculty, meeting schedule /<br/>conflict refusal (college and program only) /<br/>drafted and finalized load" --> PL(("3.0<br/>Faculty<br/>Loading"))
+  PL <-- "exclusive per-college edit lock" --> D52l@{ shape: lin-rect, label: "D52&nbsp; provisioning_locks" }
+  PL <-- "draft, superseded, finalized" --> D53l@{ shape: lin-rect, label: "D53&nbsp; faculty_load_drafts" }
+  PL <-- "offered subjects" --> D5l@{ shape: lin-rect, label: "D5&nbsp; subjects" }
+  PL <-- "sections of the college" --> D3l@{ shape: lin-rect, label: "D3&nbsp; sections" }
+  PL -- "provisioned class, meeting pattern" --> D7l@{ shape: lin-rect, label: "D7&nbsp; class_records" }
+
+  %% ---------- 4.0 ----------
+  C3["College Dean"] <-- "submission status, grade distribution /<br/>SG correction proposals, grade change requests /<br/>approve, reject or pass to the Registrar" --> P3(("4.0<br/>Grades"))
+  P3 <-- "handled sections,<br/>submission status" --> D7c@{ shape: lin-rect, label: "D7&nbsp; class_records" }
+  P3 <-- "grade distribution" --> D12c@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P3 <-- "proposed SG, remark, decision /<br/>student dispute, decision at this step" --> D14c@{ shape: lin-rect, label: "D14&nbsp; remark_override_requests" }
+  P3 <-- "required evidence files" --> D46c@{ shape: lin-rect, label: "D46&nbsp; grade_change_evidence<br/>(private storage)" }
+  P3 -- "audit entry" --> D25c@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+

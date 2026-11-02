@@ -1,11 +1,15 @@
 flowchart LR
-%% ===== Figure 2.11 — Level 1 DFD: Admin Portal (consolidated to module-level processes, 2026-10-14) =====
-%% Each process now corresponds 1:1 with a module in Figure 2.12 (VTOC) and the Scope and Delimitation.
-%% Manage Users / Import Users merge into 3.0 User Accounts. Maintain Subjects / Manage Grading
-%% Formulas / Manage Academic Structure / Provision Classrooms merge into 4.0 Academic Setup.
-%% Configure Term Settings / Apply Grade Override / View Activity Logs merge into 5.0 System.
-%% Single-column layout (6 processes fit without a column split; see compose_columns.py for the
-%% two-column pattern still used by Figure 2.9).
+%% ===== Figure 2.11 — Level 1 DFD: Admin Portal (updated 2026-10-30) =====
+%% Each process corresponds 1:1 with a module in Figure 2.12 (VTOC) and the Scope and Delimitation.
+%% Changes against the 2026-10-14 version:
+%%   - 4.0 Academic Setup REMOVED. Subjects, grading templates, sections, colleges and programs,
+%%     academic terms and grade override all moved to the Registrar Portal in the role split, and
+%%     Classroom Provisioning was retired in favour of Faculty Loading and Provisioning.
+%%   - Grade override removed from the System process for the same reason.
+%%   + 4.0 System Maintenance now covers what the Admin portal actually holds: audit logs, service
+%%     health, storage and AI allowance metering, maintenance windows, and encrypted backups.
+%%   + Student account requests added to User Accounts.
+%% Admin is now accounts and system maintenance only.
 %% Layout: External entity (left) -> Process (middle) -> Data stores (right)
 
   %% ---------- 1.0 ----------
@@ -13,35 +17,28 @@ flowchart LR
   P1 <-- "account record" --> D1@{ shape: lin-rect, label: "D1&nbsp; users" }
 
   %% ---------- 2.0 ----------
-  E2["Admin"] <-- "user counts, system metrics" --> P2(("2.0<br/>Dashboard"))
+  E2["Admin"] <-- "user counts by role, system metrics" --> P2(("2.0<br/>Dashboard"))
   P2 <-- "recent transactions" --> D25b@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
   P2 <-- "active term" --> D4b@{ shape: lin-rect, label: "D4&nbsp; academic_terms" }
 
   %% ---------- 3.0 ----------
-  E3["Admin"] <-- "account details / account list /<br/>CSV or Excel file / import results" --> P3(("3.0<br/>User<br/>Accounts"))
+  E3["Admin"] <-- "account details / account list /<br/>CSV or Excel file / import results /<br/>account request decision" --> P3(("3.0<br/>User<br/>Accounts"))
   P3 <-- "create, edit, deactivate;<br/>name, email, ID, department /<br/>bulk account creation" --> D1c@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P3 <-- "pending student accounts" --> D47c@{ shape: lin-rect, label: "D47&nbsp; student_account_requests" }
   P3 -- "audit entry" --> D25c@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
   P3 -- "section enrollment" --> D8c@{ shape: lin-rect, label: "D8&nbsp; enrollments" }
 
   %% ---------- 4.0 ----------
-  E4["Admin"] <-- "subject details, CSV/Excel file /<br/>subject catalog / template weights,<br/>formula list / structure data, section<br/>CSV/Excel / directory / classroom<br/>assignments / classroom list" --> P4(("4.0<br/>Academic<br/>Setup"))
-  P4 <-- "course codes, units" --> D5d@{ shape: lin-rect, label: "D5&nbsp; subjects" }
-  P4 <-- "bound COG template,<br/>templates" --> D6d@{ shape: lin-rect, label: "D6&nbsp; grade_computations" }
-  P4 <-- "component weights" --> D27d@{ shape: lin-rect, label: "D27&nbsp; grade_computation_components" }
-  P4 <-- "colleges" --> D2d@{ shape: lin-rect, label: "D2&nbsp; departments" }
-  P4 <-- "programs" --> D26d@{ shape: lin-rect, label: "D26&nbsp; programs" }
-  P4 <-- "section shells, section" --> D3d@{ shape: lin-rect, label: "D3&nbsp; sections" }
-  P4 <-- "classroom instances" --> D7d@{ shape: lin-rect, label: "D7&nbsp; class_records" }
-  P4 -- "section students" --> D8d@{ shape: lin-rect, label: "D8&nbsp; enrollments" }
+  E4["Admin"] <-- "filters / audit entries / service state /<br/>capacity, object storage and AI allowance /<br/>maintenance window / encrypted backup" --> P4(("4.0<br/>System<br/>Maintenance"))
+  P4 <-- "audit entry, immutable ledger" --> D25e@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+  P4 <-- "configuration, AI call budget,<br/>daily cap, maintenance state" --> D48e@{ shape: lin-rect, label: "D48&nbsp; system_settings" }
+  P4 <-- "plan ceilings" --> D49e@{ shape: lin-rect, label: "D49&nbsp; hosting_plan_tiers" }
+  P4 <-- "window reason, note presets" --> D50e@{ shape: lin-rect, label: "D50&nbsp; maintenance_reasons<br/>maintenance_note_presets" }
+  P4 <-- "encrypted backup history" --> D51e@{ shape: lin-rect, label: "D51&nbsp; backup_runs" }
+  P4 <-- "object count, bytes used" --> R2E["Cloudflare R2<br/>object storage<br/>(via server function)"]
 
   %% ---------- 5.0 ----------
-  E5["Admin"] <-- "term settings / active term /<br/>authorized override / override<br/>result / filters / audit entries" --> P5(("5.0<br/>System"))
-  P5 <-- "school year, semester" --> D4e@{ shape: lin-rect, label: "D4&nbsp; academic_terms" }
-  P5 -- "overridden effective grade" --> D12e@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
-  P5 <-- "audit entry, immutable ledger" --> D25e@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
-
-  %% ---------- 6.0 ----------
-  E6["Admin"] <-- "photo, contact number,<br/>password, alert choices / profile" --> P6(("6.0<br/>Account"))
-  P6 <-- "contact number, photo reference" --> D1f@{ shape: lin-rect, label: "D1&nbsp; users" }
-  P6 <-- "profile photo file" --> D30f@{ shape: lin-rect, label: "D30&nbsp; avatars (private storage)" }
-  P6 <-- "device alert choices" --> D29f@{ shape: lin-rect, label: "D29&nbsp; notification_preferences" }
+  E5["Admin"] <-- "photo, contact number,<br/>password, alert choices / profile" --> P5(("5.0<br/>Account"))
+  P5 <-- "contact number, photo reference" --> D1f@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P5 <-- "profile photo file" --> D30f@{ shape: lin-rect, label: "D30&nbsp; avatars (private storage)" }
+  P5 <-- "device alert choices" --> D29f@{ shape: lin-rect, label: "D29&nbsp; notification_preferences" }

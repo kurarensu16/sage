@@ -1,0 +1,36 @@
+flowchart LR
+%% ===== Level 1 DFD: Existing Manual System — Dean (new, 2026-10-30) =====
+%% Decomposes the Dean side of Figure 2.6's single manual process.
+%% ---
+%% Against the proposed Dean Portal DFD, the contrasts worth reading off this figure:
+%%   - submission compliance is tracked by checking which sheets have physically arrived
+%%   - grade distribution has to be tallied by hand before it can be seen at all
+%%   - at-risk cases arrive as conversation, not as a referral with a reason and a disposition
+%%   - faculty loading is done on a printed matrix, so a double-booked instructor is caught
+%%     only if somebody notices
+%% ---
+%% Layout: External entity (left) -> Process (middle) -> Data store (right)
+
+  %% ---------- 1.0 ----------
+  C1["College Dean"] <-- "sheets as they arrive /<br/>who has not submitted, by inspection" --> P1(("1.0<br/>Receive and Check<br/>Grade Sheets"))
+  P1 <-- "submitted sheets, stacked by section" --> D4@{ shape: lin-rect, label: "D4&nbsp; Paper grade sheets" }
+
+  %% ---------- 2.0 ----------
+  C2["College Dean"] <-- "correction form from faculty /<br/>approval or refusal, signed" --> P2(("2.0<br/>Approve Grade<br/>Corrections"))
+  P2 <-- "form held, then passed on;<br/>no record linking old and new" --> D6@{ shape: lin-rect, label: "D6&nbsp; Paper correction form" }
+
+  %% ---------- 3.0 ----------
+  C3["College Dean"] <-- "none; tallied by hand /<br/>grade spread per section" --> P3(("3.0<br/>Tally Grade<br/>Distribution"))
+  P3 <-- "counted off the submitted sheets" --> D4c@{ shape: lin-rect, label: "D4&nbsp; Paper grade sheets" }
+
+  %% ---------- 4.0 ----------
+  C4["College Dean"] <-- "concerns raised in conversation /<br/>advice, referral by word of mouth" --> P4(("4.0<br/>Hear Informal<br/>At-Risk Reports"))
+  P4 <-- "nothing is stored; no case, no<br/>disposition, no follow-up" --> D5@{ shape: lin-rect, label: "D5&nbsp; No record kept" }
+
+  %% ---------- 5.0 ----------
+  C5["College Dean"] <-- "teaching load proposals /<br/>printed loading matrix" --> P5(("5.0<br/>Assign Teaching<br/>Loads on Paper"))
+  P5 <-- "subject, section and instructor<br/>written into a grid; clashes caught<br/>only if somebody notices" --> D7@{ shape: lin-rect, label: "D7&nbsp; Paper loading matrix" }
+
+  %% ---------- 6.0 ----------
+  C6["College Dean"] <-- "report request /<br/>manually compiled summary" --> P6(("6.0<br/>Compile College<br/>Reports by Hand"))
+  P6 <-- "re-read and re-typed from the sheets" --> D4f@{ shape: lin-rect, label: "D4&nbsp; Paper grade sheets" }

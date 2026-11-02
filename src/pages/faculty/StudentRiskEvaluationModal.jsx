@@ -37,6 +37,23 @@ const earliestFutureDate = () => {
   return toLocalDateValue(tomorrow);
 };
 
+// Which catch-up tasks should demand proof before a student can tick them.
+//
+// Defaulted by action_type rather than applied to everything: a consultation
+// and an attendance recovery have no artifact -- the instructor was there --
+// and the AI is allowed to generate both. Requiring a file on those makes them
+// permanently un-tickable. The faculty member can override either way; this
+// only decides where the switch starts.
+const EVIDENCE_BY_DEFAULT = new Set([
+  'complete_missing_work', 'correct_failed_work', 'practice_assessment'
+]);
+const NEVER_EVIDENCE = new Set(['faculty_consultation', 'attendance_recovery']);
+
+function defaultRequiresEvidence(actionType) {
+  if (NEVER_EVIDENCE.has(actionType)) return false;
+  return EVIDENCE_BY_DEFAULT.has(actionType);
+}
+
 export default function StudentRiskEvaluationModal({
   isOpen,
   onClose,
@@ -236,6 +253,9 @@ export default function StudentRiskEvaluationModal({
         due_date: planDeadline || '',
         completed: false,
         completed_at: null,
+        // A hand-written task has no action_type to key off, so it starts
+        // requiring proof: the faculty member wrote it and can turn it off.
+        requires_evidence: true,
         source: 'manual'
       }
     ]);
@@ -261,7 +281,11 @@ export default function StudentRiskEvaluationModal({
           faculty_edited: task.faculty_edited
         }))
       });
-      setTasks(previous => previous.length >= 5 ? previous : [...previous, draft.tasks[0]]);
+      setTasks(previous => previous.length >= 5 ? previous : [...previous, {
+        ...draft.tasks[0],
+        // The drafter does not decide this; the action_type it chose does.
+        requires_evidence: defaultRequiresEvidence(draft.tasks[0]?.action_type)
+      }]);
     } catch (err) {
       console.error('Unable to generate an additional intervention task:', err);
       setError(err.message || 'The additional AI task could not be generated. You can retry or add one manually.');
@@ -284,7 +308,7 @@ export default function StudentRiskEvaluationModal({
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!EVALUATION_TERMS.includes(currentTerm) || loadingExisting) {
-      setError('Select a grading term and wait for the existing evaluation to load.');
+      setError('Select a grading period and wait for the existing evaluation to load.');
       return;
     }
     if (referToDean && !referralReason.trim()) {
@@ -617,7 +641,8 @@ export default function StudentRiskEvaluationModal({
 
             <div className="space-y-2">
               {tasks.map((task, idx) => (
-                <div key={task.task_id} className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-md">
+                <div key={task.task_id} className="flex flex-col gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-md">
+                  <div className="flex items-center gap-2">
                   <span className="font-mono font-bold text-slate-400 text-xs w-4">{idx + 1}.</span>
                   <input
                     type="text"
@@ -656,6 +681,19 @@ export default function StudentRiskEvaluationModal({
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   )}
+                  </div>
+                  {/* Proof of work. Defaulted by action_type, overridable here,
+                      because only the instructor knows what the work looks
+                      like. A consultation has no artifact and starts off. */}
+                  <label className="flex items-center gap-2 pl-6 text-[10px] text-slate-500 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={task.requires_evidence !== false}
+                      onChange={(e) => handleTaskChange(task.task_id, 'requires_evidence', e.target.checked)}
+                      className="h-3 w-3 cursor-pointer accent-sage-600"
+                    />
+                    Require a photo or PDF before the student can mark this done
+                  </label>
                 </div>
               ))}
             </div>

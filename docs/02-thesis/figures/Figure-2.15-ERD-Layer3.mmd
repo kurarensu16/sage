@@ -1,20 +1,30 @@
 erDiagram
-%% ===== Figure 2.15 — ERD Layer 3: Grading Engine (updated 2026-10-10) =====
-%% Removes UNLOCK_REQUESTS (no longer used); adds STUDENT_COMPONENT_SCORES, STUDENT_TERM_SCORES,
-%% CLASS_GRADING_COLUMNS, GRADE_CORRECTION_HISTORY, and the posted-grade link of SG proposals.
+%% ===== Figure 2.15 — ERD Layer 3: Grading Engine (updated 2026-10-30) =====
+%% Changes against the live schema:
+%%   STUDENT_COMPONENT_SCORES  dropped 2026-10-30 (20261030140129_schema_cleanup) — removed
+%%   ACTIVITY_RESOURCES        added  2026-10-30 — faculty learning material per activity, which
+%%                             is what AI Study Advising grounds itself in
+%%   POSTED_GRADE_REVISIONS    added  — the revision trail behind every applied correction
+%%   GRADE_CHANGE_EVIDENCE     added  — the one to three required files on a dispute
+%% REMARK_OVERRIDE_REQUESTS is now the grade change request chain: the table was extended rather
+%% than replaced, which is why no table is named grade_change_requests.
     SUBJECTS }o--|| GRADE_COMPUTATIONS : "uses template"
     GRADE_COMPUTATIONS ||--o{ GRADE_COMPUTATION_COMPONENTS : "defines"
     CLASS_RECORDS ||--o{ CLASS_ACTIVITIES : "contains"
+    CLASS_ACTIVITIES ||--o{ ACTIVITY_RESOURCES : "learning material for"
+    USERS ||--o{ ACTIVITY_RESOURCES : "added by (faculty)"
     CLASS_ACTIVITIES ||--o{ STUDENT_ACTIVITY_SCORES : "scored by"
     USERS ||--o{ STUDENT_ACTIVITY_SCORES : "student score"
     CLASS_RECORDS ||--o{ CLASS_GRADING_COLUMNS : "fixed-slot layout"
     CLASS_RECORDS ||--o{ STUDENT_TERM_SCORES : "term scores"
     USERS ||--o{ STUDENT_TERM_SCORES : "student"
-    GRADE_COMPUTATION_COMPONENTS ||--o{ STUDENT_COMPONENT_SCORES : "component"
-    CLASS_RECORDS ||--o{ STUDENT_COMPONENT_SCORES : "per class"
     CLASS_RECORDS ||--o{ POSTED_GRADES : "grades for"
     USERS ||--o{ POSTED_GRADES : "student grade"
-    POSTED_GRADES ||--o{ REMARK_OVERRIDE_REQUESTS : "SG correction proposal"
-    USERS ||--o{ REMARK_OVERRIDE_REQUESTS : "requested by / decided by"
+    POSTED_GRADES ||--o{ REMARK_OVERRIDE_REQUESTS : "grade change request"
+    USERS ||--o{ REMARK_OVERRIDE_REQUESTS : "raised by / decided by"
+    REMARK_OVERRIDE_REQUESTS ||--o{ GRADE_CHANGE_EVIDENCE : "supported by"
+    USERS ||--o{ GRADE_CHANGE_EVIDENCE : "uploaded by"
+    POSTED_GRADES ||--o{ POSTED_GRADE_REVISIONS : "revision trail"
+    REMARK_OVERRIDE_REQUESTS |o--o{ POSTED_GRADE_REVISIONS : "applied under"
     REMARK_OVERRIDE_REQUESTS ||--o| GRADE_CORRECTION_HISTORY : "applied as"
     POSTED_GRADES ||--o{ GRADE_CORRECTION_HISTORY : "corrected in"

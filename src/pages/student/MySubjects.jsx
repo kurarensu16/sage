@@ -5,22 +5,14 @@ import {
   BookOpen, 
   Award,
   Calendar, 
-  Plus, 
   X, 
   ChevronDown, 
   GraduationCap, 
-  AlertCircle, 
-  CheckCircle2, 
-  MessageSquare,
   FileText,
   User,
-  Clock,
-  Lock
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
-import { submitJoinRequest, getMyJoinRequests, dismissJoinRequest } from '../../lib/classRoomService';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { fetchAcademicTerms, getClassTermState } from '../../lib/termStatus';
 import { TableSkeleton } from '../../components/common/Skeleton';
@@ -46,38 +38,38 @@ export default function MySubjects() {
   const [selectedSemLabel, setSelectedSemLabel] = useState('');
   const [enrolledSubjects, setEnrolledSubjects] = useState([]);
   const [studentSection, setStudentSection] = useState(null);
+  // The section the student is actually assigned to, read from their own
+  // record rather than inferred from enrolments. A first-year with nothing
+  // enrolled yet still has a section, and the card is supposed to show it.
+  const [assignedSectionName, setAssignedSectionName] = useState('');
 
-  // Join Classroom Modal State
-  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
-  const [joinCodeInput, setJoinCodeInput] = useState('');
-  const [joining, setJoining] = useState(false);
-  const [joinFeedback, setJoinFeedback] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // Join requests waiting for (or declined by) the instructor: shown as locked cards.
-  const [joinRequests, setJoinRequests] = useState([]);
-  const [dismissingId, setDismissingId] = useState(null);
-
+  // Looked up by id rather than embedded on the profile: users and sections
+  // both predate the tracked migrations, so the foreign key PostgREST would
+  // need for an embed cannot be verified from the repo. A plain filter needs
+  // no relationship and cannot break the shared profile query.
   useEffect(() => {
-    if (!user?.id) return;
-    let cancelled = false;
-    getMyJoinRequests(user.id)
-      .then(rows => { if (!cancelled) setJoinRequests(rows); })
-      .catch(err => console.warn('Could not load join requests:', err));
-    return () => { cancelled = true; };
-  }, [user?.id, refreshTrigger]);
+    const sectionId = profile?.section_id;
+    if (!sectionId) { setAssignedSectionName(''); return; }
 
-  const handleDismissRequest = async (requestId) => {
-    setDismissingId(requestId);
-    try {
-      await dismissJoinRequest(requestId);
-      setJoinRequests(prev => prev.filter(request => request.request_id !== requestId));
-    } catch (err) {
-      console.warn('Could not dismiss join request:', err);
-    } finally {
-      setDismissingId(null);
-    }
-  };
+    let cancelled = false;
+    supabase
+      .from('sections')
+      .select('name')
+      .eq('section_id', sectionId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.warn('Could not read the assigned section:', error.message);
+          setAssignedSectionName('');
+          return;
+        }
+        setAssignedSectionName(data?.name || '');
+      });
+    return () => { cancelled = true; };
+  }, [profile?.section_id]);
 
   // Format Term Label helper (consistent with MyGradesList)
   const formatLabel = (sem, sy) => {
@@ -328,29 +320,6 @@ export default function MySubjects() {
     loadSubjectsForSem();
   }, [user, profile?.section_id, profile?.section_name, selectedSemLabel, semestersList, refreshTrigger]);
 
-  // Join Classroom Submission Handler
-  const handleJoinClassSubmit = async (e) => {
-    e.preventDefault();
-    if (!joinCodeInput.trim()) return;
-    setJoining(true);
-    setJoinFeedback(null);
-    try {
-      const res = await submitJoinRequest(user.id, joinCodeInput);
-      setJoinFeedback({
-        type: 'success',
-        message: res.message
-      });
-      setJoinCodeInput('');
-      setRefreshTrigger(prev => prev + 1);
-    } catch (err) {
-      setJoinFeedback({
-        type: 'error',
-        message: err.message || 'Failed to join classroom. Please check your code and try again.'
-      });
-    } finally {
-      setJoining(false);
-    }
-  };
 
   // Search Query
   const [searchQuery, setSearchQuery] = useState('');
@@ -397,18 +366,8 @@ export default function MySubjects() {
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
           </div>
 
-          {/* Join Classroom Button */}
-          <button
-            onClick={() => {
-              setIsJoinModalOpen(true);
-              setJoinFeedback(null);
-              setJoinCodeInput('');
-            }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Join Class with Code</span>
-          </button>
+          {/* Enrolment is handled by the Registrar and the Dean's office since the
+              faculty loading rebuild, so there is no self-service join here. */}
         </div>
       </PageHeader>
 
@@ -449,9 +408,15 @@ export default function MySubjects() {
             <div className="min-w-0 flex-1">
               <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider block truncate">Assigned Section</span>
               <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono mt-1 truncate">
+                {/* The student's own assigned section comes first: it is the
+                    authoritative answer and exists even with nothing enrolled.
+                    The enrolment-derived name is the fallback, for a past term
+                    the current section was not part of. "Block Section" used to
+                    sit here as a literal, which read like a real section name
+                    while actually meaning "we could not find one". */}
                 {studentSection?.isIrregular
                   ? 'Irregular'
-                  : studentSection?.name || profile?.section_name || 'Block Section'}
+                  : assignedSectionName || studentSection?.name || 'Not assigned'}
               </h3>
               {/* Enrollment type only (same rule as the faculty "Irregular" badge); academic
                   standing is shown on the Grade Report and dashboard. */}
@@ -502,75 +467,7 @@ export default function MySubjects() {
           </div>
         </div>
 
-        {/* Join requests: visible but locked until the instructor decides */}
-        {joinRequests.length > 0 && (
-          <div className="space-y-2">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Join requests</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {joinRequests.map((request) => {
-                const cls = request.class_records || {};
-                const isRejected = request.status === 'rejected';
-                const instructor = cls.faculty ? `Prof. ${cls.faculty.first_name || ''} ${cls.faculty.last_name || ''}`.trim() : 'Course Instructor';
-                const requestedOn = request.requested_at || request.created_at;
-                return (
-                  <div
-                    key={request.request_id}
-                    aria-disabled="true"
-                    className={cn(
-                      "bg-slate-50/80 rounded-2xl border border-dashed shadow-2xs overflow-hidden text-left cursor-not-allowed",
-                      isRejected ? "border-rose-200" : "border-slate-300"
-                    )}
-                  >
-                    <div className="p-4 sm:p-5 space-y-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-white text-slate-600 border border-slate-200 font-mono">
-                          {cls.sections?.name || 'Section'}
-                        </span>
-                        {isRejected ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                            <X className="h-3 w-3" /> Not approved
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                            <Clock className="h-3 w-3" /> Waiting for approval
-                          </span>
-                        )}
-                      </div>
-                      <div>
-                        <h3 className="text-base font-bold font-display text-slate-700 leading-tight flex items-center gap-1.5">
-                          <Lock className="h-3.5 w-3.5 text-slate-400" />
-                          {cls.subjects?.code || 'Class'}
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-1 line-clamp-2">{cls.subjects?.name || ''}</p>
-                      </div>
-                      <p className="text-[11px] text-slate-500">
-                        {instructor}{requestedOn ? ` · Requested ${new Date(requestedOn).toLocaleDateString()}` : ''}
-                      </p>
-                      <p className="text-xs text-slate-600 leading-relaxed">
-                        {isRejected
-                          ? 'Your instructor did not approve this request. Check the class code with your instructor, then request again.'
-                          : 'You can open this class once your instructor approves your request.'}
-                      </p>
-                      {isRejected && (
-                        <button
-                          type="button"
-                          onClick={() => handleDismissRequest(request.request_id)}
-                          disabled={dismissingId === request.request_id}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                          {dismissingId === request.request_id ? 'Dismissing…' : 'Dismiss'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Course Cards Grid */}
+                {/* Course Cards Grid */}
         {filteredSubjects.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center max-w-lg mx-auto space-y-4 shadow-xs">
             <div className="w-12 h-12 rounded-2xl bg-sage-50 text-sage-600 flex items-center justify-center mx-auto">
@@ -583,7 +480,7 @@ export default function MySubjects() {
               <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
                 {searchQuery 
                   ? `No courses matched "${searchQuery}". Try clearing your search query.`
-                  : `You have no active courses registered for ${selectedSemLabel}. You can add courses using a classroom join code provided by your instructor.`}
+                  : `You have no active courses registered for ${selectedSemLabel}. Enrolment is handled by the Registrar's office — contact them if you believe this is wrong.`}
               </p>
             </div>
             <div className="pt-2">
@@ -595,16 +492,7 @@ export default function MySubjects() {
                 >
                   Clear Search
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsJoinModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Join Classroom via Code</span>
-                </button>
-              )}
+              ) : null}
             </div>
           </div>
         ) : (
@@ -649,7 +537,12 @@ export default function MySubjects() {
                   </div>
 
                   {/* Faculty Instructor Info */}
-                  <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200/70 rounded-xl">
+                  {/* The "Request Academic Consultation" link that sat here is
+                      gone. A consultation is not something a student opens from
+                      a subject card: the window is opened by the trigger that
+                      fires when a milestone is posted, and it is time-bounded.
+                      The link implied a request the system no longer accepts. */}
+                  <div className="flex items-center p-2.5 bg-slate-50 border border-slate-200/70 rounded-xl">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="w-8 h-8 rounded-full bg-sage-100 text-sage-700 flex items-center justify-center font-bold text-xs flex-shrink-0 border border-sage-200">
                         <User className="h-4 w-4" />
@@ -661,14 +554,6 @@ export default function MySubjects() {
                         <span className="text-[10px] text-slate-400 block">Course Instructor</span>
                       </div>
                     </div>
-
-                    <Link
-                      to={`/student/consultations?class=${sub.class_record_id}`}
-                      title="Request Academic Consultation"
-                      className="p-1.5 text-slate-400 hover:text-sage-700 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-200"
-                    >
-                      <MessageSquare className="h-3.5 w-3.5" />
-                    </Link>
                   </div>
                 </div>
 
@@ -695,93 +580,7 @@ export default function MySubjects() {
           </div>
         )}
 
-        {/* Join Classroom Modal */}
-        {isJoinModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-            <div 
-              className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150"
-              role="dialog"
-              aria-modal="true"
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-sage-50 text-sage-600 rounded-xl">
-                    <GraduationCap className="h-4 w-4" />
-                  </div>
-                  <h3 className="font-bold font-display text-slate-900 text-base">Join a Classroom</h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsJoinModalOpen(false)}
-                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
               </div>
-
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Enter the 8-character alphanumeric classroom code, displayed as <span className="font-mono font-bold text-slate-700">XXXX-XXXX</span>, provided by your professor. Your instructor approves the request before you are added to the class.
-              </p>
-
-              <form onSubmit={handleJoinClassSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Classroom Join Code
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. CS3A-8X92"
-                    value={joinCodeInput}
-                    onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sage-500/20 focus:border-sage-400 uppercase transition-colors"
-                  />
-                </div>
-
-                {joinFeedback && (
-                  <div className={cn(
-                    "p-3 rounded-xl text-xs flex items-start gap-2",
-                    joinFeedback.type === 'success' 
-                      ? "bg-emerald-50 text-emerald-800 border border-emerald-200/80" 
-                      : "bg-rose-50 text-rose-800 border border-rose-200/80"
-                  )}>
-                    {joinFeedback.type === 'success' ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                    ) : (
-                      <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
-                    )}
-                    <span>{joinFeedback.message}</span>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setIsJoinModalOpen(false)}
-                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-100 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={joining || !joinCodeInput.trim()}
-                    className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:opacity-50 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                  >
-                    {joining ? (
-                      <>
-                        <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Verifying...</span>
-                      </>
-                    ) : (
-                      <span>Join Classroom</span>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-      </div>
     </>
   );
 }

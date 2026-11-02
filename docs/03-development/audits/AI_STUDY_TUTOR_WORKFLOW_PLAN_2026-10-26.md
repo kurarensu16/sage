@@ -1,6 +1,6 @@
 # AI Study Tutor Workflow Plan - 2026-10-26
 
-**Status:** Proposed design. No code, migration, or edge function exists yet. Every file listed under "Suggested build order" still requires its own developer confirmation before it is created or edited, per `AGENTS.md`.
+**Status:** Design confirmed 2026-10-29 — all open decisions resolved except the model/provider choice (decision #2 below), which remains explicitly open and blocks only the `invoke-study-tutor` backend build step, not the UI/table work. No code, migration, or edge function exists yet. Every file listed under "Suggested build order" still requires its own per-file confirmation before it is created or edited, per `AGENTS.md`.
 **Scope:** Adds one new, student-initiated AI mode ("Start Tutoring") and one new edge function. Does **not** change `invoke-advisor`, `generate-intervention-draft`, grading, risk, or evaluation logic in any way.
 **Trigger:** Capstone defense panel ruling. The feature named "AI Study Tutor" in the paper functions only as an advising assistant in the running system — `supabase/functions/invoke-advisor/index.ts` rule 11 explicitly states "You are an academic advisor, not a tutor or a student." The panel also noted a general-purpose assistant (e.g. ChatGPT) could reproduce the current advising output if a student pasted in their own grades, so the gap is not naming alone — the system needs tutoring behavior a generic assistant cannot replicate unassisted.
 
@@ -335,12 +335,12 @@ Response `assessment` (truncated to one item for brevity), now informed by Monda
 
 If no row exists yet for a topic, `resources` returns empty and `message` says so plainly — the model is never allowed to fill the gap with an invented link.
 
-## Open decisions (confirm before any file is touched)
+## Decisions (confirmed 2026-10-29, one still open)
 
-1. Resources: curated table vs. live grounding (e.g. Gemini 2.5 Flash's native Google Search grounding) — the latter needs routing that one call to a specific provider outside the shared OpenRouter fallback, and raises the data-residency question already flagged if paired with a non-US-hosted model.
-2. Model for `explain`/`plan`/`practice`: assumed to stay on the existing OpenRouter fallback chain, independent of the resources decision.
-3. "All topics covered so far" is assumed to come from `topicTag` values already recorded on activities (topics actually assessed), not a separate syllabus table, since none exists today.
-4. UI entry: two top-level tiles (Ask ASPIRE / Start Tutoring) on the AI Study Tutor page, assumed above as the clearest way to demonstrate the tutor/advisor split live.
+1. **Resources:** Curated `topic_resources` table — faculty/admin manually populate it, the function only reads it. No live grounding.
+2. **Model/provider for `explain`/`plan`/`practice`: STILL OPEN.** The developer has decided this will **not** reuse the existing OpenRouter fallback chain `invoke-advisor` uses, but the replacement provider/model is still being finalized (candidates discussed: direct Anthropic Claude API, direct Gemini API). **This blocks only the `invoke-study-tutor` edge function build step** (Suggested build order item #2) — the migration, UI menu wizard, and entry tiles do not depend on this answer and can proceed first.
+3. **"All topics covered so far":** Confirmed — derived live from `topicTag` values already recorded on graded activities, no separate syllabus table.
+4. **UI entry:** Confirmed — two top-level tiles (Ask ASPIRE / Start Tutoring) on the AI Study Tutor page.
 
 ## Suggested build order
 

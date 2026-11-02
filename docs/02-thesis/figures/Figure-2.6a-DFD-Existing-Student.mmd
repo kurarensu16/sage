@@ -1,0 +1,36 @@
+flowchart LR
+%% ===== Level 1 DFD: Existing Manual System — Student (new, 2026-10-30) =====
+%% Decomposes the Student side of Figure 2.6's single manual process, so the existing system is
+%% documented at the same depth as the proposed one.
+%% ---
+%% Read against the proposed Student Portal DFD, the contrast is the point:
+%%   - no running or tentative grade; the student learns the result at term end
+%%   - no risk indicator; nothing tells the student they are falling behind
+%%   - no record of a request; asking about a grade leaves no trace to follow up
+%%   - every store is paper or a personal note, held by whoever wrote it
+%% ---
+%% NUMBERING: named 2.6a so it sits beside Figure 2.6 without forcing a renumber. The owner
+%% settles the final number when the descriptions are written.
+%% ---
+%% Layout: External entity (left) -> Process (middle) -> Data store (right)
+
+  %% ---------- 1.0 ----------
+  S1["Student"] <-- "attend class, copy returned paper /<br/>own score, written on the paper" --> P1(("1.0<br/>Receive Returned<br/>Papers"))
+  P1 <-- "returned quiz, seatwork, exam" --> D1@{ shape: lin-rect, label: "D1&nbsp; Returned paper<br/>(held by the student)" }
+
+  %% ---------- 2.0 ----------
+  S2["Student"] <-- "verbal question, usually after class /<br/>verbal answer, nothing written down" --> P2(("2.0<br/>Ask the Instructor<br/>Informally"))
+  P2 <-- "instructor's own record,<br/>shown or not at their discretion" --> D2@{ shape: lin-rect, label: "D2&nbsp; Instructor's Excel COG file<br/>or paper class record" }
+
+  %% ---------- 3.0 ----------
+  S3["Student"] <-- "none; the student waits /<br/>grading-period result at term end" --> P3(("3.0<br/>Receive Grade<br/>Report at Term End"))
+  P3 <-- "released grading-period result" --> D3@{ shape: lin-rect, label: "D3&nbsp; Paper grade report<br/>/ posted grade sheet" }
+
+  %% ---------- 4.0 ----------
+  S4["Student"] <-- "concern raised in person /<br/>verbal advice, no plan on record" --> P4(("4.0<br/>Seek Advice<br/>Informally"))
+  P4 <-- "nothing is stored;<br/>the advice exists only in conversation" --> D4@{ shape: lin-rect, label: "D4&nbsp; No record kept" }
+
+  %% ---------- 5.0 ----------
+  S5["Student"] <-- "verbal or written appeal /<br/>instructor decision, paper-based" --> P5(("5.0<br/>Question a<br/>Released Grade"))
+  P5 <-- "manual recomputation in the<br/>spreadsheet, re-submitted on paper" --> D2b@{ shape: lin-rect, label: "D2&nbsp; Instructor's Excel COG file<br/>or paper class record" }
+  P5 <-- "correction form, signed" --> D5@{ shape: lin-rect, label: "D5&nbsp; Paper correction form" }

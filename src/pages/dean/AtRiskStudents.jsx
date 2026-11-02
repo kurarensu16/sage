@@ -833,7 +833,9 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
   const filteredTier1 = filterStudents(tier1Students);
   const filteredTier2 = filterStudents(tier2PlStudents);
 
-  const deanCollege = profile?.departments?.name || 'College of Computer Studies';
+  // No hard-coded fallback college: naming one that may not exist is worse than
+  // showing nothing while the profile loads.
+  const deanCollege = profile?.departments?.name || 'your college';
 
   return (
     <>

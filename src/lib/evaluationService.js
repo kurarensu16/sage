@@ -1,6 +1,12 @@
 import { supabase } from './supabase';
 import { getClassPriorityRoster } from './classRoomService';
 import { FOLLOWUP_MILESTONES, findFollowupMilestone } from './evaluationTracking';
+import {
+  EVIDENCE_BUCKET, EVIDENCE_STORES, describeEvidenceFile,
+  evidenceFileName, evidenceObjectPath, resolveFileType
+} from './gradeChangeRules';
+import { downscaleImage } from './imageDownscale';
+import { toUserMessage } from './errorMessages';
 
 export const CASE_PAGE_SIZE = 20;
 const CLASS_FIELDS = 'class_record_id, faculty_id, status, term_id, school_year, semester, subjects(code,name), sections(name)';
@@ -126,4 +132,97 @@ export async function getReferralHistory(evaluationId) {
     .eq('evaluation_id', evaluationId).order('referred_at', { ascending: false, nullsFirst: false });
   if (error) throw error;
   return data || [];
+}
+
+// ── Catch-up task evidence ───────────────────────────────────────────────────
+// Proof of work, so "verified" means a faculty member looked at something
+// rather than at a second click.
+//
+// Deliberately reuses the grade-change evidence helpers and the same private
+// bucket: the validation rules, the size cap and the accepted types are already
+// decided there, and a second set would drift from the first. The task records
+// WHERE its file lives, so moving to R2 later is a value change rather than a
+// migration -- the same branch getEvidenceUrl() already makes.
+export async function uploadTaskEvidence({ studentId, file }) {
+  // Shrink first, exactly as the dispute path does. A phone photo is routinely
+  // 6-12 MB and the bucket's ceiling is 5, so without this the same photograph
+  // that attaches fine to a grade dispute was refused on a catch-up task --
+  // and the student had no way to tell why one worked and the other did not.
+  //
+  // downscaleImage returns a PDF untouched and hands back the original when it
+  // cannot decode an image, so describeEvidenceFile() below still gets to
+  // explain a genuinely unusable file in its own words.
+  const prepared = (await downscaleImage(file)) || file;
+
+  const check = describeEvidenceFile(prepared);
+  if (!check.ok) throw new Error(check.message);
+
+  const path = evidenceObjectPath(studentId, prepared.name || file.name);
+  const contentType = resolveFileType(prepared);
+  const { error } = await supabase.storage
+    .from(EVIDENCE_BUCKET)
+    .upload(path, prepared, { contentType, upsert: false });
+
+  if (error) {
+    console.error('[ASPIRE] task evidence upload failed:', error);
+    throw new Error('Your file could not be uploaded, so nothing was marked done. Check your connection and try again.');
+  }
+  return { objectKey: path, storage: EVIDENCE_STORES.SUPABASE, contentType, size: prepared.size };
+}
+
+/**
+ * Mark a task done, with its evidence, in ONE call.
+ *
+ * Not two steps on purpose: an upload that succeeded followed by a tick that
+ * failed would leave a file with nothing pointing at it, and a tick that
+ * succeeded before its upload is the exact state the requirement exists to
+ * prevent. The RPC refuses a required-evidence task that arrives without a file.
+ */
+export async function setTaskCompletion({
+  evaluationId, taskId, completed, evidence = null
+}) {
+  const { data, error } = await supabase.rpc('set_advising_task_completion_with_evidence', {
+    p_evaluation_id: evaluationId,
+    p_task_id: taskId,
+    p_completed: completed,
+    p_object_key: evidence?.objectKey || null,
+    p_storage: evidence?.storage || 'supabase',
+    p_mime: evidence?.contentType || null,
+    p_size: evidence?.size || null
+  });
+  if (error) throw new Error(toUserMessage(error, 'That task could not be updated.'));
+  return data;
+}
+
+/**
+ * The bytes of one task's evidence, for the faculty verifying it.
+ *
+ * Deliberately NOT a signed URL. A signed URL is a public, unauthenticated link
+ * to a student's work, and once it exists it can be copied out of the DOM, the
+ * network log or the address bar and opened by anyone for its whole lifetime.
+ * Downloading through the session leaves no such link; EvidenceViewer wraps the
+ * blob in an object URL scoped to the document and revokes it on close.
+ *
+ * Throws rather than returning null, because the caller cannot tell the two
+ * failures apart from a null. Storage reports an RLS refusal as
+ * "Object not found", identically to a genuinely missing file -- see
+ * 20261101003000, where exactly that cost an afternoon -- so the message must
+ * not assert which one happened.
+ */
+export async function downloadTaskEvidence(evidence) {
+  if (!evidence?.object_key) return null;
+  const { data, error } = await supabase.storage
+    .from(EVIDENCE_BUCKET)
+    .download(evidence.object_key);
+  if (error) {
+    console.warn('[ASPIRE] could not read task evidence:', error);
+    throw new Error('That file could not be opened. It may have been removed, or your account may not be allowed to read it.');
+  }
+  if (!data) throw new Error('That file could not be opened. Storage returned nothing for it.');
+  return data;
+}
+
+/** The file name the student uploaded, recovered from the stored object key. */
+export function taskEvidenceName(evidence) {
+  return evidenceFileName(evidence?.object_key);
 }

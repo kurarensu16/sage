@@ -41,8 +41,10 @@ const scoreInput = readFileSync(new URL('../src/pages/faculty/ScoreInput.jsx', i
 const postedGradesView = readFileSync(new URL('../src/pages/faculty/PostedGradesView.jsx', import.meta.url), 'utf8');
 const facultyNotifications = readFileSync(new URL('../src/pages/faculty/Notifications.jsx', import.meta.url), 'utf8');
 const studentGradeDetail = readFileSync(new URL('../src/pages/student/MyGradesDetail.jsx', import.meta.url), 'utf8');
-const deanCorrections = readFileSync(new URL('../src/pages/dean/RemarkOverrideRequests.jsx', import.meta.url), 'utf8');
-const adminOverride = readFileSync(new URL('../src/pages/admin/GradeOverride.jsx', import.meta.url), 'utf8');
+const deanCorrections = readFileSync(new URL('../src/pages/dean/GradeChangeRequests.jsx', import.meta.url), 'utf8');
+// The admin/registrar role split moved grade override to the Registrar; the
+// Admin portal is accounts and system maintenance only.
+const adminOverride = readFileSync(new URL('../src/pages/registrar/GradeOverride.jsx', import.meta.url), 'utf8');
 
 const assertPlpgsqlVariablesDeclared = (source, label) => {
   source.split(/(?=CREATE OR REPLACE FUNCTION)/g).forEach(block => {
@@ -88,25 +90,56 @@ assert.equal(
   null
 );
 
-assert.match(
-  gradeComputationPreview,
-  /disabled=\{postingGrades \|\| isComputingDiff \|\| isLocked\}\s*onClick=\{\(\) => computeChangedStudents\('midterm'\)\}/,
-  'Grade preview must keep MR available for first posting and updates before SG.'
-);
-assert.match(
-  gradeComputationPreview,
-  /disabled=\{postingGrades \|\| isComputingDiff \|\| isLocked \|\| Boolean\(getGradePeriodSequenceBlock\('tfr', lockedMilestones\)\)\}\s*onClick=\{\(\) => computeChangedStudents\('tfr'\)\}/,
-  'Grade preview must require MR before first posting or updating TFR.'
-);
+// These used to match the literal `disabled={...}` string, which made them fail
+// the moment a NEW correct gate was added -- mrFinalized broke all four on
+// 2026-10-31 while the behaviour they guard was fine. Anchored on the rule
+// instead: each posting control must carry its own finalized gate, and the two
+// later milestones must carry their sequence block. The spelling may change.
+function postingControl(source, label, trigger) {
+  const pattern = new RegExp(
+    `disabled=\\{[^}]*\\}[\\s\\S]{0,400}?onClick=\\{\\(\\) => ${trigger}\\}`
+  );
+  const match = source.match(pattern);
+  assert.ok(match, `${label}: the posting control was not found at all.`);
+  return match[0];
+}
+
+const previewMr = postingControl(gradeComputationPreview, 'Grade preview MR', "computeChangedStudents\\('midterm'\\)");
+assert.match(previewMr, /mrFinalized/, 'Grade preview must refuse MR once its consultation is finalized.');
+
+const previewTfr = postingControl(gradeComputationPreview, 'Grade preview TFR', "computeChangedStudents\\('tfr'\\)");
+assert.match(previewTfr, /tfrFinalized/, 'Grade preview must refuse TFR once its consultation is finalized.');
+assert.match(previewTfr, /getGradePeriodSequenceBlock\('tfr', lockedMilestones\)/, 'Grade preview must require MR before TFR.');
+
+// Posting the SG IS finalizing it: there is no consultation window to close, and
+// post_grade_milestone_v2 preserves an existing SG row unless an approved
+// request names it. The control must say so rather than offering "Update SG".
+const previewSg = postingControl(gradeComputationPreview, 'Grade preview SG', "computeChangedStudents\\('semestral'\\)");
+assert.match(previewSg, /sgFinalized/, 'Grade preview must refuse to re-post an official SG.');
+assert.match(previewSg, /getGradePeriodSequenceBlock\('semestral', lockedMilestones\)/, 'Grade preview must require MR and TFR before SG.');
+assert.doesNotMatch(gradeComputationPreview, /'Update SG'/, 'An official SG is final; the control must not offer to update it.');
+
+const inputMr = postingControl(scoreInput, 'Score input MR', "setPendingPostMilestone\\('midterm'\\)");
+assert.match(inputMr, /mrFinalized/, 'Score input must refuse MR once its consultation is finalized.');
+
+const inputTfr = postingControl(scoreInput, 'Score input TFR', "setPendingPostMilestone\\('tfr'\\)");
+assert.match(inputTfr, /tfrFinalized/, 'Score input must refuse TFR once its consultation is finalized.');
+assert.match(inputTfr, /getGradePeriodSequenceBlock\('tfr', postedMilestones\)/, 'Score input must require MR before TFR.');
+
+const inputSg = postingControl(scoreInput, 'Score input SG', "setPendingPostMilestone\\('semestral'\\)");
+assert.match(inputSg, /sgFinalized/, 'Score input must refuse to re-post an official SG.');
+assert.doesNotMatch(scoreInput, /'Update SG'/, 'An official SG is final; the control must not offer to update it.');
+
+// Two doors, one rule. A gate on only one screen is the bug this pair exists for.
 assert.match(
   scoreInput,
-  /disabled=\{postingGrades \|\| isLocked\}\s*onClick=\{\(\) => setPendingPostMilestone\('midterm'\)\}/,
-  'Score input must keep MR available for first posting and updates before SG.'
+  /const sgFinalized = lockedMilestones\.includes\('Semestral Grade'\)/,
+  'Score input must derive sgFinalized from the posted Semestral Grade.'
 );
 assert.match(
-  scoreInput,
-  /disabled=\{postingGrades \|\| isLocked \|\| Boolean\(getGradePeriodSequenceBlock\('tfr', postedMilestones\)\)\}\s*onClick=\{\(\) => setPendingPostMilestone\('tfr'\)\}/,
-  'Score input must require MR before first posting or updating TFR.'
+  gradeComputationPreview,
+  /const sgFinalized = lockedMilestones\.includes\('Semestral Grade'\)/,
+  'Grade preview must derive sgFinalized from the posted Semestral Grade.'
 );
 
 // Official exceptional remarks are never collapsed back to numeric pass/fail.
@@ -249,8 +282,13 @@ assert.doesNotMatch(
   'Parenthesize JSON text extraction when concatenating URLs; otherwise PostgreSQL may select JSON concatenation.'
 );
 
+// Anchored on openApprovedCorrectionEditor rather than the button's label: the
+// label has already been reworded once ("Edit Full Row & Apply" ->
+// "Recalculate Official Result") and the function is the only way the editor
+// opens, so it is what actually encodes the gate.
 assert.ok(
-  postedGradesView.includes('Edit Full Row &amp; Apply')
+  postedGradesView.includes('openApprovedCorrectionEditor')
+    && postedGradesView.includes('{approvedCorrectionRequest && (')
     && postedGradesView.includes('handlePreviewApprovedCorrection')
     && postedGradesView.includes('handleApplyApprovedCorrection')
     && postedGradesView.includes('Recalculated MR %')
@@ -258,9 +296,13 @@ assert.ok(
     && postedGradesView.includes('Apply & Relock'),
   'Faculty must receive a student-scoped full-row editor only after Dean approval.'
 );
+// Phase 6 superseded RemarkOverrideRequests.jsx with dean/GradeChangeRequests.jsx.
+// The scope wording moved into the confirmation dialog, so the anchors changed
+// while the guarantee did not: the Dean is told whose grade, and which single
+// milestone, the approval authorizes.
 assert.ok(
-  deanCorrections.includes('Approve Student Correction')
-    && deanCorrections.includes('Authorized correction scope'),
+  deanCorrections.includes('Approve this correction?')
+    && deanCorrections.includes('will be able to correct '),
   'Dean review must describe the one-use student correction scope.'
 );
 assert.ok(
@@ -274,10 +316,13 @@ assert.ok(
     && facultyNotifications.includes('payload: n.payload || {}'),
   'Dean approval notifications must retain their payload and deep-link to the exact faculty correction.'
 );
+// The per-milestone ternaries were refactored into the milestoneBadge() helper,
+// so the anchors are now the helper and the two flags it is called with.
 assert.ok(
   studentGradeDetail.includes('Included in corrected official SG')
-    && studentGradeDetail.includes("mrIsCorrected ? 'Corrected'")
-    && studentGradeDetail.includes("tfrIsCorrected ? 'Corrected'"),
+    && studentGradeDetail.includes("if (isCorrected) return { text: 'Corrected'")
+    && studentGradeDetail.includes('milestoneBadge(finalCalculations.mrIsCorrected')
+    && studentGradeDetail.includes('milestoneBadge(finalCalculations.tfrIsCorrected'),
   'The student detail must distinguish corrected official milestones from their original posting.'
 );
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import StudentRow from '../../components/StudentRow';
 import { 
@@ -27,7 +27,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { triggerExcelExport } from '../../lib/excelExport';
-import { getEnrollmentType } from '../../lib/classRoomService';
+import { getEnrollmentType, loadClassActivities } from '../../lib/classRoomService';
 import ExportPreviewModal from '../../components/ExportPreviewModal';
 import html2pdf from 'html2pdf.js';
 import {
@@ -67,6 +67,7 @@ const DB_REMARK_TO_DISPLAY = Object.freeze({
 
 export default function PostedGradesView() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, profile } = useAuth();
   const classRecordId = new URLSearchParams(location.search).get('id');
   const autoExport = new URLSearchParams(location.search).get('export') === '1';
@@ -97,39 +98,11 @@ export default function PostedGradesView() {
     [gradingFormula]
   );
 
+  // Empty until the class's real activities load. The previous default seeded
+  // six columns named FA 1 to FA 6, which showed through whenever the load
+  // found nothing -- six columns for a class that had none.
   const [activities, setActivities] = useState({
-    Prelim: [
-      { id: 'act1', name: 'FA 1', max: 20 },
-      { id: 'act2', name: 'FA 2', max: 20 },
-      { id: 'act3', name: 'FA 3', max: 20 },
-      { id: 'act4', name: 'FA 4', max: 20 },
-      { id: 'act5', name: 'FA 5', max: 20 },
-      { id: 'act6', name: 'FA 6', max: 10 }
-    ],
-    Midterm: [
-      { id: 'act1', name: 'FA 1', max: 20 },
-      { id: 'act2', name: 'FA 2', max: 20 },
-      { id: 'act3', name: 'FA 3', max: 20 },
-      { id: 'act4', name: 'FA 4', max: 20 },
-      { id: 'act5', name: 'FA 5', max: 20 },
-      { id: 'act6', name: 'FA 6', max: 10 }
-    ],
-    'Semi-Final': [
-      { id: 'act1', name: 'FA 1', max: 20 },
-      { id: 'act2', name: 'FA 2', max: 20 },
-      { id: 'act3', name: 'FA 3', max: 20 },
-      { id: 'act4', name: 'FA 4', max: 20 },
-      { id: 'act5', name: 'FA 5', max: 20 },
-      { id: 'act6', name: 'FA 6', max: 10 }
-    ],
-    Final: [
-      { id: 'act1', name: 'FA 1', max: 20 },
-      { id: 'act2', name: 'FA 2', max: 20 },
-      { id: 'act3', name: 'FA 3', max: 20 },
-      { id: 'act4', name: 'FA 4', max: 20 },
-      { id: 'act5', name: 'FA 5', max: 20 },
-      { id: 'act6', name: 'FA 6', max: 10 }
-    ]
+    Prelim: [], Midterm: [], 'Semi-Final': [], Final: []
   });
 
   // Success modals
@@ -546,79 +519,19 @@ export default function PostedGradesView() {
         }
         setMaxItems(newMax);
 
-        // Seed activities state from grade computations components if exists
-        const compList = cr.subjects?.grade_computations?.grade_computation_components || [];
-        const dynamicComps = compList.filter(c => c.is_multiple);
-        
-        if (dynamicComps.length > 0) {
-          const loadedActivities = {};
-          const isSummer = cr.semester === 'Summer';
-          const periodsList = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
-          periodsList.forEach(t => {
-            loadedActivities[t] = dynamicComps.map((c, index) => ({
-              id: `act${index + 1}`,
-              name: c.name,
-              max: parseFloat(c.max_score) || 20
-            }));
-          });
-          setActivities(loadedActivities);
-        }
-        
-        // Fetch dynamic custom activities from Supabase class_activities table
-        let fetchedDbActs = [];
-        try {
-          const { data: dbActs } = await supabase
-            .from('class_activities')
-            .select('*')
-            .eq('class_record_id', classRecordId)
-            .order('created_at', { ascending: true });
-
-          if (dbActs && dbActs.length > 0) {
-            fetchedDbActs = dbActs;
-            const loadedActivities = { Prelim: [], Midterm: [], 'Semi-Final': [], Final: [] };
-            const isSummer = cr.semester === 'Summer';
-            const periodsList = isSummer ? ['Midterm', 'Final'] : ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
-            periodsList.forEach(t => {
-              const termActs = dbActs.filter(a => a.term === t);
-              if (termActs.length > 0) {
-                loadedActivities[t] = termActs.map(a => ({
-                  id: a.activity_id,
-                  dbId: a.activity_id,
-                  name: a.name,
-                  max: parseFloat(a.max_score) || 20,
-                  componentId: a.component_id || null
-                }));
-              } else if (dynamicComps.length > 0) {
-                loadedActivities[t] = dynamicComps.map((c, index) => ({
-                  id: `act${index + 1}`,
-                  name: c.name,
-                  max: parseFloat(c.max_score) || 20
-                }));
-              }
-            });
-            setActivities(loadedActivities);
-          } else {
-            // Restore custom activities from LocalStorage if not in DB
-            const localActs = localStorage.getItem(`sage_activities_${classRecordId}`);
-            if (localActs) {
-              try {
-                setActivities(JSON.parse(localActs));
-              } catch {
-                console.debug('Failed to parse cached activities');
-              }
-            }
-          }
-        } catch (actErr) {
-          console.warn('Could not query class_activities, fallback to cache:', actErr);
-          const localActs = localStorage.getItem(`sage_activities_${classRecordId}`);
-          if (localActs) {
-            try {
-              setActivities(JSON.parse(localActs));
-            } catch {
-              console.debug('Failed to parse cached activities');
-            }
-          }
-        }
+        // Activity columns come from the shared loader, so this page and the
+        // Scorebook can never disagree about how many a class has. This used to
+        // rebuild the list from three sources of its own -- the COG's is_multiple
+        // components, class_activities, then a localStorage cache -- and kept its
+        // hard-coded six-column default whenever all three missed.
+        const loadedActs = await loadClassActivities(classRecordId, cr.semester);
+        setActivities(loadedActs);
+        // Score loading below still needs the raw rows (activity_id + term).
+        // Rebuilt from the loader's output rather than queried a second time;
+        // placeholder slots carry no dbId and are skipped.
+        const fetchedDbActs = Object.entries(loadedActs).flatMap(([term, list]) =>
+          (list || []).filter(a => a.dbId).map(a => ({ activity_id: a.dbId, term }))
+        );
 
         // 4. Fetch saved term scores from db
         const { data: savedScores } = await supabase
@@ -1145,7 +1058,7 @@ export default function PostedGradesView() {
 
   return (
     <>
-      <PageHeader title="Posted Grades & Corrections" breadcrumb="Faculty Portal">
+      <PageHeader title="Posted Grades" breadcrumb="Faculty Portal">
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
           <button 
             disabled={students.length === 0}
@@ -1174,7 +1087,7 @@ export default function PostedGradesView() {
             <div className="flex gap-3">
               <FileText className="h-5 w-5 text-sage-600 mt-0.5 flex-shrink-0" />
               <div>
-                <h4 className="font-bold text-xs sm:text-sm text-slate-800">Class Record Registry &amp; Remark Management</h4>
+                <h4 className="font-bold text-xs sm:text-sm text-slate-800">Posted Grade Ledger</h4>
                 <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 leading-relaxed">
                   Posted semestral grades remain official and locked. Request correction access for one student; after Dean approval, faculty may edit that student's full score row and apply one audited server-side recalculation.
                 </p>
@@ -1213,10 +1126,10 @@ export default function PostedGradesView() {
                       {request.status === 'approved' && request.correction_scope === 'student_score_row' && (
                         <button
                           type="button"
-                          onClick={() => openApprovedCorrectionEditor(request)}
-                          className="rounded-lg border border-emerald-300 bg-emerald-600 px-2.5 py-1.5 text-[10px] font-bold text-white transition-colors hover:bg-emerald-700 cursor-pointer"
+                          onClick={() => navigate('/faculty/graderequests')}
+                          className="rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 text-[10px] font-bold text-emerald-700 transition-colors hover:bg-emerald-50 cursor-pointer"
                         >
-                          Edit Full Row &amp; Apply
+                          Open in Grade Change Requests
                         </button>
                       )}
                       <button

@@ -1,0 +1,40 @@
+flowchart LR
+%% ===== Level 1 DFD: Registrar Portal (new, 2026-10-30) =====
+%% The Registrar portal did not exist when the figure series was drawn. Its processes are the
+%% eight modules that moved out of the Admin portal in the role split, plus the two that are
+%% genuinely new: Faculty Loading and Provisioning, and Late Grade Changes.
+%% ---
+%% NUMBERING: this file is named 2.11a deliberately. Inserting it as a numbered figure shifts
+%% every figure after it, so the number is left for the owner to settle when the Word file is
+%% renumbered. The content does not depend on which number it ends up with.
+%% ---
+%% Layout: External entity (left) -> Process (middle) -> Data stores (right)
+
+%% COLUMN A of 2. Split from Figure-2.11a-DFD-Registrar.mmd so the figure fits a page; compose with
+%% compose_columns.py. Edit the halves, not a merged copy.
+  %% ---------- 1.0 ----------
+  R1["Registrar"] <-- "credentials / access session" --> P1(("1.0<br/>Authenticate<br/>User"))
+  P1 <-- "account record" --> D1@{ shape: lin-rect, label: "D1&nbsp; users" }
+
+  %% ---------- 2.0 ----------
+  R2["Registrar"] <-- "term readiness, enrolment and section<br/>coverage, loading progress" --> P2(("2.0<br/>Dashboard"))
+  P2 <-- "active term" --> D4b@{ shape: lin-rect, label: "D4&nbsp; academic_terms" }
+  P2 <-- "sections of the term" --> D3b@{ shape: lin-rect, label: "D3&nbsp; sections" }
+  P2 <-- "loading progress" --> D53b@{ shape: lin-rect, label: "D53&nbsp; faculty_load_drafts" }
+
+  %% ---------- 3.0 ----------
+  R3["Registrar"] <-- "account lookup / new student accounts" --> P3(("3.0<br/>People"))
+  P3 <-- "read-only account records" --> D1c@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P3 <-- "pending student accounts" --> D47c@{ shape: lin-rect, label: "D47&nbsp; student_account_requests" }
+
+  %% ---------- 4.0 ----------
+  R4["Registrar"] <-- "subject details, CSV/Excel file /<br/>subject catalog / template weights, formula list /<br/>structure data, section CSV/Excel / directory /<br/>term activation and rollover" --> P4(("4.0<br/>Academic<br/>Setup"))
+  P4 <-- "course codes, units" --> D5d@{ shape: lin-rect, label: "D5&nbsp; subjects" }
+  P4 <-- "bound COG template, templates" --> D6d@{ shape: lin-rect, label: "D6&nbsp; grade_computations" }
+  P4 <-- "component weights" --> D27d@{ shape: lin-rect, label: "D27&nbsp; grade_computation_components" }
+  P4 <-- "colleges" --> D2d@{ shape: lin-rect, label: "D2&nbsp; departments" }
+  P4 <-- "programs" --> D26d@{ shape: lin-rect, label: "D26&nbsp; programs" }
+  P4 <-- "section shells" --> D3d@{ shape: lin-rect, label: "D3&nbsp; sections" }
+  P4 <-- "school year, semester,<br/>activation, rollover, grace period" --> D4d@{ shape: lin-rect, label: "D4&nbsp; academic_terms" }
+  P4 -- "audit entry" --> D25d@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+

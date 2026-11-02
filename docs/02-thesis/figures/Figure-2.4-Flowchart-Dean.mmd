@@ -1,5 +1,9 @@
 flowchart TB
 %% ===== Figure 2.4 — Proposed System Flowchart: Dean Portal (updated 2026-10-10) =====
+%% Updated 2026-10-30: adds Faculty Loading for the Dean's own college, and the Dean's step in
+%% the grade change request chain -- approve inside the dispute window, or pass to the Registrar
+%% once it has closed. A schedule clash in another college is refused but disclosed only as a
+%% college and program.
 %% Approval authorizes the faculty's exact SG proposal (faculty reposts); Intervention Results
 %% shows verified completion, acknowledgment, and follow-up-due flags.
 
@@ -19,10 +23,22 @@ flowchart TB
   LOGIN --> SEL
   SEL -- "Log out" --> OUT
 
+  SEL -- "Faculty Loading" --> FL
   SEL -- "Grades" --> GM
   SEL -- "Student Risk" --> RM
   SEL -- "Reports" --> PM
   SEL -- "Account" --> NM
+
+  subgraph FL["<b>Faculty Loading Module</b>"]
+    direction TB
+    F1["Open the Dean's own college"] --> F2{"Lock available?"}
+    F2 -- "No" --> F3["Another user is editing"]
+    F2 -- "Yes" --> F4[/"Faculty, section, subject,<br/>meeting days and times"/]
+    F4 --> F5{"Schedule complete<br/>and conflict-free?"}
+    F5 -- "No" --> F6["Refused. A clash outside this<br/>college shows only its college<br/>and program"]
+    F6 -.-> F4
+    F5 -- "Yes" --> F7["Drafted, then finalized<br/>into a class record"]
+  end
 
   subgraph GM["<b>Grades Module</b>"]
     direction TB
@@ -31,7 +47,10 @@ flowchart TB
     G3["Grade Corrections queue:<br/>proposed SG, remark,<br/>evidence"] --> GQ{"Approve or reject?"}
     GQ -- "Reject" --> GR["SG stays locked,<br/>logged to audit trail"]
     GQ -- "Approve" --> GA["Faculty reposts the<br/>approved SG; correction<br/>history recorded"]
-    G1 ~~~ G2 ~~~ G3
+    G4["Grade Change Requests<br/>forwarded by instructors"] --> GW{"Dispute window<br/>still open?"}
+    GW -- "Yes" --> GA2["Approval authorizes<br/>the correction directly"]
+    GW -- "No" --> GP["Passed to the Registrar,<br/>who alone may reopen<br/>a closed term"]
+    G1 ~~~ G2 ~~~ G3 ~~~ G4
   end
 
   subgraph RM["<b>Student Risk Module</b>"]

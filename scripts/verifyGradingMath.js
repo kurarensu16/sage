@@ -18,7 +18,11 @@ import {
   resolveOfficialGwa,
   toDbRemark,
   toDisplayRemark,
-  toGwaOrNull
+  toGwaOrNull,
+  buildTransmutationLadder,
+  resolveAttendancePolicy,
+  TRANSMUTATION_LADDER,
+  ATTENDANCE
 } from '../src/lib/academicPolicy.js';
 import { calculateAcademicRisk } from '../src/lib/riskEngine.js';
 import {
@@ -39,6 +43,11 @@ import { computeTentativeGradeDetails } from '../src/lib/riskEngine.js';
 import { evaluateAcademicAdvising } from '../src/lib/advisingEngine.js';
 import { collectBlankScoreReview, prepareReviewedBlankScores } from '../src/lib/gradeScoreReview.js';
 import { OFFICIAL_DYCI_PRESETS } from '../src/lib/officialGradingPresets.js';
+import { hasConsultationWindow, resolveMilestoneState } from '../src/lib/milestoneState.js';
+import {
+  REQUEST_STATUS, isOpenStatus, describeEvidenceFile, resolveFileType,
+  evidenceObjectPath, correctionSignature, EVIDENCE_MAX_BYTES
+} from '../src/lib/gradeChangeRules.js';
 
 assert.equal(isTermCoveredByPostedMilestone('Prelim', ['Midterm Rating']), true);
 assert.equal(isTermCoveredByPostedMilestone('Midterm', ['midterm_rating']), true);
@@ -440,4 +449,193 @@ assert.equal(toDisplayRemark('incomplete'), 'Incomplete (INC)');
 assert.equal(toDisplayRemark('dropped'), 'Dropped');
 assert.equal(toDisplayRemark('some_future_legacy_value'), 'some_future_legacy_value', 'unrecognized remarks must surface as-is, never collapse to Failed');
 
-console.log(`Verified ${presets.length} grading presets, policy scale, attendance, honors, risk boundaries, milestone identity, and summer isolation.`);
+// ── Dynamic grading thresholds (Phase 3) ────────────────────────────────────
+// The JS ladder must stay identical to aspire_transmute_grade(NUMERIC, NUMERIC)
+// in 20261029054241_dynamic_grading_thresholds.sql. The SQL is transcribed here
+// so a change to either side fails this script rather than silently diverging
+// and mis-transmuting posted grades.
+function sqlTransmuteTwin(rating, threshold) {
+  if (rating === null) return null;
+  if (threshold === null || threshold === 75) {
+    if (rating >= 98) return 1.00;
+    if (rating >= 95) return 1.25;
+    if (rating >= 92) return 1.50;
+    if (rating >= 89) return 1.75;
+    if (rating >= 86) return 2.00;
+    if (rating >= 83) return 2.25;
+    if (rating >= 80) return 2.50;
+    if (rating >= 77) return 2.75;
+    if (rating >= 75) return 3.00;
+    return 5.00;
+  }
+  const offsets = [23, 20, 17, 14, 11, 8, 5, 2, 0];
+  const gwas = [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3];
+  for (let i = 0; i < offsets.length; i += 1) {
+    if (rating >= threshold + (offsets[i] * (100 - threshold)) / 25) return gwas[i];
+  }
+  return 5.00;
+}
+
+// Regression guard: an unset threshold must be the institutional ladder, by
+// identity rather than by value, so no second code path can drift from it.
+assert.equal(buildTransmutationLadder(null), TRANSMUTATION_LADDER, 'a null threshold must reuse the institutional ladder');
+assert.equal(buildTransmutationLadder(undefined), TRANSMUTATION_LADDER, 'an undefined threshold must reuse the institutional ladder');
+assert.equal(buildTransmutationLadder(''), TRANSMUTATION_LADDER, 'an empty threshold must reuse the institutional ladder');
+assert.equal(buildTransmutationLadder(75), TRANSMUTATION_LADDER, 'an explicit 75 must reuse the institutional ladder');
+
+// Number(null) is 0, not NaN. If that ever slips past the guard, an unset
+// template rescales to a 0% passing mark and every grade in the system is wrong
+// -- so it is asserted explicitly rather than left to the sweep below.
+assert.equal(toGwaOrNull(75, null), 3, 'a null threshold must not be read as a 0% passing mark');
+assert.equal(toGwaOrNull(74.9, null), 5, 'a null threshold must still fail below 75');
+
+// Full sweep: the JS and SQL ladders must agree at every quarter point, at the
+// default and at both ends of the allowed 50..94 range.
+let thresholdChecks = 0;
+for (const threshold of [null, 75, 50, 69, 80, 85, 94]) {
+  for (let rating = 0; rating <= 100; rating += 0.25) {
+    assert.equal(
+      toGwaOrNull(rating, threshold),
+      sqlTransmuteTwin(rating, threshold),
+      `JS and SQL transmutation disagree at rating ${rating} with threshold ${threshold}`
+    );
+    thresholdChecks += 1;
+  }
+  // And one-argument callers must be untouched by any of this.
+  assert.equal(toGwaOrNull(97), 1.25, 'the legacy one-argument ladder must not change');
+  assert.equal(toGwaOrNull(75), 3, 'the legacy one-argument ladder must not change');
+}
+
+// The rescaled ladder's own invariants, for every allowed threshold.
+for (let threshold = 50; threshold <= 94; threshold += 0.5) {
+  const ladder = buildTransmutationLadder(threshold);
+  assert.equal(ladder.length, 9, 'a rescaled ladder must keep all nine bands');
+  assert.ok(ladder[0].minRating <= 100, `a 1.00 must be reachable at threshold ${threshold}`);
+  assert.equal(ladder[8].minRating, threshold, `the passing band must sit exactly at threshold ${threshold}`);
+  for (let i = 1; i < ladder.length; i += 1) {
+    assert.ok(ladder[i].minRating < ladder[i - 1].minRating, `the ladder must descend at threshold ${threshold}`);
+  }
+}
+
+// A worked case that matters for the defense: the same raw score, opposite
+// outcomes, because the two classes legitimately ran different passing policies.
+assert.equal(toGwaOrNull(78, null), 2.75, 'a 78 passes under the institutional 75% policy');
+assert.equal(toGwaOrNull(78, 80), 5, 'the same 78 fails under an 80% policy');
+
+// Attendance tiers derive from one configured number; the status vocabulary does not.
+const defaultAttendance = resolveAttendancePolicy(null);
+assert.equal(defaultAttendance.fdaAbsences, ATTENDANCE.fdaAbsences, 'an unset FDA threshold must match the institutional default');
+assert.equal(defaultAttendance.warningAbsences, ATTENDANCE.warningAbsences, 'an unset FDA threshold must match the institutional warning tier');
+assert.equal(defaultAttendance.nearFdaAbsences, ATTENDANCE.nearFdaAbsences, 'an unset FDA threshold must match the institutional near-FDA tier');
+assert.deepEqual(resolveAttendancePolicy(3), { warningAbsences: 1, nearFdaAbsences: 2, fdaAbsences: 3, statuses: ATTENDANCE.statuses }, 'FDA 3 must derive 1/2/3');
+assert.deepEqual(resolveAttendancePolicy(6), { warningAbsences: 4, nearFdaAbsences: 5, fdaAbsences: 6, statuses: ATTENDANCE.statuses }, 'FDA 6 must derive 4/5/6');
+assert.equal(resolveAttendancePolicy(undefined).fdaAbsences, 4, 'an undefined FDA threshold must fall back to 4');
+
+// Consultation window states. The badge a student reads must agree with
+// milestone_edits_frozen() in SQL, or the page offers a correction the database
+// refuses -- or hides one it would allow.
+{
+  const open = { opened_at: '2026-10-29T01:00:00Z', finalized_at: null };
+  const closed = { opened_at: '2026-10-29T01:00:00Z', finalized_at: '2026-10-30T01:00:00Z' };
+  const state = (posted, win, period) => resolveMilestoneState({ posted, window: win, gradePeriod: period }).state;
+
+  assert.ok(hasConsultationWindow(GRADE_MILESTONES.MIDTERM_RATING), 'MR must have a consultation window');
+  assert.ok(hasConsultationWindow(GRADE_MILESTONES.TENTATIVE_FINAL_RATING), 'TFR must have a consultation window');
+  assert.ok(!hasConsultationWindow(GRADE_MILESTONES.SEMESTRAL_GRADE), 'SG must have no consultation window');
+
+  for (const period of [GRADE_MILESTONES.MIDTERM_RATING, GRADE_MILESTONES.TENTATIVE_FINAL_RATING]) {
+    assert.equal(state(false, null, period), 'tentative', 'an unposted milestone is tentative');
+    assert.equal(state(false, open, period), 'tentative', 'posting, not the window, makes a grade official');
+    assert.equal(state(true, open, period), 'posted', 'an open window reads as not yet final');
+    assert.equal(state(true, closed, period), 'finalized', 'a finalized window reads as final');
+    // Matches milestone_edits_frozen()'s COALESCE(..., TRUE): a milestone posted
+    // before windows existed is frozen, so it must not read as still open.
+    assert.equal(state(true, null, period), 'finalized', 'a posted milestone with no window reads as final');
+    assert.equal(state(true, undefined, period), 'finalized', 'a missing window and a null window must agree');
+  }
+
+  // SG locks on posting and never acquires a window, so it skips the middle state.
+  assert.equal(state(false, null, GRADE_MILESTONES.SEMESTRAL_GRADE), 'tentative', 'an unposted SG is tentative');
+  assert.equal(state(true, null, GRADE_MILESTONES.SEMESTRAL_GRADE), 'finalized', 'a posted SG is final at once');
+  assert.equal(state(true, open, GRADE_MILESTONES.SEMESTRAL_GRADE), 'finalized', 'a stray window must not unlock SG');
+}
+
+// Grade change requests. Only the pure rules are asserted here: whether a
+// midterm correction stays isolated lives entirely in SQL, and a JavaScript
+// test claiming to prove it would prove nothing. That one is covered by the
+// migration's own verification block and by GCR-APPLY in the checklist.
+{
+  // Every waiting state must count as open. Missing one strands a student:
+  // withdrawing and attaching are both gated on this, so a request sitting with
+  // the Registrar would become uneditable and un-withdrawable.
+  for (const open of [REQUEST_STATUS.PENDING_FACULTY, REQUEST_STATUS.PENDING_DEAN, REQUEST_STATUS.PENDING_REGISTRAR]) {
+    assert.ok(isOpenStatus(open), `${open} must count as an open request`);
+  }
+  for (const closed of [REQUEST_STATUS.APPROVED, REQUEST_STATUS.APPLIED, REQUEST_STATUS.REJECTED, REQUEST_STATUS.CANCELLED]) {
+    assert.ok(!isOpenStatus(closed), `${closed} must not count as open`);
+  }
+
+  // The preview guard compares signatures. If order mattered, re-ordering the
+  // same edits would invalidate a preview for no reason the instructor could
+  // see -- and they would be told to check again having changed nothing.
+  const a = [
+    { target_key: 'activity:b', new_score: 18 },
+    { target_key: 'activity:a', new_score: 12 }
+  ];
+  const b = [
+    { target_key: 'activity:a', new_score: 12 },
+    { target_key: 'activity:b', new_score: 18 }
+  ];
+  assert.equal(correctionSignature(a), correctionSignature(b),
+    'the same edits in a different order must be the same correction');
+
+  // ...but a changed score must change it, or Apply would proceed on a figure
+  // nobody previewed.
+  assert.notEqual(
+    correctionSignature(a),
+    correctionSignature([{ target_key: 'activity:a', new_score: 13 }, { target_key: 'activity:b', new_score: 18 }]),
+    'changing a score must invalidate the preview'
+  );
+  assert.equal(correctionSignature([]), correctionSignature([]), 'an empty correction is stable');
+
+  // The first path segment is the uploader's id. Both the storage policy and
+  // submit_grade_change_request() check it, so a change to this shape would
+  // silently refuse every submission.
+  const uid = '11111111-2222-3333-4444-555555555555';
+  assert.equal(evidenceObjectPath(uid, 'paper.jpg').split('/')[0], uid,
+    'evidence must be stored under the uploading student');
+  const crafted = evidenceObjectPath(uid, '../../etc/passwd');
+  assert.equal(crafted.split('/').length, 2,
+    'a crafted file name must not introduce another path segment');
+  assert.equal(crafted.split('/')[0], uid,
+    'a crafted file name must not escape the student prefix');
+  assert.ok(evidenceObjectPath(uid, null).startsWith(uid + '/'),
+    'a missing file name must still produce a scoped path');
+
+  // A browser that reports no MIME type must not cost a student a valid photo.
+  assert.equal(resolveFileType({ name: 'scan.JPG', type: '' }), 'image/jpeg');
+  assert.equal(resolveFileType({ name: 'sheet.pdf', type: '' }), 'application/pdf');
+  assert.equal(resolveFileType({ name: 'x.jpg', type: 'image/png' }), 'image/png',
+    'a reported type wins over the extension');
+
+  assert.ok(describeEvidenceFile({ name: 'a.jpg', type: 'image/jpeg', size: 1000 }).ok);
+  assert.ok(describeEvidenceFile({ name: 'a.jpg', type: '', size: 1000 }).ok,
+    'a JPG with no reported type must still be accepted');
+  assert.ok(!describeEvidenceFile({ name: 'a.docx', type: '', size: 10 }).ok);
+  assert.ok(!describeEvidenceFile(null).ok);
+  assert.ok(!describeEvidenceFile({ name: 'a.jpg', type: 'image/jpeg', size: EVIDENCE_MAX_BYTES + 1 }).ok,
+    'a file over the limit must be refused');
+
+  // HEIC gets its own message. Reaching that branch means conversion failed, so
+  // the advice must be about this browser, not about attaching a photo -- the
+  // student already did attach a photo.
+  const heic = describeEvidenceFile({ name: 'IMG_0001.HEIC', type: 'image/heic', size: 1000 });
+  assert.ok(!heic.ok, 'HEIC must be refused once conversion has failed');
+  assert.ok(/iPhone/i.test(heic.message), 'the HEIC message must name the cause');
+  assert.ok(!/JPG, PNG or WebP/.test(heic.message),
+    'HEIC must not fall through to the generic "attach a photo" message');
+  assert.ok(!describeEvidenceFile({ name: 'IMG.heic', type: '' }).ok,
+    'HEIC detected by extension alone must also be refused');
+}
+
+console.log(`Verified ${presets.length} grading presets, policy scale, attendance, honors, risk boundaries, milestone identity, summer isolation, consultation window states, grade change request rules, and ${thresholdChecks} dynamic-threshold transmutations against the SQL twin.`);

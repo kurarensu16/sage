@@ -1,5 +1,11 @@
 flowchart TB
 %% ===== Figure 2.3 — Proposed System Flowchart: Faculty Portal (updated 2026-10-10) =====
+%% Updated 2026-10-30:
+%%   - Create Classrooms and Enrollment Requests are gone. Classes are provisioned by the
+%%     Registrar or Dean through Faculty Loading, and an irregular student is added straight
+%%     onto the roster, so there is no code and no approval queue here.
+%%   - the consultation REQUEST flow is gone; it is a grade consultation log now
+%%   + Grade Change Requests: the instructor's two steps in the dispute chain
 %% UI labels (Preview & Post Grades, My Class Records, Evaluate Students, Performance Reports);
 %% SG correction proposal and matching repost; task verify/return; one-time follow-up.
 %% Revised 2026-10-10 (evening): follow-up after reported tasks are reviewed; re-evaluation in a later
@@ -26,7 +32,7 @@ flowchart TB
   SEL -- "Student Risk" --> RM
   SEL -- "Attendance" --> TM
   SEL -- "Reports" --> PM
-  SEL -- "Consult" --> CM
+  SEL -- "Grades and Disputes" --> CM
   SEL -- "Account" --> NM
 
   subgraph ROW1[" "]
@@ -45,15 +51,10 @@ flowchart TB
     end
     subgraph KM["<b>Classes Module</b>"]
       direction TB
-      K1["My Class Records:<br/>rosters and join codes"]
-      K2["Create Classrooms<br/>from teaching load"]
-      K3["Enrollment Requests"] --> KQ{"Approve?"}
-      KQ -- "No" --> KN["Request rejected;<br/>student notified"]
-      KQ -- "Yes" --> KY["Added to roster<br/>and gradebook;<br/>student notified"]
-      KY --> KL{"Milestone already<br/>posted?"}
+      K1["My Class Records:<br/>rosters and<br/>irregular-student labels"]
+      K4["Roster update notices:<br/>students added by the<br/>Registrar or Dean"] --> KL{"Milestone already<br/>posted?"}
       KL -- "Yes" --> KZ["Enter 0 for missing<br/>posted-term work;<br/>replace after make-up"]
-      K4["Roster update notices:<br/>number of students added"]
-      K1 ~~~ K2 ~~~ K4 ~~~ K3
+      K1 ~~~ K4
     end
     subgraph RM["<b>Student Risk Module</b>"]
       direction TB
@@ -86,9 +87,15 @@ flowchart TB
       P1 --> PX["Export or print"]
       P2 --> PX
     end
-    subgraph CM["<b>Consultations Module</b>"]
+    subgraph CM["<b>Grades Module (disputes)</b>"]
       direction TB
-      C1["Consultation Requests"] --> C2["Respond and log<br/>resolution notes"]
+      C1["Grade Consultation Log:<br/>consultations raised in the<br/>window after a posting"]
+      C3["Grade Change Requests"] --> CQ{"Applicable?"}
+      CQ -- "No" --> CR["Rejected, reason recorded"]
+      CQ -- "Yes" --> CF["Forwarded to the Dean"]
+      CF --> CD{"Authorized?"}
+      CD -- "Yes" --> CA["Apply the correction.<br/>MR and TFR use a dedicated<br/>editor; SG uses the one-use<br/>full-row workflow"]
+      C1 ~~~ C3
     end
     subgraph NM["<b>Account Module</b>"]
       direction TB

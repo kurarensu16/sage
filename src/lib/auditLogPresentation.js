@@ -8,8 +8,6 @@ const AUDIT_ENTITY_LABELS = {
   grade_computation_components: 'grade component',
   class_records: 'class record',
   class_activities: 'class activity',
-  class_join_requests: 'class join request',
-  class_room_join_codes: 'class join code',
   student_term_scores: 'student term score',
   student_activity_scores: 'student activity score',
   attendance_records: 'attendance record',

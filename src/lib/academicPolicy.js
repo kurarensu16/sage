@@ -18,6 +18,71 @@ export const HONORS = Object.freeze({
   ])
 });
 export const ATTENDANCE = Object.freeze({ warningAbsences: 2, nearFdaAbsences: 3, fdaAbsences: 4, statuses: Object.freeze(['Present', 'Absent', 'Late', 'Excused']) });
+
+// Default policy values. NULL/absent anywhere downstream means "use these",
+// which is what keeps every template and subject that never opts in unchanged.
+export const DEFAULT_PASSING_THRESHOLD = 75;
+export const DEFAULT_FDA_ABSENCES = 4;
+export const PASSING_THRESHOLD_BOUNDS = Object.freeze({ min: 50, max: 94 });
+export const FDA_ABSENCE_BOUNDS = Object.freeze({ min: 2, max: 10 });
+
+// Each band's distance above the passing mark in the DYCI ladder: a 1.00 sits 23
+// points above the 75 cutoff, a 2.75 sits 2 points above it, and so on. The
+// spacing is 3,3,3,3,3,3,3,2 -- uneven, and deliberately kept that way below.
+const LADDER_OFFSETS = Object.freeze([23, 20, 17, 14, 11, 8, 5, 2, 0]);
+const LADDER_GWAS = Object.freeze([1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3]);
+const OFFSET_SPAN = 25; // 100 - DEFAULT_PASSING_THRESHOLD
+
+// Rebuilds the ladder for a given passing threshold by scaling the offsets
+// above, so every band keeps its proportional distance above the passing mark:
+//
+//     minRating(i) = T + offset(i) * (100 - T) / 25
+//
+// At T = 75 the factor is exactly 1.0, so this returns the institutional ladder
+// byte for byte -- which is why there is no separate "default" code path to
+// drift out of sync. The handbook's uneven spacing is preserved rather than
+// flattened into even steps, and no band ever demands more than 100 for any
+// threshold in the allowed 50..94 range.
+//
+// This is the JS twin of aspire_transmute_grade(NUMERIC, NUMERIC) in
+// 20261029054241_dynamic_grading_thresholds.sql. The two must agree exactly;
+// `npm run verify:grading` asserts it.
+export function buildTransmutationLadder(passingThreshold = null) {
+  // Checked before Number() on purpose: Number(null) is 0, not NaN, so an
+  // isFinite guard alone would treat "no threshold set" as a 0% passing mark
+  // and rescale the entire ladder. Every unset template takes this path, so
+  // getting it wrong would mis-transmute every grade in the system.
+  if (passingThreshold === null || passingThreshold === undefined || passingThreshold === '') {
+    return TRANSMUTATION_LADDER;
+  }
+  const threshold = Number(passingThreshold);
+  if (!Number.isFinite(threshold) || threshold === DEFAULT_PASSING_THRESHOLD) {
+    return TRANSMUTATION_LADDER;
+  }
+  const factor = (100 - threshold) / OFFSET_SPAN;
+  return Object.freeze(
+    LADDER_OFFSETS.map((offset, i) =>
+      Object.freeze({ minRating: threshold + offset * factor, gwa: LADDER_GWAS[i] })
+    )
+  );
+}
+
+// Derives the absence tiers from the FDA count, mirroring how the GWA bands
+// derive from the passing threshold: one number is configured, the rest follow.
+// The status vocabulary is NOT policy and stays fixed.
+export function resolveAttendancePolicy(fdaThreshold = null) {
+  // Same trap as buildTransmutationLadder: Number(null) is 0, which would make
+  // every unset subject trigger FDA at zero absences.
+  const unset = fdaThreshold === null || fdaThreshold === undefined || fdaThreshold === '';
+  const parsed = unset ? NaN : Number(fdaThreshold);
+  const fdaAbsences = Number.isFinite(parsed) ? parsed : DEFAULT_FDA_ABSENCES;
+  return {
+    warningAbsences: fdaAbsences - 2,
+    nearFdaAbsences: fdaAbsences - 1,
+    fdaAbsences,
+    statuses: ATTENDANCE.statuses
+  };
+}
 export const RISK_TIERS = Object.freeze({
   LOW: { min: 0, max: 24, label: 'low', color: 'emerald' },
   MODERATE: { min: 25, max: 49, label: 'moderate', color: 'amber' },
@@ -37,9 +102,12 @@ export const GWA_BANDS = Object.freeze([
   { max: 3, label: 'Passing Margin' }, { max: Infinity, label: 'Academic Warning' }
 ]);
 
-export function toGwaOrNull(rating) {
+// `passingThreshold` is optional and defaults to the institutional ladder, so
+// every existing one-argument caller behaves exactly as before.
+export function toGwaOrNull(rating, passingThreshold = null) {
   if (rating === null || rating === undefined || rating === '' || !Number.isFinite(Number(rating))) return null;
-  return TRANSMUTATION_LADDER.find(item => Number(rating) >= item.minRating)?.gwa ?? GRADE_SCALE.failedValue;
+  const ladder = buildTransmutationLadder(passingThreshold);
+  return ladder.find(item => Number(rating) >= item.minRating)?.gwa ?? GRADE_SCALE.failedValue;
 }
 
 export function resolveOfficialGwa(row = {}) {

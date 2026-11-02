@@ -14,9 +14,14 @@ const ROLES = [
   { value: 'student', label: 'Student' },
   { value: 'faculty', label: 'Faculty' },
   { value: 'dean', label: 'Dean' },
+  { value: 'registrar', label: 'Registrar' },
   { value: 'admin', label: 'Administrator' }
 ];
-const NUMBER_PREFIX = { student: '', faculty: 'FAC-', dean: 'DN-', admin: 'ADM-' };
+const NUMBER_PREFIX = { student: '', faculty: 'FAC-', dean: 'DN-', registrar: 'REG-', admin: 'ADM-' };
+
+// Registrar, like Admin, is institution-wide rather than scoped to one college,
+// so neither role carries a department.
+const COLLEGE_EXEMPT_ROLES = ['admin', 'registrar'];
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
 const DEFAULT_PASSWORD = 'SagePassword123!';
 
@@ -181,7 +186,7 @@ export default function UserForm() {
         next.programId = '';
         next.sectionId = '';
       }
-      if ('role' in changes && changes.role === 'admin') {
+      if ('role' in changes && COLLEGE_EXEMPT_ROLES.includes(changes.role)) {
         next.departmentId = '';
       }
       return next;
@@ -220,7 +225,7 @@ export default function UserForm() {
       setErrorMsg('Choose a valid role.');
       return;
     }
-    if (formData.role !== 'admin' && !formData.departmentId) {
+    if (!COLLEGE_EXEMPT_ROLES.includes(formData.role) && !formData.departmentId) {
       setErrorMsg('Choose a college.');
       return;
     }
@@ -240,7 +245,7 @@ export default function UserForm() {
     }
 
     const isStudent = formData.role === 'student';
-    const departmentId = formData.role === 'admin' ? null : formData.departmentId;
+    const departmentId = COLLEGE_EXEMPT_ROLES.includes(formData.role) ? null : formData.departmentId;
     const sectionId = isStudent ? formData.sectionId : null;
     const yearLevel = isStudent ? formData.yearLevel : null;
 
@@ -420,7 +425,7 @@ export default function UserForm() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
-            {formData.role !== 'admin' && (
+            {!COLLEGE_EXEMPT_ROLES.includes(formData.role) && (
               <div className="flex flex-col gap-1.5">
                 <label className={labelClass}>College / School <span className="text-rose-500">*</span></label>
                 <select

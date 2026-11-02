@@ -25,6 +25,19 @@ import {
 import { scoreOrNull } from '../../lib/evaluationTracking';
 import { loadStudentRunningGrades } from '../../lib/studentRunningGrade';
 import { toDisplayRemark } from '../../lib/academicPolicy';
+import { fetchWindowsForClass, resolveMilestoneState } from '../../lib/gradeConsultationService';
+
+// The badge under a milestone rating. A posted MR/TFR reads "Not Final" while
+// its consultation window is open -- the span in which the instructor can still
+// correct it directly -- and "Finalized" once that window closes, after which a
+// change needs a formal grade change request. A Dean-applied correction outranks
+// both, because what the student needs to see first is that the grade moved.
+function milestoneBadge(isCorrected, state) {
+  if (isCorrected) return { text: 'Corrected', className: 'text-emerald-600' };
+  if (state?.state === 'posted') return { text: 'Not Final', className: 'text-sky-600' };
+  if (state?.state === 'finalized') return { text: 'Finalized', className: 'text-emerald-600' };
+  return { text: 'Tentative', className: 'text-amber-600' };
+}
 
 export default function MyGradesDetail() {
   const navigate = useNavigate();
@@ -363,6 +376,17 @@ export default function MyGradesDetail() {
           remarks = 'Tentative';
         }
 
+        // Consultation windows decide whether a posted MR/TFR is still open to
+        // direct correction. If they cannot be read, fall back to no windows,
+        // which reads as Finalized -- the behaviour before windows existed.
+        let windows = [];
+        try {
+          windows = await fetchWindowsForClass(targetClassRecordId);
+        } catch (winErr) {
+          console.warn('Could not load consultation windows:', winErr);
+        }
+        const windowFor = (period) => windows.find((w) => w.grade_period === period) || null;
+
         setFinalCalculations({
           mr: running?.mr ?? null,
           tfr: running?.tfr ?? null,
@@ -381,6 +405,16 @@ export default function MyGradesDetail() {
             && postedTfr?.last_correction_request_id === postedSg?.last_correction_request_id
           ),
           sgIsCorrected: hasAppliedScoreCorrection,
+          mrState: resolveMilestoneState({
+            posted: Boolean(postedMr),
+            window: windowFor(GRADE_MILESTONES.MIDTERM_RATING),
+            gradePeriod: GRADE_MILESTONES.MIDTERM_RATING
+          }),
+          tfrState: resolveMilestoneState({
+            posted: Boolean(postedTfr),
+            window: windowFor(GRADE_MILESTONES.TENTATIVE_FINAL_RATING),
+            gradePeriod: GRADE_MILESTONES.TENTATIVE_FINAL_RATING
+          }),
           blankActivityCount: running?.blankActivityCount || 0
         });
 
@@ -736,9 +770,9 @@ export default function MyGradesDetail() {
                   {finalCalculations.mr !== null && (
                     <span className={cn(
                       "block text-micro font-bold uppercase tracking-wide",
-                      finalCalculations.mrIsPosted ? 'text-emerald-600' : 'text-amber-600'
+                      milestoneBadge(finalCalculations.mrIsCorrected, finalCalculations.mrState).className
                     )}>
-                      {finalCalculations.mrIsCorrected ? 'Corrected' : finalCalculations.mrIsPosted ? 'Posted' : 'Tentative'}
+                      {milestoneBadge(finalCalculations.mrIsCorrected, finalCalculations.mrState).text}
                     </span>
                   )}
                 </div>
@@ -748,13 +782,24 @@ export default function MyGradesDetail() {
                   {finalCalculations.tfr !== null && (
                     <span className={cn(
                       "block text-micro font-bold uppercase tracking-wide",
-                      finalCalculations.tfrIsPosted ? 'text-emerald-600' : 'text-amber-600'
+                      milestoneBadge(finalCalculations.tfrIsCorrected, finalCalculations.tfrState).className
                     )}>
-                      {finalCalculations.tfrIsCorrected ? 'Corrected' : finalCalculations.tfrIsPosted ? 'Posted' : 'Tentative'}
+                      {milestoneBadge(finalCalculations.tfrIsCorrected, finalCalculations.tfrState).text}
                     </span>
                   )}
                 </div>
               </div>
+
+              {(finalCalculations.mrState?.state === 'posted' || finalCalculations.tfrState?.state === 'posted') && (
+                <div className="bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-2 flex items-start gap-2 text-micro text-sky-800">
+                  <AlertCircle className="h-3.5 w-3.5 mt-px flex-shrink-0" />
+                  <span>
+                    A rating marked <strong>Not Final</strong> is posted but still open for
+                    consultation, so your instructor can correct it directly. Once it is
+                    finalized, a change needs a formal grade change request.
+                  </span>
+                </div>
+              )}
 
               <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
                 <div>

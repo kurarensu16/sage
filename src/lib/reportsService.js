@@ -111,16 +111,27 @@ export function createFormattedReportWorksheet({
  * Determine a student's performance category based on institutional cutoffs.
  * Null/unrecorded scores evaluate to null (ungraded) to avoid false-struggling flags.
  *
+ * The passing cutoff is the class's own frozen threshold when one is supplied,
+ * so "Average" versus "Struggling" reflects the policy the class actually ran
+ * under. Omitting it keeps the institutional default, which is what every
+ * existing caller does.
+ *
  * @param {number|null} percentage
+ * @param {number|null} passingThreshold
  * @returns {'Performed well'|'Average'|'Struggling'|null}
  */
-export function getStudentStatus(percentage) {
+export function getStudentStatus(percentage, passingThreshold = null) {
   if (percentage === null || percentage === undefined || Number.isNaN(Number(percentage))) {
     return null;
   }
   const val = Number(percentage);
+  const passing =
+    passingThreshold === null || passingThreshold === undefined || passingThreshold === ''
+      ? PASSING_GRADE
+      : Number(passingThreshold);
+  const cutoff = Number.isFinite(passing) ? passing : PASSING_GRADE;
   if (val >= HIGH_CUTOFF) return 'Performed well';
-  if (val >= PASSING_GRADE) return 'Average';
+  if (val >= cutoff) return 'Average';
   return 'Struggling';
 }
 

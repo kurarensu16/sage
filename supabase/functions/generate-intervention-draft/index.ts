@@ -12,7 +12,28 @@ const ACTION_TYPES = new Set([
 ])
 const PRIORITIES = new Set(['immediate', 'developmental', 'follow_up'])
 const PROHIBITED = /\b(lazy|unmotivated|irresponsible|disorder|diagnos|punish|penalty|guarantee(?:d)? pass|will pass|retake|special exam)\b/i
-const ACTION_START = /^(complete|correct|review|practice|prepare|create|attend|schedule|summarize|solve|revise|organize|develop|demonstrate|submit|present|explain)\b/i
+// A task must open with something the student DOES. The verb list is the
+// quality bar -- "study harder" is not a task -- so it stays deliberately tight.
+const ACTION_START = /^(complete|correct|review|practice|prepare|create|attend|schedule|summarize|solve|revise|organize|develop|demonstrate|submit|present|explain|read|rewrite|rework|draft|list|finish|attempt|watch|meet)\b/i
+
+// Models phrase the same instruction two ways: "Complete the Lab 3 exercise" and
+// "The student should complete the Lab 3 exercise". Both name the same action;
+// only the first passed ACTION_START, so the draft failed intermittently on
+// sentence shape rather than on substance -- same model, same temperature, same
+// evidence, a different wording.
+//
+// The description is normalised to the imperative BEFORE it is judged, and the
+// imperative form is what gets stored, so tasks read uniformly to the student.
+// This is not a loophole: stripping the lead-in leaves the verb test exactly
+// where it was, so a task that never names an action still fails.
+const STUDENT_LEAD_IN = /^(the\s+)?student\s+(should|must|needs\s+to|has\s+to|will|can|is\s+to)\s+/i
+const IMPERATIVE_LEAD_IN = /^(you\s+(should|must|need\s+to|will|can)\s+|please\s+)/i
+
+function toImperative(description: string) {
+  const stripped = description.replace(STUDENT_LEAD_IN, '').replace(IMPERATIVE_LEAD_IN, '').trim()
+  if (!stripped) return description
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1)
+}
 const MAX_BODY_BYTES = 8_000
 const REQUESTS_PER_WINDOW = 8
 const REQUEST_WINDOW_MS = 60_000
@@ -108,15 +129,16 @@ function validateModelDraft(value: any, basisCodes: Set<string>, term: string, d
     const codes = Array.isArray(task?.basis_codes)
       ? [...new Set(task.basis_codes.map((code: unknown) => clean(code, 160)).filter((code: string) => basisCodes.has(code)))].slice(0, 6)
       : []
-    if (description.length < 40 || !deliverable || codes.length === 0) throw new Error('A generated task lacked an actionable description, deliverable, or valid evidence.')
-    if (!ACTION_START.test(description)) throw new Error('A generated task did not begin with a clear student action.')
+    const imperative = toImperative(description)
+    if (imperative.length < 40 || !deliverable || codes.length === 0) throw new Error('A generated task lacked an actionable description, deliverable, or valid evidence.')
+    if (!ACTION_START.test(imperative)) throw new Error('A generated task did not begin with a clear student action.')
     if (!ACTION_TYPES.has(actionType) || !PRIORITIES.has(priority)) throw new Error('A generated task used an unsupported action type or priority.')
     if (PROHIBITED.test(`${description} ${deliverable}`)) throw new Error('A generated task contained prohibited language.')
     const suggested = task?.suggested_due_date == null ? null : clean(task.suggested_due_date, 10)
     if (suggested) throw new Error('The model invented a deadline without academic-calendar evidence.')
     return {
       task_id: crypto.randomUUID(),
-      description,
+      description: imperative,
       deliverable,
       action_type: actionType,
       priority,

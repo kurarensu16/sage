@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { cn } from "../lib/utils";
-import { Check, MessageSquare, CloudUpload, Lock } from 'lucide-react';
+import { Check, MessageSquare, CloudUpload, Lock, TriangleAlert } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import {
   calculateSemestralGrade,
@@ -24,6 +24,8 @@ export default function StudentRow({
   classCode = 'default',
   classRecordId,
   studentLocked,
+  // Terms behind a finalized milestone. Empty until the class's windows load.
+  frozenTerms = [],
   periodsList,
   maxItems = {
     Prelim: { exam: 40 },
@@ -64,7 +66,7 @@ export default function StudentRow({
     };
   });
 
-  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
+  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const [showNoteInput, setShowNoteInput] = useState(Boolean(scores.remarksNote));
   const debounceRef = useRef(null);
   const editVersionRef = useRef(scores.pendingSync === true ? 1 : 0);
@@ -110,7 +112,20 @@ export default function StudentRow({
 
         const upsertRows = [];
         const emptyTerms = [];
-        const periods = periodsList || ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+        const allPeriods = periodsList || ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+
+        // A frozen term's cells are read-only, but the autosave used to serialise
+        // the WHOLE row regardless -- so editing Final re-sent Prelim, and
+        // trg_block_frozen_term_scores refused the statement. One refused row
+        // aborts the upsert, so nothing saved: the instructor typed Semi-Final
+        // and Final scores that never reached the database while the header
+        // still read "All grades saved".
+        //
+        // The trigger was right. The client had no business sending them. This
+        // also keeps the delete below off a finalized term -- the trigger fires
+        // on INSERT and UPDATE only, so a delete would have gone through and
+        // taken posted scores with it.
+        const periods = allPeriods.filter(term => !frozenTerms.includes(term));
 
         periods.forEach(term => {
           const tScores = scores[term] || {};
@@ -220,9 +235,13 @@ export default function StudentRow({
         lastValidScoresRef.current = scores;
         onSaveStatusChange?.('saved');
       } catch (err) {
+        // Not 'idle'. The header treats anything that is not 'saving' as saved,
+        // so reporting idle painted a failed save green and left pendingSync
+        // set with nobody told. Scores that never reached the database are the
+        // one thing this screen must never claim to have stored.
         console.error('Failed to sync scores:', err);
-        setSaveStatus('idle');
-        onSaveStatusChange?.('idle');
+        setSaveStatus('error');
+        onSaveStatusChange?.('error', err?.message || 'These scores could not be saved.');
       }
     }, 1200);
     return () => clearTimeout(debounceRef.current);
@@ -386,22 +405,105 @@ export default function StudentRow({
 
   const statusInfo = getStatus(sg);
 
-  const isPrelimCellLocked = isLocked;
-  const isMidtermCellLocked = isLocked;
-  const isSemiFinalCellLocked = isLocked;
-  const isFinalCellLocked = isLocked;
+  // Per-term now, not one flag copied four times. Finalizing the Midterm
+  // Rating freezes Prelim and Midterm while Semi-Final and Final stay open --
+  // the instructor still has a semester to teach, and locking the whole record
+  // would stop them entering the scores the next milestone needs.
+  //
+  // frozenTerms mirrors aspire_frozen_terms() in the database. The trigger is
+  // the control; this is what stops a cell inviting an edit it would refuse.
+  const isTermFrozen = (term) => frozenTerms.includes(term);
+  const isPrelimCellLocked = isLocked || isTermFrozen('Prelim');
+  const isMidtermCellLocked = isLocked || isTermFrozen('Midterm');
+  const isSemiFinalCellLocked = isLocked || isTermFrozen('Semi-Final');
+  const isFinalCellLocked = isLocked || isTermFrozen('Final');
+
+  // Keyboard navigation across the grid.
+  //
+  // Every editable cell carries its coordinate, so moving between them is a
+  // lookup rather than anything the rows have to coordinate with each other.
+  // Locked cells render as text and have no coordinate, so they are skipped --
+  // which is what you want: a posted term should not swallow the cursor.
+  //
+  // Left and right only CHANGE CELL when the caret is already at the end of the
+  // value. Inside a two-digit score the arrows still move the caret, because
+  // taking that away to gain column movement would be a bad trade for anyone
+  // correcting a typo.
+  const focusCell = (col, row) => {
+    const next = document.querySelector(
+      `input[data-grid-col="${CSS.escape(col)}"][data-grid-row="${row}"]`
+    );
+    if (!next) return false;
+    next.focus();
+    next.select?.();
+    return true;
+  };
+
+  const handleGridKey = (e, col) => {
+    const row = Number(rowNo);
+    const input = e.currentTarget;
+
+    // input[type=number] does not expose a caret: selectionStart reads null,
+    // and reading it throws outright in some browsers. Where it cannot be read,
+    // treat the caret as being at both ends, so left and right always change
+    // cell rather than appearing to do nothing.
+    let atStart = true;
+    let atEnd = true;
+    try {
+      if (input.selectionStart !== null) {
+        const len = String(input.value).length;
+        atStart = input.selectionStart === 0 && input.selectionEnd === 0;
+        atEnd = input.selectionStart === len && input.selectionEnd === len;
+      }
+    } catch {
+      // Keep the both-ends default.
+    }
+
+    if (e.key === 'Enter' || e.key === 'ArrowDown') {
+      // Always swallowed, even at the last row: on a number input these keys
+      // otherwise step the value, so a stray Down on the bottom row would
+      // quietly subtract a mark.
+      e.preventDefault();
+      focusCell(col, row + 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusCell(col, row - 1);
+    } else if (e.key === 'ArrowLeft' && atStart) {
+      if (stepColumn(col, row, -1)) e.preventDefault();
+    } else if (e.key === 'ArrowRight' && atEnd) {
+      if (stepColumn(col, row, 1)) e.preventDefault();
+    }
+  };
+
+  // Columns are discovered from the row itself, so the order always matches what
+  // is on screen -- including a term the view is currently filtered to.
+  const stepColumn = (col, row, delta) => {
+    const cells = Array.from(
+      document.querySelectorAll(`input[data-grid-row="${row}"][data-grid-col]`)
+    );
+    const index = cells.findIndex((c) => c.dataset.gridCol === col);
+    const target = cells[index + delta];
+    if (!target) return false;
+    target.focus();
+    target.select?.();
+    return true;
+  };
 
   const renderInputCell = (term, key, maxVal, isTermLocked, widthClass = "w-full", label = key) => {
     const value = scores[term]?.[key] ?? '';
     if (isTermLocked) {
       return <span className="font-mono text-xs">{value === '' ? '—' : value}</span>;
     }
+    const gridCol = `${term}:${key}`;
     return (
       <input
         type="number"
         min="0"
         max={maxVal}
         value={value}
+        data-grid-col={gridCol}
+        data-grid-row={rowNo}
+        onKeyDown={(e) => handleGridKey(e, gridCol)}
         onFocus={(e) => e.target.select()}
         onChange={(e) => {
           const val = e.target.value === '' ? '' : Math.max(0, Math.min(maxVal, Number(e.target.value)));
@@ -673,6 +775,11 @@ export default function StudentRow({
               {saveStatus === 'saved' && (
                 <span className="flex items-center gap-1 text-micro text-emerald-600 font-semibold mt-1">
                   <Check className="h-2.5 w-2.5" /> Saved
+                </span>
+              )}
+              {saveStatus === 'error' && (
+                <span className="flex items-center gap-1 text-micro text-rose-600 font-semibold mt-1">
+                  <TriangleAlert className="h-2.5 w-2.5" /> Not saved
                 </span>
               )}
             </div>

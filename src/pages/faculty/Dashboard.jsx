@@ -32,6 +32,7 @@ import InfoModal from '../../components/InfoModal';
 import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 import { getClassPriorityRoster } from '../../lib/classRoomService';
 import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
+import { toUserMessage } from '../../lib/errorMessages';
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
@@ -220,9 +221,12 @@ export default function Dashboard() {
             .order('created_at', { ascending: false });
 
           if (consultData) loadedConsultations = consultData;
-        } catch {
-          const local = localStorage.getItem(`sage_consultations_faculty_${user.id}`);
-          loadedConsultations = local ? JSON.parse(local) : [];
+        } catch (err) {
+          // Supabase is the only store. The old localStorage copy was a
+          // leftover of the mockDb era and could show stale consultations as
+          // though they were live, which is worse than showing none.
+          console.error('[ASPIRE] could not load consultation requests:', err);
+          loadedConsultations = [];
         }
 
         setConsultationRequests(loadedConsultations);
@@ -391,11 +395,11 @@ export default function Dashboard() {
       }]);
 
       // Audit Log
-      await logActivity({
-        action: 'Resolved Consultation Request',
-        message: `${facultyName} updated consultation request to "${resolutionStatus}" for student (${selectedConsultation.users?.email || 'Student'}).`,
-        actor: facultyName
-      });
+      await logActivity(
+        'Resolved Consultation Request',
+        `${facultyName} updated consultation request to "${resolutionStatus}" for student (${selectedConsultation.users?.email || 'Student'}).`,
+        facultyName
+      );
 
       setResolveFeedback({ type: 'success', message: `Consultation request marked as ${resolutionStatus}.` });
       setTimeout(() => {
@@ -403,29 +407,15 @@ export default function Dashboard() {
         setResolveFeedback(null);
       }, 1000);
     } catch (err) {
-      console.warn('Database update failed, using local cache fallback:', err);
-      // Fallback in localStorage
-      const updated = consultationRequests.map(c => 
-        c.consultation_id === selectedConsultation.consultation_id 
-          ? { ...c, ...updatedPayload } 
-          : c
-      );
-      setConsultationRequests(updated);
-      localStorage.setItem(`sage_consultations_faculty_${user.id}`, JSON.stringify(updated));
-
-      setStats(prev => ({
-        ...prev,
-        pendingConsultationsCount: Math.max(
-          0, 
-          prev.pendingConsultationsCount - (selectedConsultation.status === 'pending' && resolutionStatus !== 'pending' ? 1 : 0)
-        )
-      }));
-
-      setResolveFeedback({ type: 'success', message: `Consultation marked as ${resolutionStatus} (cached locally).` });
-      setTimeout(() => {
-        setSelectedConsultation(null);
-        setResolveFeedback(null);
-      }, 1000);
+      // This used to write the change to localStorage and report SUCCESS, so a
+      // failed save looked exactly like a saved one -- the instructor believed
+      // a consultation was resolved that the database never recorded. The
+      // modal now stays open with the record untouched, so the only way to
+      // leave it resolved is to actually resolve it.
+      setResolveFeedback({
+        type: 'error',
+        message: toUserMessage(err, 'This could not be saved, so nothing was changed. Please try again.')
+      });
     } finally {
       setResolving(false);
     }

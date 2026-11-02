@@ -18,9 +18,12 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { cn } from '../../lib/utils';
 import { countTaskProgress, isAcknowledged, isStudentVisibleEvaluation, taskVerification } from '../../lib/evaluationTracking';
+import { setTaskCompletion, uploadTaskEvidence, downloadTaskEvidence, taskEvidenceName } from '../../lib/evaluationService';
+import EvidenceViewer from '../../components/common/EvidenceViewer';
+import { EVIDENCE_ACCEPT_ATTR } from '../../lib/gradeChangeRules';
 import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
 import { fetchAcademicTerms, getActiveAcademicTerm } from '../../lib/termStatus';
-import { getCachedData, setCachedData } from '../../lib/dataCache';
+import { getCachedData, invalidateCache, setCachedData } from '../../lib/dataCache';
 
 export default function FacultyAdvisingInbox() {
   const { user } = useAuth();
@@ -28,6 +31,10 @@ export default function FacultyAdvisingInbox() {
   const [evaluations, setEvaluations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updatingTaskId, setUpdatingTaskId] = useState(null);
+  // One hidden file input per task, opened by the row when proof is required.
+  const evidenceInputRefs = useRef({});
+  // The attachment open in the in-app viewer, or null.
+  const [viewing, setViewing] = useState(null);
   const [acknowledgingId, setAcknowledgingId] = useState(null);
   const [terms, setTerms] = useState([]);
   const [archiveMode, setArchiveMode] = useState(false);
@@ -205,27 +212,38 @@ export default function FacultyAdvisingInbox() {
   };
 
   // Toggle checklist task completion
-  const handleToggleTask = async (evaluationId, taskId, currentStatus, isLocked) => {
+  // Ticking a task, with its proof when the task asks for one.
+  //
+  // The upload and the tick are one call, because an upload followed by a
+  // failed tick leaves a file nothing points at, and a tick before its upload
+  // is the state the requirement exists to prevent. The RPC refuses a
+  // required-evidence task that arrives without a file, so a stale tab cannot
+  // route around the disabled control.
+  const handleToggleTask = async (evaluationId, taskId, currentStatus, isLocked, file = null) => {
     if (isLocked || archiveMode) return;
     setUpdatingTaskId(taskId);
     try {
       const targetEval = evaluations.find(e => e.evaluation_id === evaluationId);
       if (!targetEval) return;
 
-      const { data: updatedPlan, error } = await supabase
-        .rpc('set_legacy_advising_task_completion', {
-          p_evaluation_id: evaluationId,
-          p_task_id: taskId,
-          p_completed: !currentStatus
-        });
+      let evidence = null;
+      // Only on the way to done. Unticking must never demand a re-upload.
+      if (file && !currentStatus) {
+        evidence = await uploadTaskEvidence({ studentId: user.id, file });
+      }
 
-      if (error) throw error;
+      const updatedPlan = await setTaskCompletion({
+        evaluationId, taskId, completed: !currentStatus, evidence
+      });
 
-      // Update local state
       setEvaluations(prev => prev.map(e => e.evaluation_id === evaluationId ? { ...e, advising_plan: updatedPlan } : e));
+      // The list is cached for 180s. Updating only React state meant leaving
+      // this page and returning inside that window brought back the plan as it
+      // was before the tick -- a replaced file appeared not to have replaced.
+      invalidateCache(`student_advisories_${user.id}`);
     } catch (err) {
       console.error('Failed to update task status:', err);
-      alert(err.message || 'Failed to update task status. Please try again.');
+      alert(err.message || 'That task could not be updated. Please try again.');
     } finally {
       setUpdatingTaskId(null);
     }
@@ -233,7 +251,7 @@ export default function FacultyAdvisingInbox() {
 
   return (
     <>
-      <PageHeader title="Advisories & Study Plans" breadcrumb="Student Portal" />
+      <PageHeader title="Faculty Action Plans" breadcrumb="Student Portal" />
 
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-4 sm:space-y-6 text-left font-sans">
         <AcademicPeriodFilter
@@ -263,7 +281,7 @@ export default function FacultyAdvisingInbox() {
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-sage-600 hover:bg-sage-700 rounded-md shadow-xs transition-colors whitespace-nowrap cursor-pointer"
           >
             <BrainCircuit className="w-3.5 h-3.5" />
-            <span>AI Study Tutor</span>
+            <span>Academic Insights</span>
           </Link>
         </div>
 
@@ -456,7 +474,16 @@ export default function FacultyAdvisingInbox() {
                                   ? cn("bg-emerald-50/40 border-emerald-200 text-slate-600", isLocked ? "cursor-default" : "cursor-pointer")
                                   : "bg-white border-slate-200 text-slate-800 hover:border-slate-300 cursor-pointer"
                             )}
-                            onClick={() => !isLocked && handleToggleTask(ev.evaluation_id, task.task_id, task.completed, isLocked)}
+                            onClick={() => {
+                              if (isLocked) return;
+                              // Going to done on a task that wants proof opens the
+                              // picker instead of ticking. Unticking never does.
+                              if (task.requires_evidence !== false && !task.completed && !task.evidence) {
+                                evidenceInputRefs.current[task.task_id]?.click();
+                                return;
+                              }
+                              handleToggleTask(ev.evaluation_id, task.task_id, task.completed, isLocked);
+                            }}
                           >
                             <button
                               type="button"
@@ -471,10 +498,78 @@ export default function FacultyAdvisingInbox() {
                               )}
                             </button>
 
+                            <input
+                              type="file"
+                              // The same list the validator and the bucket use.
+                              // "image/*" offered GIF, BMP, SVG and TIFF in the
+                              // file dialog and then refused them after the
+                              // student had chosen one.
+                              accept={EVIDENCE_ACCEPT_ATTR}
+                              hidden
+                              ref={(el) => { evidenceInputRefs.current[task.task_id] = el; }}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = '';
+                                if (!file) return;
+                                // Replacing a file on a task already marked done
+                                // must leave it done. Passing the CURRENT state
+                                // as if it were the opposite keeps the toggle
+                                // landing on `true` either way.
+                                const pretendCurrent = task.completed ? false : task.completed;
+                                handleToggleTask(ev.evaluation_id, task.task_id, pretendCurrent, isLocked, file);
+                              }}
+                            />
+
                             <div className="flex-1 text-xs">
                               <span className={cn(task.completed && "line-through text-slate-400")}>
                                 {task.description}
                               </span>
+                              {task.requires_evidence !== false && !task.completed && !task.evidence && (
+                                <span className="mt-1 block text-[10px] text-amber-700">
+                                  Needs a photo or PDF of your work before you can mark it done.
+                                </span>
+                              )}
+                              {task.evidence?.object_key && (
+                                <span className="mt-1 flex items-center gap-2 text-[10px] text-emerald-700">
+                                  Proof attached — your instructor can see it.
+                                  {/* "Replace file" used to be the only control
+                                      here, which asked the student to decide
+                                      whether they had sent the right thing
+                                      without letting them look at it. Same
+                                      viewer the instructor uses, so both sides
+                                      are looking at the same file. */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setViewing({
+                                        name: taskEvidenceName(task.evidence),
+                                        contentType: task.evidence.mime,
+                                        load: () => downloadTaskEvidence(task.evidence)
+                                      });
+                                    }}
+                                    className="font-semibold text-sage-700 underline cursor-pointer"
+                                  >
+                                    View
+                                  </button>
+                                  {!isLocked && (
+                                    // Attaching the wrong file is easy and the
+                                    // instructor has not looked yet. Replacing
+                                    // re-sends the tick with the new file, so
+                                    // the task never sits done-with-no-proof.
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        evidenceInputRefs.current[task.task_id]?.click();
+                                      }}
+                                      className="font-semibold text-sage-700 underline cursor-pointer"
+                                    >
+                                      Replace file
+                                    </button>
+                                  )}
+                                </span>
+                              )}
                               {task.completed && task.completed_at && (
                                 <div className="text-[10px] font-mono text-slate-400 mt-0.5 flex items-center gap-1">
                                   <span className="text-emerald-600 font-semibold">Reported done on {new Date(task.completed_at).toLocaleDateString()}</span>
@@ -501,7 +596,7 @@ export default function FacultyAdvisingInbox() {
                         to="/student/academic-insights"
                         className="inline-flex items-center gap-1 font-semibold text-sage-600 hover:text-sage-700"
                       >
-                        <span>Open AI Study Tutor</span>
+                        <span>Open Academic Insights</span>
                         <ArrowRight className="w-3.5 h-3.5" />
                       </Link>
                     </div>
@@ -513,6 +608,8 @@ export default function FacultyAdvisingInbox() {
         )}
 
       </div>
+
+      <EvidenceViewer source={viewing} onClose={() => setViewing(null)} />
     </>
   );
 }

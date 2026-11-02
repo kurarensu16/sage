@@ -26,7 +26,6 @@ import {
   MessageSquare,
   CheckCircle2,
   Lock,
-  TrendingUp,
   Info
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -143,8 +142,14 @@ export default function AcademicInsights() {
   // Selector states
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const initialScope = searchParams.get('tab') || 'overall';
-  const [scope, setScope] = useState(initialScope); // Today, My Courses, My Progress
+  // Validated, not trusted. ?tab= comes from the URL, and the only panels that
+  // exist now are the all-subjects view, one subject, and consultations. An
+  // unrecognised value -- a bookmark to the retired ?tab=progress, or a typo --
+  // would otherwise match no panel and render a blank page.
+  const SCOPES = ['overall', 'subject', 'consultations'];
+  const requestedScope = searchParams.get('tab') || 'overall';
+  const initialScope = SCOPES.includes(requestedScope) ? requestedScope : 'overall';
+  const [scope, setScope] = useState(initialScope);
   const [selectedSubjectCode, setSelectedSubjectCode] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState('semestralGrade');
   const [completedActionIds, setCompletedActionIds] = useState([]);
@@ -196,7 +201,7 @@ export default function AcademicInsights() {
 
         // Immediate local alert
         await showLocalNotification({
-          title: 'AI Study Tutor Insight Ready',
+          title: 'Academic Insight Ready',
           body: '🧠 Your personalized academic guidance and counseling verdict is ready.'
         });
 
@@ -1275,65 +1280,66 @@ export default function AcademicInsights() {
   return (
     <>
       <PageHeader 
-        title="AI Study Tutor"
-        breadcrumb="Student Portal" 
+        title="Academic Insights"
+        breadcrumb="Student Portal"
       >
-        <button
-          onClick={() => {
-            navigate('/student/consultations');
-          }}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap"
-        >
-          <MessageSquare className="w-4 h-4" />
-          <span>Request Consultation</span>
-        </button>
+        {/* The "Request Consultation" button that stood here was retired with
+            the self-service request flow in Phase 5. Consultations are now
+            logged by faculty and this student's view of them is read-only, so
+            a button offering to request one promised something the process no
+            longer does. Consultations remain one click away in the sidebar. */}
       </PageHeader>
 
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-5 sm:space-y-6">
-        
-        {/* Navigation Scope Tabs */}
+
+        {/* No entry tiles here.
+            Ask ASPIRE already has its own button inside the panels below, and
+            AI Study Advising has a dedicated page in the sidebar. Repeating
+            both at the top only added links to places the student can already
+            reach. */}
+
+        {/* One selector instead of Today / My Courses.
+            Those two tabs showed the same thing at different scope -- all
+            subjects versus one -- which is the same overall/subject split the
+            advisor already uses internally. Presenting it as a scope picker
+            says that plainly, and removes a tab that looked like a different
+            feature.
+
+            My Progress was retired with it: its action checklist and its
+            toggle already exist in the overall panel below, so it was a second
+            view of one set of data. Faculty-assigned plans now live under
+            Faculty Action Plans. */}
         {scope !== 'consultations' && (
-          <div className="bg-slate-200/70 p-1 rounded-2xl shadow-inner grid grid-cols-3 gap-1 max-w-2xl mx-auto">
-          <button
-            onClick={() => setScope('overall')}
-            className={cn(
-              "flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded-xl transition-all cursor-pointer text-center select-none",
-              scope === 'overall'
-                ? "bg-white text-sage-900 shadow-sm font-bold"
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <BrainCircuit className="h-4 w-4 text-sage-600" />
-            <span>Today</span>
-          </button>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+            <button
+              onClick={() => setScope('overall')}
+              className={cn(
+                "inline-flex items-center gap-1.5 py-2 px-3.5 text-xs font-semibold rounded-xl transition-all cursor-pointer whitespace-nowrap border",
+                scope === 'overall'
+                  ? "bg-sage-700 text-white border-sage-700 shadow-xs"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+              )}
+            >
+              <BrainCircuit className="h-4 w-4" />
+              <span>All subjects</span>
+            </button>
 
-          <button
-            onClick={() => setScope('subject')}
-            className={cn(
-              "flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded-xl transition-all cursor-pointer text-center select-none",
-              scope === 'subject'
-                ? "bg-white text-slate-900 shadow-sm font-bold"
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <BookOpen className="h-4 w-4 text-sage-600" />
-            <span>My Courses</span>
-          </button>
-
-          <button
-            onClick={() => setScope('progress')}
-            className={cn(
-              "flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded-xl transition-all cursor-pointer text-center select-none",
-              scope === 'progress'
-                ? "bg-white text-sage-900 shadow-sm font-bold"
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <TrendingUp className="h-4 w-4 text-sage-600" />
-            <span>My Progress</span>
-          </button>
-
-        </div>
+            {subjectsList.map(sub => (
+              <button
+                key={sub.code}
+                onClick={() => { setScope('subject'); setSelectedSubjectCode(sub.code); }}
+                className={cn(
+                  "inline-flex items-center gap-1.5 py-2 px-3.5 text-xs font-semibold rounded-xl transition-all cursor-pointer whitespace-nowrap border",
+                  scope === 'subject' && selectedSubjectCode === sub.code
+                    ? "bg-sage-700 text-white border-sage-700 shadow-xs"
+                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                )}
+              >
+                <BookOpen className="h-4 w-4" />
+                <span>{sub.code}</span>
+              </button>
+            ))}
+          </div>
         )}
 
         {/* Dynamic Panels */}
@@ -2284,93 +2290,6 @@ export default function AcademicInsights() {
             )}
 
           </div>
-        ) : scope === 'progress' ? (
-          <>
-            {/* ================= MY PROGRESS ================= */}
-            <div className="space-y-5 sm:space-y-6 animate-fade-in text-left">
-              <div className="rounded-2xl border border-sage-800 bg-gradient-to-r from-sage-950 via-slate-900 to-sage-900 p-5 text-white shadow-md sm:p-6">
-                <span className="rounded-md border border-sage-700/50 bg-sage-800/60 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-widest text-sage-300">
-                  Follow-through
-                </span>
-                <h3 className="mt-2 text-xl font-extrabold font-display tracking-tight sm:text-2xl">My Progress</h3>
-                <p className="mt-1 max-w-xl text-xs leading-relaxed text-slate-300">
-                  Track the actions you completed and know exactly when ASPIRE will review your evidence again.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Actions completed</span>
-                  <span className="mt-1 block font-mono text-2xl font-extrabold text-slate-900">
-                    {completedCurrentActionCount}/{advisorEvaluation.actions.length}
-                  </span>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Tentative evidence</span>
-                  <span className="mt-1 block font-mono text-2xl font-extrabold text-slate-900">{tentativeScoredActivityCount}</span>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
-                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Current advisor state</span>
-                  <span className="mt-1 block text-sm font-bold capitalize text-slate-900">{advisorEvaluation.state.replaceAll('_', ' ')}</span>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs sm:p-6">
-                <div className="flex flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900">Current action checklist</h4>
-                    <p className="mt-0.5 text-[11px] text-slate-500">These actions come from the same evidence shown on Today.</p>
-                  </div>
-                  <span className="rounded-full border border-sage-200 bg-sage-50 px-2.5 py-1 text-[10px] font-bold capitalize text-sage-700">
-                    Review: {advisorEvaluation.reviewTrigger.replaceAll('_', ' ')}
-                  </span>
-                </div>
-
-                {advisorEvaluation.actions.length > 0 ? (
-                  <div className="mt-4 space-y-2.5">
-                    {advisorEvaluation.actions.map((item) => {
-                      const isComplete = completedActionIds.includes(getAdvisorActionKey(item));
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => toggleAdvisorAction(item)}
-                          className="flex w-full items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-left transition-colors hover:bg-slate-100 cursor-pointer"
-                        >
-                          <span className={cn(
-                            'mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border',
-                            isComplete ? 'border-sage-600 bg-sage-600 text-white' : 'border-slate-300 bg-white text-slate-400'
-                          )}>
-                            {isComplete && <CheckCircle2 className="h-3.5 w-3.5" />}
-                          </span>
-                          <span>
-                            <span className={cn('block text-xs font-bold text-slate-900', isComplete && 'line-through text-slate-500')}>{item.title}</span>
-                            <span className="mt-1 block text-[11px] leading-relaxed text-slate-500">{item.description}</span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-xs text-slate-500">
-                    Your progress plan will begin when saved academic evidence supports a specific next step.
-                  </div>
-                )}
-
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-[10px] text-slate-500">Need help with an action or your official record?</p>
-                  <button
-                    type="button"
-                    onClick={() => openAskAspire(null)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-sage-700 px-3 py-2 text-xs font-bold text-white hover:bg-sage-800 transition-colors cursor-pointer"
-                  >
-                    <MessageSquare className="h-3.5 w-3.5" />
-                    Ask ASPIRE
-                  </button>
-                </div>
-              </div>
-            </div>
-          </>
         ) : null}
 
       </div>

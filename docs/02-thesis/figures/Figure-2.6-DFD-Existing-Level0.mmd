@@ -1,0 +1,19 @@
+flowchart LR
+%% ===== Level 0 DFD: Existing Manual System (DYCI) — mermaid source, created 2026-10-30 =====
+%% Figure 2.6 exists in the paper as an image with no source file. This recreates it in the
+%% project's own style so the whole existing-system set is editable and renders consistently
+%% with the Level 1 figures beside it.
+%% ---
+%% ONE CORRECTION to the published figure: it shows three entities — Student, Faculty, Dean —
+%% and omits the REGISTRAR, who already exists at DYCI and already does this work on paper.
+%% The existing system has four entities. Only the ADMIN is absent, because account
+%% provisioning, academic setup and system configuration are things a manual process simply
+%% does not have. That absence is the sharpest single contrast with the proposed system.
+%% ---
+%% Layout: External entity (left) -> Process (middle) -> Data store (right)
+
+  E1["Student Entity"] <-- "attend classes, ask about grades informally /<br/>grade report at term-end, verbal advice" --> P0(("0.0<br/>Manual Academic<br/>Grading and Risk<br/>Monitoring Process"))
+  E2["Faculty Entity"] <-- "raw scores entered into school-provided<br/>Excel COG template, ad hoc risk observations /<br/>class rosters, Excel COG template" --> P0
+  E3["Dean Entity"] <-- "grade correction approvals, paper-based /<br/>submitted grade sheets, informal at-risk reports" --> P0
+  E4["Registrar Entity"] <-- "enrolment lists, section assignments,<br/>approved late grade changes /<br/>submitted grade sheets, student records" --> P0
+  P0 <-- "computed grades, submitted sheets,<br/>enrolment and section lists" --> D0@{ shape: lin-rect, label: "D0&nbsp; School-provided Excel COG template,<br/>paper grade sheets and registrar files" }
