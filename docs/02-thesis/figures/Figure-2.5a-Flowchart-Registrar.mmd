@@ -1,0 +1,102 @@
+flowchart TB
+%% ===== Proposed System Flowchart: Registrar Portal (new, 2026-10-30) =====
+%% The fifth portal, created by the admin/registrar role split. It holds the academic setup
+%% that used to sit under Admin, plus the two workflows that are genuinely new: Faculty Loading
+%% and Provisioning, and Late Grade Changes.
+%% ---
+%% The loading branch is the one worth following. Editing a college is exclusive, every
+%% assignment needs a complete meeting schedule, and the conflict check runs across every
+%% college -- so the refusal path is a real path, not an error case.
+%% ---
+%% NUMBERING: named 2.5a so it sits beside the other portal flowcharts without forcing a
+%% renumber until it is placed.
+
+  SEL{"Select module"}
+  OUT(["<b>Log out / End</b>"]):::accent
+
+  subgraph LOGIN["<b>Authentication</b>"]
+    direction LR
+    START(["<b>Start</b>"]):::accent --> CRED[/"Enter credentials"/] --> VALID{"Valid credentials?"}
+    VALID -- "No" --> ERR["Show login error"]
+    ERR -.-> CRED
+    VALID -- "Yes" --> FIRST{"First login?"}
+    FIRST -- "Yes" --> CHG["Change temporary password"] --> DASH["<b>Dashboard</b>"]:::accent
+    FIRST -- "No" --> DASH
+  end
+
+  LOGIN --> SEL
+  SEL -- "Log out" --> OUT
+
+  SEL -- "People" --> PE
+  SEL -- "Academic Setup" --> AS
+  SEL -- "Enrollment and Loading" --> EL
+  SEL -- "Grade Records" --> GR
+  SEL -- "Reports" --> RP
+  SEL -- "Account" --> AC
+
+  subgraph PE["<b>People Module</b>"]
+    direction TB
+    P1["View Users:<br/>read-only account lookup"]
+    P2["New Student Accounts:<br/>review requested accounts"] --> PQ{"Approve?"}
+    PQ -- "No" --> PD["Declined, reason recorded"]
+    PQ -- "Yes" --> PA["Account handed over;<br/>student can be enrolled"]
+    P1 ~~~ P2
+  end
+
+  subgraph AS["<b>Academic Setup Module</b>"]
+    direction TB
+    A1["Subjects, Degree Programs,<br/>Colleges and Departments"]
+    A2["Grading Templates:<br/>COG components and weights"]
+    A3["Manage Sections<br/>per program and term"]
+    A4["Academic Terms:<br/>activation, rollover,<br/>SG grace period"]
+    A1 ~~~ A2 ~~~ A3 ~~~ A4
+  end
+
+  subgraph EL["<b>Enrollment and Loading Module</b>"]
+    direction TB
+    E1["Open a college<br/>for loading"] --> EL1{"Lock available?"}
+    EL1 -- "No" --> EL2["Another user is editing;<br/>read-only view"]
+    EL1 -- "Yes" --> EL3["Pick faculty, program,<br/>year, section, subject"]
+    EL3 --> EL4[/"Enter meeting days<br/>and start and end time"/]
+    EL4 --> EL5{"Schedule complete?"}
+    EL5 -- "No" --> EL6["Refused: a class cannot be<br/>assigned without a schedule"]
+    EL6 -.-> EL4
+    EL5 -- "Yes" --> EL7{"Conflict anywhere<br/>in the institution?"}
+    EL7 -- "Yes" --> EL8["Refused, with the clashing<br/>class named in full"]
+    EL8 -.-> EL3
+    EL7 -- "No" --> EL9["Assignment drafted;<br/>not visible to students"]
+    EL9 --> EL10{"Finalize?"}
+    EL10 -- "Yes" --> EL11["Class record provisioned,<br/>meeting pattern carried over"]
+    E2["Enrollment Management:<br/>block roster, plus irregular<br/>and off-block students"]
+    E3["Section Rosters:<br/>block and off-block,<br/>shown separately"]
+    EL11 ~~~ E2 ~~~ E3
+  end
+
+  subgraph GR["<b>Grade Records Module</b>"]
+    direction TB
+    G1["Late Grade Changes:<br/>requests past the<br/>dispute window"] --> GQ{"Authorize<br/>reopening the term?"}
+    GQ -- "No" --> GN["Rejected, reason recorded"]
+    GQ -- "Yes" --> GY["Instructor may apply<br/>the correction"]
+    G2["Grade Override:<br/>SG, effective GWA and<br/>status replaced together"] --> G3["Separately reasoned<br/>and written to the<br/>audit trail"]
+    GY ~~~ G2
+  end
+
+  subgraph RP["<b>Reports Module</b>"]
+    direction TB
+    R1["Select school year<br/>and semester"] --> R2["Enrollment, section, loading<br/>and grade-record summaries"]
+    R2 --> R3["Print or export"]
+  end
+
+  subgraph AC["<b>Account Module</b>"]
+    direction TB
+    N1["Profile, password,<br/>notification preferences"]
+  end
+
+  PE --> SEL
+  AS --> SEL
+  EL --> SEL
+  GR --> SEL
+  RP --> SEL
+  AC --> SEL
+
+  classDef accent fill:#D4D4D4,stroke:#9A9A9A,stroke-width:1.2px,color:#000000;

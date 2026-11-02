@@ -275,14 +275,38 @@ export function calculateStoredTermRating({
   return calculateWeightedTermRating({ formula, componentScores });
 }
 
-export function createGradingFormulaSnapshot(formula, { computationId = null } = {}) {
+// The snapshot is frozen at class creation and made immutable by
+// trg_protect_class_formula_snapshot, which is what guarantees a policy edit
+// only ever reaches the NEXT term. The two threshold keys ride that same
+// guarantee rather than inventing effective-date logic.
+//
+// Both default to null, and null means "institutional default". Snapshots
+// written before Phase 3 simply lack the keys, which reads back as undefined
+// and resolves to the same defaults -- so no historical snapshot was modified
+// (it could not be: the trigger forbids it) and no class changes behaviour.
+export function createGradingFormulaSnapshot(
+  formula,
+  { computationId = null, passingThreshold = null, fdaThreshold = null } = {}
+) {
   if (!formula?.ok) return null;
   return {
     version: 1,
     computationId,
     source: formula.source,
     totalWeight: formula.totalWeight,
+    passingThreshold,
+    fdaThreshold,
     components: formula.components.map(component => ({ ...component }))
+  };
+}
+
+// Single reader for both keys, so every consumer resolves a snapshot the same
+// way and a pre-Phase-3 snapshot (missing keys) is indistinguishable from one
+// that explicitly opted out.
+export function readSnapshotPolicy(snapshot) {
+  return {
+    passingThreshold: snapshot?.passingThreshold ?? null,
+    fdaThreshold: snapshot?.fdaThreshold ?? null
   };
 }
 

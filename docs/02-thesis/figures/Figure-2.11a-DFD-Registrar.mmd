@@ -1,0 +1,64 @@
+flowchart LR
+%% ===== Level 1 DFD: Registrar Portal (new, 2026-10-30) =====
+%% The Registrar portal did not exist when the figure series was drawn. Its processes are the
+%% eight modules that moved out of the Admin portal in the role split, plus the two that are
+%% genuinely new: Faculty Loading and Provisioning, and Late Grade Changes.
+%% ---
+%% NUMBERING: this file is named 2.11a deliberately. Inserting it as a numbered figure shifts
+%% every figure after it, so the number is left for the owner to settle when the Word file is
+%% renumbered. The content does not depend on which number it ends up with.
+%% ---
+%% Layout: External entity (left) -> Process (middle) -> Data stores (right)
+
+  %% ---------- 1.0 ----------
+  R1["Registrar"] <-- "credentials / access session" --> P1(("1.0<br/>Authenticate<br/>User"))
+  P1 <-- "account record" --> D1@{ shape: lin-rect, label: "D1&nbsp; users" }
+
+  %% ---------- 2.0 ----------
+  R2["Registrar"] <-- "term readiness, enrolment and section<br/>coverage, loading progress" --> P2(("2.0<br/>Dashboard"))
+  P2 <-- "active term" --> D4b@{ shape: lin-rect, label: "D4&nbsp; academic_terms" }
+  P2 <-- "sections of the term" --> D3b@{ shape: lin-rect, label: "D3&nbsp; sections" }
+  P2 <-- "loading progress" --> D53b@{ shape: lin-rect, label: "D53&nbsp; faculty_load_drafts" }
+
+  %% ---------- 3.0 ----------
+  R3["Registrar"] <-- "account lookup / new student accounts" --> P3(("3.0<br/>People"))
+  P3 <-- "read-only account records" --> D1c@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P3 <-- "pending student accounts" --> D47c@{ shape: lin-rect, label: "D47&nbsp; student_account_requests" }
+
+  %% ---------- 4.0 ----------
+  R4["Registrar"] <-- "subject details, CSV/Excel file /<br/>subject catalog / template weights, formula list /<br/>structure data, section CSV/Excel / directory /<br/>term activation and rollover" --> P4(("4.0<br/>Academic<br/>Setup"))
+  P4 <-- "course codes, units" --> D5d@{ shape: lin-rect, label: "D5&nbsp; subjects" }
+  P4 <-- "bound COG template, templates" --> D6d@{ shape: lin-rect, label: "D6&nbsp; grade_computations" }
+  P4 <-- "component weights" --> D27d@{ shape: lin-rect, label: "D27&nbsp; grade_computation_components" }
+  P4 <-- "colleges" --> D2d@{ shape: lin-rect, label: "D2&nbsp; departments" }
+  P4 <-- "programs" --> D26d@{ shape: lin-rect, label: "D26&nbsp; programs" }
+  P4 <-- "section shells" --> D3d@{ shape: lin-rect, label: "D3&nbsp; sections" }
+  P4 <-- "school year, semester,<br/>activation, rollover, grace period" --> D4d@{ shape: lin-rect, label: "D4&nbsp; academic_terms" }
+  P4 -- "audit entry" --> D25d@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+
+  %% ---------- 5.0 ----------
+  R5["Registrar"] <-- "subject, section, faculty, meeting schedule /<br/>conflict refusal with full specifics /<br/>drafted, finalized and reassigned load /<br/>block and off-block roster" --> P5(("5.0<br/>Enrollment<br/>and Loading"))
+  P5 <-- "exclusive per-college edit lock" --> D52e@{ shape: lin-rect, label: "D52&nbsp; provisioning_locks" }
+  P5 <-- "draft, superseded, finalized" --> D53e@{ shape: lin-rect, label: "D53&nbsp; faculty_load_drafts" }
+  P5 -- "provisioned class, meeting pattern" --> D7e@{ shape: lin-rect, label: "D7&nbsp; class_records" }
+  P5 <-- "block membership, irregular and<br/>off-block students added to a roster" --> D8e@{ shape: lin-rect, label: "D8&nbsp; enrollments" }
+  P5 <-- "section rosters" --> D3e@{ shape: lin-rect, label: "D3&nbsp; sections" }
+
+  %% ---------- 6.0 ----------
+  R6["Registrar"] <-- "authorized override / override result /<br/>late request decision, reopening a closed term" --> P6(("6.0<br/>Grade<br/>Records"))
+  P6 -- "overridden SG, effective GWA,<br/>academic status" --> D12f@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P6 <-- "requests past the dispute window" --> D14f@{ shape: lin-rect, label: "D14&nbsp; remark_override_requests" }
+  P6 <-- "revision trail" --> D54f@{ shape: lin-rect, label: "D54&nbsp; posted_grade_revisions" }
+  P6 -- "audit entry" --> D25f@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+
+  %% ---------- 7.0 ----------
+  R7["Registrar"] <-- "report parameters / exportable reports" --> P7(("7.0<br/>Reports"))
+  P7 <-- "enrolment and section coverage" --> D8g@{ shape: lin-rect, label: "D8&nbsp; enrollments" }
+  P7 <-- "loading summary" --> D53g@{ shape: lin-rect, label: "D53&nbsp; faculty_load_drafts" }
+  P7 <-- "posted grade records" --> D12g@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+
+  %% ---------- 8.0 ----------
+  R8["Registrar"] <-- "photo, contact number,<br/>password, alert choices / profile" --> P8(("8.0<br/>Account"))
+  P8 <-- "contact number, photo reference" --> D1h@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P8 <-- "profile photo file" --> D30h@{ shape: lin-rect, label: "D30&nbsp; avatars (private storage)" }
+  P8 <-- "device and email choices" --> D29h@{ shape: lin-rect, label: "D29&nbsp; notification_preferences" }

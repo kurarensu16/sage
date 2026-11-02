@@ -28,11 +28,12 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 });
 
 const defaultUsers = [
-  { lastName: 'System', firstName: 'Admin', middleName: 'Control', email: 'admin@sage.edu.ph', role: 'admin', user_number: 'ADM-2026-00001', departmentName: 'College of Computer Studies' },
-  { lastName: 'Valdes', firstName: 'Carlos', middleName: 'Mendoza', email: 'c.valdes@sage.edu.ph', role: 'dean', user_number: 'DN-2026-00002', departmentName: 'College of Computer Studies' },
-  { lastName: 'Rivera', firstName: 'Amanda', middleName: 'Santos', email: 'a.rivera@sage.edu.ph', role: 'faculty', user_number: 'FAC-2026-00003', departmentName: 'College of Computer Studies' },
-  { lastName: 'Jenkins', firstName: 'Sarah', middleName: 'Lee', email: 's.jenkins@student.sage.edu', role: 'student', user_number: '2026-00005', year_level: '1st Year', departmentName: 'College of Computer Studies' },
-  { lastName: 'Staff', firstName: 'College', middleName: 'Office', email: 'office@sage.edu.ph', role: 'admin', user_number: 'OFC-2026-00008', departmentName: 'College of Computer Studies' }
+  { lastName: 'System', firstName: 'Admin', middleName: 'Control', email: 'admin@sage.edu.ph', role: 'admin', user_number: 'ADM-2026-00001', departmentName: 'Technology and Engineering College for Humanity' },
+  { lastName: 'Santos', firstName: 'Rosario', middleName: 'Cruz', email: 'registrar@sage.edu.ph', role: 'registrar', user_number: 'REG-2026-00009', departmentName: null },
+  { lastName: 'Valdes', firstName: 'Carlos', middleName: 'Mendoza', email: 'c.valdes@sage.edu.ph', role: 'dean', user_number: 'DN-2026-00002', departmentName: 'Technology and Engineering College for Humanity' },
+  { lastName: 'Rivera', firstName: 'Amanda', middleName: 'Santos', email: 'a.rivera@sage.edu.ph', role: 'faculty', user_number: 'FAC-2026-00003', departmentName: 'Technology and Engineering College for Humanity' },
+  { lastName: 'Jenkins', firstName: 'Sarah', middleName: 'Lee', email: 's.jenkins@student.sage.edu', role: 'student', user_number: '2026-00005', year_level: '1st Year', departmentName: 'Technology and Engineering College for Humanity' },
+  { lastName: 'Staff', firstName: 'College', middleName: 'Office', email: 'office@sage.edu.ph', role: 'admin', user_number: 'OFC-2026-00008', departmentName: 'Technology and Engineering College for Humanity' }
 ];
 
 async function seed() {
@@ -81,7 +82,11 @@ async function seed() {
       password_hash: 'managed_by_supabase_auth',
       role: u.role,
       year_level: u.year_level || null,
-      department_id: tech.department_id,
+      // Registrar is institution-wide, so it carries no college -- the same
+      // reason UserForm exempts it from the "choose a college" requirement.
+      // Other seeded roles keep their existing department to avoid changing
+      // demo data that other checks may rely on.
+      department_id: u.role === 'registrar' ? null : tech.department_id,
       must_change_password: true,
       user_number: u.user_number
     }, { onConflict: 'email' });

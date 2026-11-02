@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import MainLayout from './components/layout/MainLayout';
 import { AuthProvider } from './lib/AuthContext';
+import { MaintenanceProvider } from './lib/MaintenanceContext';
 
 import PublicLogin from './pages/public/Login';
 import PublicForgotPassword from './pages/public/ForgotPassword';
@@ -14,18 +15,37 @@ import RoleGuard from './components/layout/RoleGuard';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminUserList from './pages/admin/UserList';
 import AdminUserForm from './pages/admin/UserForm';
-import AdminGradeOverride from './pages/admin/GradeOverride';
 import AdminAuditLog from './pages/admin/AuditLog';
-import AdminSubjectList from './pages/admin/SubjectList';
-import AdminSubjectForm from './pages/admin/SubjectForm';
-import AdminSectionList from './pages/admin/SectionList';
-import AdminSectionForm from './pages/admin/SectionForm';
-import AdminSectionMasterlist from './pages/admin/SectionMasterlist';
 import AdminNotifications from './pages/admin/Notifications';
-import AdminTermManagement from './pages/admin/TermManagement';
-import AdminGradeComputationsList from './pages/admin/GradeComputationsList';
-import AdminDepartmentsList from './pages/admin/DepartmentsList';
-import AdminClassroomProvisioning from './pages/admin/ClassroomProvisioning';
+import AdminMaintenanceMode from './pages/admin/MaintenanceMode';
+import AdminSystemHealth from './pages/admin/SystemHealth';
+import AdminStorageHealth from './pages/admin/StorageHealth';
+import AdminBackupAndRestore from './pages/admin/BackupAndRestore';
+import AdminStudentAccountRequests from './pages/admin/StudentAccountRequests';
+
+// Registrar Pages
+// Academic Setup, Academic Terms, Section Rosters, and Grade Override moved here
+// from Admin in the Admin/Registrar role split; Admin is now maintenance-only.
+import RegistrarDashboard from './pages/registrar/Dashboard';
+import RegistrarReports from './pages/registrar/Reports';
+import RegistrarNotifications from './pages/registrar/Notifications';
+import RegistrarProgramList from './pages/registrar/ProgramList';
+import RegistrarProgramForm from './pages/registrar/ProgramForm';
+import RegistrarEnrollmentManagement from './pages/registrar/EnrollmentManagement';
+import RegistrarStudentAccountRequests from './pages/registrar/StudentAccountRequests';
+import RegistrarFacultyLoading from './pages/registrar/FacultyLoadingAndProvisioning';
+import RegistrarLateGradeChanges from './pages/registrar/LateGradeChanges';
+import DeanFacultyLoading from './pages/dean/FacultyLoadingAndProvisioning';
+import RegistrarViewUsers from './pages/registrar/ViewUsers';
+import RegistrarSubjectList from './pages/registrar/SubjectList';
+import RegistrarSubjectForm from './pages/registrar/SubjectForm';
+import RegistrarSectionList from './pages/registrar/SectionList';
+import RegistrarSectionForm from './pages/registrar/SectionForm';
+import RegistrarSectionMasterlist from './pages/registrar/SectionMasterlist';
+import RegistrarTermManagement from './pages/registrar/TermManagement';
+import RegistrarGradeComputationsList from './pages/registrar/GradeComputationsList';
+import RegistrarDepartmentsList from './pages/registrar/DepartmentsList';
+import RegistrarGradeOverride from './pages/registrar/GradeOverride';
 
 // Dean Pages
 import DeanDashboard from './pages/dean/Dashboard';
@@ -34,7 +54,8 @@ import DeanGradeDistribution from './pages/dean/GradeDistribution';
 import DeanAtRiskStudents from './pages/dean/AtRiskStudents';
 import DeanSummaryReports from './pages/dean/SummaryReports';
 import DeanNotifications from './pages/dean/Notifications';
-import DeanRemarkOverrideRequests from './pages/dean/RemarkOverrideRequests';
+import DeanGradeChangeRequests from './pages/dean/GradeChangeRequests';
+import DeanGradeOverrides from './pages/dean/GradeOverrides';
 
 // Faculty Pages
 import FacultyDashboard from './pages/faculty/Dashboard';
@@ -47,8 +68,9 @@ import FacultyClassAttendance from './pages/faculty/ClassAttendance';
 import FacultyNotifications from './pages/faculty/Notifications';
 import FacultyStudentRisk from './pages/faculty/StudentRisk';
 import FacultyEvaluatedStudents from './pages/faculty/EvaluatedStudents';
-import FacultyConsultationRequests from './pages/faculty/ConsultationRequests';
-import FacultyEnrollmentRequests from './pages/faculty/EnrollmentRequests';
+import FacultyGradeConsultationLog from './pages/faculty/GradeConsultationLog';
+import FacultyGradeChangeRequests from './pages/faculty/GradeChangeRequests';
+import FacultyApplyMilestoneCorrection from './pages/faculty/ApplyMilestoneCorrection';
 import FacultyClassPerformance from './pages/faculty/ClassPerformance';
 import FacultyPerformanceComparison from './pages/faculty/PerformanceComparison';
 
@@ -59,7 +81,10 @@ import StudentMyGradesList from './pages/student/MyGradesList';
 import StudentMyGradesDetail from './pages/student/MyGradesDetail';
 import StudentAdvisingInbox from './pages/student/FacultyAdvisingInbox';
 import StudentAcademicInsights from './pages/student/AcademicInsights';
-import StudentConsultations from './pages/student/Consultations';
+import StudentStudyTutor from './pages/student/StudyTutor';
+import StudentConsultationHistory from './pages/student/ConsultationHistory';
+import StudentGradeChangeRequests from './pages/student/MyGradeChangeRequests';
+import StudentSubmitGradeChangeRequest from './pages/student/SubmitGradeChangeRequest';
 import StudentNotifications from './pages/student/Notifications';
 import StudentAttendance from './pages/student/Attendance';
 
@@ -103,6 +128,10 @@ function App() {
 
   return (
     <AuthProvider>
+      {/* Inside AuthProvider because maintenance state depends on the session and
+          the signed-in role (admin is exempt), and outside BrowserRouter so one
+          subscription serves every route rather than one per navigation. */}
+      <MaintenanceProvider>
       <NetworkBanner />
       <BrowserRouter>
         <Routes>
@@ -121,26 +150,50 @@ function App() {
               <Route path="/admin/dashboard" element={<AdminDashboard />} />
               <Route path="/admin/userlist" element={<AdminUserList />} />
               <Route path="/admin/userform" element={<AdminUserForm />} />
-              <Route path="/admin/gradeoverride" element={<AdminGradeOverride />} />
+              <Route path="/admin/studentaccountrequests" element={<AdminStudentAccountRequests />} />
               <Route path="/admin/auditlog" element={<AdminAuditLog />} />
-              <Route path="/admin/subjectlist" element={<AdminSubjectList />} />
-              <Route path="/admin/subjectform" element={<AdminSubjectForm />} />
-              <Route path="/admin/sectionlist" element={<AdminSectionList />} />
-              <Route path="/admin/sectionform" element={<AdminSectionForm />} />
-              <Route path="/admin/sectionmasterlist" element={<AdminSectionMasterlist />} />
               <Route path="/admin/notifications" element={<AdminNotifications />} />
-              <Route path="/admin/termmanagement" element={<AdminTermManagement />} />
-              <Route path="/admin/gradecomputationslist" element={<AdminGradeComputationsList />} />
-              <Route path="/admin/departmentslist" element={<AdminDepartmentsList />} />
-              <Route path="/admin/classrooms" element={<AdminClassroomProvisioning />} />
+              <Route path="/admin/maintenance" element={<AdminMaintenanceMode />} />
+              <Route path="/admin/systemhealth" element={<AdminSystemHealth />} />
+              <Route path="/admin/storagehealth" element={<AdminStorageHealth />} />
+              <Route path="/admin/backup" element={<AdminBackupAndRestore />} />
               <Route path="/admin/settings" element={<Settings />} />
+            </Route>
+
+            {/* Registrar Routes */}
+            <Route element={<RoleGuard allowedRoles={['registrar']} />}>
+              <Route path="/registrar/dashboard" element={<RegistrarDashboard />} />
+              <Route path="/registrar/reports" element={<RegistrarReports />} />
+              <Route path="/registrar/viewusers" element={<RegistrarViewUsers />} />
+              <Route path="/registrar/programlist" element={<RegistrarProgramList />} />
+              <Route path="/registrar/programform" element={<RegistrarProgramForm />} />
+              <Route path="/registrar/enrollment" element={<RegistrarEnrollmentManagement />} />
+              <Route path="/registrar/newstudentaccounts" element={<RegistrarStudentAccountRequests />} />
+              <Route path="/registrar/facultyloading" element={<RegistrarFacultyLoading />} />
+              <Route path="/registrar/lategradechanges" element={<RegistrarLateGradeChanges />} />
+              <Route path="/registrar/subjectlist" element={<RegistrarSubjectList />} />
+              <Route path="/registrar/subjectform" element={<RegistrarSubjectForm />} />
+              <Route path="/registrar/gradecomputationslist" element={<RegistrarGradeComputationsList />} />
+              <Route path="/registrar/sectionlist" element={<RegistrarSectionList />} />
+              <Route path="/registrar/sectionform" element={<RegistrarSectionForm />} />
+              <Route path="/registrar/sectionmasterlist" element={<RegistrarSectionMasterlist />} />
+              <Route path="/registrar/departmentslist" element={<RegistrarDepartmentsList />} />
+              <Route path="/registrar/termmanagement" element={<RegistrarTermManagement />} />
+              <Route path="/registrar/gradeoverride" element={<RegistrarGradeOverride />} />
+              <Route path="/registrar/notifications" element={<RegistrarNotifications />} />
+              <Route path="/registrar/settings" element={<Settings />} />
             </Route>
 
             {/* Dean Routes */}
             <Route element={<RoleGuard allowedRoles={['dean']} />}>
+              <Route path="/dean/facultyloading" element={<DeanFacultyLoading />} />
               <Route path="/dean/dashboard" element={<DeanDashboard />} />
               <Route path="/dean/gradepostingstatus" element={<DeanGradePostingStatus />} />
-              <Route path="/dean/remarkoverriderequests" element={<DeanRemarkOverrideRequests />} />
+              {/* Retired page. Its URL is kept because the Dean dashboard links
+                  here and bookmarks exist; the new page supersedes it. */}
+              <Route path="/dean/remarkoverriderequests" element={<DeanGradeChangeRequests />} />
+              <Route path="/dean/graderequests" element={<DeanGradeChangeRequests />} />
+              <Route path="/dean/gradeoverrides" element={<DeanGradeOverrides />} />
               <Route path="/dean/gradedistribution" element={<DeanGradeDistribution />} />
               <Route path="/dean/atriskstudents" element={<DeanAtRiskStudents />} />
               <Route path="/dean/escalatedcases" element={<DeanAtRiskStudents initialTab="discussion_queue" standalone />} />
@@ -163,8 +216,14 @@ function App() {
               <Route path="/faculty/atriskstudents" element={<LegacyStudentRiskRedirect />} />
               <Route path="/faculty/evaluatestudent" element={<FacultyStudentRisk mode="evaluate" />} />
               <Route path="/faculty/evaluatedstudents" element={<FacultyEvaluatedStudents />} />
-              <Route path="/faculty/consultations" element={<FacultyConsultationRequests />} />
-              <Route path="/faculty/enrollmentrequests" element={<FacultyEnrollmentRequests />} />
+              <Route path="/faculty/consultations" element={<FacultyGradeConsultationLog />} />
+              <Route path="/faculty/graderequests" element={<FacultyGradeChangeRequests />} />
+              <Route path="/faculty/graderequests/:requestId/apply" element={<FacultyApplyMilestoneCorrection />} />
+              {/* Retired with the class join code. The URL is kept and
+                  redirected rather than removed, so an old bookmark or a link
+                  in a past notification lands somewhere useful instead of on
+                  the 404 page. */}
+              <Route path="/faculty/enrollmentrequests" element={<Navigate to="/faculty/classrecordslist" replace />} />
               <Route path="/faculty/classattendance" element={<FacultyClassAttendance />} />
               <Route path="/faculty/reports/class-performance" element={<FacultyClassPerformance />} />
               <Route path="/faculty/reports/comparison" element={<FacultyPerformanceComparison />} />
@@ -182,7 +241,10 @@ function App() {
               <Route path="/student/mygradesdetail" element={<StudentMyGradesDetail />} />
               <Route path="/student/advising-inbox" element={<StudentAdvisingInbox />} />
               <Route path="/student/academic-insights" element={<StudentAcademicInsights />} />
-              <Route path="/student/consultations" element={<StudentConsultations />} />
+              <Route path="/student/tutor" element={<StudentStudyTutor />} />
+              <Route path="/student/consultations" element={<StudentConsultationHistory />} />
+              <Route path="/student/graderequests" element={<StudentGradeChangeRequests />} />
+              <Route path="/student/graderequests/new" element={<StudentSubmitGradeChangeRequest />} />
               <Route path="/student/airecommendation" element={<Navigate to="/student/academic-insights" replace />} />
               <Route path="/student/notifications" element={<StudentNotifications />} />
               <Route path="/student/attendance" element={<StudentAttendance />} />
@@ -194,6 +256,7 @@ function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
+      </MaintenanceProvider>
     </AuthProvider>
   );
 }

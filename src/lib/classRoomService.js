@@ -14,6 +14,98 @@ import { countPendingActivities, countRecordedZeroScores, scoreOrNull } from './
  * they have no home block section or their home section differs from the
  * class section. This mirrors get_class_attendance_roster in PostgreSQL.
  */
+// What a piece of work IS, which is not what it is WORTH. The activity's COG
+// component decides the weight; this only describes the activity. Nothing in
+// the grading math reads it, and nothing should start -- a type that affects
+// weight would be a second grading formula disagreeing with the frozen snapshot.
+//
+// 'formative' is not offered: it is the legacy default on rows created before
+// the field reached the UI, kept so those rows stay valid.
+export const ACTIVITY_TYPES = Object.freeze([
+  { value: 'seatwork', label: 'Seatwork' },
+  { value: 'quiz', label: 'Quiz' },
+  { value: 'performance_task', label: 'Performance Task' },
+  { value: 'recitation', label: 'Recitation' },
+  { value: 'assignment', label: 'Assignment' },
+  { value: 'project', label: 'Project' }
+]);
+
+export const DEFAULT_ACTIVITY_TYPE = 'seatwork';
+
+export const activityTypeLabel = (value) =>
+  ACTIVITY_TYPES.find((t) => t.value === value)?.label
+    || (value === 'formative' ? 'Formative' : '');
+
+// Terms a class is graded over. Summer runs two, everything else four.
+export const GRADING_PERIODS = ['Prelim', 'Midterm', 'Semi-Final', 'Final'];
+export const SUMMER_PERIODS = ['Midterm', 'Final'];
+
+export const periodsForSemester = (semester) =>
+  (semester === 'Summer' ? SUMMER_PERIODS : GRADING_PERIODS);
+
+/**
+ * The activity columns of a class, per grading period.
+ *
+ * One loader, because there were three. The Scorebook and Posted Grades each
+ * rebuilt this list from their own code, and a class with no activities yet made
+ * them disagree out loud: the Scorebook showed a single empty slot while Posted
+ * Grades showed six columns called FA 1 to FA 6, which was neither the class's
+ * data nor its template -- just a hard-coded initial state that every one of
+ * Posted Grades' replacement branches had failed to overwrite.
+ *
+ * An unconfigured period returns exactly ONE empty placeholder, never six. The
+ * number of activities is the instructor's to decide; a gradebook should not
+ * invent five columns nobody asked for.
+ */
+export async function loadClassActivities(classRecordId, semester) {
+  const periods = periodsForSemester(semester);
+  const placeholder = () => ([{
+    id: 'act1',
+    name: '',            // empty means unconfigured
+    max: 20,
+    description: '',
+    placeholder: 'Activity 1'
+  }]);
+
+  const empty = () => Object.fromEntries(periods.map((t) => [t, placeholder()]));
+  if (!classRecordId) return empty();
+
+  try {
+    const { data, error } = await supabase
+      .from('class_activities')
+      .select('*')
+      .eq('class_record_id', classRecordId)
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+
+    const rows = data || [];
+    return Object.fromEntries(periods.map((term) => {
+      const termActs = rows.filter((a) => a.term === term);
+      if (termActs.length === 0) return [term, placeholder()];
+      return [term, termActs.map((a, idx) => ({
+        id: a.activity_id,
+        dbId: a.activity_id,
+        slotKey: `act${idx + 1}`,
+        name: a.name || a.title || '',
+        max: parseFloat(a.max_score) || 20,
+        description: a.description || '',
+        topicTag: a.topic_tag || '',
+        activityType: a.activity_type || 'formative',
+        releasedAt: a.released_at || null,
+        releasedBy: a.released_by || null,
+        createdAt: a.created_at || null,
+        componentId: a.component_id || null
+      }))];
+    }));
+  } catch (err) {
+    // No localStorage fallback. Caching gradebook STRUCTURE per browser is how
+    // one screen came to show columns the class did not have; an empty period
+    // is both honest and recoverable by reloading.
+    console.warn('Could not load class activities:', err);
+    return empty();
+  }
+}
+
 export function getEnrollmentType(studentSectionId, classSectionId) {
   if (!studentSectionId) return 'Irregular';
   // A class with no section assigned can't match any student's section, so the
@@ -88,112 +180,12 @@ export async function getSectionIrregularEnrollees(sectionId) {
     }));
 }
 
-/**
- * Generates eight alphanumeric symbols displayed as XXXX-XXXX.
- * e.g., "CS3A-8X92" (the hyphen is a visual separator).
- */
-export function generateJoinCode(subjectCode = 'CLS', sectionName = 'A') {
-  const prefix = (subjectCode.replace(/[^A-Za-z0-9]/g, '').slice(0, 3) || 'CLS').toUpperCase();
-  const sec = (sectionName.replace(/[^A-Za-z0-9]/g, '').slice(-1) || 'X').toUpperCase();
-  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `${prefix}${sec}-${rand}`;
-}
+// generateJoinCode() and getOrCreateJoinCode() were removed with the class
+// join code: Registrar and Dean place students on a roster directly, so a code
+// nobody can redeem was only generating rows in a table nothing read.
 
-/**
- * Gets or creates an active join code for a class record.
- */
-export async function getOrCreateJoinCode(classRecordId, subjectCode = 'CLS', sectionName = 'A') {
-  try {
-    const { data: existing } = await supabase
-      .from('class_room_join_codes')
-      .select('join_code')
-      .eq('class_record_id', classRecordId)
-      .eq('is_active', true)
-      .maybeSingle();
 
-    if (existing?.join_code) {
-      return existing.join_code;
-    }
 
-    // Create new join code
-    const newCode = generateJoinCode(subjectCode, sectionName);
-    const { data: inserted, error: insErr } = await supabase
-      .from('class_room_join_codes')
-      .insert({
-        class_record_id: classRecordId,
-        join_code: newCode,
-        is_active: true
-      })
-      .select('join_code')
-      .single();
-
-    if (insErr) {
-      console.warn('Could not insert join code into DB, using memory fallback:', insErr.message);
-      return newCode;
-    }
-    return inserted?.join_code || newCode;
-  } catch (err) {
-    console.warn('Join code generation fallback:', err);
-    return generateJoinCode(subjectCode, sectionName);
-  }
-}
-
-/**
- * Student requests to join a class by code. Creates a PENDING request for the
- * class's faculty to approve (request_class_join); the student is not enrolled
- * until approved. The faculty receives an in-app notification.
- */
-export async function submitJoinRequest(_studentId, joinCode) {
-  const cleanCode = (joinCode || '').trim().toUpperCase();
-  if (!cleanCode) throw new Error('Please enter a valid join code.');
-
-  const { data, error } = await supabase.rpc('request_class_join', { p_join_code: cleanCode });
-  if (error) throw new Error(error.message || 'Failed to send the join request.');
-
-  const subjectCode = data?.subject_code || 'Class';
-  const sectionName = data?.section_name || 'Section';
-  return {
-    success: true,
-    pending: true,
-    requestId: data?.request_id,
-    classRecordId: data?.class_record_id,
-    subjectCode,
-    subjectName: data?.subject_name || 'Subject',
-    sectionName,
-    message: `Request sent to the instructor of ${subjectCode} (${sectionName}). You'll be added once it's approved.`
-  };
-}
-
-/**
- * The student's own join requests that are still waiting or were rejected and not
- * yet dismissed — shown as locked cards on My Subjects.
- */
-export async function getMyJoinRequests(studentId) {
-  if (!studentId) return [];
-  const { data, error } = await supabase
-    .from('class_join_requests')
-    .select(`
-      request_id, status, requested_at, created_at, decided_at,
-      class_records (
-        class_record_id,
-        subjects ( code, name, credits ),
-        sections ( name ),
-        faculty:users!faculty_id ( first_name, last_name )
-      )
-    `)
-    .eq('student_id', studentId)
-    .in('status', ['pending', 'rejected'])
-    .is('student_dismissed_at', null)
-    .order('requested_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
-}
-
-/** Hides one of the student's rejected request cards. */
-export async function dismissJoinRequest(requestId) {
-  const { error } = await supabase.rpc('dismiss_class_join_request', { p_request_id: requestId });
-  if (error) throw new Error(error.message || 'Could not dismiss the request.');
-}
 
 /**
  * Admin Provisions an official Classroom (Subject + Section + Faculty + Term)
@@ -224,7 +216,7 @@ export async function provisionClassroomByAdmin({
 
   // 2. Fetch subject and section info for code generation
   const [{ data: sub }, { data: sec }] = await Promise.all([
-    supabase.from('subjects').select('code, name, computation_id').eq('subject_id', subjectId).single(),
+    supabase.from('subjects').select('code, name, computation_id, fda_absence_threshold').eq('subject_id', subjectId).single(),
     supabase.from('sections').select('name').eq('section_id', sectionId).single()
   ]);
 
@@ -239,11 +231,17 @@ export async function provisionClassroomByAdmin({
   // a strict JSONB <>, which is order-sensitive for the components array, so this must not
   // be a reimplementation. A subject with no template, or one whose weights do not total
   // 100%, yields null here and falls back to the old snapshot-at-first-posting behavior.
+  // This is also where the two dynamic policy thresholds are frozen. They are
+  // read from the CURRENT template and subject at this moment and written into
+  // the snapshot, which the immutability trigger then seals -- so editing a
+  // template's passing threshold or a subject's FDA count later reaches only
+  // classes provisioned after the edit, exactly as component weights already
+  // behave. Both stay null when unset, meaning the institutional defaults.
   let gradingFormulaSnapshot = null;
   if (sub?.computation_id) {
     const { data: computation } = await supabase
       .from('grade_computations')
-      .select('name, description, grade_computation_components ( * )')
+      .select('name, description, passing_threshold, grade_computation_components ( * )')
       .eq('computation_id', sub.computation_id)
       .maybeSingle();
 
@@ -251,7 +249,9 @@ export async function provisionClassroomByAdmin({
       formulaAssigned: true
     });
     gradingFormulaSnapshot = createGradingFormulaSnapshot(formula, {
-      computationId: sub.computation_id
+      computationId: sub.computation_id,
+      passingThreshold: computation?.passing_threshold ?? null,
+      fdaThreshold: sub?.fda_absence_threshold ?? null
     });
   }
 
@@ -272,7 +272,17 @@ export async function provisionClassroomByAdmin({
 
   if (insErr) throw insErr;
 
-  // 3.5 Auto-enroll regular block section students assigned to this section
+  // 3.5 Auto-enroll regular block section students assigned to this section.
+  //
+  // Reported, not swallowed. This used to console.warn and return as if the
+  // class were fully provisioned, so an RLS refusal here produced a class with
+  // nobody in it and a success message on screen -- which is exactly how a
+  // Dean's finalize failed unnoticed until someone opened the roster. The
+  // class is still kept on failure: it exists and can be enrolled into from
+  // Enrollment Management, so throwing away a correct class record would be
+  // the worse outcome. The caller is told so it can say so.
+  let enrolled = 0;
+  let enrollmentError = null;
   try {
     const { data: sectionStudents } = await supabase
       .from('users')
@@ -304,146 +314,34 @@ export async function provisionClassroomByAdmin({
           .insert(enrollmentsToInsert);
 
         if (enrollErr) {
-          console.warn('Block section auto-enroll notice:', enrollErr.message);
+          enrollmentError = enrollErr.message;
+        } else {
+          enrolled = enrollmentsToInsert.length;
         }
       }
     }
   } catch (autoErr) {
-    console.warn('Auto-enrollment background error:', autoErr);
+    enrollmentError = autoErr?.message || String(autoErr);
   }
-
-  // 4. Generate unique join code
-  const joinCode = await getOrCreateJoinCode(
-    newClass.class_record_id,
-    sub?.code || 'CLS',
-    sec?.name || 'A'
-  );
 
   return {
     class_record: newClass,
-    join_code: joinCode,
     subject: sub,
-    section: sec
+    section: sec,
+    enrolled,
+    enrollmentError
   };
 }
 
 /**
  * Faculty Self-Service Provisioning / Creation of a single Classroom
  */
-export async function provisionClassroomByFaculty({
-  subjectId,
-  sectionId,
-  facultyId,
-  schoolYear,
-  semester
-}) {
-  return provisionClassroomByAdmin({
-    subjectId,
-    sectionId,
-    facultyId,
-    schoolYear,
-    semester
-  });
-}
 
 /**
  * Faculty Self-Service Batch Creation of Multiple Classrooms (Teaching Load)
  */
-export async function provisionBatchClassroomsByFaculty({
-  facultyId,
-  classroomEntries,
-  schoolYear,
-  semester
-}) {
-  if (!classroomEntries || classroomEntries.length === 0) {
-    throw new Error('Please add at least one classroom assignment.');
-  }
 
-  const results = [];
-  const errors = [];
 
-  for (let i = 0; i < classroomEntries.length; i++) {
-    const entry = classroomEntries[i];
-    if (!entry.subjectId || !entry.sectionId) {
-      errors.push(`Row #${i + 1}: Please select both a Subject and a Section.`);
-      continue;
-    }
-
-    try {
-      const res = await provisionClassroomByAdmin({
-        subjectId: entry.subjectId,
-        sectionId: entry.sectionId,
-        facultyId,
-        schoolYear,
-        semester
-      });
-      results.push(res);
-    } catch (err) {
-      errors.push(`Row #${i + 1}: ${err.message}`);
-    }
-  }
-
-  if (results.length === 0 && errors.length > 0) {
-    throw new Error(errors.join(' '));
-  }
-
-  return {
-    results,
-    errors
-  };
-}
-
-/**
- * Gets pending irregular join requests for a class record.
- */
-export async function getPendingJoinRequests(classRecordId) {
-  try {
-    const { data, error } = await supabase
-      .from('class_join_requests')
-      .select(`
-        request_id,
-        class_record_id,
-        student_id,
-        status,
-        created_at,
-        requested_at,
-        users:student_id (
-          user_id,
-          first_name,
-          last_name,
-          email,
-          user_number,
-          section_id
-        )
-      `)
-      .eq('class_record_id', classRecordId)
-      .eq('status', 'pending')
-      .order('requested_at', { ascending: false });
-
-    if (error) {
-      console.warn('Could not fetch class_join_requests:', error.message);
-      return [];
-    }
-    return data || [];
-  } catch (err) {
-    console.warn('Fallback getting join requests:', err);
-    return [];
-  }
-}
-
-/**
- * Approves or rejects a join request in one database transaction
- * (resolve_class_join_request): only the class's assigned faculty may decide,
- * approval also enrolls the student, and the student is notified in-app.
- */
-export async function resolveJoinRequest(requestId, _classRecordId, _studentId, newStatus) {
-  const { data, error } = await supabase.rpc('resolve_class_join_request', {
-    p_request_id: requestId,
-    p_decision: newStatus
-  });
-  if (error) throw new Error(error.message || 'Could not update the enrollment request.');
-  return data;
-}
 
 /**
  * Fetches class students and calculates their academic risk score,
@@ -643,7 +541,6 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
         approxGwa = resolveOfficialGwa(finalPosted).gwa;
       }
 
-
       // Count zero submissions ONLY for activities that are actually configured (max > 0)
       const zeroSubmissionsCount = countRecordedZeroScores(studScores, colsMap,
         classActivities || [], (granularScores || []).filter(score => score.student_id === stud.user_id));
@@ -717,5 +614,4 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
 
 // Backward-compatibility alias
 export const getClassTriageRoster = getClassPriorityRoster;
-
 

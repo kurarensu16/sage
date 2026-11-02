@@ -14,8 +14,9 @@ flowchart LR
   P7 <-- "attendance counts" --> D15g@{ shape: lin-rect, label: "D15&nbsp; attendance_records" }
 
   %% ---------- 8.0 ----------
-  F8["Faculty"] <-- "consultation requests /<br/>response, resolution notes" --> P8(("8.0<br/>Consultations"))
-  P8 <-- "request and status" --> D23h@{ shape: lin-rect, label: "D23&nbsp; student_consultation_requests" }
+  F8["Faculty"] <-- "consultation logged after a posting /<br/>mode, response, resolution" --> P8(("8.0<br/>Grade<br/>Consultation Log"))
+  P8 <-- "window opened after posting" --> D44h@{ shape: lin-rect, label: "D44&nbsp; grade_consultation_windows" }
+  P8 <-- "logged consultations" --> D43h@{ shape: lin-rect, label: "D43&nbsp; grade_consultation_notes" }
 
   %% ---------- 9.0 ----------
   F9["Faculty"] <-- "photo, contact number,<br/>password, alert choices / profile" --> P9(("9.0<br/>Account"))

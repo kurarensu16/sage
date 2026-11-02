@@ -1,0 +1,32 @@
+erDiagram
+%% ===== ERD Layer 4b: AI Advising & Grade Consultation (new, 2026-10-30) =====
+%% ---
+%% The second half of the old Layer 4. See the split note in Figure-2.16-ERD-Layer4.mmd.
+%% Everything here is Phase 6 or Phase 7 and appears in no published figure.
+%% ---
+%% STUDENT_TUTOR_PRACTICE_SETS has RLS enabled with NO POLICY AT ALL. That is deliberate and it
+%% is the control that withholds practice answers: with no policy, the table is unreachable from
+%% the client entirely, and answers are released only by a server function once an attempt has
+%% been submitted. It is worth saying in the caption, because the diagram cannot show it.
+%% ---
+%% SEARCH_DESTINATIONS holds curated https templates carrying a {q} placeholder. The model is
+%% never given a browser; it can only offer one of these.
+%% ---
+%% STUDENT_CONSULTATION_REQUESTS is kept because the table still exists and holds the historical
+%% record, but no page creates rows in it any more -- the grade consultation window replaced it.
+%% ---
+%% NUMBERING: named 2.16b so it sits beside Figure 2.16 without forcing a renumber.
+    USERS ||--o{ STUDENT_ACADEMIC_INSIGHTS : "receives"
+    USERS ||--o{ STUDENT_TUTOR_PLANS : "active study plan of"
+    SUBJECTS |o--o{ STUDENT_TUTOR_PLANS : "scoped to subject"
+    ACADEMIC_TERMS |o--o{ STUDENT_TUTOR_PLANS : "archived on rollover"
+    USERS ||--o{ STUDENT_TUTOR_PRACTICE_SETS : "practice generated for"
+    STUDENT_TUTOR_PRACTICE_SETS ||--o{ STUDENT_TUTOR_PRACTICE_ATTEMPTS : "answered in"
+    USERS ||--o{ STUDENT_TUTOR_PRACTICE_ATTEMPTS : "attempted by"
+    USERS ||--o{ STUDENT_TUTOR_LOG : "metered call of"
+    SEARCH_DESTINATIONS }o--o{ STUDENT_TUTOR_PLANS : "curated further reading"
+    CLASS_RECORDS ||--o{ GRADE_CONSULTATION_WINDOWS : "opened after posting"
+    USERS ||--o{ GRADE_CONSULTATION_WINDOWS : "finalized by (faculty)"
+    GRADE_CONSULTATION_WINDOWS ||--o{ GRADE_CONSULTATION_NOTES : "consultations logged in"
+    USERS ||--o{ GRADE_CONSULTATION_NOTES : "student / logged by"
+    USERS ||--o{ STUDENT_CONSULTATION_REQUESTS : "historical record only"

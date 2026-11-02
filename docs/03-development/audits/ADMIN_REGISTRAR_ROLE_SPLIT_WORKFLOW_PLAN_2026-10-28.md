@@ -1,6 +1,6 @@
 # Admin/Registrar Role Split Workflow Plan - 2026-10-28
 
-**Status:** Proposed design. No code, migration, or edge function exists yet. Every file listed under "Suggested build order" still requires its own developer confirmation before it is created or edited, per `AGENTS.md`.
+**Status:** Design confirmed 2026-10-29 — all open decisions resolved (see "Decisions" below). No code, migration, or edge function exists yet. Every file listed under "Suggested build order" still requires its own per-file confirmation before it is created or edited, per `AGENTS.md`.
 **Scope:** Introduces a 5th role, `registrar`, and moves a defined slice of Admin's current pages/permissions onto it. Does **not** design Maintenance Mode or the System Health dashboard (that is a separate plan, `SYSTEM_MAINTENANCE_AND_HEALTH_WORKFLOW_PLAN_2026-10-28.md`, roadmap item #2) — this plan only adds the placeholder nav slot Admin keeps for them. Does **not** design Faculty Loading & Provisioning (roadmap item #4) or the Grade Change Request dispute chain (roadmap item #6) — Grade Override here stays the existing direct, no-dispute correction tool, just relocated.
 **Trigger:** Capstone defense panel ruling 2.1 ("Separate the Admin and Registrar roles — give distinct function for admin and registrar") plus this conversation's follow-up: Registrar owns academic/records data, Admin is narrowed to system maintenance and account creation only.
 
@@ -31,7 +31,7 @@
 
 ## Current state (verified against the live code)
 
-- **Role storage:** `public.users.role` is a plain `TEXT` column with no `CHECK` constraint found anywhere in `supabase/migrations/` (searched for `CHECK...role`, `role TEXT`, `ADD CONSTRAINT...role` — no hits). This means adding `'registrar'` as a value needs **no migration to widen an enum/check** — it's purely an authorization-logic change, not a schema change. (If a constraint is found at implementation time that this search missed, treat that as a blocking discovery, not a surprise to route around.)
+- **Role storage:** `public.users.role` is a plain `TEXT` column with no `CHECK` constraint found anywhere in `supabase/migrations/` (searched for `CHECK...role`, `role TEXT`, `ADD CONSTRAINT...role` — no hits). This means adding `'registrar'` as a value needs **no migration to widen an enum/check** — it's purely an authorization-logic change, not a schema change. (If a constraint is found at implementation time that this search missed, treat that as a blocking discovery, not a surprise to route around.) **CORRECTED 2026-10-29:** a constraint WAS found at implementation time — the live database rejects `registrar`. The grep could never have found it: `public.users` was created outside the tracked migrations, so its constraints are not in version control. Per this plan's own instruction this was treated as a blocking discovery; `20261029034500_allow_registrar_role_value.sql` resolves it and runs before the authorization migration.
 - **Role already has an unused value:** `'office'` appears in `20261003110100_guardian_admin_access.sql`'s RLS policy (`role IN ('admin', 'dean', 'office', 'faculty')`) — a leftover from the discarded College Office portal (`docs/02-thesis/decisions/`). Registrar is a genuinely new value, not a revival of `office`; don't reuse that string.
 - **Client-side gate:** `src/lib/AuthContext.jsx:373` — `role: userProfile?.role ?? null`, sourced from `users.role` on login (`fetchUserProfile`, line 79-107).
 - **Route gate:** `src/components/layout/RoleGuard.jsx` — a simple `allowedRoles.includes(role)` check wrapping each `<Route element={<RoleGuard allowedRoles={[...]}/>}>` group in `src/App.jsx`. The Admin route group starts at `src/App.jsx:120` (`allowedRoles={['admin']}`), covering lines 121-133+ (Dashboard, UserList, UserForm, GradeOverride, AuditLog, SubjectList, SubjectForm, SectionList, SectionForm, SectionMasterlist, Notifications, TermManagement, GradeComputationsList, DepartmentsList, ClassroomProvisioning).
@@ -65,22 +65,59 @@
 - **Records:** Grade Override (`GradeOverride.jsx`, relocated) — same direct-correction behavior as today; its audit trail (`20261014130000_admin_grade_override_audited.sql`) needs its `role = 'admin'` check widened or replaced to also accept `role = 'registrar'`, since the actor performing this action is no longer necessarily Admin
 - Out of scope here: Faculty Loading & Provisioning and Add Irregular Student to Class (roadmap item #4), Import Faculty Records (explicitly **not** given to Registrar — stays Admin-only alongside Import Users)
 
+### Replaced during implementation, 2026-10-29: Import Students
+
+This plan gave the Registrar an **Import Students (CSV/Excel)** page. It was
+built, then **removed and replaced** before any of it shipped, because checking
+the code showed it was both redundant and weaker than what already existed:
+
+* Admin's Import Users already **requires** a section for every student,
+  validates it belongs to the right college for the active term, checks the year
+  level agrees with the section, and enforces unique ID numbers. Every student
+  created through the proper path therefore already had a home section, so
+  Import Students had no population to fix.
+* It validated **less** than Import Users did, so it could write combinations
+  Import Users would reject. Two write paths to one column, one of them laxer, is
+  how data drifts.
+
+What replaced it is a one-directional handoff that matches who owns what:
+**Registrar → New Student Accounts** (upload institutional records) and
+**Admin → Student Account Requests** (review, export in Import Users' own column
+format with Email blank, create the Outlook mailboxes, upload through the
+existing Import Users). The new Admin page deliberately **cannot create
+accounts** — Import Users remains the single creation path and therefore the
+single place those rules live. A `RequestID` column carried through the export
+links each created account back and flips its queue row to Created.
+
+Backed by `20261029085444_student_account_requests.sql`. The ID number is
+required and unique institution-wide across students and both teaching and
+non-teaching personnel, enforced in the preview, the submit RPC, and the column.
+
+### Added during implementation, 2026-10-29 (beyond this plan as originally written)
+
+Both were built in Phase 1 and are recorded here so the plan matches what exists:
+
+- **Registrar Dashboard** (`src/pages/registrar/Dashboard.jsx`) — this plan listed no dashboard for Registrar, but the route is **mandatory**, not optional: every post-auth redirect in the app interpolates the role generically (`/${role}/dashboard` in `Login.jsx`, `ForceChangePassword.jsx`, `NotFound.jsx`, `Forbidden.jsx`), so without it a registrar login lands on NotFound, which redirects straight back to the missing route — an infinite loop. On the developer's instruction it carries analytics scoped to Registrar's own remit: records integrity (presented as a work queue, each count linking to the page that clears it), enrollment distribution with the Regular/Irregular split, term readiness via `get_term_sg_status`, and academic structure. Deliberately excludes student-performance analytics (Dean's) and system health (Admin's).
+- **Registrar Reports** (`src/pages/registrar/Reports.jsx`) — developer-requested. Four records-oriented `.xlsx` exports: enrollment, section roster masterlist, academic structure inventory, and the grade override log. The faculty-load export is deliberately **not** here; it belongs to roadmap item #4's Faculty Loading page, and duplicating it would give one figure two sources of truth.
+- **Registrar Notifications** (`src/pages/registrar/Notifications.jsx`) — also mandatory rather than designed: `Topbar.jsx` links the notification bell to `/${role}/notifications` generically. Modelled on the other portals rather than reusing Admin's page (which carries admin-only delivery-queue monitoring) or Dean's (which carries `dean_referral` handling with no registrar meaning).
+- **Registrar's student-records write path** — a SECURITY DEFINER RPC (`20261029044752_registrar_student_records_rpc.sql`), not an RLS change. A student's home section lives on `public.users`, which only self-or-admin may update, so Enrollment Management and Import Students had no legal write path. The RPC writes only `section_id`, `year_level`, and `department_id`, and refuses non-student targets, leaving `users` RLS admin-only. Note `users.program_id` does not exist — `UserForm` uses program only to filter section choices and never persists it.
+
 ## Worked example (why the RLS audit matters)
 
 Today, Dean Valdes cannot touch `TermManagement.jsx` or `GradeOverride.jsx` at all — both routes are admin-only. After this split, if Registrar Santos opens Grade Override to make a last-resort correction on a posted SG, the write itself succeeds at the RLS layer only if `admin_grade_override_audited.sql`'s policy is updated to also accept `role = 'registrar'`. If that migration is missed, Santos's UI will render the page (route/nav guard updated) but every write will silently fail at the database layer with a permission error — a mismatch between "looks reachable" and "actually works" that only shows up in testing, not in a code read. This is why the suggested build order below puts the RLS audit and migration **before** the nav/route changes, not after: a role that can navigate to a page it can't actually use is worse than a role that can't navigate there yet.
 
-## Open decisions (confirm before any file is touched)
+## Decisions (confirmed 2026-10-29 — developer sign-off, ready to build)
 
-1. **Demo account:** `AGENTS.md`'s demo users list has no Registrar account. Add one (e.g. `registrar@sage.edu.ph`, same `DemoPassword123!` policy) in `seedAdmin.js`/`seedDatabase.js`, and update `AGENTS.md` itself once approved?
-2. **Grade Override's audit actor check:** widen `role = 'admin'` to `role IN ('admin', 'registrar')` in `20261014130000_admin_grade_override_audited.sql`'s logic, or write a fresh migration that fully re-points it to `registrar` only (since Admin no longer has the route to reach this page at all)? The plan above assumes the latter — Admin loses Grade Override entirely, so the audited actor role should become `registrar`-only, not `admin`-or-`registrar`. Confirm this reading is correct before the migration is written.
-3. **`guardians_admin_access` policy** (`role IN ('admin', 'dean', 'office', 'faculty')`) — does Registrar need guardian visibility too, given it's taking over student-records ownership? Needs a decision, not an assumption.
-4. **Existing `'office'` role string** — confirm it is genuinely dead (no seeded user currently has `role = 'office'`) before writing Registrar's policies, so a leftover office-role account doesn't unexpectedly inherit or collide with new Registrar policies.
-5. **View Users' exact column scope** — read-only on every column `UserList.jsx` shows today, or a narrower subset (e.g. hide salary/compliance-sensitive fields if any exist on `users`)?
+1. **Demo account:** Yes — add `registrar@sage.edu.ph` (same `DemoPassword123!` policy) to `seedAdmin.js`/`seedDatabase.js`, and add it to `AGENTS.md`'s demo users list in the same change.
+2. **Grade Override's audit actor check:** Registrar-only. `20261014130000_admin_grade_override_audited.sql`'s actor-role check re-points fully to `role = 'registrar'`, not `admin`-or-`registrar` — Admin has no route to this page anymore.
+3. **`guardians_admin_access` policy:** Yes — add `registrar` to the role list (`role IN ('admin', 'dean', 'office', 'faculty')` gains `registrar`), since Registrar now owns student-records.
+4. **Existing `'office'` role string:** Confirmed dead — no seeded or real user currently has `role = 'office'`. Treat it as inert; no cleanup migration needed before writing Registrar's policies.
+5. **View Users' exact column scope:** Full parity with `UserList.jsx` — Registrar's read-only view shows every column Admin sees today, just with no create/edit/deactivate controls rendered.
 
 ## Suggested build order
 
 1. RLS audit: re-run and expand the grep inventory above across all of `supabase/migrations/` and any PL/pgSQL function bodies, confirm the final list of policies/functions needing a `registrar` branch, write it down before touching code.
-2. Migration(s): add Registrar-aware RLS policies (users read-only SELECT, Grade Override actor-role update, any others the audit surfaces); no schema/CHECK change needed since `role` is unconstrained `TEXT`.
+2. Migration(s): add Registrar-aware RLS policies (users read-only SELECT, Grade Override actor-role update, any others the audit surfaces); preceded by `20261029034500_allow_registrar_role_value.sql`, which admits the `registrar` value (the "unconstrained TEXT" assumption proved false — see the correction above).
 3. `src/lib/AuthContext.jsx` — confirm no change needed beyond what already reads `role` generically (likely none, since the value is just passed through).
 4. `src/components/layout/RoleGuard.jsx` — confirm no change needed (generic `allowedRoles.includes(role)`, likely none).
 5. `src/App.jsx` — new `<Route element={<RoleGuard allowedRoles={['registrar']} />}>` group; move the relocated routes' `element`/`path` pairs out of the Admin group and into it; add new routes for Programs, Enrollment Management, Import Students.

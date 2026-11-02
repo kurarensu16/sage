@@ -11,7 +11,7 @@ export const NOTIFICATION_TITLES = {
   eval_closed: 'Faculty Evaluation Closed',
   eval_deadline_reminder: 'Evaluation Deadline Reminder',
   ews_alert: 'Early Warning System Alert',
-  ai_recommendation: 'AI Study Tutor Insight Ready',
+  ai_recommendation: 'Academic Insight Ready',
   class_assigned: 'New Class Assigned',
   term_rollover_reminder: 'Grade Submission Reminder',
   override_approved: 'Grade Override Approved',
@@ -31,7 +31,13 @@ export const NOTIFICATION_TITLES = {
   security: 'Administrative Security Alert',
   database_sync: 'Database Sync Success',
   user_signup: 'New User Registered',
-  system: 'SAGE System Notice'
+  system: 'SAGE System Notice',
+  // Raised by trg_notify_dean_of_override and acknowledge_grade_override. The
+  // Registrar's override is effective immediately; these carry the record of
+  // who saw it, not a request for permission.
+  override_review: 'Grade Override Needs Your Acknowledgement',
+  override_acknowledged: 'Grade Override Acknowledged',
+  override_queried: 'Grade Override Queried'
 };
 
 /**
@@ -674,16 +680,21 @@ export async function notifyRosterImported({
   actorName = 'College Office'
 }) {
   try {
-    const { data: admins } = await supabase
+    // Roster import is a Registrar responsibility since the Admin/Registrar
+    // role split, so the notice goes to registrars rather than admins. The other
+    // admin-targeted notices in this file stay with Admin on purpose: account
+    // status changes, system and security alerts, and the no-active-dean
+    // escalation, whose actionable fix (assigning a dean) is still Admin's.
+    const { data: recipients } = await supabase
       .from('users')
       .select('user_id')
-      .eq('role', 'admin')
+      .eq('role', 'registrar')
       .eq('status', 'active');
 
-    if (!admins || admins.length === 0) return;
+    if (!recipients || recipients.length === 0) return;
 
-    const list = admins.map(adm => ({
-      recipient_id: adm.user_id,
+    const list = recipients.map(person => ({
+      recipient_id: person.user_id,
       type: 'roster_import',
       message: `Roster Synchronization: ${count} member(s) synchronized into ${departmentName || 'institution'} by ${actorName}.`
     }));

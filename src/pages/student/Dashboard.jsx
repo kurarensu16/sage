@@ -53,7 +53,7 @@ const checkPendingAdvisingTasks = async (studentId) => {
   }
 };
 
-const NO_INSIGHT_SUMMARY = 'No AI guidance yet. Open the AI Study Tutor to generate it from your recorded scores.';
+const NO_INSIGHT_SUMMARY = 'No AI guidance yet. Open Academic Insights to generate it from your recorded scores.';
 
 // computeAcademicVerdict values -> card labels (same mapping the saved insights use).
 const VERDICT_LABELS = {
@@ -256,7 +256,7 @@ export default function Dashboard() {
           : VERDICT_LABELS[computeAcademicVerdict({ gwa: resolvedGwaSummary?.gwa ?? null, hasFdaSubject })];
         const resolvedVerdictTentative = resolvedVerdict !== 'No data yet' && !resolvedGwaSummary?.isOfficial;
 
-        // Same rule as the AI Study Tutor: the saved insight stays until a grade is
+        // Same rule as Academic Insights: the saved insight stays until a grade is
         // posted (or its format changes); newer scores alone wait for a manual Refresh.
         let resolvedSummary = NO_INSIGHT_SUMMARY;
         if (insightData && insightData.length > 0) {
@@ -264,7 +264,7 @@ export default function Dashboard() {
           const isUsable = !shouldAutoRegenerateOverallInsight(latest, createPostedMilestoneKey(currentPostedGrades));
           resolvedSummary = isUsable
             ? latest.summary
-            : 'A grade was posted since your last AI guidance. Open the AI Study Tutor to update it.';
+            : 'A grade was posted since your last AI guidance. Open Academic Insights to update it.';
         }
         setInsightVerdict(resolvedVerdict);
         setInsightVerdictTentative(resolvedVerdictTentative);
@@ -323,7 +323,7 @@ export default function Dashboard() {
               Welcome Back, {profile?.first_name || 'Student'}!
             </h1>
             <p className="text-xs sm:text-sm text-sage-200/90 max-w-xl leading-relaxed">
-              Track your real-time academic progress, review faculty intervention checklists, and explore AI Study Tutor insights.
+              Track your real-time academic progress, review faculty intervention checklists, and explore Academic Insights.
             </p>
           </div>
           
@@ -461,7 +461,7 @@ export default function Dashboard() {
                 {insightVerdict}
               </h3>
               <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate">
-                {AI_STANDING_SUBTITLES[insightVerdict] || 'Open AI Study Tutor'}
+                {AI_STANDING_SUBTITLES[insightVerdict] || 'Open Academic Insights'}
                 {insightVerdictTentative ? ' · tentative' : ''}
               </p>
             </div>
@@ -555,7 +555,7 @@ export default function Dashboard() {
             <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-sm space-y-3 sm:space-y-4">
               <div className="flex items-center gap-2">
                 <ListTodo className="h-4 w-4 sm:h-5 sm:w-5 text-sage-600" />
-                <h3 className="text-xs sm:text-sm font-bold text-slate-900">Advisories & Study Plans</h3>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900">Faculty Action Plans</h3>
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">
                 {pendingAdvisingCount > 0 
@@ -611,7 +611,7 @@ export default function Dashboard() {
                         </span>
                       )}
                     </li>
-                    <li>This number changes as new scores are recorded. Use it to see where you stand early and to ask the AI Study Tutor what to improve.</li>
+                    <li>This number changes as new scores are recorded. Use it to see where you stand early and to ask Academic Insights what to improve.</li>
                   </ul>
                   <p>When every subject's Semestral Grade is posted, this card shows your <strong>Official GWA</strong>.</p>
                 </>
@@ -622,7 +622,7 @@ export default function Dashboard() {
                   <div>
                     <p className="font-semibold text-slate-800">When it updates</p>
                     <ul className="list-disc pl-5 space-y-1 mt-1">
-                      <li>It is created automatically the first time you open the <strong>AI Study Tutor</strong>.</li>
+                      <li>It is created automatically the first time you open <strong>Academic Insights</strong>.</li>
                       <li>It updates automatically when your instructor <strong>posts a grade</strong> (Midterm Rating, Tentative Final Rating, or Semestral Grade).</li>
                       <li>New activity scores do <strong>not</strong> update it automatically.</li>
                     </ul>
@@ -630,7 +630,7 @@ export default function Dashboard() {
                   <div>
                     <p className="font-semibold text-slate-800">To update it yourself</p>
                     <ol className="list-decimal pl-5 space-y-1 mt-1">
-                      <li>Click <strong>View Insights</strong> (or open <strong>AI Study Tutor</strong> in the sidebar).</li>
+                      <li>Click <strong>View Insights</strong> (or open <strong>Academic Insights</strong> in the sidebar).</li>
                       <li>On the <strong>Today</strong> tab, find <strong>Proactive academic guidance</strong>.</li>
                       <li>Click <strong>Refresh</strong>.</li>
                       <li>Return to the dashboard to see the new insight.</li>
@@ -642,11 +642,11 @@ export default function Dashboard() {
                 <p>The total number of active subjects and enrolled units you are taking this semester. Only subjects marked as 'Active' or 'Grades Posted' contribute to your GWA.</p>
               )}
               {infoModalType === 'tasks' && (
-                <p>These are pending <strong>faculty advising interventions</strong> that require your attention. If you are marked as "CLEARED," you have no immediate required actions. If "PENDING," please check Advisories & Study Plans below for details.</p>
+                <p>These are pending <strong>faculty advising interventions</strong> that require your attention. If you are marked as "CLEARED," you have no immediate required actions. If "PENDING," please check Faculty Action Plans below for details.</p>
               )}
               {infoModalType === 'ai' && (
                 <>
-                  <p>Your standing is computed live from your <strong>running GWA</strong> and your <strong>absences in each subject</strong>, using the same rule as the <strong>AI Study Tutor</strong>. It is marked <em>tentative</em> until your Semestral Grades are posted. Open the AI Study Tutor for a written explanation.</p>
+                  <p>Your standing is computed live from your <strong>running GWA</strong> and your <strong>absences in each subject</strong>, using the same rule as <strong>Academic Insights</strong>. It is marked <em>tentative</em> until your Semestral Grades are posted. Open Academic Insights for a written explanation.</p>
                   
                   <div className="space-y-3 mt-4">
                     <div className="bg-emerald-50/50 border border-emerald-100 p-3 rounded-xl flex gap-3">

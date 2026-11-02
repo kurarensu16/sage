@@ -1,0 +1,32 @@
+flowchart LR
+%% ===== Level 0 DFD: ASPIRE Context Diagram (source created 2026-10-30) =====
+%% This figure existed in the paper as an image with no source file. Recreated here and brought
+%% up to date at the same time.
+%% ---
+%% Changes against the published image:
+%%   + REGISTRAR, the fifth role, with academic setup, loading and late grade changes
+%%   - the Administrator no longer performs academic setup or grade override; both moved
+%%   + the grade change request chain, which crosses four of the five roles
+%%   + object storage, reached only through a server-side function
+%% The AI provider is left as the paper documents it, by the owner's decision.
+%% ---
+%% The point of a context diagram is the boundary: AI returns advice and drafts and can change
+%% no grade, no risk classification and no intervention plan on its own.
+
+  ASPIRE(("0.0<br/>ASPIRE<br/>Academic Support and<br/>Performance Advising"))
+
+  ST["Student"] <-- "credentials, plan acknowledgment,<br/>task completion reports, practice attempts,<br/>grade change request with evidence /<br/>tentative and posted grades, attendance,<br/>advisories, study guidance, request status" --> ASPIRE
+
+  FA["Faculty"] <-- "activity scores and metadata, learning resources,<br/>attendance, intervention plans, follow-up records,<br/>referrals, correction requests, dispute decisions /<br/>class rosters, risk roster, submission status" --> ASPIRE
+
+  DE["College Dean"] <-- "loading decisions for their own college,<br/>correction and dispute decisions,<br/>case dispositions, report parameters /<br/>college analytics, escalated cases,<br/>conflict refusals limited to college and program" --> ASPIRE
+
+  RE["Registrar"] <-- "subjects, programs, grading templates, sections,<br/>academic terms, faculty loading, enrolment,<br/>authorized overrides, late grade changes /<br/>term readiness, loading and enrolment coverage,<br/>conflict refusals in full" --> ASPIRE
+
+  AD["Administrator"] <-- "accounts, bulk imports, maintenance windows,<br/>encrypted backups /<br/>audit trail, service and storage health" --> ASPIRE
+
+  ASPIRE <-- "grounded prompt, activity metadata /<br/>study diagnostics, practice sets, task drafts.<br/>Returns advice only: it changes no grade,<br/>no risk tier and no intervention plan" --> AI["AI Model Provider<br/>(Gemini 2.5 Flash<br/>via OpenRouter)"]
+
+  ASPIRE <-- "profile photos, grade-dispute evidence /<br/>authorized, time-limited links only" --> FS["Private file storage<br/>(Supabase Storage and<br/>Cloudflare R2, reached<br/>through a server function)"]
+
+  ASPIRE -- "grade, advising and request notices" --> NT["Email delivery"]

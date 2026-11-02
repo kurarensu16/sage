@@ -89,7 +89,7 @@ function getTermActivityInfo(gradingOptions, termName) {
 }
 
 // ---------------------------------------------------------------------------
-// Color palette extracted from SAGE_Grading_System_Mock.xlsx
+// Color palette extracted from ASPIRE_Grading_System_Mock.xlsx
 // ---------------------------------------------------------------------------
 const COLOR = {
   green:     'E2EFDA', // Subject Profile input cells

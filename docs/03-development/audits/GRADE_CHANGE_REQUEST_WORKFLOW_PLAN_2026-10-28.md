@@ -1,6 +1,6 @@
 # Grade Change Request Workflow Plan - 2026-10-28
 
-**Status:** Proposed design. No code or migration exists yet for the broadened scope described here. Every file listed under "Suggested build order" still requires its own developer confirmation before it is created or edited, per `AGENTS.md`.
+**Status:** Design confirmed 2026-10-29 — all open decisions resolved (see "Decisions" below). No code or migration exists yet for the broadened scope described here. Every file listed under "Suggested build order" still requires its own per-file confirmation before it is created or edited, per `AGENTS.md`.
 **Scope:** Broadens the existing `remark_override_requests` / SG-correction system (`src/lib/gradeCorrectionService.js`, `src/pages/dean/RemarkOverrideRequests.jsx`, `submit_sg_correction_request` / `review_sg_correction_request` / `apply_approved_sg_correction_v2`) from **Semestral Grade only** into a request available for **any finalized milestone** (MR, TFR, or SG), with a student-initiated, evidence-gated entry point and a consolidated faculty edit trigger. Does **not** touch `src/pages/admin/GradeOverride.jsx` (the admin emergency override) — see "Explicitly out of scope," below. Does not redesign the Tentative/Posted/Finalized state machine itself — that is roadmap item #5 (`GRADE_LIFECYCLE_AND_CONSULTATION_LOG_WORKFLOW_PLAN_2026-10-28.md`); this plan only gates on a milestone's `Finalized` state existing.
 **Trigger:** Capstone defense panel item 3.3 ("harden the process for changing a finalized grade") plus this conversation's follow-on decisions: broaden the dispute chain from SG-only to any milestone, require evidence/media (not just a text reason), and consolidate the faculty edit action into the request list itself instead of a prompt on the posted-grade view.
 **Depends on:** Roadmap item #5 (Grade Lifecycle Hardening) for the `Finalized` state a request gates on. See `PRE_DEFENSE_IMPLEMENTATION_ROADMAP_2026-10-28.md`.
@@ -133,13 +133,13 @@ Reyes's TFR for ITC113 finalizes on a Friday. The following Tuesday, Reyes notic
 5. Because this request is scoped to **TFR, not SG**, the recompute is isolated: TFR recalculates in full from its components, but SG (not yet posted) is untouched and will simply be computed normally from the corrected TFR when that milestone is reached later — no separate cascade is fired. Status: `applied`, row moves to Faculty's **History** and Reyes's **My Requests**.
 6. Three weeks later at SG time, a separate issue is found in a Prelim exam score. That is a **new, independent SG-scoped request** — because it targets SG, approving and applying it *would* cascade back through MR/TFR per Part 3's SG rule, unchanged from today's existing behavior.
 
-## Open decisions (confirm before any file is touched)
+## Decisions (confirmed 2026-10-29 — developer sign-off, ready to build)
 
-1. New dedicated RPC (`submit_grade_change_request`) vs. extending `submit_sg_correction_request` with a milestone parameter — the worked SQL above assumes extension of the existing table, but the RPC split is still an open call.
-2. Exact reason-type enum values — the four listed (`computation_error`, `missing_or_incorrect_score`, `technical_issue`, `other`) are a starting proposal, not finalized vocabulary.
-3. Evidence storage backend (Supabase Storage bucket vs. Cloudflare R2) — explicitly deferred to roadmap item #2; this plan's schema does not block on the answer, but the upload UI implementation does.
-4. Whether `apply_approved_milestone_correction` (the new MR/TFR-scoped recompute) is one shared function branching on `grade_period`, or two separate functions — the SQL sketch above shows one function with an assertion guard, but this is a build-time call.
-5. Rate limiting / abuse prevention for student-initiated submissions (e.g. one open request per posted_grade_id at a time) — not addressed above, needs a decision before Part 1 ships.
+1. **RPC approach:** Extend the existing `submit_sg_correction_request` with a `p_grade_period` parameter rather than creating a new dedicated RPC.
+2. **Reason-type enum:** Keep the four proposed values as final vocabulary — `computation_error`, `missing_or_incorrect_score`, `technical_issue`, `other`.
+3. **Evidence storage backend:** Resolved via roadmap item #2 — Cloudflare R2, adopted specifically for this plan's evidence uploads (never avatars), accessed via server-side signed URLs minted by an edge function.
+4. **`apply_approved_milestone_correction`:** One shared function branching on `grade_period`, with the assertion guard rejecting `semestral_grade` requests (routed to `apply_approved_sg_correction_v2` instead) — not two separate functions.
+5. **Rate limiting:** One open request per `posted_grade_id` at a time — a student cannot file a second dispute on the same milestone while one is already pending.
 
 ## Suggested build order
 

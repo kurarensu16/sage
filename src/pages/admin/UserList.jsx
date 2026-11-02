@@ -273,18 +273,9 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       const matchesSearch = !searchLower || fullName.includes(searchLower) || email.includes(searchLower) || userNum.includes(searchLower);
       const matchesRole = roleFilter ? user.role === roleFilter : true;
       
-      // Normalise department comparison for legacy data
-      let userDept = user.department;
-      if (userDept === 'College of IT' || userDept === 'College of CS') {
-        userDept = 'College of Computer Studies';
-      }
-      
-      let filterDept = deptFilter;
-      if (filterDept === 'College of IT' || filterDept === 'College of CS') {
-        filterDept = 'College of Computer Studies';
-      }
-      
-      const matchesDept = filterDept ? userDept === filterDept : true;
+      // Compared as stored. The legacy aliases here mapped to a college that no
+      // longer exists, which made the filter silently miss real rows.
+      const matchesDept = deptFilter ? user.department === deptFilter : true;
       const matchesProgram = programFilter ? user.program === programFilter : true;
       const matchesYear = yearFilter ? user.yearLevel === yearFilter : true;
       const matchesSection = sectionFilter ? user.section === sectionFilter : true;
@@ -320,6 +311,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       student: baseList.filter(u => u.role === 'student').length,
       faculty: baseList.filter(u => u.role === 'faculty').length,
       dean: baseList.filter(u => u.role === 'dean').length,
+      registrar: baseList.filter(u => u.role === 'registrar').length,
       admin: baseList.filter(u => u.role === 'admin').length,
     };
   }, [users, statusFilter, showArchived]);
@@ -775,7 +767,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       ];
       ws['!cols'] = colWidths;
 
-      XLSX.writeFile(wb, `SAGE_Users_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      XLSX.writeFile(wb, `ASPIRE_Users_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
 
       const actorName = resolveActorName(profile, user);
       logActivity('User Export', `Exported ${filteredUsers.length} user records to Excel.`, actorName);
@@ -849,10 +841,13 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
       const parts = line.split(',');
       if (parts.length < 6) {
         importStatus = 'error';
-        importMessage = `Insufficient columns. Required: LastName,FirstName,MiddleName,Email,Role,College,Program[,Section,YearLevel,IDNumber]`;
+        importMessage = `Insufficient columns. Required: LastName,FirstName,MiddleName,Email,Role,College,Program[,Section,YearLevel,IDNumber,RequestID]`;
       }
 
-      let [lastName, firstName, middleName, email, role, department, program, section, yearLevel, userNumber] = parts.map(p => p?.trim() || '');
+      // RequestID is an optional 11th column, present only on a file exported
+      // from Student Account Requests. It links the created account back to the
+      // Registrar's row; ordinary imports simply never have it.
+      let [lastName, firstName, middleName, email, role, department, program, section, yearLevel, userNumber, requestId] = parts.map(p => p?.trim() || '');
 
       let finalUserNumber = userNumber;
       let departmentId = null;
@@ -861,33 +856,27 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         // Backwards compatibility for 6 columns
         if (parts.length === 6) {
           department = parts[5].trim();
-          if (department === 'College of IT' || department === 'College of CS' || department === 'College of Computer Studies') {
-            department = 'College of Computer Studies';
-            program = role === 'student' || role === 'faculty'
-              ? 'Bachelor of Science in Information Technology'
-              : '';
-          } else {
-            program = '';
-          }
+          program = '';
           section = '';
           yearLevel = '';
           userNumber = '';
-        } else {
-          if (department === 'College of IT' || department === 'College of CS') {
-            department = 'College of Computer Studies';
-            program = program || (role === 'student' || role === 'faculty'
-              ? 'Bachelor of Science in Information Technology'
-              : '');
-          }
         }
+        // The legacy aliases that rewrote "College of IT" and "College of CS"
+        // into "College of Computer Studies" were removed: that college no
+        // longer exists, so the mapping turned valid input into a name the
+        // database would reject. Colleges are matched by exact name against the
+        // database, as the check below does -- an alias table is a second,
+        // silently diverging source of truth.
 
         // College and section are matched to the database by exact name, never guessed.
         const normalizedRole = role.toLowerCase();
-        const validRoles = ['admin', 'dean', 'faculty', 'student'];
+        const validRoles = ['admin', 'registrar', 'dean', 'faculty', 'student'];
+        // Registrar, like Admin, is institution-wide and carries no college.
+        const collegeExemptRoles = ['admin', 'registrar'];
         if (!validRoles.includes(normalizedRole)) {
           importStatus = 'error';
-          importMessage = `Invalid role: "${role}". Valid values: admin, dean, faculty, student`;
-        } else if (normalizedRole !== 'admin') {
+          importMessage = `Invalid role: "${role}". Valid values: admin, registrar, dean, faculty, student`;
+        } else if (!collegeExemptRoles.includes(normalizedRole)) {
           const deptMatch = departments.find(d => d.name.toLowerCase() === department.toLowerCase());
           if (!department) {
             importStatus = 'error';
@@ -948,7 +937,11 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         if (importStatus !== 'error') {
           finalUserNumber = userNumber;
           if (!finalUserNumber) {
-            const prefix = role.toLowerCase() === 'student' ? '' : role.toLowerCase() === 'admin' ? 'ADM-' : role.toLowerCase() === 'faculty' ? 'FAC-' : 'DN-';
+            // Keyed by role so a new role cannot silently inherit another's
+            // prefix -- the previous ternary fell through to 'DN-' for anything
+            // it did not recognise, which would have stamped a registrar with a
+            // dean's employee ID.
+            const prefix = { student: '', admin: 'ADM-', faculty: 'FAC-', dean: 'DN-', registrar: 'REG-' }[role.toLowerCase()] ?? '';
             const year = new Date().getFullYear();
             let generated = '';
             do {
@@ -965,7 +958,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 importMessage = `Invalid Student Number format: "${finalUserNumber}". Must be YYYY-XXXXX.`;
               }
             } else {
-              const employeeIdRegex = /^((ADM|FAC|DN)-)?\d{4}-\d{5}$/;
+              const employeeIdRegex = /^((ADM|FAC|DN|REG)-)?\d{4}-\d{5}$/;
               if (!employeeIdRegex.test(finalUserNumber)) {
                 importStatus = 'error';
                 importMessage = `Invalid Employee ID format: "${finalUserNumber}". Must be YYYY-XXXXX or with prefix like ADM-YYYY-XXXXX.`;
@@ -999,6 +992,8 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         yearLevel,
         status: 'active',
         userNumber: finalUserNumber,
+        // Carried through only when the file came from Student Account Requests.
+        requestId: requestId || null,
         importStatus,
         importMessage
       });
@@ -1099,6 +1094,22 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 .eq('user_id', data.user.id);
               if (updateErr) {
                 console.error(`Failed to set user number client-side for ${u.email}:`, updateErr);
+              }
+
+              // Close the loop on a Registrar handover. The export from Student
+              // Account Requests carries a RequestID column; linking it here is
+              // what marks that row Created, so the queue reflects accounts that
+              // genuinely exist rather than ones believed to have been made.
+              // A failure here must not fail the import: the account is real
+              // either way, and the queue can be reconciled afterwards.
+              if (u.requestId) {
+                const { error: linkErr } = await supabase.rpc('mark_student_account_request_created', {
+                  p_request_id: u.requestId,
+                  p_user_id: data.user.id
+                });
+                if (linkErr) {
+                  console.warn(`Created ${u.email} but could not link request ${u.requestId}:`, linkErr.message);
+                }
               }
             }
             added.push(u);
@@ -1294,6 +1305,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
             { id: 'student', label: 'Students', count: roleCounts.student },
             { id: 'faculty', label: 'Faculty', count: roleCounts.faculty },
             { id: 'dean', label: 'Deans', count: roleCounts.dean },
+            { id: 'registrar', label: 'Registrars', count: roleCounts.registrar },
             { id: 'admin', label: 'Admins', count: roleCounts.admin },
           ].map(tab => {
             const isSelected = roleFilter === tab.id;
@@ -1428,6 +1440,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
             >
               <option value="">All Roles</option>
               <option value="admin">Admin</option>
+              <option value="registrar">Registrar</option>
               <option value="dean">Dean</option>
               <option value="faculty">Faculty</option>
               <option value="student">Student</option>
@@ -2360,7 +2373,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                     }}
                     onBlur={() => handleParseCSV()}
                     rows="6"
-                    placeholder="Smith,Jane,A.,jane.smith@student.sage.edu,student,College of Computer Studies,Bachelor of Science in Information Technology,BSIT-1A,1st Year,2026-00001"
+                    placeholder="Smith,Jane,A.,jane.smith@student.sage.edu,student,College of Accountancy,Bachelor of Science in Accountancy,BSA-1A,1st Year,2026-00001"
                     className="block w-full p-3.5 border border-slate-200 rounded-xl text-xs font-mono focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400 leading-relaxed bg-white shadow-2xs"
                   />
 

@@ -3,44 +3,73 @@ import {
   LayoutDashboard,
   FileText,
   BrainCircuit,
-  Calendar,
   BookOpen,
   Users,
   BookMarked,
   AlertCircle,
   ClipboardList,
-  FileDown,
   Shield,
+  GraduationCap,
+  UserCheck,
   MoreHorizontal
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
-// Shortcuts to the most-used pages per role. Every page, including these, is also
-// reachable from "More", which opens the full sidebar menu (all groups and pages).
+// Four shortcuts per role plus "More", which opens the full sidebar menu.
+//
+// TWO RULES THESE HAVE TO FOLLOW
+// 1. Matches must not overlap. Each tab tests the path independently, so two
+//    tabs matching the same page would both light up. `/registrar/section` as a
+//    prefix would swallow `/registrar/sectionmasterlist`, which belongs to a
+//    different tab -- hence the exact paths below rather than a loose prefix.
+// 2. The four should cover the pages a role opens daily. Anything they miss
+//    falls back to "More", which is correct for occasional pages (reports) and
+//    wrong for core workflow -- Enrollment Management and Faculty Loading had
+//    no tab at all before this.
 const PRIMARY_TABS = {
   student: [
     { to: '/student/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/student/dashboard' || p === '/student' },
-    { to: '/student/mysubjects', label: 'Subjects', icon: BookMarked, match: (p) => p.startsWith('/student/mysubjects') },
+    // Attendance rides with Subjects: it is recorded per subject, and the
+    // sidebar groups it there too.
+    { to: '/student/mysubjects', label: 'Subjects', icon: BookMarked, match: (p) => p.startsWith('/student/mysubjects') || p.startsWith('/student/attendance') },
     { to: '/student/mygradeslist', label: 'Grades', icon: FileText, match: (p) => p.startsWith('/student/mygrades') || p === '/student/grades' },
-    { to: '/student/advising-inbox', label: 'Support', icon: BrainCircuit, match: (p) => p.startsWith('/student/advising-inbox') || p.startsWith('/student/academic-insights') || p.startsWith('/student/airecommendation') || p.startsWith('/student/consultations') },
+    { to: '/student/advising-inbox', label: 'Support', icon: BrainCircuit, match: (p) => p.startsWith('/student/advising-inbox') || p.startsWith('/student/academic-insights') || p.startsWith('/student/airecommendation') || p.startsWith('/student/consultations') || p.startsWith('/student/graderequests') || p.startsWith('/student/tutor') },
   ],
   faculty: [
     { to: '/faculty/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/faculty/dashboard' || p === '/faculty' },
-    { to: '/faculty/classrecordslist', label: 'Classes', icon: BookOpen, match: (p) => p.startsWith('/faculty/classrecords') || p.startsWith('/faculty/gradecomponents') || p.startsWith('/faculty/scoreinput') || p.startsWith('/faculty/gradecomputation') || p.startsWith('/faculty/postedgrades') },
-    { to: '/faculty/evaluatestudent', label: 'Support', icon: ClipboardList, match: (p) => p.startsWith('/faculty/evaluate') || p.startsWith('/faculty/consultations') },
-    { to: '/faculty/classattendance', label: 'Attendance', icon: Calendar, match: (p) => p.startsWith('/faculty/classattendance') },
+    // Attendance folded in here, matching the sidebar: it is taken per class,
+    // and this frees a slot for Grades, which had none.
+    { to: '/faculty/classrecordslist', label: 'Classes', icon: BookOpen, match: (p) => p.startsWith('/faculty/classrecords') || p.startsWith('/faculty/gradecomponents') || p.startsWith('/faculty/scoreinput') || p.startsWith('/faculty/gradecomputation') || p.startsWith('/faculty/postedgrades') || p.startsWith('/faculty/classattendance') },
+    { to: '/faculty/evaluatestudent', label: 'Support', icon: ClipboardList, match: (p) => p.startsWith('/faculty/evaluate') },
+    { to: '/faculty/consultations', label: 'Grades', icon: FileText, match: (p) => p.startsWith('/faculty/consultations') || p.startsWith('/faculty/graderequests') },
   ],
   dean: [
     { to: '/dean/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/dean/dashboard' || p === '/dean' },
-    { to: '/dean/gradepostingstatus', label: 'Grades', icon: BookOpen, match: (p) => p.startsWith('/dean/gradeposting') || p.startsWith('/dean/remarkoverride') || p.startsWith('/dean/gradedistribution') },
+    { to: '/dean/gradepostingstatus', label: 'Grades', icon: BookOpen, match: (p) => p.startsWith('/dean/gradeposting') || p.startsWith('/dean/remarkoverride') || p.startsWith('/dean/graderequests') || p.startsWith('/dean/gradedistribution') },
     { to: '/dean/atriskstudents', label: 'Risk', icon: AlertCircle, match: (p) => p.startsWith('/dean/atriskstudents') || p.startsWith('/dean/escalatedcases') || p.startsWith('/dean/interventionresults') },
-    { to: '/dean/summaryreports', label: 'Reports', icon: FileDown, match: (p) => p.startsWith('/dean/summaryreports') },
+    // Replaces the Reports tab. Faculty loading is a term-start workflow with
+    // several steps; generating a report is one occasional page, so it is the
+    // better candidate for "More".
+    { to: '/dean/facultyloading', label: 'Loading', icon: GraduationCap, match: (p) => p.startsWith('/dean/facultyloading') },
   ],
   admin: [
     { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/admin/dashboard' || p === '/admin' },
     { to: '/admin/userlist', label: 'Users', icon: Users, match: (p) => p.startsWith('/admin/user') },
-    { to: '/admin/subjectlist', label: 'Setup', icon: BookMarked, match: (p) => p.startsWith('/admin/subject') || p.startsWith('/admin/gradecomputations') || p.startsWith('/admin/section') || p.startsWith('/admin/departments') || p.startsWith('/admin/classrooms') },
-    { to: '/admin/auditlog', label: 'System', icon: Shield, match: (p) => p.startsWith('/admin/auditlog') || p.startsWith('/admin/termmanagement') || p.startsWith('/admin/gradeoverride') },
+    { to: '/admin/studentaccountrequests', label: 'Requests', icon: BookMarked, match: (p) => p.startsWith('/admin/studentaccountrequests') },
+    // One tab for the whole System Maintenance group, so Storage Health,
+    // Maintenance Mode and Backup & Restore each highlight it rather than
+    // leaving no tab active.
+    { to: '/admin/auditlog', label: 'System', icon: Shield, match: (p) => p.startsWith('/admin/auditlog') || p.startsWith('/admin/systemhealth') || p.startsWith('/admin/storagehealth') || p.startsWith('/admin/maintenance') || p.startsWith('/admin/backup') },
+  ],
+  registrar: [
+    { to: '/registrar/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/registrar/dashboard' || p === '/registrar' },
+    // Exact section paths, not a '/registrar/section' prefix: that would also
+    // swallow sectionmasterlist, which belongs to the Enrolment tab.
+    { to: '/registrar/subjectlist', label: 'Setup', icon: BookMarked, match: (p) => p.startsWith('/registrar/subject') || p.startsWith('/registrar/program') || p.startsWith('/registrar/gradecomputations') || p.startsWith('/registrar/sectionlist') || p.startsWith('/registrar/sectionform') || p.startsWith('/registrar/departments') || p.startsWith('/registrar/termmanagement') },
+    // The registrar's term-start workflow, which had no tab at all: enrolment,
+    // faculty loading and rosters were all reachable only through "More".
+    { to: '/registrar/enrollment', label: 'Enrolment', icon: UserCheck, match: (p) => p.startsWith('/registrar/enrollment') || p.startsWith('/registrar/facultyloading') || p.startsWith('/registrar/sectionmasterlist') || p.startsWith('/registrar/newstudentaccounts') || p.startsWith('/registrar/viewusers') },
+    { to: '/registrar/gradeoverride', label: 'Grades', icon: Shield, match: (p) => p.startsWith('/registrar/gradeoverride') || p.startsWith('/registrar/lategradechanges') },
   ],
 };
 

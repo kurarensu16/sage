@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, ChevronDown, ChevronUp, ClipboardCheck, RefreshCw, RotateCcw, Send, X } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronUp, ClipboardCheck, Paperclip, RefreshCw, RotateCcw, Send, X } from 'lucide-react';
 import PageHeader from '../../components/layout/PageHeader';
 import { useAuth } from '../../lib/AuthContext';
 import {
   CASE_PAGE_SIZE, buildFollowupSnapshot, getEvaluatedCases, getEvaluationClasses, getReferralHistory,
-  recordInterventionFollowup, referEvaluation, verifyInterventionTask
+  recordInterventionFollowup, referEvaluation, verifyInterventionTask,
+  downloadTaskEvidence, taskEvidenceName
 } from '../../lib/evaluationService';
 import {
   FOLLOWUP_MILESTONE_LABELS, countTaskProgress, getTermsForPeriod, isAcknowledged, referralEligibility,
@@ -14,6 +15,7 @@ import {
 import { getRiskDisplay } from '../../lib/academicPolicy';
 import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
+import EvidenceViewer from '../../components/common/EvidenceViewer';
 
 const field = 'rounded-lg border border-sage-200 bg-sage-50 px-3 py-2 text-sm text-sage-900 focus:ring-2 focus:ring-sage-400';
 const action = 'rounded-lg border border-sage-200 px-3 py-2 text-sm font-semibold text-sage-700 hover:bg-sage-100 disabled:opacity-50';
@@ -64,6 +66,9 @@ function Tracker({ facultyId }) {
   const [taskBusy, setTaskBusy] = useState('');
   const [taskErrors, setTaskErrors] = useState({});
   const [returnDraft, setReturnDraft] = useState(null);
+  // The attachment open in the in-app viewer, or null. Held as one object so
+  // EvidenceViewer re-runs its loader only when a different file is chosen.
+  const [viewing, setViewing] = useState(null);
   const [followupCase, setFollowupCase] = useState(null);
   const [followupError, setFollowupError] = useState('');
   const [recording, setRecording] = useState(false);
@@ -320,7 +325,7 @@ function Tracker({ facultyId }) {
       <RiskEducationNote variant="evaluationHistory" />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 rounded-xl border border-sage-200 bg-sage-50 p-4">
         <label className="text-xs font-semibold">Class<select className={`${field} block w-full mt-1`} value={filters.classId} onChange={e => changeFilter('class', e.target.value)}><option value="">All allowed classes</option>{allowedClasses.map(item => <option key={item.class_record_id} value={item.class_record_id}>{item.subjects?.code} · {item.sections?.name} · {item.school_year}</option>)}</select></label>
-        <label className="text-xs font-semibold">Grading term<select className={`${field} block w-full mt-1`} value={filters.term} onChange={e => changeFilter('term', e.target.value)}><option value="">All Terms</option>{termOptions.map(term => <option key={term}>{term}</option>)}</select></label>
+        <label className="text-xs font-semibold">Grading period<select className={`${field} block w-full mt-1`} value={filters.term} onChange={e => changeFilter('term', e.target.value)}><option value="">All periods</option>{termOptions.map(term => <option key={term}>{term}</option>)}</select></label>
         <label className="text-xs font-semibold">Referral<select className={`${field} block w-full mt-1`} value={filters.referral} onChange={e => changeFilter('referral', e.target.value)}><option value="">All cases</option><option value="pending">Pending Dean referral</option><option value="none">No active referral</option></select></label>
         <form className="flex items-end gap-2" onSubmit={e => { e.preventDefault(); changeFilter('search', searchText); }}><label className="text-xs font-semibold flex-1">Student search<input className={`${field} block w-full mt-1`} value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Name or student number" maxLength={100} /></label><button className={action}>Search</button></form>
       </div>
@@ -350,7 +355,7 @@ function Tracker({ facultyId }) {
               <p className="font-mono text-sm mt-1">Follow-up GWA: {gradeText(item.followup_snapshot.gwa)}</p>
               <p className="text-xs">{FOLLOWUP_MILESTONE_LABELS[item.followup_snapshot.milestone] || item.followup_snapshot.milestone} · {dateText(item.followup_snapshot.captured_at)}</p>
               <p className="text-xs mt-2 font-mono">Verified tasks: {summary.tasks.verified}/{summary.tasks.total}{summary.completionRate !== null ? ` (${summary.completionRate}%)` : ''}</p>
-              <p className="text-xs mt-2">Closed for {item.term}. If the student still needs support, <Link to="/faculty/evaluatestudent" className="font-semibold underline">evaluate again in a later grading term</Link>.</p>
+              <p className="text-xs mt-2">Closed for {item.term}. If the student still needs support, <Link to="/faculty/evaluatestudent" className="font-semibold underline">evaluate again in a later grading period</Link>.</p>
             </div> : <div>
               <h3 className="text-xs font-semibold uppercase">Current subject standing</h3><p className="font-mono">{gradeText(standing?.current_gwa)}</p><p className="text-xs">{standing?.standing_source || 'Pending'} · {standing?.standing_milestone || 'No available milestone'}</p>
               <p className="text-xs mt-2 font-mono">Tasks: {progress.verified} verified · {awaiting} awaiting review · {progress.total} total</p>
@@ -376,12 +381,40 @@ function Tracker({ facultyId }) {
                 <p>{task.description}</p>
                 <p className="text-xs">Target: {task.target_term || 'Not specified'} · {taskState(task)}</p>
                 {task.completed === true && <p className="text-xs"><CheckCircle2 className="inline h-3 w-3" /> Reported at: {dateText(task.completed_at)}</p>}
+                {/* The point of requiring proof is that the person verifying can
+                    look at it. A signed link, opened on demand, so nothing is
+                    fetched for tasks nobody is reviewing. */}
+                {task.evidence?.object_key && (
+                  <p className="text-xs">
+                    <button
+                      type="button"
+                      className={smallAction}
+                      onClick={() => setViewing({
+                        name: taskEvidenceName(task.evidence),
+                        contentType: task.evidence.mime,
+                        load: () => downloadTaskEvidence(task.evidence)
+                      })}
+                    >
+                      <Paperclip className="inline h-3 w-3 mr-1" />View submitted work
+                    </button>
+                    <span className="ml-2 text-slate-400">
+                      attached {dateText(task.evidence.uploaded_at)}
+                    </span>
+                  </p>
+                )}
+                {task.requires_evidence !== false && task.completed === true && !task.evidence?.object_key && (
+                  <p className="text-xs text-amber-700">Reported without a file. Return it if proof was expected.</p>
+                )}
                 {state === 'verified' && <p className="text-xs">Verified at: {dateText(task.verified_at)}</p>}
                 {state === 'returned' && <p className="text-xs">Returned {dateText(task.returned_at)}: {task.return_note}</p>}
                 {state === 'reported' && !manageBlocked && !returning && <div className="flex flex-wrap gap-2 pt-1">
                   <button className={smallAction} disabled={Boolean(taskBusy)} onClick={() => decideTask(item, task, true)}><CheckCircle2 className="inline h-3 w-3 mr-1" />{taskBusy === key ? 'Saving…' : 'Verify'}</button>
                   <button className={smallAction} disabled={Boolean(taskBusy)} onClick={() => setReturnDraft({ key, note: '' })}><RotateCcw className="inline h-3 w-3 mr-1" />Return to student</button>
                 </div>}
+                {/* Every other control on this page states why it is unavailable.
+                    Without this the pair simply vanished, which reads as "there is
+                    no way to verify" rather than "not from this view". */}
+                {state === 'reported' && manageBlocked && <p className="text-xs">Cannot be reviewed here: {manageBlocked.toLowerCase()}</p>}
                 {returning && <form className="space-y-2 pt-1" onSubmit={event => { event.preventDefault(); decideTask(item, task, false, returnDraft.note); }}>
                   <label className="block text-xs font-semibold">What does the student still need to do?<textarea autoFocus required maxLength={500} value={returnDraft.note} onChange={event => setReturnDraft({ key, note: event.target.value })} className={`${field} block w-full mt-1 min-h-20`} /></label>
                   <div className="flex gap-2"><button className={smallAction} disabled={Boolean(taskBusy) || !returnDraft.note.trim()}>{taskBusy === key ? 'Saving…' : 'Return task'}</button><button type="button" className={smallAction} disabled={Boolean(taskBusy)} onClick={() => setReturnDraft(null)}>Cancel</button></div>
@@ -399,6 +432,7 @@ function Tracker({ facultyId }) {
       <div className="flex items-center justify-end gap-3"><button className={action} disabled={loading || filters.page === 0} onClick={() => changeFilter('page', String(filters.page - 1))}>Previous</button><span className="text-sm">Page {filters.page + 1}</span><button className={action} disabled={loading || (filters.page + 1) * CASE_PAGE_SIZE >= result.count} onClick={() => changeFilter('page', String(filters.page + 1))}>Next</button></div>
       </div>
     </div>
+    <EvidenceViewer source={viewing} onClose={() => setViewing(null)} />
     {referralCase && <div className="fixed inset-0 z-50 bg-sage-950/60 p-4 flex items-center justify-center">
       <form onSubmit={submitReferral} onKeyDown={event => dialogKeys(event, closeReferral)} role="dialog" aria-modal="true" aria-labelledby="referral-title" className="rounded-xl bg-sage-50 border border-sage-200 p-5 w-full max-w-lg max-h-full overflow-y-auto space-y-4 text-sage-900">
         <div className="flex justify-between"><h2 id="referral-title" className="font-display font-semibold">Escalate to Dean</h2><button type="button" className={action} aria-label="Close referral" disabled={sending} onClick={closeReferral}><X className="h-4 w-4" /></button></div>

@@ -7,7 +7,28 @@ import {
   resolveGradingFormula,
   toEffectiveGradeForPosting
 } from '../../lib/gradingMath';
-import { evaluateFdaDecision, getPersistentRemarkOverride, getRemarks, toDisplayRemark } from '../../lib/academicPolicy';
+import { evaluateFdaDecision, getPersistentRemarkOverride, getRemarks, toDbRemark, toDisplayRemark } from '../../lib/academicPolicy';
+
+/**
+ * The database remark for one milestone.
+ *
+ * student.remarks is the SEMESTRAL verdict, derived from the whole-year GWA and
+ * from whether all four terms are scored. Using it for a Midterm Rating meant a
+ * student whose Final was still empty read as "failed" on a Midterm that had not
+ * changed -- the Update MR preview showed "81.00 -> 81.00, PASSED -> FAILED".
+ *
+ * MR and TFR take their remark from their own rating, through the same
+ * getRemarks rule, so one pass/fail rule is applied to the right number.
+ * Returns null when the milestone has no rating yet; the caller decides whether
+ * that is a refusal or simply nothing to show.
+ */
+function remarkForMilestone(student, milestone) {
+  if (milestone === 'semestral') return toDbRemark(student.remarks);
+  const rating = milestone === 'midterm' ? student.mr : student.tfr;
+  const effective = toEffectiveGradeForPosting(rating);
+  if (effective === null || effective === undefined) return null;
+  return toDbRemark(getRemarks({ gwa: effective, isComplete: true }));
+}
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
@@ -56,6 +77,7 @@ import {
   isSummerClass
 } from '../../lib/gradeMilestones';
 import { postGradeMilestoneAtomic, preflightSgCorrectionPosting } from '../../lib/gradePostingService';
+import { fetchWindowsForClass, isMilestoneFinalized } from '../../lib/gradeConsultationService';
 import { collectBlankScoreReview, prepareReviewedBlankScores } from '../../lib/gradeScoreReview';
 import { fetchApprovedSgCorrections } from '../../lib/gradeCorrectionService';
 import { hasActiveAdminGradeOverride, planSgCorrectionPosting, requireAuthorizedSgCorrectionPlan } from '../../lib/sgCorrectionPosting';
@@ -186,6 +208,16 @@ export default function GradeComputationPreview() {
   const [pendingPostMilestone, setPendingPostMilestone] = useState(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [lockedMilestones, setLockedMilestones] = useState([]);
+  // A finalized milestone cannot be re-posted here either. ScoreInput gates its
+  // own buttons; this page is the other door to the same action.
+  const [consultationWindows, setConsultationWindows] = useState([]);
+  const mrFinalized = isMilestoneFinalized(consultationWindows, 'midterm_rating');
+  const tfrFinalized = isMilestoneFinalized(consultationWindows, 'tentative_final_rating');
+  // MR and TFR are finalized by closing their consultation window. The SG has
+  // no window to close -- it is the official grade, so posting it IS the
+  // finalization. post_grade_milestone_v2 has always treated it that way: an
+  // existing SG row is preserved untouched unless an approved request names it.
+  const sgFinalized = lockedMilestones.includes('Semestral Grade');
   const [postingGrades, setPostingGrades] = useState(false);
   const [postSuccess, setPostSuccess] = useState(null);
   const [nullScoreReview, setNullScoreReview] = useState(null);
@@ -556,6 +588,11 @@ export default function GradeComputationPreview() {
           });
         }
         setLockedMilestones(collectPostedMilestoneCoverage(pgData || [], { lockedOnly: true }));
+        try {
+          setConsultationWindows(await fetchWindowsForClass(classRecordId));
+        } catch (winErr) {
+          console.warn('Could not read consultation windows:', winErr);
+        }
 
 
         // Compile complete student datasets
@@ -724,18 +761,21 @@ export default function GradeComputationPreview() {
         });
       }
 
-      const mapRemarkToDb = (remarkStr) => {
-        if (!remarkStr) return 'passed';
-        const lower = remarkStr.toLowerCase();
-        if (lower === 'inc') return 'incomplete';
-        return lower;
-      };
+      // Was a local re-encoder that lowercased whatever it was given. It sent
+      // "in progress" and "incomplete (inc)" straight at the grade_remarks
+      // enum -- which holds only passed/failed/incomplete/fda/dropped -- and
+      // defaulted a missing remark to 'passed', quietly passing a student whose
+      // remark had not been resolved. toDbRemark is the one encoder, and it
+      // defaults to 'failed' for exactly that reason.
+      const mapRemarkToDb = toDbRemark;
 
       if (isFirstPost) {
         setChangedStudentsPreview(null);
       } else {
         const candidateRows = computedStudents.map(stud => {
-          const remarksLabel = mapRemarkToDb(stud.remarks);
+          // Same rule as the post path, so the preview cannot promise a change
+          // that posting will not make.
+          const remarksLabel = remarkForMilestone(stud, targetMilestone) ?? mapRemarkToDb(stud.remarks);
           let computedGWA = stud.gwa;
           if (remarksLabel === 'passed' && stud.gwa > 3.00) computedGWA = 3.00;
           const computedTermGrade = targetMilestone === 'midterm'
@@ -915,12 +955,13 @@ export default function GradeComputationPreview() {
         });
       }
 
-      const mapRemarkToDb = (remarkStr) => {
-        if (!remarkStr) return 'passed';
-        const lower = remarkStr.toLowerCase();
-        if (lower === 'inc') return 'incomplete';
-        return lower;
-      };
+      // Was a local re-encoder that lowercased whatever it was given. It sent
+      // "in progress" and "incomplete (inc)" straight at the grade_remarks
+      // enum -- which holds only passed/failed/incomplete/fda/dropped -- and
+      // defaulted a missing remark to 'passed', quietly passing a student whose
+      // remark had not been resolved. toDbRemark is the one encoder, and it
+      // defaults to 'failed' for exactly that reason.
+      const mapRemarkToDb = toDbRemark;
 
       const updatedLockedMilestones = getUpdatedMilestoneLocks(
         lockedMilestones,
@@ -929,7 +970,39 @@ export default function GradeComputationPreview() {
       );
 
       let postRows = studentsForPosting.map(stud => {
-        const remarksLabel = mapRemarkToDb(stud.remarks);
+        // Completeness belongs to the milestone being posted, not to the year.
+        // MR is Prelim and Midterm, TFR is Semi-Final and Final, and only SG
+        // needs all four (gradingMath.js:482). student.remarks is derived from
+        // the SEMESTRAL gwa against all four terms, so judging by it meant a
+        // finished Midterm could not be posted while the Final -- months away --
+        // was still empty.
+        const notScoredYet = new Error(
+          `${stud.name}: this grading period is not fully scored yet, so there is no result to post. `
+          + 'Fill in the remaining scores, or record a zero where work was not submitted.'
+        );
+        const milestoneRating = targetMilestone === 'midterm'
+          ? stud.mr
+          : targetMilestone === 'tfr' ? stud.tfr : stud.sg;
+        if (milestoneRating === null || milestoneRating === undefined || milestoneRating === '') {
+          throw notScoredYet;
+        }
+
+        // Passed/Failed is a semestral verdict. For MR and TFR the remark is
+        // read off that milestone's own rating, through the same getRemarks
+        // rule, so a progress reading never carries the whole year's conclusion
+        // -- nor the unresolved 'In Progress', which is not a grade_remarks
+        // value at all and was the enum error this started as.
+        let remarksLabel;
+        if (targetMilestone === 'semestral') {
+          const displayRemark = String(stud.remarks || '').trim().toLowerCase();
+          if (!displayRemark || displayRemark === 'in progress' || displayRemark === 'pending') {
+            throw notScoredYet;
+          }
+          remarksLabel = mapRemarkToDb(stud.remarks);
+        } else {
+          remarksLabel = remarkForMilestone(stud, targetMilestone);
+          if (remarksLabel === null) throw notScoredYet;
+        }
         if (targetMilestone === 'semestral'
           && ['incomplete', 'dropped'].includes(remarksLabel)
           && !String(stud.remarksNote || '').trim()) {
@@ -2426,18 +2499,21 @@ export default function GradeComputationPreview() {
                             )}
                           </div>
                           <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                            {isSummer 
-                              ? 'Posts Midterm scores for consultation. Faculty may revise and re-post this rating until SG is finalized.'
-                              : 'Posts Prelim and Midterm scores with MR for consultation. Faculty may revise and re-post until SG is finalized.'}
+                            {mrFinalized
+                              ? 'This rating is final. Prelim and Midterm are closed; a change now needs an approved grade change request.'
+                              : isSummer
+                                ? 'Posts Midterm scores for consultation. Faculty may revise and re-post until the consultation is finalized.'
+                                : 'Posts Prelim and Midterm scores with MR for consultation. Faculty may revise and re-post until the consultation is finalized.'}
                           </p>
                         </div>
                         <button
                           type="button"
-                          disabled={postingGrades || isComputingDiff || isLocked}
+                          disabled={postingGrades || isComputingDiff || isLocked || mrFinalized}
+                          title={mrFinalized ? 'This rating is final. Use a grade change request to correct it.' : undefined}
                           onClick={() => computeChangedStudents('midterm')}
                           className="px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                         >
-                          {isComputingDiff ? '...' : (lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')) ? 'Update MR' : 'Post MR'}
+                          {isComputingDiff ? '...' : mrFinalized ? 'MR Final' : (lockedMilestones.includes('Midterm Rating') || lockedMilestones.includes('Midterm')) ? 'Update MR' : 'Post MR'}
                         </button>
                       </div>
                     </div>
@@ -2464,17 +2540,18 @@ export default function GradeComputationPreview() {
                           </div>
                           <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
                             {isSummer
-                              ? 'Posts Final scores for consultation. Faculty may revise and re-post TFR until SG is finalized.'
-                              : 'Posts Semi-Final and Final scores with TFR for consultation. Faculty may revise and re-post until SG is finalized.'}
+                              ? 'Posts Final scores for consultation. Faculty may revise and re-post TFR until the consultation is finalized.'
+                              : 'Posts Semi-Final and Final scores with TFR for consultation. Faculty may revise and re-post until the consultation is finalized.'}
                           </p>
                         </div>
                         <button
                           type="button"
-                          disabled={postingGrades || isComputingDiff || isLocked || Boolean(getGradePeriodSequenceBlock('tfr', lockedMilestones))}
+                          disabled={postingGrades || isComputingDiff || isLocked || tfrFinalized || Boolean(getGradePeriodSequenceBlock('tfr', lockedMilestones))}
+                          title={tfrFinalized ? 'This rating is final. Use a grade change request to correct it.' : undefined}
                           onClick={() => computeChangedStudents('tfr')}
                           className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                         >
-                          {isComputingDiff ? '...' : (lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')) ? 'Update TFR' : 'Post TFR'}
+                          {isComputingDiff ? '...' : tfrFinalized ? 'TFR Final' : (lockedMilestones.includes('Tentative Final Rating') || lockedMilestones.includes('Final')) ? 'Update TFR' : 'Post TFR'}
                         </button>
                       </div>
                     </div>
@@ -2500,16 +2577,18 @@ export default function GradeComputationPreview() {
                             )}
                           </div>
                           <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                            Finalizes overall Semestral Grade (SG) & Transmuted GWA. Submits official grade sheet to Dean & Registrar.
+                            {sgFinalized
+                              ? 'This grade is final and has been submitted to the Dean and Registrar. A change now needs an approved grade change request.'
+                              : 'Finalizes overall Semestral Grade (SG) & Transmuted GWA. Submits official grade sheet to Dean & Registrar.'}
                           </p>
                         </div>
                         <button
                           type="button"
-                          disabled={postingGrades || isComputingDiff || Boolean(getGradePeriodSequenceBlock('semestral', lockedMilestones))}
+                          disabled={sgFinalized || postingGrades || isComputingDiff || Boolean(getGradePeriodSequenceBlock('semestral', lockedMilestones))}
                           onClick={() => computeChangedStudents('semestral')}
                           className="px-3 py-1.5 text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                         >
-                          {isComputingDiff ? '...' : lockedMilestones.includes('Semestral Grade') ? 'Update SG' : 'Finalize SG'}
+                          {isComputingDiff ? '...' : sgFinalized ? 'SG Final' : 'Finalize SG'}
                         </button>
                       </div>
                     </div>

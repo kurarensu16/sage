@@ -1,0 +1,38 @@
+flowchart LR
+%% ===== Figure 2.8 — Level 1 DFD: Student Portal (updated 2026-10-30) =====
+%% Each process corresponds 1:1 with a module in Figure 2.12 (VTOC) and the Scope and Delimitation.
+%% Changes against the 2026-10-14 version:
+%%   3.0 My Grades      - class_room_join_codes and class_join_requests removed; both tables were
+%%                        dropped and irregular enrolment is now done by the Registrar or Dean
+%%   5.0 Academic Support - now covers Academic Insights and AI Study Advising as well as the
+%%                        advisories inbox; reads faculty learning resources, writes tutor plans,
+%%                        practice sets and the metered call log
+%%   6.0 Grades and Consultation - the consultation REQUEST flow is gone. What remains is the
+%%                        read-only consultation history plus the grade change request chain
+%% The AI provider node is left as the paper documents it, by the owner's decision.
+%% Layout: External entity (left) -> Process (middle) -> Data stores (right)
+
+%% COLUMN A of 2. Split from Figure-2.8-DFD-Student.mmd so the figure fits a page; compose with
+%% compose_columns.py. Edit the halves, not a merged copy.
+  %% ---------- 1.0 ----------
+  S1["Student"] <-- "credentials / access session" --> P1(("1.0<br/>Authenticate<br/>User"))
+  P1 <-- "account record" --> D1@{ shape: lin-rect, label: "D1&nbsp; users" }
+
+  %% ---------- 2.0 ----------
+  S2["Student"] <-- "running / posted GWA,<br/>standing badge" --> P2(("2.0<br/>Dashboard"))
+  P2 <-- "enrolled subjects" --> D8b@{ shape: lin-rect, label: "D8&nbsp; enrollments" }
+  P2 <-- "posted grades" --> D12b@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P2 <-- "recorded scores" --> D11b@{ shape: lin-rect, label: "D11&nbsp; student_activity_scores" }
+  P2 <-- "latest risk score" --> D16b@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
+
+  %% ---------- 3.0 ----------
+  S3["Student"] <-- "enrolled subjects, posted milestones,<br/>tentative running GWA, activity scores" --> P3(("3.0<br/>My Grades"))
+  P3 <-- "MR / TFR / SG, GWA" --> D12c@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P3 <-- "recorded / released scores" --> D11c@{ shape: lin-rect, label: "D11&nbsp; student_activity_scores" }
+  P3 <-- "activity title, description" --> D10c@{ shape: lin-rect, label: "D10&nbsp; class_activities" }
+  P3 <-- "block and off-block membership" --> D8c@{ shape: lin-rect, label: "D8&nbsp; enrollments" }
+
+  %% ---------- 4.0 ----------
+  S4["Student"] <-- "counts, FDA warning" --> P4(("4.0<br/>My<br/>Attendance"))
+  P4 <-- "attendance per subject" --> D15d@{ shape: lin-rect, label: "D15&nbsp; attendance_records" }
+

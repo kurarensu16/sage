@@ -1,0 +1,21 @@
+erDiagram
+%% ===== ERD Layer 1: Identity & Academic Structure (source created 2026-10-30) =====
+%% This figure existed in the paper as an image with no source file. Recreated here from the
+%% live schema so it can be maintained like the other layers.
+%% ---
+%% USERS now carries FIVE roles. The Registrar was added in the admin/registrar role split;
+%% the existing manual system has four of these five and no administrator at all.
+%% ---
+%% Some of these tables predate the tracked migrations -- users, departments, sections and
+%% subjects were created outside supabase/migrations/ -- so their constraints are not in
+%% version control and must be read from the live catalog rather than grepped for.
+    DEPARTMENTS ||--o{ PROGRAMS : "owns catalog"
+    DEPARTMENTS ||--o{ SECTIONS : "sections per year and semester"
+    DEPARTMENTS ||--o{ SUBJECTS : "owns subject"
+    DEPARTMENTS ||--o{ USERS : "scopes account"
+    SECTIONS ||--o{ USERS : "block section of a regular student"
+    USERS ||--o{ STUDENT_TERM_DETAILS : "year level and section per term"
+    ACADEMIC_TERMS ||--o{ STUDENT_TERM_DETAILS : "recorded for term"
+    SECTIONS ||--o{ STUDENT_TERM_DETAILS : "section held that term"
+    ACADEMIC_TERMS ||--o| ACADEMIC_TERMS : "rolls over into"
+    USERS ||--o{ GUARDIANS : "primary contact for a student"

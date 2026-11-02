@@ -1,6 +1,6 @@
 # Dynamic Grading Policy Workflow Plan - 2026-10-27
 
-**Status:** Proposed design. No code or migration exists yet. Every file listed under "Suggested build order" still requires its own developer confirmation before it is created or edited, per `AGENTS.md`.
+**Status:** Design confirmed 2026-10-29 — all open decisions resolved (see "Decisions" below). No code or migration exists yet. Every file listed under "Suggested build order" still requires its own per-file confirmation before it is created or edited, per `AGENTS.md`.
 **Scope:** Two independent, admin-editable policy levers that today are single hardcoded institutional constants:
 1. **Passing transmutation threshold** — per COG template (`grade_computations`), e.g. 69%/75%/80%.
 2. **FDA/absence threshold** — per subject (`subjects`), tracking units/subject type rather than the grading formula.
@@ -15,6 +15,74 @@ Does **not** change component weights, the posting workflow's structure, GWA-spa
 4. Full propagation: risk scoring and reporting (including dean-level reports and charts) follow each class's own thresholds, not the flat constants.
 5. Zero behavior change for anything that doesn't opt in, including every already-posted grade and already-logged absence.
 6. **No change needed to GWA or President's List logic** — see "Why GWA/Honors need no new field," below. That connection the panel/faculty raised is already satisfied by how the ladder is designed, not by adding more configuration.
+
+## Implementation departures (2026-10-29) — read before trusting the design below
+
+Phase 3 was built, and three parts of this plan did not survive contact with the
+live schema. The sections further down are preserved as the original design; **the
+corrections here are what was actually implemented.**
+
+### 1. The rescale formula is different, and so are the band numbers
+
+This plan proposes `minRating(i) = T + (100 - T) * (8 - i) / 8`, and the worked
+example below shows a 1.00 requiring **100** at an 80% threshold. At `T = 75`
+that formula yields 100 for a 1.00, but the DYCI ladder's top band is **98** — so
+it does not reproduce the current ladder, which is why this plan needed a "use
+the verbatim table when T is NULL or 75" special case. That special case leaves a
+cliff: at `T = 75` a 1.00 needs 98, at `T = 76` it needs 100.
+
+Implemented instead: scale the handbook's **own offsets** above the passing mark
+— `[23, 20, 17, 14, 11, 8, 5, 2, 0]` for GWA 1.00…3.00 — by `(100 - T) / 25`:
+
+```
+minRating(i) = T + offset(i) * (100 - T) / 25
+```
+
+At `T = 75` the factor is exactly 1.0, so the institutional ladder is reproduced
+**exactly, with no special case**; the handbook's uneven 3,3,3,3,3,3,3,2 spacing
+is preserved proportionally instead of flattened to even steps; and no band
+exceeds 100 anywhere in the allowed 50–94 range. At an 80% threshold a 1.00
+therefore needs **98.40**, not 100 — so the worked example in Part 1 below shows
+the wrong numbers.
+
+### 2. The second parameter has no `DEFAULT`
+
+This plan states that a `DEFAULT NULL` second parameter means none of the 20+
+existing one-argument call sites need to change. In PostgreSQL that is the
+opposite of true: with both `aspire_transmute_grade(numeric)` and
+`aspire_transmute_grade(numeric, numeric DEFAULT NULL)` present, a one-argument
+call fails with *"function … is not unique"* — so following the plan would have
+broken every existing caller.
+
+Implemented instead: a two-argument overload with **both arguments required**.
+One-argument calls then resolve unambiguously to the existing function, which
+was left completely untouched.
+
+### 3. There is no snapshot backfill
+
+This plan calls for adding the new keys to every existing
+`class_records.grading_formula_snapshot`. That is impossible as written:
+`trg_protect_grading_formula_snapshot` (`20261008180000`) raises `23514` on any
+change to an established snapshot, so the backfill would fail on every row, and
+forcing it through would mean disabling an integrity guard over live grading data.
+
+Its stated justification does not hold either. The strict JSONB `<>` check in the
+posting path only fires when the **caller** passes a snapshot, and the client does
+not — `gradePostingService.js` calls `post_grade_milestone_v3` with no snapshot
+argument.
+
+Implemented instead: readers treat a **missing key as NULL**, which already means
+"institutional default". No historical snapshot is touched, consistent with the
+confirmed decision that already-posted data is out of scope.
+
+### Also worth recording
+
+A null-handling trap nearly shipped: `Number(null)` is `0`, not `NaN`, so an
+`isFinite` guard alone treated "no threshold set" as a **0% passing mark** and
+rescaled the whole ladder. It was caught by a JS-versus-SQL differential test
+before any grade was affected, and is now asserted explicitly in
+`verify:grading`, which compares the two implementations across 2807 rating and
+threshold combinations on every run.
 
 ## Part 1 — Dynamic passing transmutation threshold
 
@@ -130,12 +198,12 @@ Rides the identical "frozen at class creation" mechanism as Part 1: a new key on
 - Manual click-through: new COG template at 80% + new subject at FDA-threshold 3, assigned to a demo class, confirm Score Input preview, posted grade, student grade view, dean/faculty "Average/Struggling" labels, FacultyCharts/DeanCharts benchmark line, and attendance/FDA warnings all agree with the configured values — then confirm an unrelated existing template/subject and an already-existing class are completely unaffected by any edit made after that class was created.
 - `node scripts/verifyEvaluationTracking.js` / `verifyEvaluationReferrals.js` are unrelated, no re-run needed.
 
-## Open decisions (confirm before any file is touched)
+## Decisions (confirmed 2026-10-29 — developer sign-off, ready to build)
 
-1. Range bounds: 50-94% for passing threshold, 2-10 for FDA absences — adjust if the Handbook implies tighter/looser bounds.
-2. Should either threshold be lockable on existing templates/subjects (like component weight structure already is), or stay editable going forward as recommended (future classes only, by the freeze guarantee)?
-3. Confirm the linear-rescale approximation of the DYCI ladder is acceptable for non-default passing thresholds (the official ladder's real gaps are 3/3/3/3/3/3/3/2, not perfectly even).
-4. Historical legacy-reconstruction migrations and already-posted/logged data are out of scope — confirm this holds.
+1. **Range bounds:** Keep as proposed — 50-94% for passing threshold, 2-10 for FDA absences.
+2. **Lockability:** Not lockable like component weights. Stays editable going forward; the existing freeze guarantee (snapshot frozen at class creation) is what protects already-running classes — an edit only reaches the next term/semester, same as today's weight-edit behavior.
+3. **Linear-rescale approximation:** Accepted as-is. The even-gap approximation of the DYCI ladder's real 3/3/3/3/3/3/3/2 gaps is close enough (at most ~1 raw point of discrepancy at one band) to not warrant an exact-gap-preserving formula.
+4. **Historical scope:** Confirmed out of scope — no legacy-reconstruction migration, no retroactive recalculation of already-posted grades or already-logged absences.
 
 ## Suggested build order
 

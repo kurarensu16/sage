@@ -1,8 +1,14 @@
 flowchart TB
 %% ===== Figure 2.2 — Proposed System Flowchart: Student Portal (updated 2026-10-10) =====
 %% Plans appear only after publication and must be acknowledged; faculty verify or return
-%% reported tasks; feature renamed "AI Study Tutor"; Account shows photo/contact/guardian.
-%% Revised 2026-10-10 (evening): joining an outside class by code waits for instructor approval.
+%% reported tasks; Account shows photo/contact/guardian.
+%% Updated 2026-10-30:
+%%   - joining a class by code is gone; the Registrar or Dean adds an irregular student
+%%     straight onto the roster, so there is no request and no waiting state
+%%   - the consultation REQUEST flow is gone; what remains is a read-only history plus the
+%%     grade change request chain, which is where a disputed grade now goes
+%%   + Academic Insights, a page of its own beside AI Study Advising
+%%   AI Study Tutor renamed AI Study Advising
 %% Revised 2026-10-11: unposted milestones show a tentative running GWA (posted milestones replace it);
 %% see docs/02-thesis/decisions/STUDENT_RUNNING_GWA_2026-10-11.md.
 
@@ -25,15 +31,11 @@ flowchart TB
   SEL -- "My Grades" --> GM
   SEL -- "Attendance" --> TM
   SEL -- "Support" --> PM
-  SEL -- "Consult" --> CM
+  SEL -- "Grades and Consultation" --> CM
   SEL -- "Account" --> NM
 
   subgraph GM["<b>My Grades Module</b>"]
     direction TB
-    J1["Join class by code<br/>(outside block section)"] --> JQ{"Instructor<br/>decision?"}
-    JQ -- "Pending" --> JP["Locked card:<br/>waiting for approval"]
-    JQ -- "Rejected" --> JR["Not-approved card:<br/>dismiss or request again"]
-    JQ -- "Approved" --> G1
     G1["My Subjects:<br/>select a subject"] --> GB["Score Breakdown:<br/>activity title,<br/>description, score"]
     G1 --> GQ{"Milestone<br/>officially posted?"}
     GQ -- "Not yet" --> GH["Show running GWA<br/>from recorded scores<br/>(labeled Tentative)"]
@@ -57,14 +59,24 @@ flowchart TB
     PA -- "Yes" --> PY["Report task done"] --> PV{"Instructor<br/>decision"}
     PV -- "Verified" --> PVV["Task locked<br/>as verified"]
     PV -- "Returned" --> PR["Read instructor note,<br/>redo and report again"]
-    P2["AI Study Tutor"] --> AQ{"AI service<br/>available?"}
+    P2["Academic Insights:<br/>areas for attention,<br/>honors blockers, Ask ASPIRE"]
+    P3["AI Study Advising"] --> AQ{"AI service<br/>available?"}
     AQ -- "No" --> AN["Local fallback<br/>recommendation"]
-    AQ -- "Yes" --> AY["Topic-grounded diagnostics<br/>and what-if GWA simulator"]
+    AQ -- "Yes" --> AY["Topic-grounded diagnostics,<br/>one active study plan per<br/>subject, practice set"]
+    AY --> AP{"Practice<br/>submitted?"}
+    AP -- "No" --> AW["Answers withheld"]
+    AP -- "Yes" --> AS["Answers and explanation<br/>released"]
   end
 
-  subgraph CM["<b>Consultations Module</b>"]
+  subgraph CM["<b>Grades and Consultation Module</b>"]
     direction TB
-    C1["Request consultation:<br/>concern and schedule"] --> C2["View instructor<br/>response and status"]
+    C1["Consultation History:<br/>consultations logged in the<br/>window opened after a posting"]
+    C2["Dispute a posted result"] --> CQ{"Within the<br/>dispute window?"}
+    CQ -- "No" --> CN["Request goes to the Registrar,<br/>who alone may reopen a<br/>closed term"]
+    CQ -- "Yes" --> CE[/"Attach one to three<br/>required evidence files"/]
+    CE --> CF["Instructor review"] --> CD["Dean decision"]
+    CD --> CA["Instructor applies<br/>the authorized correction"]
+    C1 ~~~ C2
   end
 
   subgraph NM["<b>Account Module</b>"]

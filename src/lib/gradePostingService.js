@@ -121,3 +121,108 @@ export async function applyAdminGradeOverride({
   if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
   return data;
 }
+
+// --- Dean acknowledgement of a Registrar override --------------------------
+//
+// The override takes effect immediately and the Dean cannot reverse it. What
+// they can do is put their name on it, or refuse to. See
+// 20261102123111_dean_acknowledges_registrar_overrides.sql for why that is a
+// record rather than a gate.
+
+/**
+ * Overrides awaiting, or carrying, a Dean's decision.
+ *
+ * RLS decides the scope: a Dean sees their own college's, the Registrar sees
+ * the ones they applied. The same call therefore serves both screens, which is
+ * what keeps the two from reporting different numbers.
+ */
+export async function fetchGradeOverridesForReview({ pendingOnly = false } = {}) {
+  let query = supabase
+    .from('admin_grade_override_operations')
+    .select(`
+      operation_id,
+      posted_grade_id,
+      actor_id,
+      result,
+      committed_at,
+      acknowledgement_state,
+      acknowledged_by,
+      acknowledged_at,
+      acknowledgement_note,
+      posted_grades (
+        posted_grade_id,
+        student_id,
+        class_record_id,
+        computed_grade,
+        effective_grade,
+        remarks,
+        class_records ( sections (name), subjects (code, name) ),
+        users:student_id ( first_name, last_name, user_number )
+      )
+    `)
+    .order('committed_at', { ascending: false });
+
+  if (pendingOnly) query = query.eq('acknowledgement_state', 'pending');
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  return (data || []).map((row) => {
+    const grade = row.posted_grades || {};
+    const student = grade.users || {};
+    const klass = grade.class_records || {};
+    return {
+      operationId: row.operation_id,
+      postedGradeId: row.posted_grade_id,
+      actorId: row.actor_id,
+      committedAt: row.committed_at,
+      state: row.acknowledgement_state,
+      acknowledgedBy: row.acknowledged_by,
+      acknowledgedAt: row.acknowledged_at,
+      note: row.acknowledgement_note || '',
+      studentName: [student.last_name, student.first_name].filter(Boolean).join(', '),
+      studentNumber: student.user_number || '',
+      subjectCode: klass.subjects?.code || '',
+      subjectName: klass.subjects?.name || '',
+      sectionName: klass.sections?.name || '',
+      classRecordId: grade.class_record_id || null,
+      // The before/after the Dean is actually being asked to judge. Written by
+      // the RPC at override time, so it reflects what was replaced rather than
+      // whatever the row holds now.
+      previous: {
+        computed: row.result?.previous_computed_grade ?? null,
+        effective: row.result?.previous_effective_grade ?? null,
+        remark: row.result?.previous_remark ?? null
+      },
+      next: {
+        computed: row.result?.new_computed_grade ?? null,
+        effective: row.result?.new_effective_grade ?? null,
+        remark: row.result?.new_remark ?? null
+      }
+    };
+  });
+}
+
+/** How many overrides in the caller's scope still have nobody's name on them. */
+export async function countUnacknowledgedOverrides() {
+  const { count, error } = await supabase
+    .from('admin_grade_override_operations')
+    .select('operation_id', { count: 'exact', head: true })
+    .eq('acknowledgement_state', 'pending');
+  if (error) throw error;
+  return count || 0;
+}
+
+/**
+ * Record the Dean's decision. `state` is 'acknowledged' or 'queried'; a query
+ * needs a note, and the database refuses one without it.
+ */
+export async function acknowledgeGradeOverride({ operationId, state, note = '' }) {
+  const { data, error } = await supabase.rpc('acknowledge_grade_override', {
+    p_operation_id: operationId,
+    p_state: state,
+    p_note: note || null
+  });
+  if (error) throw new Error(error.message || 'That decision could not be saved.');
+  return data;
+}

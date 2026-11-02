@@ -11,7 +11,7 @@ import {
   getTransmutedGrade,
   resolveGradingFormula
 } from './gradingMath.js';
-import { getRiskTierForScore, RISK_TIERS, ATTENDANCE } from './academicPolicy.js';
+import { getRiskTierForScore, RISK_TIERS, resolveAttendancePolicy } from './academicPolicy.js';
 
 // ── V4 Risk Matrix Weights (Anchored to DYCI Transmutation Scale) ────────────
 // Individual components can exceed 100 (total potential: 135) but the final
@@ -77,8 +77,13 @@ export function calculateAcademicRisk({
   zeroSubmissionsCount = 0,
   previousTermRating = null,
   currentTermRating = null,
-  isSummer = false
+  isSummer = false,
+  // The class's frozen FDA threshold, from its grading_formula_snapshot. Null
+  // means the institutional default of 4, so every existing caller that omits
+  // it keeps its current behaviour exactly.
+  fdaThreshold = null
 }) {
+  const attendancePolicy = resolveAttendancePolicy(fdaThreshold);
   // ── 1. GWA FACTOR (0 to 60 points) ──────────────────────────────────────────
   // Anchored directly to the DYCI Institutional Transmutation Scale.
   let gwaPoints = 0;
@@ -113,19 +118,21 @@ export function calculateAcademicRisk({
   let attendPoints = 0;
   let attendDetail = `${absenceCount} absence(s)`;
 
-  if (absenceCount >= ATTENDANCE.fdaAbsences) {
+  if (absenceCount >= attendancePolicy.fdaAbsences) {
     attendPoints = 50;
     attendDetail = `${absenceCount} absences — FDA recommendation triggered (Faculty Choice)`;
-  } else if (absenceCount === ATTENDANCE.nearFdaAbsences) {
+  } else if (absenceCount === attendancePolicy.nearFdaAbsences) {
     attendPoints = 25;
-    attendDetail = "3 absences — Approaching FDA threshold";
-  } else if (absenceCount === ATTENDANCE.warningAbsences) {
+    // Stated from the resolved policy rather than hardcoded, so a subject with a
+    // non-default limit does not report "3 absences" when its tier is at 2.
+    attendDetail = `${absenceCount} absences — Approaching FDA threshold`;
+  } else if (absenceCount === attendancePolicy.warningAbsences) {
     attendPoints = 10;
-    attendDetail = "2 absences — Early warning";
+    attendDetail = `${absenceCount} absences — Early warning`;
   }
 
   // Summer term amplifier: absences are more impactful in compressed 6-week terms
-  if (isSummer && absenceCount >= ATTENDANCE.warningAbsences && attendPoints < 50) {
+  if (isSummer && absenceCount >= attendancePolicy.warningAbsences && attendPoints < 50) {
     attendPoints = Math.min(50, Math.round(attendPoints * 1.5));
     attendDetail += " (Summer amplified)";
   }

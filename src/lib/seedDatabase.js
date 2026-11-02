@@ -21,6 +21,7 @@ const defaultSections = [
 
 const defaultUsers = [
   { lastName: 'System', firstName: 'Admin', middleName: 'Control', email: 'admin@sage.edu.ph', role: 'admin', user_number: 'ADM-2026-00001', departmentName: 'Technology and Engineering College for Humanity' },
+  { lastName: 'Santos', firstName: 'Rosario', middleName: 'Cruz', email: 'registrar@sage.edu.ph', role: 'registrar', user_number: 'REG-2026-00009', departmentName: null },
   { lastName: 'Valdes', firstName: 'Carlos', middleName: 'Mendoza', email: 'c.valdes@sage.edu.ph', role: 'dean', user_number: 'DN-2026-00002', departmentName: 'Technology and Engineering College for Humanity' },
   { lastName: 'Rivera', firstName: 'Amanda', middleName: 'Santos', email: 'a.rivera@sage.edu.ph', role: 'faculty', user_number: 'FAC-2026-00003', departmentName: 'Technology and Engineering College for Humanity' },
   { lastName: 'Jenkins', firstName: 'Sarah', middleName: 'Lee', email: 's.jenkins@student.sage.edu', role: 'student', user_number: '2026-00005', year_level: '1st Year', departmentName: 'Technology and Engineering College for Humanity' }
@@ -31,7 +32,10 @@ export async function seedDatabase() {
   try {
     // 1. Seed Departments (Check if exists first to avoid duplicates)
     let ccsId;
-    const { data: existingDept } = await supabase.from('departments').select('department_id').or('name.eq.Technology and Engineering College for Humanity,name.eq.College of Computer Studies').maybeSingle();
+    // Looks up the real college by name. The retired 'College of Computer Studies'
+    // fallback was removed -- a seed that silently matches nothing is better than
+    // one that matches a college which no longer exists.
+    const { data: existingDept } = await supabase.from('departments').select('department_id').eq('name', 'Technology and Engineering College for Humanity').maybeSingle();
     
     if (existingDept) {
       ccsId = existingDept.department_id;
@@ -96,7 +100,8 @@ export async function seedDatabase() {
         password_hash: 'managed_by_supabase_auth',
         role: u.role,
         year_level: u.year_level || null,
-        department_id: ccsId,
+        // Registrar is institution-wide, so it carries no college.
+        department_id: u.role === 'registrar' ? null : ccsId,
         must_change_password: true,
         user_number: u.user_number
       }, { onConflict: 'email' });

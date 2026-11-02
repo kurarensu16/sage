@@ -29,7 +29,16 @@ import {
   Building2,
   PlusCircle,
   BarChart2,
-  TrendingUp
+  TrendingUp,
+  UserCheck,
+  Inbox,
+  UserPlus,
+  Activity,
+  HardDrive,
+  Wrench,
+  DatabaseBackup,
+  FileWarning,
+  ShieldAlert
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import SageLogo from './SageLogo';
@@ -39,27 +48,20 @@ import { usePwaInstall } from '../../lib/usePwaInstall';
 
 // Navigation configuration conforming to ASPIRE Sidebar Navigation Developer Documentation (§4 & §6)
 const PORTAL_NAVIGATION = {
+  // Grouping rule applied throughout: a group earns its disclosure triangle by
+  // holding more than one page. Several groups here used to wrap a single link,
+  // costing an expand to reveal one item. Those are standalone links now.
   student: [
-    {
-      standalone: true,
-      to: '/student/dashboard',
-      label: 'Dashboard',
-      icon: LayoutDashboard
-    },
+    { standalone: true, to: '/student/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     {
       id: 'grades',
       label: 'Courses & Grades',
       icon: BookOpen,
       items: [
         { to: '/student/mysubjects', label: 'My Subjects', icon: BookMarked },
-        { to: '/student/mygradeslist', label: 'Grade Report', icon: FileText, activeOn: ['/student/grades'] }
-      ]
-    },
-    {
-      id: 'attendance',
-      label: 'My Attendance',
-      icon: Calendar,
-      items: [
+        { to: '/student/mygradeslist', label: 'Grade Report', icon: FileText, activeOn: ['/student/grades'] },
+        // Attendance is recorded per subject, so it belongs beside the subjects
+        // rather than in a group of its own.
         { to: '/student/attendance', label: 'Attendance & Warnings', icon: Calendar }
       ]
     },
@@ -68,35 +70,39 @@ const PORTAL_NAVIGATION = {
       label: 'Academic Support',
       icon: BrainCircuit,
       items: [
-        { to: '/student/advising-inbox', label: 'Advisories & Study Plans', icon: ClipboardList },
-        { to: '/student/academic-insights', label: 'AI Study Tutor', icon: BrainCircuit }
+        // Three distinct things, named so a student can tell them apart: plans
+        // a professor assigned, the AI's read on their standing, and the AI
+        // that teaches.
+        { to: '/student/advising-inbox', label: 'Faculty Action Plans', icon: ClipboardList },
+        { to: '/student/academic-insights', label: 'Academic Insights', icon: BrainCircuit },
+        { to: '/student/tutor', label: 'AI Study Advising', icon: GraduationCap }
       ]
     },
     {
-      id: 'consultations',
-      label: 'Consultations',
-      icon: MessageSquare,
+      // Was "Consultations", which made a four-step grade dispute look like a
+      // request to talk. They share a group because both are things the student
+      // raises, and the label now says so.
+      id: 'requests',
+      label: 'Requests & Consultations',
+      icon: FileWarning,
       items: [
+        { to: '/student/graderequests', label: 'Grade Change Requests', icon: FileWarning },
         { to: '/student/consultations', label: 'Consultations', icon: MessageSquare }
       ]
     }
   ],
 
   faculty: [
-    {
-      standalone: true,
-      to: '/faculty/dashboard',
-      label: 'Dashboard',
-      icon: LayoutDashboard
-    },
+    { standalone: true, to: '/faculty/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     {
       id: 'classes',
       label: 'Classes',
       icon: GraduationCap,
       items: [
         { to: '/faculty/classrecordslist', label: 'My Classes', icon: BookOpen },
-        { to: '/faculty/classrecordslist?action=create', label: 'Create Classroom', icon: PlusCircle },
-        { to: '/faculty/enrollmentrequests', label: 'Enrollment Requests', icon: Users }
+        // Attendance is taken per class, so it sits with the classes instead of
+        // occupying a group that held one link.
+        { to: '/faculty/classattendance', label: 'Attendance Monitoring', icon: Calendar }
       ]
     },
     {
@@ -104,24 +110,24 @@ const PORTAL_NAVIGATION = {
       label: 'Student Support',
       icon: AlertCircle,
       items: [
+        // /faculty/atriskstudents is deliberately absent. It duplicated what
+        // Evaluate Students and Intervention Records already do, and the owner
+        // had disconnected it earlier without deleting the file. It is now
+        // retired properly: the route redirects rather than leaving a page
+        // reachable only by typing its URL.
         { to: '/faculty/evaluatestudent', label: 'Evaluate Students', icon: ClipboardCheck },
         { to: '/faculty/evaluatedstudents', label: 'Intervention Records', icon: CheckCircle2 }
       ]
     },
     {
-      id: 'attendance',
-      label: 'Attendance',
-      icon: Calendar,
+      // Was "Consultations". A grade dispute is not a consultation; it shared
+      // the group only because both involve talking to an instructor.
+      id: 'grade_records',
+      label: 'Grades',
+      icon: FileText,
       items: [
-        { to: '/faculty/classattendance', label: 'Attendance Monitoring', icon: Calendar }
-      ]
-    },
-    {
-      id: 'consultations',
-      label: 'Consultations',
-      icon: MessageSquare,
-      items: [
-        { to: '/faculty/consultations', label: 'Consultation Requests', icon: MessageSquare }
+        { to: '/faculty/consultations', label: 'Grade Consultation Log', icon: MessageSquare },
+        { to: '/faculty/graderequests', label: 'Grade Change Requests', icon: FileWarning }
       ]
     },
     {
@@ -136,19 +142,17 @@ const PORTAL_NAVIGATION = {
   ],
 
   dean: [
-    {
-      standalone: true,
-      to: '/dean/dashboard',
-      label: 'Dashboard',
-      icon: LayoutDashboard
-    },
+    { standalone: true, to: '/dean/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    // Both of these were groups wrapping a single link.
+    { standalone: true, to: '/dean/facultyloading', label: 'Faculty Loading', icon: GraduationCap },
     {
       id: 'grades',
       label: 'Grades',
       icon: FileText,
       items: [
         { to: '/dean/gradepostingstatus', label: 'Grade Submission Status', icon: BookOpen },
-        { to: '/dean/remarkoverriderequests', label: 'Grade Corrections', icon: ClipboardList },
+        { to: '/dean/graderequests', label: 'Grade Change Requests', icon: FileWarning },
+        { to: '/dean/gradeoverrides', label: 'Grade Overrides', icon: ShieldAlert },
         { to: '/dean/gradedistribution', label: 'Grade Distribution', icon: BarChart3 }
       ]
     },
@@ -162,30 +166,49 @@ const PORTAL_NAVIGATION = {
         { to: '/dean/interventionresults', label: 'Intervention Results', icon: CheckCircle2, activeOn: ['/dean/atriskstudents?tab=outcomes_tracker'] }
       ]
     },
-    {
-      id: 'reports',
-      label: 'Reports',
-      icon: FileDown,
-      items: [
-        { to: '/dean/summaryreports', label: 'Generate Reports', icon: FileDown }
-      ]
-    }
+    { standalone: true, to: '/dean/summaryreports', label: 'Generate Reports', icon: FileDown }
   ],
 
+  // Admin is narrowed to accounts and system maintenance by the Admin/Registrar
+  // role split. Academic Setup, Academic Terms, Section Rosters, and Grade
+  // Override now live under registrar below.
   admin: [
-    {
-      standalone: true,
-      to: '/admin/dashboard',
-      label: 'Dashboard',
-      icon: LayoutDashboard
-    },
+    { standalone: true, to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     {
       id: 'user_accounts',
       label: 'User Accounts',
       icon: Users,
       items: [
         { to: '/admin/userlist', label: 'Manage Users', icon: Users },
+        { to: '/admin/studentaccountrequests', label: 'Student Account Requests', icon: Inbox },
         { to: '/admin/userlist?action=import', label: 'Import Users (CSV/Excel)', icon: FileSpreadsheet }
+      ]
+    },
+    {
+      id: 'system_maintenance',
+      label: 'System Maintenance',
+      icon: Shield,
+      items: [
+        { to: '/admin/auditlog', label: 'Audit Logs', icon: Shield },
+        { to: '/admin/systemhealth', label: 'System Health', icon: Activity },
+        { to: '/admin/storagehealth', label: 'Storage Health', icon: HardDrive },
+        { to: '/admin/maintenance', label: 'Maintenance Mode', icon: Wrench },
+        { to: '/admin/backup', label: 'Backup & Restore', icon: DatabaseBackup }
+      ]
+    }
+  ],
+
+  registrar: [
+    { standalone: true, to: '/registrar/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    {
+      // Was "User Accounts" holding one read-only link. Accounts are created
+      // and edited by Admin; the Registrar reads them and hands new ones over.
+      id: 'people',
+      label: 'People',
+      icon: Users,
+      items: [
+        { to: '/registrar/viewusers', label: 'View Users', icon: Users },
+        { to: '/registrar/newstudentaccounts', label: 'New Student Accounts', icon: UserPlus }
       ]
     },
     {
@@ -193,24 +216,40 @@ const PORTAL_NAVIGATION = {
       label: 'Academic Setup',
       icon: BookMarked,
       items: [
-        { to: '/admin/subjectlist', label: 'Subjects', icon: BookMarked },
-        { to: '/admin/gradecomputationslist', label: 'Grading Templates', icon: Settings },
-        { to: '/admin/sectionlist', label: 'Manage Sections', icon: Layers },
-        { to: '/admin/sectionmasterlist', label: 'Section Rosters', icon: ClipboardList },
-        { to: '/admin/departmentslist', label: 'Colleges & Departments', icon: Building2 },
-        { to: '/admin/classrooms', label: 'Classroom Provisioning', icon: GraduationCap }
+        { to: '/registrar/subjectlist', label: 'Subjects', icon: BookMarked },
+        { to: '/registrar/programlist', label: 'Degree Programs', icon: GraduationCap },
+        { to: '/registrar/gradecomputationslist', label: 'Grading Templates', icon: Settings },
+        { to: '/registrar/sectionlist', label: 'Manage Sections', icon: Layers },
+        { to: '/registrar/departmentslist', label: 'Colleges & Departments', icon: Building2 },
+        // Terms are DEFINED here. They were filed under "Records", which is
+        // where a record of something kept would go, not where it is created.
+        { to: '/registrar/termmanagement', label: 'Academic Terms', icon: Calendar }
       ]
     },
     {
-      id: 'system',
-      label: 'System',
+      // Faculty Loading was filed under "Student Records" despite assigning
+      // FACULTY to classes. These three together are the term-start workflow.
+      id: 'enrollment',
+      label: 'Enrollment & Loading',
+      icon: UserCheck,
+      items: [
+        { to: '/registrar/facultyloading', label: 'Faculty Loading & Provisioning', icon: GraduationCap },
+        { to: '/registrar/enrollment', label: 'Enrollment Management', icon: UserCheck },
+        { to: '/registrar/sectionmasterlist', label: 'Section Rosters', icon: ClipboardList }
+      ]
+    },
+    {
+      // Was "Records", a near-synonym of the "Student Records" group above it,
+      // so nobody could predict which held what. This is what it actually held.
+      id: 'grade_records',
+      label: 'Grade Records',
       icon: Shield,
       items: [
-        { to: '/admin/auditlog', label: 'Audit Logs', icon: Shield },
-        { to: '/admin/termmanagement', label: 'Academic Terms', icon: Calendar },
-        { to: '/admin/gradeoverride', label: 'Grade Override', icon: AlertCircle }
+        { to: '/registrar/gradeoverride', label: 'Grade Override', icon: AlertCircle },
+        { to: '/registrar/lategradechanges', label: 'Late Grade Changes', icon: FileWarning }
       ]
-    }
+    },
+    { standalone: true, to: '/registrar/reports', label: 'Reports', icon: BarChart3 }
   ]
 };
 
@@ -266,8 +305,6 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
 
   const groups = PORTAL_NAVIGATION[role] || PORTAL_NAVIGATION.faculty;
 
-  const standaloneTop = groups.find(g => g.standalone);
-  const regularGroups = groups.filter(g => !g.standalone);
 
   // Auto-expand all groups by default, or auto-expand the active section
   const [expandedGroups, setExpandedGroups] = useState(() => {
@@ -367,27 +404,34 @@ export default function Sidebar({ isCollapsed, mobileOpen, setMobileOpen }) {
       
       {/* Navigation list */}
       <nav className="flex-1 p-2.5 space-y-2 overflow-y-auto min-h-0 text-left sleek-scrollbar-dark">
-        {/* Standalone Dashboard */}
-        {standaloneTop && (
-          <NavLink 
-            to={standaloneTop.to}
-            onClick={() => setMobileOpen && setMobileOpen(false)}
-            title={isCollapsed ? standaloneTop.label : undefined}
-            className={({ isActive }) => cn(
-              "flex items-center rounded-lg transition-all",
-              isCollapsed ? "justify-center p-2.5" : "gap-3 px-3.5 py-2.5 text-sm font-medium",
-              isActive 
-                ? "bg-sage-800 text-white font-semibold border-l-2 border-sage-400 shadow-xs" 
-                : "text-slate-300 hover:bg-sage-800/80 hover:text-white"
-            )}
-          >
-            <standaloneTop.icon className={cn("flex-shrink-0", isCollapsed ? "h-5 w-5" : "h-4 w-4 text-sage-300")} /> 
-            {(!isCollapsed || mobileOpen) && <span>{standaloneTop.label}</span>}
-          </NavLink>
-        )}
+        {/* Rendered in declaration order, standalone links and groups alike.
+            This used to render only the FIRST standalone entry and then filter
+            every standalone out of the group list — so a second one appeared
+            nowhere at all. The Registrar's Reports link was invisible in the
+            sidebar for exactly that reason. */}
+        {groups.map((group) => {
+          if (group.standalone) {
+            const StandaloneIcon = group.icon;
+            return (
+              <NavLink
+                key={group.to}
+                to={group.to}
+                onClick={() => setMobileOpen && setMobileOpen(false)}
+                title={isCollapsed ? group.label : undefined}
+                className={({ isActive }) => cn(
+                  "flex items-center rounded-lg transition-all",
+                  isCollapsed ? "justify-center p-2.5" : "gap-3 px-3.5 py-2.5 text-sm font-medium",
+                  isActive
+                    ? "bg-sage-800 text-white font-semibold border-l-2 border-sage-400 shadow-xs"
+                    : "text-slate-300 hover:bg-sage-800/80 hover:text-white"
+                )}
+              >
+                <StandaloneIcon className={cn("flex-shrink-0", isCollapsed ? "h-5 w-5" : "h-4 w-4 text-sage-300")} />
+                {(!isCollapsed || mobileOpen) && <span>{group.label}</span>}
+              </NavLink>
+            );
+          }
 
-        {/* Grouped Collapsible Modules */}
-        {regularGroups.map((group) => {
           const isExpanded = expandedGroups.has(group.id);
           const hasActiveChild = group.items.some(item => isItemActive(item, location, group.items));
 

@@ -19,7 +19,7 @@ const WORKFLOW_STEPS = Object.freeze([
   },
   {
     id: 'posted',
-    label: 'Posted Grades & Corrections',
+    label: 'Posted Grades',
     description: 'View official records',
     icon: CheckCircle2,
     getPath: classRecordId => `/faculty/postedgradesview?id=${classRecordId}`

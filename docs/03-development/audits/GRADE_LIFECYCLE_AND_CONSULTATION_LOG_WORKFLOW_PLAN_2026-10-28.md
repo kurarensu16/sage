@@ -1,6 +1,6 @@
 # Grade Lifecycle Hardening & Grade Consultation Log Workflow Plan - 2026-10-28
 
-**Status:** Proposed design. No code or migration exists yet. Every file listed under "Suggested build order" still requires its own developer confirmation before it is created or edited, per `AGENTS.md`.
+**Status:** Design confirmed 2026-10-29 — all open decisions resolved (see "Decisions" below). No code or migration exists yet. Every file listed under "Suggested build order" still requires its own per-file confirmation before it is created or edited, per `AGENTS.md`.
 **Scope:** Splits "posted" into two states — **Posted (Not Finalized)** and **Finalized** — for each milestone (MR, TFR, SG) independently, adds a per-class, timestamped **Grade Consultation Log** where faculty record who reached out during the open window, and moves **Finalize Grade** onto that log page. Retires the existing student-initiated, faculty-approved consultation-request feature entirely. Does **not** define what happens *after* a grade is Finalized and later disputed — that is roadmap item #6, `GRADE_CHANGE_REQUEST_WORKFLOW_PLAN_2026-10-28.md`. This doc only guarantees that Posting no longer equals locking.
 **Trigger:** Capstone defense panel feedback and this conversation's design pass: the current request/approve consultation feature is bias-prone and saw little real use; grades are locked (`is_locked = TRUE`) the instant they are posted, leaving no window for a student to raise a concern before the record is final.
 
@@ -96,7 +96,7 @@ New page, e.g. `src/pages/faculty/GradeConsultationLog.jsx`, replacing `Consulta
 ### Part 4 — Student UI: Grade Report status + conditional Consultation History
 
 - `src/pages/student/MyGradesDetail.jsx` / `MyGradesList.jsx` (the Grade Report views): status badge per milestone changes from a flat "Posted" to one of **Tentative** / **Posted — Not Finalized** / **Finalized**, derived from `posted_grades.finalized_at` the same way the backend now derives `is_locked`.
-- `src/pages/student/Consultations.jsx` is replaced by a read-only **Consultation History** view (new component, or a section appended to the Grade Report page rather than its own route — open decision below). It queries `grade_consultation_notes` for the current student and renders **nothing** if there are zero rows for a given class/milestone — no "request a consultation" button, no empty state implying self-service is available, consistent with this being a faculty-driven record, not a student-initiated one.
+- `src/pages/student/Consultations.jsx` is replaced by a read-only **Consultation History** view — its own dedicated page/route (per decision #2 above), not a section on Grade Report. It queries `grade_consultation_notes` for the current student, grouped per semester with older terms archived via `AcademicPeriodFilter`, and renders **nothing** for a term/class/milestone with zero rows — no "request a consultation" button, no empty state implying self-service is available, consistent with this being a faculty-driven record, not a student-initiated one.
 - The old `consultations` table and its request/schedule UI are not migrated forward into this view — a student's old pending/scheduled requests, if any, are historical only.
 
 ## Explicit non-goals (left to item #6)
@@ -115,20 +115,20 @@ New page, e.g. `src/pages/faculty/GradeConsultationLog.jsx`, replacing `Consulta
 
 **The following month.** Reyes, in the same class, wants to dispute the now-Finalized Midterm Rating. That flow — evidence submission, faculty validation, Dean approval — is entirely out of scope here; it is roadmap item #6's job to define what Reyes can do next.
 
-## Open decisions (confirm before any file is touched)
+## Decisions (confirmed 2026-10-29 — developer sign-off, ready to build)
 
-1. Does the consultation window open **automatically** the moment a milestone is posted (as designed above), or does faculty take a separate explicit "Open Consultation Window" action? Auto-open removes a step but means faculty can't delay opening it.
-2. Does **Consultation History** live as its own student nav entry (as originally proposed) or as a section inside the existing Grade Report page? This plan assumes a section on Grade Report is simpler, but the standalone-nav version is still viable.
-3. Should `finalize_grade_milestone` allow finalizing with **zero** logged notes in one click (the "nobody reached out" case), or require an explicit faculty confirmation step distinct from the button itself, to avoid an accidental click? This plan assumes a single confirm dialog is sufficient.
-4. Is there a **minimum open-window duration** before Finalize is allowed (e.g. at least 24 hours), or can faculty finalize immediately after posting if they choose? This plan assumes no minimum, leaving pacing to faculty judgment, but the panel's bias-prevention concern may call for a floor.
-5. Fate of the old `consultations` table and its historical rows: kept read-only for audit/history (this plan's assumption), or migrated/backfilled into the new tables, or archived out entirely?
+1. **Window open:** Automatic — the consultation window opens the moment a milestone is posted, no separate "Open Consultation Window" action.
+2. **Consultation History placement:** Its own **dedicated** student page (not a section inside Grade Report), with history viewable per semester, archived on term rollover using the same `AcademicPeriodFilter` pattern already used elsewhere (e.g. `ConsultationRequests.jsx` today).
+3. **Finalize with zero notes:** Allowed, but requires an **extra confirmation step** distinct from the normal Finalize confirm — and that confirmation must **summarize the logged-consultation count** (e.g. "0 students logged this term" or "3 students logged") so faculty sees exactly what they're locking in before confirming, whether the count is zero or not.
+4. **Minimum open-window duration:** None. Faculty can finalize immediately after posting if they choose; pacing is left to faculty judgment.
+5. **Fate of old `consultations` table:** Kept read-only for historical/audit access — no new writes ever go to it; the Grade Consultation Log is the only active path going forward.
 
 ## Suggested build order
 
 1. Migration: `posted_grades.finalized_at` column; `grade_consultation_windows` and `grade_consultation_notes` tables; `finalize_grade_milestone(p_window_id)` RPC; update `post_grade_milestone_atomic` to stop setting `is_locked = TRUE` directly and instead leave it derived from `finalized_at` — developer applies manually.
 2. `src/lib/gradeMilestones.js` / `src/lib/gradePostingService.js`: add helpers to read the three-state status (`Tentative` / `Posted — Not Finalized` / `Finalized`) from a `posted_grades` row.
 3. New `src/pages/faculty/GradeConsultationLog.jsx`, replacing `src/pages/faculty/ConsultationRequests.jsx` in `src/App.jsx` routes and `src/components/layout/Sidebar.jsx`'s faculty nav.
-4. Student-side: status badge update in `src/pages/student/MyGradesDetail.jsx` / `MyGradesList.jsx`; new conditional Consultation History (component or section, per open decision #2), replacing `src/pages/student/Consultations.jsx`'s route in `src/App.jsx` and the student nav entry in `Sidebar.jsx`.
+4. Student-side: status badge update in `src/pages/student/MyGradesDetail.jsx` / `MyGradesList.jsx`; new dedicated Consultation History page (per-semester, archived via `AcademicPeriodFilter`), replacing `src/pages/student/Consultations.jsx`'s route in `src/App.jsx` and the student nav entry in `Sidebar.jsx`.
 5. Remove the now-dead `ConsultationRequests.jsx` / `Consultations.jsx` files (or leave them in place but unrouted, developer's call) once their replacements are confirmed working.
 6. `npm run verify:grading` — add a fixture confirming a Not-Finalized posted row is excluded from whatever currently assumes "posted = locked," and that `is_locked` still reads `TRUE` correctly once `finalized_at` is set.
 7. Manual click-through: post MR for a demo class, confirm "Posted — Not Finalized" badge, log a note for one student, confirm only that student sees history, click Finalize, confirm the log closes and the badge flips to "Finalized," confirm the archived view renders via `AcademicPeriodFilter`.

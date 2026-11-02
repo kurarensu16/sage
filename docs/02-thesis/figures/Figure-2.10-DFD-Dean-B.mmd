@@ -1,0 +1,33 @@
+flowchart LR
+%% ===== Figure 2.10 — Level 1 DFD: Dean Portal (consolidated to module-level processes, 2026-10-14) =====
+%% Each process now corresponds 1:1 with a module in Figure 2.12 (VTOC) and the Scope and Delimitation.
+%% Decide Grade Corrections broadens into 3.0 Grades (adds submission-status and distribution reads).
+%% Risk and Honors Overview / Resolve Escalated Cases / Intervention Results merge into 4.0 Student Risk.
+%% Updated 2026-10-30:
+%%   + 3.0 Faculty Loading. The Dean loads faculty for their OWN college through the same workspace
+%%     the Registrar uses. Schedule conflicts are checked institution-wide, but a clash in another
+%%     college discloses only that college and program -- never its subject, section or faculty.
+%%   + 4.0 Grades now also decides the grade change request chain: within the dispute window the
+%%     Dean's approval authorizes the correction, and once the window has closed the request passes
+%%     to the Registrar instead.
+%% Layout: External entity (left) -> Process (middle) -> Data stores (right)
+
+%% COLUMN B of 2. Split from Figure-2.10-DFD-Dean.mmd so the figure fits a page; compose with
+%% compose_columns.py. Edit the halves, not a merged copy.
+  %% ---------- 5.0 ----------
+  C4["College Dean"] <-- "dual-tier rosters, evaluation status /<br/>escalated cases / recommendation,<br/>disposition / GWA change, risk transition,<br/>verified completion, follow-up due" --> P4(("5.0<br/>Student<br/>Risk"))
+  P4 <-- "GWA, honors eligibility,<br/>milestones posted after publication" --> D12d@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P4 <-- "risk tier, evaluation status,<br/>frozen baseline, follow-up snapshot,<br/>verified tasks, acknowledgment" --> D16d@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
+  P4 <-- "referral, reason,<br/>review note, resolution" --> D31d@{ shape: lin-rect, label: "D31&nbsp; student_evaluation_referrals" }
+  P4 -- "audit entry" --> D25d@{ shape: lin-rect, label: "D25&nbsp; activity_logs" }
+
+  %% ---------- 6.0 ----------
+  C5["College Dean"] <-- "report parameters / exportable reports" --> P5(("6.0<br/>Reports"))
+  P5 <-- "grade distribution" --> D12e@{ shape: lin-rect, label: "D12&nbsp; posted_grades" }
+  P5 <-- "evaluations and outcomes" --> D16e@{ shape: lin-rect, label: "D16&nbsp; student_risk_evaluations" }
+
+  %% ---------- 7.0 ----------
+  C6["College Dean"] <-- "photo, contact number,<br/>password, alert choices / profile" --> P6(("7.0<br/>Account"))
+  P6 <-- "contact number, photo reference" --> D1f@{ shape: lin-rect, label: "D1&nbsp; users" }
+  P6 <-- "profile photo file" --> D30f@{ shape: lin-rect, label: "D30&nbsp; avatars (private storage)" }
+  P6 <-- "device and email choices" --> D29f@{ shape: lin-rect, label: "D29&nbsp; notification_preferences" }
