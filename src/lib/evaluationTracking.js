@@ -115,9 +115,22 @@ export function summarizeInterventionOutcome(evaluation, followupMilestone = nul
   const tasks = followup
     ? { total: outcome.tasksTotal, verified: outcome.tasksVerified, reported: Number(followup.tasks_reported) || 0 }
     : live;
+  // A closed plan is no longer "in intervention", and saying so forever was
+  // the old behaviour: with no follow-up snapshot this fell through to
+  // 'In intervention' and stayed there after the period, and the term, had
+  // ended. See 20261103091500.
+  const closure = evaluation?.closure_state || null;
+
   let status = 'In intervention';
   if (followup) {
     status = { improved: 'Improved', unchanged: 'Unchanged', worsened: 'Worsened' }[outcome.riskTransition] || 'Follow-up recorded';
+  } else if (closure === 'closed_tasks_verified') {
+    // The student did everything and it was verified; only the outcome
+    // snapshot is missing. Labelling that "unfinished" would blame them for
+    // the instructor's omission, and this label is shown to the student.
+    status = 'Closed — tasks verified';
+  } else if (closure === 'unfinished') {
+    status = 'Closed — unfinished';
   } else if (followupMilestone) {
     status = 'Follow-up due';
   } else if (evaluation?.refer_to_dean) {
@@ -129,7 +142,9 @@ export function summarizeInterventionOutcome(evaluation, followupMilestone = nul
     outcome,
     tasks,
     completionRate: tasks.total > 0 ? Math.round((tasks.verified / tasks.total) * 100) : null,
-    followupDue: !followup && Boolean(followupMilestone),
+    // A closed plan's follow-up can never be recorded, so it is not "due".
+    followupDue: !followup && !closure && Boolean(followupMilestone),
+    closure,
     status
   };
 }

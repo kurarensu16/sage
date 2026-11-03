@@ -37,7 +37,12 @@ export const NOTIFICATION_TITLES = {
   // who saw it, not a request for permission.
   override_review: 'Grade Override Needs Your Acknowledgement',
   override_acknowledged: 'Grade Override Acknowledged',
-  override_queried: 'Grade Override Queried'
+  override_queried: 'Grade Override Queried',
+  // An action plan is scoped to a grading period. These two bracket its life:
+  // the warning goes out when the milestone is POSTED, while the student can
+  // still act, and the closure when it is FINALIZED, when they no longer can.
+  plan_due: 'Finish Your Action Plan',
+  plan_closed: 'Action Plan Closed'
 };
 
 /**
@@ -642,7 +647,18 @@ export async function notifyAdminGradeOverride({
 }
 
 /**
- * Notify Faculty and Deans when an academic term is activated or rolled over.
+ * Notify staff when an academic term is activated or rolled over.
+ *
+ * Students are deliberately NOT here. Their notice carries the grade-change
+ * deadline -- 22 school days from the rollover, after which they can no longer
+ * question a posted grade -- so it is sent by trg_notify_students_of_rollover
+ * instead, transactionally with the rollover itself. This function's failure
+ * path is a console.warn, which is acceptable for a line that carries no
+ * deadline and unacceptable for one that does.
+ *
+ * Registrar and admin were missing: before 2026-11-03 only faculty and deans
+ * were told, so the roles that answer "why does my portal look different" found
+ * out from someone asking them.
  */
 export async function notifyTermActivated({
   termName = '',
@@ -654,7 +670,7 @@ export async function notifyTermActivated({
     const { data: targetUsers } = await supabase
       .from('users')
       .select('user_id, role')
-      .in('role', ['faculty', 'dean'])
+      .in('role', ['faculty', 'dean', 'registrar', 'admin'])
       .eq('status', 'active');
 
     if (!targetUsers || targetUsers.length === 0) return;

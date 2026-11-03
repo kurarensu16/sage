@@ -106,6 +106,42 @@ assert.equal(closed.status, 'Worsened');
 assert.deepEqual(closed.tasks, { total: 2, verified: 1, reported: 2 }, 'A recorded follow-up uses its frozen task counts');
 assert.equal(closed.completionRate, 50);
 assert.equal(closed.followupDue, false);
+
+// --- A plan closed with its grading period (20261103091500) ---------------
+//
+// Two closure states, not one. The label reaches the STUDENT, so marking
+// someone "unfinished" who completed every task would blame them for the
+// instructor never having recorded the outcome.
+const verifiedPlan = [{ completed: true, verification_status: 'verified' }];
+const halfPlan = [{ completed: true, verification_status: 'verified' }, { completed: true }];
+
+const closedVerified = summarizeInterventionOutcome(
+  { ...evaluation, advising_plan: verifiedPlan, closure_state: 'closed_tasks_verified' }, posted.at(-1));
+assert.equal(closedVerified.status, 'Closed — tasks verified');
+assert.equal(closedVerified.closure, 'closed_tasks_verified');
+
+const closedUnfinished = summarizeInterventionOutcome(
+  { ...evaluation, advising_plan: halfPlan, closure_state: 'unfinished' }, posted.at(-1));
+assert.equal(closedUnfinished.status, 'Closed — unfinished');
+
+// A closed plan's follow-up can never be recorded: the only window was
+// posted -> finalized. Reporting it as "due" would send an instructor after
+// something the database will refuse.
+assert.equal(closedVerified.followupDue, false, 'A closed plan is never follow-up due');
+assert.equal(closedUnfinished.followupDue, false, 'A closed plan is never follow-up due');
+
+// An OPEN plan with the same milestone still is.
+assert.equal(
+  summarizeInterventionOutcome({ ...evaluation, advising_plan: halfPlan }, posted.at(-1)).followupDue,
+  true, 'An open plan with a posted milestone is still follow-up due');
+
+// A recorded outcome outranks a closure: the pairing exists, so report it.
+assert.equal(summarizeInterventionOutcome({
+  ...evaluation, closure_state: 'unfinished',
+  baseline_snapshot: { gwa: 3.25, risk_score: 62, risk_level: 'high' },
+  followup_snapshot: { gwa: 2.0, risk_score: 20, risk_level: 'low', tasks_total: 1, tasks_verified: 1, tasks_reported: 1 },
+  advising_plan: verifiedPlan
+}, posted.at(-1)).status, 'Improved');
 const student = { user_id: 's', risk_score: RISK_TIERS.MODERATE.min };
 assert.equal(needsEvaluation(student, [{ student_id: 's', term: 'Prelim' }], 'Midterm', RISK_TIERS.MODERATE.min), true);
 assert.equal(needsEvaluation(student, [{ student_id: 's', term: 'Midterm' }], 'Midterm', RISK_TIERS.MODERATE.min), false);
@@ -166,4 +202,4 @@ const render = vm.runInNewContext(`${templateSource}; renderDeanReferralTemplate
 const mail = render({ evaluation_id: '00000000-0000-4000-8000-000000000001', reason: 'PRIVATE_REASON', student_name: 'PRIVATE_STUDENT', risk: 'PRIVATE_RISK' });
 assert.ok(!JSON.stringify(mail).includes('PRIVATE_'));
 assert.ok(mail.text.includes('/dean/atriskstudents?tab=discussion_queue&evaluation_id='));
-console.log('Evaluation tracking checks passed: zeros/blanks, dynamic activity coverage, risk contribution, Manila dates, term coverage, eligibility, task verification, follow-up eligibility, intervention outcomes, and referral email syntax/privacy.');
+console.log('Evaluation tracking checks passed: zeros/blanks, dynamic activity coverage, risk contribution, Manila dates, term coverage, eligibility, task verification, follow-up eligibility, intervention outcomes, period closure states, and referral email syntax/privacy.');

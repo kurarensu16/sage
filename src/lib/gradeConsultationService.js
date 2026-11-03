@@ -134,3 +134,36 @@ export async function fetchStudentConsultationHistory(studentId) {
     };
   });
 }
+
+/**
+ * Action plans that finalizing this milestone would close.
+ *
+ * Finalizing is irreversible and closes every open plan on the periods behind
+ * it (20261103091500). The instructor should see that before clicking, not
+ * discover it in a notification afterwards — so this is a count, shown in the
+ * confirm dialog, not a block. One unresolved intervention must never hold up
+ * a whole class's grade milestone.
+ */
+export async function countOpenPlansForMilestone(classRecordId, gradePeriod) {
+  const terms = gradePeriod === 'midterm_rating'
+    ? ['Prelim', 'Midterm']
+    : gradePeriod === 'tentative_final_rating'
+      ? ['Semi-Final', 'Final']
+      : [];
+  if (!classRecordId || !terms.length) return 0;
+
+  const { count, error } = await supabase
+    .from('student_risk_evaluations')
+    .select('evaluation_id', { count: 'exact', head: true })
+    .eq('class_record_id', classRecordId)
+    .in('term', terms)
+    .is('closure_state', null)
+    .in('status', ['submitted', 'acknowledged_by_student'])
+    .not('published_to_student_at', 'is', null);
+
+  if (error) {
+    console.warn('[ASPIRE] could not count open action plans:', error);
+    return 0;
+  }
+  return count || 0;
+}

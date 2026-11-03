@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { Calendar, RefreshCw, AlertTriangle, CheckCircle, ShieldAlert, Database, ArrowRight, Check, X, ClipboardList, Plus, Layers } from 'lucide-react';
+import { Calendar, RefreshCw, AlertTriangle, CheckCircle, ShieldAlert, Database, ArrowRight, Check, X, ClipboardList, Plus, Layers, GraduationCap } from 'lucide-react';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { dispatchNotifications, notifyAdminActivity, notifyTermActivated } from '../../lib/notificationDispatcher';
@@ -10,6 +10,7 @@ import { cn } from '../../lib/utils';
 import SuccessModal from '../../components/SuccessModal';
 import ErrorModal from '../../components/ErrorModal';
 import ConfirmModal from '../../components/ConfirmModal';
+import GraduationDialog from '../../components/registrar/GraduationDialog';
 
 const DEFAULT_GRACE_DAYS = 30;
 
@@ -30,10 +31,14 @@ export default function TermManagement() {
 
   // Rollover wizard state
   const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [isGraduationOpen, setIsGraduationOpen] = useState(false);
   const [nextSemester, setNextSemester] = useState({ schoolYear: '', semester: '' });
   const [wizardStep, setWizardStep] = useState(1); // 1: Check, 2: Confirm, 3: Done
   const [auditResults, setAuditResults] = useState(null);
-  const [nextTermInfo, setNextTermInfo] = useState({ loading: false, term: null, sectionCount: 0 });
+  const [nextTermInfo, setNextTermInfo] = useState({
+    loading: false, term: null, sectionCount: 0, stranded: [], missingSections: [],
+    plannedSections: [], missingPlanned: [], terminalSections: [], isNewSchoolYear: false
+  });
   const [graceDays, setGraceDays] = useState(DEFAULT_GRACE_DAYS);
   const [confirmInput, setConfirmInput] = useState('');
   const [isWorking, setIsWorking] = useState(false);
@@ -88,11 +93,49 @@ export default function TermManagement() {
     return { schoolYear: nextSy, semester: '1st' };
   };
 
+  // The name a section becomes in the next term.
+  //
+  // Mirrors perform_semester_transition exactly (20261011130000:323-328):
+  //
+  //   WHEN v_is_new_sy AND os.name ~ '-\d'
+  //     THEN regexp_replace(os.name, '-(\d)', '-' || (digit + 1))
+  //     ELSE os.name
+  //
+  // Within a school year the name does not change -- BSIT-1A stays BSIT-1A
+  // through 2nd Semester and Summer. Crossing into a new school year the cohort
+  // climbs a rung. The `-\d` guard is load-bearing and deliberately copied: a
+  // section named BSIT1A, with no hyphen before the digit, is NOT promoted by
+  // the rollover, so this check must not claim it will be.
+  const expectedNextName = (name, isNewSchoolYear) => {
+    const raw = String(name || '');
+    if (!isNewSchoolYear) return raw;
+    const match = raw.match(/-(\d)/);
+    if (!match) return raw;
+    return raw.replace(/-(\d)/, `-${Number(match[1]) + 1}`);
+  };
+
+  // Name + college, which is what the rollover joins on. Comparing names alone
+  // would pass a BSIT-1A created under the wrong college, and the rollover would
+  // then refuse to match it.
+  const sectionKey = (name, departmentId) =>
+    `${String(name || '').toUpperCase()}|${departmentId || ''}`;
+
   // The next term must exist and have sections before the rollover: students are moved
   // into those sections, and nobody is left without one.
-  const loadNextTermInfo = useCallback(async (target) => {
+  //
+  // "Has sections" is not enough. The rollover moves each student to the section
+  // whose name and college match theirs; anyone without a match KEEPS their
+  // current section, which then belongs to a term that has ended. They match no
+  // class in the new term, so they disappear from every roster while still
+  // counting as an active student -- and the rollover returns success, with
+  // students_kept as the only clue and no indication of who.
+  //
+  // So the check is per student, not per term, and it runs before the rollover
+  // rather than reporting afterwards: perform_semester_transition cannot be
+  // undone.
+  const loadNextTermInfo = useCallback(async (target, current) => {
     if (!target?.schoolYear || !target?.semester) return;
-    setNextTermInfo({ loading: true, term: null, sectionCount: 0 });
+    setNextTermInfo({ loading: true, term: null, sectionCount: 0, stranded: [], missingSections: [] });
     try {
       const { data: term, error: termErr } = await supabase
         .from('academic_terms')
@@ -102,23 +145,170 @@ export default function TermManagement() {
         .maybeSingle();
       if (termErr) throw termErr;
 
-      const { count, error: secErr } = await supabase
-        .from('sections')
-        .select('section_id', { count: 'exact', head: true })
-        .eq('school_year', target.schoolYear)
-        .eq('semester', target.semester);
+      // Every section, then matched in memory. Two small reads beat trying to
+      // express the rollover's name-and-college join through PostgREST, and the
+      // table holds a few dozen rows.
+      const [{ data: allSections, error: secErr }, { data: studentRows, error: studentErr }] =
+        await Promise.all([
+          supabase.from('sections').select('section_id, name, department_id, school_year, semester'),
+          supabase
+            .from('users')
+            .select('user_id, first_name, last_name, section_id')
+            .eq('role', 'student')
+            .eq('status', 'active')
+            .not('section_id', 'is', null)
+        ]);
       if (secErr) throw secErr;
+      if (studentErr) throw studentErr;
 
-      setNextTermInfo({ loading: false, term: term || null, sectionCount: count || 0 });
+      const sections = allSections || [];
+      const isNextTerm = (s) =>
+        s.school_year === target.schoolYear && String(s.semester) === String(target.semester);
+
+      const sectionById = new Map(sections.map(s => [s.section_id, s]));
+      const nextTermKeys = new Set(
+        sections.filter(isNextTerm).map(s => sectionKey(s.name, s.department_id))
+      );
+      const isNewSchoolYear = Boolean(current?.schoolYear) && current.schoolYear !== target.schoolYear;
+
+      const stranded = [];
+      const missing = new Map();
+      (studentRows || []).forEach(student => {
+        const section = sectionById.get(student.section_id);
+        if (!section) return;
+        // Already sitting in a next-term section: the rollover leaves them be.
+        // Checked explicitly, because across a school year their name would be
+        // promoted a second time and they would look stranded when they are not.
+        if (isNextTerm(section)) return;
+
+        const wantedName = expectedNextName(section.name, isNewSchoolYear);
+        const key = sectionKey(wantedName, section.department_id);
+        if (nextTermKeys.has(key)) return;
+
+        stranded.push({
+          userId: student.user_id,
+          name: `${student.first_name || ''} ${student.last_name || ''}`.trim() || 'Unnamed student',
+          fromSection: section.name,
+          wantedName
+        });
+        if (!missing.has(key)) {
+          missing.set(key, { name: wantedName, departmentId: section.department_id, students: 0 });
+        }
+        missing.get(key).students += 1;
+      });
+
+      // The full set the next term SHOULD have, derived from the term that is
+      // ending. The stranded-student list above only covers sections that have
+      // students in them; this covers the rest, so a section standing empty this
+      // term still exists next term instead of quietly disappearing from the
+      // catalogue.
+      //
+      // Across a school year this is the ladder: every section climbs one rung.
+      // Sections with no rung above them -- a final year, or a name the rollover
+      // cannot promote -- are listed separately rather than silently dropped,
+      // because the students in them need a decision (graduate, or repeat), not
+      // a missing section.
+      const currentSections = sections.filter(
+        s => s.school_year === current?.schoolYear && String(s.semester) === String(current?.semester)
+      );
+      const planned = [];
+      const terminal = [];
+      currentSections.forEach(section => {
+        const wantedName = expectedNextName(section.name, isNewSchoolYear);
+        // Unchanged name across a NEW school year means the rollover found no
+        // year digit to raise. Carrying it forward unchanged would silently put
+        // a graduating cohort back into the same year.
+        if (isNewSchoolYear && wantedName === section.name) {
+          terminal.push({ name: section.name, departmentId: section.department_id });
+          return;
+        }
+        planned.push({
+          name: wantedName,
+          departmentId: section.department_id,
+          fromName: section.name,
+          exists: nextTermKeys.has(sectionKey(wantedName, section.department_id))
+        });
+      });
+
+      setNextTermInfo({
+        loading: false,
+        term: term || null,
+        sectionCount: sections.filter(isNextTerm).length,
+        isNewSchoolYear,
+        fromTermLabel: current ? `AY ${current.schoolYear} ${current.semester}` : 'the current term',
+        stranded,
+        missingSections: Array.from(missing.values()).sort((a, b) => a.name.localeCompare(b.name)),
+        plannedSections: planned.sort((a, b) => a.name.localeCompare(b.name)),
+        missingPlanned: planned.filter(entry => !entry.exists).sort((a, b) => a.name.localeCompare(b.name)),
+        terminalSections: terminal.sort((a, b) => a.name.localeCompare(b.name))
+      });
     } catch (err) {
       console.error('Failed to check the next term:', err);
-      setNextTermInfo({ loading: false, term: null, sectionCount: 0, error: err.message });
+      setNextTermInfo({
+        loading: false, term: null, sectionCount: 0,
+        stranded: [], missingSections: [], plannedSections: [],
+        missingPlanned: [], terminalSections: [], error: err.message
+      });
     }
   }, []);
 
+  // Create sections in the next term, with the names and colleges the rollover
+  // will look for.
+  //
+  // One click rather than a form per section. The system already knows every
+  // value -- the name it will search for, and the college it must match -- and
+  // retyping them is how the wrong college gets picked, producing a section that
+  // looks right and that no student can be moved into.
+  //
+  // Used by both entry points: carrying the whole catalogue forward, and the
+  // narrower "these students would be stranded" repair.
+  const createSectionsInNextTerm = async (entries, reason) => {
+    if (!entries || entries.length === 0) return;
+    setIsWorking(true);
+    try {
+      const { error } = await supabase.from('sections').insert(
+        entries.map(entry => ({
+          name: entry.name,
+          school_year: nextSemester.schoolYear,
+          semester: nextSemester.semester,
+          department_id: entry.departmentId
+        }))
+      );
+      if (error) {
+        if (error.code === '23505') {
+          throw new Error('One of those sections already exists for that term. Nothing was created; reopen the assistant to refresh.');
+        }
+        throw error;
+      }
+
+      await logActivity(
+        'Section Creation',
+        `${reason} — created ${entries.length} section(s) for ${nextSemester.schoolYear} (${nextSemester.semester} Semester): ${entries.map(entry => entry.name).join(', ')}.`,
+        resolveActorName(profile, user)
+      );
+      await loadNextTermInfo(nextSemester, activeTerm);
+    } catch (err) {
+      showError('The sections could not be created: ' + err.message);
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
+  const handleCarrySectionsForward = () =>
+    createSectionsInNextTerm(
+      nextTermInfo.missingPlanned || [],
+      nextTermInfo.isNewSchoolYear ? 'Promoted the previous year\'s sections' : 'Carried the previous term\'s sections forward'
+    );
+
+  const handleCreateMissingSections = () =>
+    createSectionsInNextTerm(
+      nextTermInfo.missingSections || [],
+      'Repaired sections so no student is left without one'
+    );
+
   useEffect(() => {
-    if (isWizardOpen && wizardStep === 1) loadNextTermInfo(nextSemester);
-  }, [isWizardOpen, wizardStep, nextSemester, loadNextTermInfo]);
+    if (isWizardOpen && wizardStep === 1) loadNextTermInfo(nextSemester, activeTerm);
+  }, [isWizardOpen, wizardStep, nextSemester, activeTerm, loadNextTermInfo]);
 
   const startRolloverWizard = async () => {
     if (!activeTerm) {
@@ -185,7 +375,7 @@ export default function TermManagement() {
         resolveActorName(profile, user)
       );
       await loadTerms();
-      await loadNextTermInfo(nextSemester);
+      await loadNextTermInfo(nextSemester, activeTerm);
     } catch (err) {
       showError('Failed to create the next term: ' + err.message);
     } finally {
@@ -244,6 +434,12 @@ export default function TermManagement() {
       showError('Create the next term and its sections first.');
       return;
     }
+    if ((nextTermInfo.stranded || []).length > 0) {
+      showError(
+        `${nextTermInfo.stranded.length} student(s) have no section in the next term. Create the missing sections first, or they will stay in a section that has ended and disappear from every class list.`
+      );
+      return;
+    }
 
     setIsWorking(true);
     try {
@@ -289,7 +485,13 @@ export default function TermManagement() {
     }
   };
 
-  const nextTermReady = Boolean(nextTermInfo.term) && nextTermInfo.sectionCount > 0;
+  // A student with nowhere to go is a blocking condition, not a warning. The
+  // rollover cannot be undone, and a stranded student is invisible rather than
+  // obviously broken -- so the one chance to catch it is before it runs.
+  const nextTermReady =
+    Boolean(nextTermInfo.term) &&
+    nextTermInfo.sectionCount > 0 &&
+    (nextTermInfo.stranded || []).length === 0;
 
   return (
     <>
@@ -360,6 +562,34 @@ export default function TermManagement() {
               <RefreshCw className="h-3.5 w-3.5" /> Start Next Semester
             </button>
           </div>
+        </div>
+
+        {/* Graduation.
+            Sits beside the rollover because it is the other half of the same
+            moment: the rollover moves everyone up a year, and the students with
+            no year above them need a decision it cannot make for them. Left
+            alone they stay 4th years forever, which is correct for anyone
+            repeating a subject and wrong for everyone who finished. */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="p-3 bg-sage-50 text-sage-600 rounded-lg shrink-0">
+              <GraduationCap className="h-6 w-6" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] font-bold text-slate-450 uppercase tracking-wide">After the rollover</div>
+              <div className="text-base font-bold text-slate-900 mt-0.5">Record Graduations</div>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                4th year students stay 4th years until you say otherwise — which is right for anyone still
+                owing a subject. Upload the ID numbers of those who completed their programme.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsGraduationOpen(true)}
+            className="shrink-0 py-2 px-4 text-xs font-bold border border-sage-300 text-sage-700 hover:bg-sage-50 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <GraduationCap className="h-3.5 w-3.5" /> Record Graduations
+          </button>
         </div>
 
         {errorMsg && (
@@ -621,17 +851,106 @@ export default function TermManagement() {
                         <Plus className="h-3.5 w-3.5" /> Create AY {nextSemester.schoolYear} ({nextSemester.semester})
                       </button>
                     </div>
+                  ) : (nextTermInfo.missingPlanned || []).length > 0 ? (
+                    // The whole catalogue, not just the sections that happen to
+                    // hold students. A block cohort does not change between the
+                    // terms of one school year and climbs one rung between
+                    // years, so the next term's sections are already known --
+                    // there is nothing for the registrar to decide, only to
+                    // confirm. Doing it by hand was 16 identical forms.
+                    <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-[11px] text-amber-900 space-y-2">
+                      <p>
+                        {nextTermInfo.isNewSchoolYear ? (
+                          <>
+                            <strong>New school year.</strong> Each section moves up one year level.
+                            Students are moved into the matching section during the rollover.
+                          </>
+                        ) : (
+                          <>
+                            <strong>The next term needs its sections.</strong> Within a school year they
+                            are the same block sections, with the same names and colleges.
+                          </>
+                        )}
+                      </p>
+                      <div className="font-mono text-[10px] bg-white/70 border border-amber-200 rounded p-2 space-y-0.5 max-h-32 overflow-y-auto">
+                        {nextTermInfo.missingPlanned.map(entry => (
+                          <div key={`${entry.name}-${entry.departmentId}`} className="flex justify-between gap-3">
+                            <span className="truncate">{entry.fromName}</span>
+                            <span className="text-amber-800 shrink-0">&rarr; {entry.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {(nextTermInfo.terminalSections || []).length > 0 && (
+                        <p className="text-[10px] text-amber-800">
+                          <strong>Not carried forward:</strong>{' '}
+                          {nextTermInfo.terminalSections.map(entry => entry.name).join(', ')} — these have no
+                          year level above them. Their students stay where they are until they are marked
+                          as graduated.
+                        </p>
+                      )}
+                      <button
+                        onClick={handleCarrySectionsForward}
+                        disabled={isWorking}
+                        className="px-2.5 py-1 text-[11px] font-bold bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        {isWorking
+                          ? 'Creating…'
+                          : `${nextTermInfo.isNewSchoolYear ? 'Promote' : 'Carry forward'} ${nextTermInfo.missingPlanned.length} section${nextTermInfo.missingPlanned.length === 1 ? '' : 's'}`}
+                      </button>
+                      <p className="text-[10px] text-amber-800">
+                        Need different sections — a new intake, or a programme closing?{' '}
+                        <Link to="/registrar/sectionlist" className="font-bold underline">
+                          Manage Sections
+                        </Link>{' '}
+                        creates them one at a time or by CSV import.
+                      </p>
+                    </div>
                   ) : nextTermInfo.sectionCount === 0 ? (
                     <div className="bg-rose-50 border border-rose-200 p-3 rounded-lg text-[11px] text-rose-900 space-y-2">
-                      <p>The next term has <strong>no sections</strong> yet. Students are moved into next-term sections during the rollover, so create them first (Sections → Add Section → Academic Term: AY {nextSemester.schoolYear} {nextSemester.semester}).</p>
+                      <p>The next term has <strong>no sections</strong> yet, and there are none in the current term to carry forward. Create them first (Manage Sections → Pre-load Section → Academic Term: AY {nextSemester.schoolYear} {nextSemester.semester}).</p>
                       <Link to="/registrar/sectionlist" className="inline-flex items-center gap-1 font-bold text-rose-800 underline">
                         <Layers className="h-3.5 w-3.5" /> Go to Sections
                       </Link>
                     </div>
+                  ) : (nextTermInfo.stranded || []).length > 0 ? (
+                    // Sections exist, but not the ones these students need. The
+                    // rollover would leave them in a section belonging to a term
+                    // that has ended: they would match no class in the new term
+                    // and drop off every roster, while the rollover reported
+                    // success. There is no "continue anyway" because there is no
+                    // good reason to proceed -- a graduated student carries
+                    // year_level 'Graduated' and a dropped one status 'inactive',
+                    // so neither reaches this list.
+                    <div className="bg-rose-50 border border-rose-200 p-3 rounded-lg text-[11px] text-rose-900 space-y-2">
+                      <p>
+                        <strong>{nextTermInfo.stranded.length} student{nextTermInfo.stranded.length === 1 ? '' : 's'} would be left without a section.</strong>{' '}
+                        The rollover moves each student to the next term&rsquo;s section with the same name and college. These have no match, so they would stay in a section that has ended and disappear from every class list.
+                      </p>
+                      <div className="font-mono text-[10px] bg-white/70 border border-rose-200 rounded p-2 space-y-0.5 max-h-28 overflow-y-auto">
+                        {nextTermInfo.stranded.slice(0, 12).map(person => (
+                          <div key={person.userId} className="flex justify-between gap-3">
+                            <span className="truncate">{person.name}</span>
+                            <span className="text-rose-700 shrink-0">{person.fromSection} &rarr; {person.wantedName}</span>
+                          </div>
+                        ))}
+                        {nextTermInfo.stranded.length > 12 && (
+                          <div className="text-rose-700">and {nextTermInfo.stranded.length - 12} more…</div>
+                        )}
+                      </div>
+                      <button
+                        onClick={handleCreateMissingSections}
+                        disabled={isWorking}
+                        className="px-2.5 py-1 text-[11px] font-bold bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 rounded flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Create {nextTermInfo.missingSections.length} missing section{nextTermInfo.missingSections.length === 1 ? '' : 's'} ({nextTermInfo.missingSections.map(entry => entry.name).join(', ')})
+                      </button>
+                    </div>
                   ) : (
                     <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-lg text-[11px] text-emerald-900 flex items-center gap-2">
                       <CheckCircle className="h-4 w-4 text-emerald-650 shrink-0" />
-                      <span>The next term exists with <strong className="font-mono">{nextTermInfo.sectionCount}</strong> section{nextTermInfo.sectionCount === 1 ? '' : 's'}.</span>
+                      <span>The next term exists with <strong className="font-mono">{nextTermInfo.sectionCount}</strong> section{nextTermInfo.sectionCount === 1 ? '' : 's'}, and every student has one to move into.</span>
                     </div>
                   )}
                 </div>
@@ -776,6 +1095,11 @@ export default function TermManagement() {
         message={confirmModalConfig.message}
         onConfirm={confirmModalConfig.onConfirm}
         onCancel={() => setIsConfirmModalOpen(false)}
+      />
+      <GraduationDialog
+        isOpen={isGraduationOpen}
+        onClose={() => setIsGraduationOpen(false)}
+        onDone={loadTerms}
       />
     </>
   );

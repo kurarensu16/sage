@@ -9,6 +9,7 @@ import {
   ArrowRight,
   ListTodo,
   CheckCircle2,
+  Lock,
   Info
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -24,32 +25,55 @@ import {
   shouldAutoRegenerateOverallInsight,
 } from '../../lib/insightFreshness';
 
-// Helper to check pending advising tasks
+// Helper to check pending advising tasks.
+//
+// An evaluation ends when its grading period is finalized (20261103090600), or
+// at the rollover for anything never finalized (20261103092900). From that
+// moment the database refuses every write to it: the student cannot tick a task
+// and the instructor cannot verify one.
+//
+// This counter did not know that. It counted unticked tasks on CLOSED plans as
+// pending, so a student whose Prelim was finalized kept being told to complete
+// work the system would reject -- "3 PENDING" against a plan that can never
+// reach zero.
+//
+// closure_state IS NULL is the one test for "still open", the same one
+// FacultyAdvisingInbox.jsx uses to decide whether to render live checkboxes.
 const checkPendingAdvisingTasks = async (studentId) => {
   try {
     const { data: evals } = await supabase
       .from('student_risk_evaluations')
-      .select('evaluation_id, advising_plan, evaluation_context, shared_academic_feedback, status, published_to_student_at, created_at')
+      .select('evaluation_id, advising_plan, evaluation_context, shared_academic_feedback, status, published_to_student_at, created_at, closure_state, term')
       .eq('student_id', studentId)
       .in('status', ['submitted', 'acknowledged_by_student'])
       .not('published_to_student_at', 'is', null)
       .order('created_at', { ascending: false });
 
     const visibleEvaluations = (evals || []).filter(isStudentVisibleEvaluation);
-    if (visibleEvaluations.length === 0) return { pendingCount: 0, latestPlan: null };
+    if (visibleEvaluations.length === 0) {
+      return { pendingCount: 0, latestPlan: null, closedUnfinishedTerm: null };
+    }
+
+    const openEvaluations = visibleEvaluations.filter(ev => !ev.closure_state);
 
     let pendingCount = 0;
-    visibleEvaluations.forEach(ev => {
+    openEvaluations.forEach(ev => {
       const items = Array.isArray(ev.advising_plan) ? ev.advising_plan : [];
       pendingCount += items.filter(item => !item.completed).length;
     });
 
+    // A plan that closed with work outstanding must not be reported as
+    // "all tasks completed". Saying so to a student who did not finish is both
+    // untrue and the opposite of the record the instructor kept.
+    const closedUnfinished = visibleEvaluations.find(ev => ev.closure_state === 'unfinished');
+
     return {
       pendingCount,
-      latestPlan: visibleEvaluations[0]
+      latestPlan: visibleEvaluations[0],
+      closedUnfinishedTerm: closedUnfinished?.term || null
     };
   } catch {
-    return { pendingCount: 0, latestPlan: null };
+    return { pendingCount: 0, latestPlan: null, closedUnfinishedTerm: null };
   }
 };
 
@@ -90,6 +114,9 @@ export default function Dashboard() {
   const [gwaSummary, setGwaSummary] = useState(null);
   const [pendingAdvisingCount, setPendingAdvisingCount] = useState(0);
   const [latestAdvisingPlan, setLatestAdvisingPlan] = useState(null);
+  // The term of a plan that closed with work outstanding, or null. Drives an
+  // honest message instead of congratulating a student who did not finish.
+  const [closedUnfinishedTerm, setClosedUnfinishedTerm] = useState(null);
   const [insightVerdict, setInsightVerdict] = useState('No data yet');
   const [insightVerdictTentative, setInsightVerdictTentative] = useState(false);
   const [insightSummary, setInsightSummary] = useState(NO_INSIGHT_SUMMARY);
@@ -110,6 +137,7 @@ export default function Dashboard() {
         setGwaSummary(cached.gwaSummary || null);
         setPendingAdvisingCount(cached.pendingAdvisingCount || 0);
         setLatestAdvisingPlan(cached.latestAdvisingPlan || null);
+        setClosedUnfinishedTerm(cached.closedUnfinishedTerm || null);
         // Cached academic facts (including the deterministic verdict) may render
         // immediately, but AI text is withheld until its evidence fingerprint is
         // revalidated against current records.
@@ -150,17 +178,50 @@ export default function Dashboard() {
           setSection(resolvedSection);
         }
 
-        // 4. Fetch all active class records to pair with enrollments
-        const { data: allClassRecs } = await supabase
-          .from('class_records')
-          .select(`
+        // 4. Class records for the ACTIVE TERM ONLY, to pair with enrollments.
+        //
+        // This used to fetch every class_record with status = 'active' and no
+        // term filter at all. That was wrong the moment a term rolled over,
+        // because perform_semester_transition deliberately leaves last term's
+        // classes active while their Semestral Grade is still outstanding
+        // (the sg_grace_days window). Those classes matched the student's old
+        // enrollments, so after the rollover the dashboard kept showing last
+        // semester's four subjects, twelve units and running GWA under a banner
+        // that read "Second Sem".
+        //
+        // The same status = 'active' that correctly means "still owed" on the
+        // faculty class list means "still mine this term" here, and only one of
+        // those readings is right for a student. The term decides.
+        //
+        // Two queries rather than one .or(): term_id is null on rows created
+        // before it was recorded, and the rollover only backfills the two terms
+        // it touches. Same shape as ClassRecordsList.jsx.
+        const classSelect = `
             class_record_id,
             subject_id,
             section_id,
             status,
+            term_id,
+            school_year,
+            semester,
             faculty:users!faculty_id ( first_name, last_name )
-          `)
-          .eq('status', 'active');
+          `;
+        const [currentTermClasses, legacyTermClasses] = await Promise.all([
+          termData?.term_id
+            ? supabase.from('class_records').select(classSelect)
+                .eq('status', 'active').eq('term_id', termData.term_id)
+            : Promise.resolve({ data: [] }),
+          termData?.school_year
+            ? supabase.from('class_records').select(classSelect)
+                .eq('status', 'active').is('term_id', null)
+                .eq('school_year', termData.school_year)
+                .eq('semester', termData.semester)
+            : Promise.resolve({ data: [] })
+        ]);
+        const allClassRecs = [
+          ...(currentTermClasses.data || []),
+          ...(legacyTermClasses.data || [])
+        ];
 
         // 5. Fetch Posted Grades
         const { data: posted } = await supabase
@@ -180,12 +241,19 @@ export default function Dashboard() {
           ])
         );
 
-        // 6. Map all student enrollments to their class records
+        // 6. Map the student's enrollments to this term's class records.
+        //
+        // Enrollments are not term-stamped -- they point at a subject and a
+        // section, and sections are per-term. So an enrollment only belongs to
+        // this term if a class record for it exists in this term. Rows that find
+        // no match are last term's and are dropped, rather than rendered as a
+        // subject with no instructor and no grade.
         const activeEnrolled = (enrolls || []).map(e => {
           const matchingClass = (allClassRecs || []).find(
             cr => cr.subject_id === e.subject_id && cr.section_id === e.section_id
           );
-          const classRecId = matchingClass?.class_record_id;
+          if (!matchingClass) return null;
+          const classRecId = matchingClass.class_record_id;
           const pGrade = classRecId ? postedMap[classRecId] : null;
 
           return {
@@ -197,7 +265,7 @@ export default function Dashboard() {
             grade: pGrade ? resolveOfficialGwa(pGrade).gwa : null,
             status: pGrade ? 'Grades Posted' : 'Active'
           };
-        });
+        }).filter(Boolean);
 
         setEnrolledSubjects(activeEnrolled);
 
@@ -220,9 +288,14 @@ export default function Dashboard() {
         setGwaSummary(resolvedGwaSummary);
 
         // 8. ASPIRE v3.1: Check Pending Faculty Advising & Action Items
-        const { pendingCount: resolvedPendingCount, latestPlan: resolvedLatestPlan } = await checkPendingAdvisingTasks(user.id);
+        const {
+          pendingCount: resolvedPendingCount,
+          latestPlan: resolvedLatestPlan,
+          closedUnfinishedTerm: resolvedClosedUnfinishedTerm
+        } = await checkPendingAdvisingTasks(user.id);
         setPendingAdvisingCount(resolvedPendingCount);
         setLatestAdvisingPlan(resolvedLatestPlan);
+        setClosedUnfinishedTerm(resolvedClosedUnfinishedTerm);
 
         // 9. Academic Insights: the saved AI text is kept until a grade is posted;
         // attendance feeds the live AI Standing verdict.
@@ -280,6 +353,7 @@ export default function Dashboard() {
           gwaSummary: resolvedGwaSummary,
           pendingAdvisingCount: resolvedPendingCount,
           latestAdvisingPlan: resolvedLatestPlan,
+          closedUnfinishedTerm: resolvedClosedUnfinishedTerm,
           insightVerdict: resolvedVerdict,
           insightVerdictTentative: resolvedVerdictTentative,
           insightSummary: resolvedSummary
@@ -426,19 +500,37 @@ export default function Dashboard() {
                   <Info className="h-3 w-3" />
                 </button>
               </span>
+              {/* Three outcomes, not two. A plan that closed with work
+                  outstanding is neither "pending" (nothing can be ticked any
+                  more) nor "cleared" (the student did not finish). */}
               <h3 className={`text-lg sm:text-2xl md:text-3xl font-extrabold font-mono mt-0.5 sm:mt-1 truncate ${
-                pendingAdvisingCount > 0 ? 'text-amber-700' : 'text-emerald-700'
+                pendingAdvisingCount > 0
+                  ? 'text-amber-700'
+                  : closedUnfinishedTerm ? 'text-slate-600' : 'text-emerald-700'
               }`}>
-                {pendingAdvisingCount > 0 ? `${pendingAdvisingCount} PENDING` : 'CLEARED'}
+                {pendingAdvisingCount > 0
+                  ? `${pendingAdvisingCount} PENDING`
+                  : closedUnfinishedTerm ? 'CLOSED' : 'CLEARED'}
               </h3>
               <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 truncate">
-                {pendingAdvisingCount > 0 ? 'Intervention tasks active' : 'All tasks up to date'}
+                {pendingAdvisingCount > 0
+                  ? 'Intervention tasks active'
+                  : closedUnfinishedTerm
+                  ? `${closedUnfinishedTerm} period finalized`
+                  : 'All tasks up to date'}
               </p>
             </div>
             <div className={`p-2 sm:p-2.5 md:p-3 rounded-xl flex-shrink-0 mt-0.5 ${
-              pendingAdvisingCount > 0 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
+              pendingAdvisingCount > 0
+                ? 'bg-amber-50 text-amber-600'
+                : closedUnfinishedTerm ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-600'
             }`}>
-              {pendingAdvisingCount > 0 ? <ListTodo className="h-4 w-4 sm:h-5 sm:w-5" /> : <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" />}
+              {/* A padlock, not a tick: the plan is shut, not satisfied. */}
+              {pendingAdvisingCount > 0
+                ? <ListTodo className="h-4 w-4 sm:h-5 sm:w-5" />
+                : closedUnfinishedTerm
+                ? <Lock className="h-4 w-4 sm:h-5 sm:w-5" />
+                : <CheckCircle2 className="h-4 w-4 sm:h-5 sm:w-5" />}
             </div>
           </div>
 
@@ -521,8 +613,20 @@ export default function Dashboard() {
                 </div>
               ))}
               {enrolledSubjects.length === 0 && (
-                <div className="col-span-1 sm:col-span-2 text-center py-8 text-slate-400 text-sm">
-                  No enrolled subjects found in active status for this section.
+                // The ordinary state right after a rollover, not a fault: the
+                // new term's classes do not exist until instructors create them.
+                // Saying so, and pointing at where last term's records live,
+                // stops it reading as lost data.
+                <div className="col-span-1 sm:col-span-2 text-center py-8 space-y-2">
+                  <p className="text-sm text-slate-500">
+                    No subjects yet for {activeTerm ? `${activeTerm.school_year} · ${activeTerm.semester} Semester` : 'this term'}.
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    They appear once your instructors set up their classes. Previous terms stay in your Grade Report.
+                  </p>
+                  <Link to="/student/mygradeslist" className="inline-flex items-center gap-1 text-xs font-bold text-sage-600 hover:underline">
+                    Open Grade Report <ChevronRight className="h-3.5 w-3.5" />
+                  </Link>
                 </div>
               )}
             </div>
@@ -558,8 +662,10 @@ export default function Dashboard() {
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900">Faculty Action Plans</h3>
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">
-                {pendingAdvisingCount > 0 
+                {pendingAdvisingCount > 0
                   ? `You have ${pendingAdvisingCount} pending action item(s) prescribed by your course instructors.`
+                  : closedUnfinishedTerm
+                  ? `Your ${closedUnfinishedTerm} action plan closed when the grading period was finalized. It stays on record as it was, and nothing further is required.`
                   : latestAdvisingPlan
                   ? 'All prescribed intervention tasks have been completed. Great job keeping your recovery on track!'
                   : 'No active academic intervention plans currently prescribed for this semester.'}

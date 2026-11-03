@@ -717,8 +717,16 @@ named in Objective 3 by acronym.
 ### Stage 7b — Closing the loop · Faculty + Dean · QA only
 
 **Objective 5** also names Dean referrals and baseline-to-follow-up outcome
-tracking. Neither is in the demo, and the follow-up snapshot is what
-**Hypothesis 2** rests on.
+tracking. Neither is in the demo.
+
+> **Updated 2026-11-03.** This used to read "the follow-up snapshot is what
+> Hypothesis 2 rests on". There is no Hypothesis 2 any more: the study now has
+> a **single unified hypothesis** about acceptability, and outcome tracking is
+> **functional evidence, not a hypothesis under test**. That lowers the stakes
+> on the numbers and raises them on the behaviour — an unverified intervention
+> recorded as verified is now a **functional-correctness** defect that an
+> expert scores against ISO/IEC 25010, which is a threshold the study must
+> actually clear.
 
 - [X] ok  [ ] **bug** — Evaluate a **Low**-risk student. Allowed — support is not rationed to the
   Critical tier, which is the design claim in Objective 4.  ·  _note:_
@@ -1082,8 +1090,28 @@ templates and its own attendance behaviour, and neither has ever been exercised.
 ### Stage 12 — Objective 8 · not a system check
 
 The eighth Specific Objective is the **evaluation itself** — the Expert and
-End-User instruments based on TAM and ISO/IEC 25010:2023. It is not a module in
-ASPIRE, so no stage can demonstrate it.
+End-User instruments based on TAM and applicable ISO/IEC 25010:2023 quality
+characteristics. It is not a module in ASPIRE, so no stage can demonstrate it.
+
+**The study's one hypothesis lives here**, per
+`ASPIRE_Chapters_1-2_Master_UPDATED_2026-11-02_v3.docx`. H0 is rejected in favour
+of H1 only when **all** of these hold:
+
+| | Threshold |
+| ------------------------------------------------------------ | --------- |
+| **Perceived Usefulness** mean, computed per respondent group  | **≥ 2.51** |
+| **Perceived Ease of Use** mean, computed per respondent group | **≥ 2.51** |
+| **Expert ISO/IEC 25010 overall compliance**                   | **≥ 80%** |
+| End-User ISO, across **seven** applicable characteristics     | reported separately, not a gate |
+
+> **This is where pass A actually pays off.** The paper says controlled
+> verification of the grading, risk, intervention, correction and
+> outcome-measurement workflows is **functional evidence, not a separate
+> hypothesis** — so every bug this pass found and fixed is a deduction an expert
+> cannot make against **functional correctness**, which is one of the
+> characteristics counting toward that 80%. A reviewer who meets a silent
+> failure has a concrete reason to mark the system down; sixteen of them are
+> now closed.
 
 - [ ] ok  [ ] **bug** — The Expert and End-User instruments exist and are consistent with how the
   system now behaves, after everything pass A just changed.  ·  _note:_

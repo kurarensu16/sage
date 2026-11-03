@@ -45,6 +45,7 @@ export async function getEvaluatedCases({ facultyId, classIds, history, classId,
     evaluation_id,class_record_id,student_id,faculty_id,term,status,created_at,updated_at,
     risk_level,risk_score,advising_plan,baseline_snapshot,refer_to_dean,
     published_to_student_at,acknowledged_at,followup_snapshot,followup_recorded_at,
+    closure_state,closed_at,closed_by_event,
     student:users!student_id!inner(first_name,last_name,user_number),
     class_record:class_records!inner(${CLASS_FIELDS}),
     referrals:student_evaluation_referrals(referral_id,state,legacy,referred_at,resolved_at)
