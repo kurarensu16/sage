@@ -19,42 +19,74 @@ const FUNCTION_NAME = 'invoke-study-tutor';
  * classes they are enrolled in, and student_activity_scores only for their own
  * records. Re-deriving enrolment here would be a second copy of a rule that
  * already exists in SQL.
+ *
+ * RLS scopes by ENROLMENT, not by term, and an enrolment outlives the term it
+ * was made in. So this returned every activity the student had ever been
+ * enrolled against: after a rollover the tutor still offered last semester's
+ * subjects and built study plans from grades that were already final. The term
+ * filter below is the part RLS cannot express.
  */
 export async function fetchTutorMenu() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Please sign in again.');
 
-  const [{ data: activities, error: actError }, { data: scores, error: scoreError }] =
-    await Promise.all([
-      supabase
-        .from('class_activities')
-        .select(`
+  const [
+    { data: activeTerm },
+    { data: activities, error: actError },
+    { data: scores, error: scoreError }
+  ] = await Promise.all([
+    supabase
+      .from('academic_terms')
+      .select('term_id, school_year, semester')
+      .eq('is_active', true)
+      .maybeSingle(),
+    supabase
+      .from('class_activities')
+      .select(`
           activity_id, class_record_id, name, description, topic_tag, max_score, term,
           class_records:class_record_id (
             subject_id,
+            term_id,
+            school_year,
+            semester,
             subjects:subject_id ( code, name )
           )
         `),
-      supabase
-        .from('student_activity_scores')
-        .select('activity_id, score')
-        .eq('student_id', user.id)
-    ]);
+    supabase
+      .from('student_activity_scores')
+      .select('activity_id, score')
+      .eq('student_id', user.id)
+  ]);
 
   if (actError) throw actError;
   if (scoreError) throw scoreError;
 
-  const flattened = (activities || []).map((a) => ({
-    activity_id: a.activity_id,
-    name: a.name,
-    description: a.description,
-    topic_tag: a.topic_tag,
-    max_score: a.max_score,
-    term: a.term,
-    subjectId: a.class_records?.subject_id || null,
-    subjectCode: a.class_records?.subjects?.code || '',
-    subjectName: a.class_records?.subjects?.name || ''
-  }));
+  // Matched on term_id, falling back to school year + semester for rows written
+  // before term_id was recorded -- the same pair every other term-scoped read in
+  // this codebase uses. With no active term nothing is in scope, which is
+  // correct: a tutor with no term has no current work to tutor on.
+  const belongsToActiveTerm = (classRecord) => {
+    if (!activeTerm || !classRecord) return false;
+    if (classRecord.term_id) return classRecord.term_id === activeTerm.term_id;
+    return (
+      classRecord.school_year === activeTerm.school_year &&
+      String(classRecord.semester) === String(activeTerm.semester)
+    );
+  };
+
+  const flattened = (activities || [])
+    .filter((a) => belongsToActiveTerm(a.class_records))
+    .map((a) => ({
+      activity_id: a.activity_id,
+      name: a.name,
+      description: a.description,
+      topic_tag: a.topic_tag,
+      max_score: a.max_score,
+      term: a.term,
+      subjectId: a.class_records?.subject_id || null,
+      subjectCode: a.class_records?.subjects?.code || '',
+      subjectName: a.class_records?.subjects?.name || ''
+    }));
 
   const scoresByActivityId = Object.fromEntries(
     (scores || []).map((s) => [s.activity_id, Number(s.score)])

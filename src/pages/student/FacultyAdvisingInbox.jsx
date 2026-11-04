@@ -12,7 +12,8 @@ import {
   CheckCircle2, 
   ArrowRight,
   Loader2,
-  Lock
+  Lock,
+  AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -90,6 +91,8 @@ export default function FacultyAdvisingInbox() {
           advising_plan,
           baseline_snapshot,
           followup_snapshot,
+          closure_state,
+          closed_at,
           status,
           acknowledged_at,
           published_to_student_at,
@@ -304,7 +307,12 @@ export default function FacultyAdvisingInbox() {
             {evaluations.map((ev) => {
               const tasks = ev.advising_plan || [];
               const { reported: completedCount, verified: verifiedCount, total: totalCount } = countTaskProgress(tasks);
-              const isClosed = Boolean(ev.followup_snapshot);
+              // A plan can now end two ways: the instructor recorded a
+              // follow-up, or its grading period was finalized and it closed
+              // where it stood. Without the second, a closed plan kept live
+              // checkboxes while trg_block_frozen_period_evaluations refused
+              // every write behind them.
+              const isClosed = Boolean(ev.followup_snapshot) || Boolean(ev.closure_state);
               const acknowledged = isAcknowledged(ev);
               // Progress counts instructor-verified tasks, matching the faculty view and the Dean's results.
               const progressPct = totalCount > 0 ? Math.round((verifiedCount / totalCount) * 100) : 0;
@@ -436,7 +444,12 @@ export default function FacultyAdvisingInbox() {
                           Assigned Catch-Up Tasks ({completedCount}/{totalCount} reported · {verifiedCount} verified)
                         </span>
                         <span className="text-[11px] text-slate-400">
-                          {isDraft ? 'Actionable once published by professor' : isClosed ? 'Plan closed after your instructor recorded the follow-up' : !acknowledged ? 'Acknowledge the plan to start reporting progress' : 'Check off items as you complete them; your instructor verifies each one'}
+                          {isDraft ? 'Actionable once published by professor'
+                            : ev.closure_state === 'closed_tasks_verified' ? 'Closed — you completed every task and your instructor verified them'
+                              : ev.closure_state ? 'Closed — this grading period is final'
+                                : isClosed ? 'Plan closed after your instructor recorded the follow-up'
+                                  : !acknowledged ? 'Acknowledge the plan to start reporting progress'
+                                    : 'Check off items as you complete them; your instructor verifies each one'}
                         </span>
                       </div>
 
@@ -444,6 +457,22 @@ export default function FacultyAdvisingInbox() {
                         <div className="flex items-center gap-2 rounded-md border border-sage-200 bg-sage-50 px-3 py-2 text-xs text-sage-800">
                           <Clock className="h-4 w-4 text-sage-600" />
                           <span><strong>Plan completion date:</strong> {planDeadline} · Complete all steps in order by this date.</span>
+                        </div>
+                      )}
+
+                      {/* The notification sent when the milestone is posted can be
+                          missed over a window that may run for weeks. This says the
+                          same thing for as long as it is still true, and stops once
+                          the plan closes or there is nothing left to do. */}
+                      {!isDraft && !isClosed && acknowledged && completedCount < totalCount && (
+                        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                          <span>
+                            <strong>Finish before your {ev.term} grade is finalized.</strong>{' '}
+                            Once your instructor finalizes this grading period, this plan
+                            closes as it stands and can no longer be changed. After that, a
+                            question about your grade has to go through a grade change request.
+                          </span>
                         </div>
                       )}
 

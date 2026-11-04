@@ -99,6 +99,12 @@ Evidence lives as long as the intervention record, and is archived with it at
 term rollover. The alternative — purge at term end, keep only the
 verified/not-verified flag — was rejected: a verified outcome that can no longer
 be justified is weak evidence for **Hypothesis 2**, which rests on the
+<!-- SUPERSEDED 2026-11-03: there is no Hypothesis 2. The study now has one
+     unified acceptability hypothesis (TAM + ISO/IEC 25010), and outcome
+     tracking is functional evidence rather than a hypothesis under test. The
+     retention argument below still holds, but the reason is ISO 25010
+     functional correctness -- which experts score against an 80% threshold --
+     not a hypothesis. Left in place because dated audits are a record. -->
 baseline-to-follow-up pairing being auditable after the fact.
 
 Storage grows per term. At this scale that is the cheaper problem.

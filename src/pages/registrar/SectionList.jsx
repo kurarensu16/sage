@@ -7,14 +7,20 @@ import * as XLSX from 'xlsx';
 import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
 import { fetchAcademicTerms, getActiveAcademicTerm } from '../../lib/termStatus';
 import { getCachedData, invalidateCache, setCachedData } from '../../lib/dataCache';
+import { useAuth } from '../../lib/AuthContext';
+import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyAdminActivity } from '../../lib/notificationDispatcher';
 
 // Program names and codes are read from the programs table, never from a map in code.
 
 export default function SectionList() {
   const navigate = useNavigate();
+  const { user, profile } = useAuth();
+  const [isImporting, setIsImporting] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const [sections, setSections] = useState([]);
   const [programs, setPrograms] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
   const [filterProgram, setFilterProgram] = useState('');
@@ -56,11 +62,16 @@ export default function SectionList() {
       setLoading(true);
       setArchiveError('');
 
-      const { data: progs } = await supabase
-        .from('programs')
-        .select('program_id, name, abbreviation, department_id')
-        .order('name');
+      const [{ data: progs }, { data: depts }] = await Promise.all([
+        supabase.from('programs').select('program_id, name, abbreviation, department_id').order('name'),
+        // The import writes department_id, but a CSV names a college in words.
+        // Resolving that here, against the real table, is what stops a typo
+        // becoming a section the rollover can never match -- it joins on
+        // department_id as well as name.
+        supabase.from('departments').select('department_id, name').order('name')
+      ]);
       if (progs) setPrograms(progs);
+      if (depts) setDepartments(depts);
 
       const cacheKey = `admin_sections_${term.term_id}`;
       let data = getCachedData(cacheKey, 5 * 60 * 1000);
@@ -345,11 +356,89 @@ export default function SectionList() {
     }
   };
 
+  // Write the parsed rows.
+  //
+  // Until 2026-11-03 this function parsed, validated, rendered a preview saying
+  // "Successfully parsed N section records" -- and then alerted "will be enabled
+  // in a future update" and wrote nothing. Every check above it was real; only
+  // the write was missing.
+  //
+  // Two rules it keeps:
+  //
+  //   * ALL OR NOTHING. A single insert() is one statement, so Postgres either
+  //     takes every row or none. Importing nine of ten and reporting success is
+  //     the failure shape behind B-02, B-10 and B-14.
+  //   * A COLLEGE MUST RESOLVE. The CSV names a college in words; the table
+  //     stores department_id. An unmatched name stops the whole file rather
+  //     than inserting a null, because the rollover matches sections on name
+  //     AND college -- a section with no college is one no student can move
+  //     into, and nothing would report that.
   const handleSaveImport = async () => {
     if (isReadOnlyArchive || parsedSections.length === 0) return;
+    setImportError('');
+    setImportSuccess('');
 
-    alert("Batch CSV import will be enabled for Supabase in a future update.");
-    setIsImportOpen(false);
+    const collegeIdByName = new Map(
+      (departments || []).map(dept => [String(dept.name).trim().toLowerCase(), dept.department_id])
+    );
+
+    const unresolved = [];
+    const rows = parsedSections.map((sec, index) => {
+      const departmentId = collegeIdByName.get(String(sec.department || '').trim().toLowerCase());
+      if (!departmentId) unresolved.push(`row ${index + 1} ("${sec.department || 'blank'}")`);
+      return {
+        name: sec.name,
+        school_year: sec.schoolYear,
+        semester: sec.semester,
+        department_id: departmentId || null
+      };
+    });
+
+    if (unresolved.length > 0) {
+      setImportError(
+        `Nothing was imported. These colleges are not in the database: ${unresolved.join(', ')}. ` +
+        `Use the exact college name shown in Manage Colleges: ${(departments || []).map(d => d.name).join(', ')}.`
+      );
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const { error } = await supabase.from('sections').insert(rows);
+      if (error) {
+        if (error.code === '23505') {
+          throw new Error(
+            'One of these sections is already registered for that school year and semester. Nothing was imported.'
+          );
+        }
+        throw error;
+      }
+
+      const actorName = resolveActorName(profile, user);
+      await logActivity(
+        'Section Creation',
+        `Imported ${rows.length} section(s): ${rows.map(row => row.name).join(', ')}.`,
+        actorName
+      );
+      await notifyAdminActivity({
+        type: 'system',
+        message: `Manage Sections: ${rows.length} section(s) were imported by ${actorName}.`,
+        actorName
+      });
+
+      invalidateCache('admin_sections_');
+      setImportSuccess(`${rows.length} section(s) imported.`);
+      setParsedSections([]);
+      setCsvText('');
+
+      const termToReload = appliedTerm || getActiveAcademicTerm(terms);
+      if (termToReload) await loadSections(termToReload, { archive: Boolean(appliedTerm) });
+      setIsImportOpen(false);
+    } catch (err) {
+      setImportError(err.message || 'The sections could not be imported.');
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   return (
@@ -783,12 +872,15 @@ export default function SectionList() {
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={handleSaveImport}
-                disabled={parsedSections.length === 0}
-                className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
+                disabled={parsedSections.length === 0 || isImporting}
+                className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm cursor-pointer"
               >
-                <Check className="h-4 w-4" /> Save Imported Sections
+                <Check className="h-4 w-4" />
+                {isImporting
+                  ? 'Importing…'
+                  : `Save ${parsedSections.length || ''} Imported Section${parsedSections.length === 1 ? '' : 's'}`}
               </button>
             </div>
           </div>

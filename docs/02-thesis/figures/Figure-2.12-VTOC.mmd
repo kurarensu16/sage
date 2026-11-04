@@ -1,5 +1,8 @@
 flowchart TB
-%% ===== Figure 2.12 — ASPIRE Visual Table of Contents (VTOC) — updated 2026-10-30 =====
+%% ===== Figure 2.12 — ASPIRE Visual Table of Contents (VTOC) — updated 2026-11-02 =====
+%% 2026-11-02: re-synced to Sidebar.jsx. Student: Courses and Grades now holds Attendance; Faculty Action
+%% Plans named; Requests and Consultations group. Faculty: Attendance Monitoring moved under Classes.
+%% Dean: Grade Corrections renamed Grade Overrides. Single-link groups are standalone links.
 %% Rebuilt from PORTAL_NAVIGATION in src/components/layout/Sidebar.jsx, so the hierarchy below
 %% is the hierarchy the sidebar renders. Changes against the 2026-10-10 version:
 %%   + 5.0 Registrar Portal, with the eight modules that moved out of Admin
@@ -31,31 +34,29 @@ flowchart TB
   subgraph S["<b>2.0&nbsp;&nbsp;Student Portal</b>"]
     direction TB
     S1["<b>2.1&nbsp;&nbsp;Dashboard</b>"]
-    S2["<b>2.2&nbsp;&nbsp;My Grades</b><br/>2.2.1&nbsp; My Subjects<br/>2.2.2&nbsp; Grade Report<br/>2.2.3&nbsp; Score Breakdown"]
-    S3["<b>2.3&nbsp;&nbsp;My Attendance</b><br/>2.3.1&nbsp; Attendance and Warnings"]
-    S4["<b>2.4&nbsp;&nbsp;Academic Support</b><br/>2.4.1&nbsp; Advisories and Study Plans<br/>2.4.2&nbsp; Academic Insights<br/>2.4.3&nbsp; AI Study Advising"]
-    S5["<b>2.5&nbsp;&nbsp;Grades and Consultation</b><br/>2.5.1&nbsp; Consultation History<br/>2.5.2&nbsp; Grade Change Requests"]
-    S6["<b>2.6&nbsp;&nbsp;Account</b><br/>2.6.1&nbsp; Profile, Password, Notifications"]
-    S1 ~~~ S2 ~~~ S3 ~~~ S4 ~~~ S5 ~~~ S6
+    S2["<b>2.2&nbsp;&nbsp;Courses and Grades</b><br/>2.2.1&nbsp; My Subjects<br/>2.2.2&nbsp; Grade Report<br/>2.2.3&nbsp; Score Breakdown<br/>2.2.4&nbsp; Attendance and Warnings"]
+    S3["<b>2.3&nbsp;&nbsp;Academic Support</b><br/>2.3.1&nbsp; Faculty Action Plans<br/>2.3.2&nbsp; Academic Insights<br/>2.3.3&nbsp; AI Study Advising"]
+    S4["<b>2.4&nbsp;&nbsp;Requests and Consultations</b><br/>2.4.1&nbsp; Grade Change Requests<br/>2.4.2&nbsp; Consultations (history)"]
+    S5["<b>2.5&nbsp;&nbsp;Account</b><br/>2.5.1&nbsp; Profile, Password, Notifications"]
+    S1 ~~~ S2 ~~~ S3 ~~~ S4 ~~~ S5
   end
 
   subgraph F["<b>3.0&nbsp;&nbsp;Faculty Portal</b>"]
     direction TB
     F1["<b>3.1&nbsp;&nbsp;Dashboard</b>"]
-    F2["<b>3.2&nbsp;&nbsp;Classes and Grades</b><br/>3.2.1&nbsp; My Class Records<br/>3.2.2&nbsp; Grade Columns Setup<br/>3.2.3&nbsp; Log Class Scores<br/>3.2.4&nbsp; Review and Post Grades<br/>3.2.5&nbsp; Posted Grades and Corrections"]
+    F2["<b>3.2&nbsp;&nbsp;Classes</b><br/>3.2.1&nbsp; My Classes (workspace)<br/>3.2.2&nbsp; Grade Columns Setup<br/>3.2.3&nbsp; Log Class Scores<br/>3.2.4&nbsp; Review and Post Grades<br/>3.2.5&nbsp; Posted Grades and Corrections<br/>3.2.6&nbsp; Attendance Monitoring"]
     F3["<b>3.3&nbsp;&nbsp;Student Support</b><br/>3.3.1&nbsp; Evaluate Students<br/>3.3.2&nbsp; Intervention Records"]
     F4["<b>3.4&nbsp;&nbsp;Grades</b><br/>3.4.1&nbsp; Grade Consultation Log<br/>3.4.2&nbsp; Grade Change Requests"]
-    F5["<b>3.5&nbsp;&nbsp;Attendance</b><br/>3.5.1&nbsp; Attendance Monitoring"]
-    F6["<b>3.6&nbsp;&nbsp;Performance Reports</b><br/>3.6.1&nbsp; Class Performance<br/>3.6.2&nbsp; Comparisons and Trends"]
-    F7["<b>3.7&nbsp;&nbsp;Account</b><br/>3.7.1&nbsp; Profile, Password, Notifications"]
-    F1 ~~~ F2 ~~~ F3 ~~~ F4 ~~~ F5 ~~~ F6 ~~~ F7
+    F5["<b>3.5&nbsp;&nbsp;Performance Reports</b><br/>3.5.1&nbsp; Class Performance<br/>3.5.2&nbsp; Comparisons and Trends"]
+    F6["<b>3.6&nbsp;&nbsp;Account</b><br/>3.6.1&nbsp; Profile, Password, Notifications"]
+    F1 ~~~ F2 ~~~ F3 ~~~ F4 ~~~ F5 ~~~ F6
   end
 
   subgraph D["<b>4.0&nbsp;&nbsp;Dean Portal</b>"]
     direction TB
     D1["<b>4.1&nbsp;&nbsp;Dashboard</b>"]
     D2["<b>4.2&nbsp;&nbsp;Faculty Loading</b><br/>4.2.1&nbsp; Faculty Loading and Provisioning"]
-    D3["<b>4.3&nbsp;&nbsp;Grades</b><br/>4.3.1&nbsp; Grade Submission Status<br/>4.3.2&nbsp; Grade Corrections<br/>4.3.3&nbsp; Grade Change Requests<br/>4.3.4&nbsp; Grade Distribution"]
+    D3["<b>4.3&nbsp;&nbsp;Grades</b><br/>4.3.1&nbsp; Grade Submission Status<br/>4.3.2&nbsp; Grade Change Requests<br/>4.3.3&nbsp; Grade Overrides<br/>4.3.4&nbsp; Grade Distribution"]
     D4["<b>4.4&nbsp;&nbsp;Risk and Interventions</b><br/>4.4.1&nbsp; Risk and Honors Overview<br/>4.4.2&nbsp; Escalated Cases<br/>4.4.3&nbsp; Intervention Results"]
     D5["<b>4.5&nbsp;&nbsp;Reports</b><br/>4.5.1&nbsp; Generate Reports"]
     D6["<b>4.6&nbsp;&nbsp;Account</b><br/>4.6.1&nbsp; Profile, Password, Notifications"]
@@ -88,4 +89,4 @@ flowchart TB
   classDef module fill:#EFEFEF,stroke:#BBBBBB,stroke-width:1px,color:#000000;
 
   class ROOT root;
-  class A1,A2,A3,S1,S2,S3,S4,S5,S6,F1,F2,F3,F4,F5,F6,F7,D1,D2,D3,D4,D5,D6,R1,R2,R3,R4,R5,R6,R7,M1,M2,M3,M4 module;
+  class A1,A2,A3,S1,S2,S3,S4,S5,F1,F2,F3,F4,F5,F6,D1,D2,D3,D4,D5,D6,R1,R2,R3,R4,R5,R6,R7,M1,M2,M3,M4 module;

@@ -11,7 +11,7 @@ import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { cn } from '../../lib/utils';
 import {
   MILESTONE_LABEL, fetchWindowsForClasses, fetchNotesForWindow,
-  logConsultation, finalizeMilestone
+  logConsultation, finalizeMilestone, countOpenPlansForMilestone
 } from '../../lib/gradeConsultationService';
 
 // Faculty-driven record of who actually reached out about a posted progress
@@ -44,6 +44,9 @@ export default function GradeConsultationLog() {
   const [noteStudent, setNoteStudent] = useState('');
   const [noteText, setNoteText] = useState('');
   const [confirmFinalize, setConfirmFinalize] = useState(false);
+  // Finalizing closes every open action plan on the periods behind this
+  // milestone. Shown before the click, never blocking it.
+  const [openPlans, setOpenPlans] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -263,7 +266,13 @@ export default function GradeConsultationLog() {
                     </div>
                     {isOpen ? (
                       <button
-                        onClick={() => setConfirmFinalize(true)}
+                        onClick={() => {
+                          setOpenPlans(0);
+                          countOpenPlansForMilestone(selected.cls.class_record_id, selected.window.grade_period)
+                            .then(setOpenPlans)
+                            .catch(() => setOpenPlans(0));
+                          setConfirmFinalize(true);
+                        }}
                         disabled={busy}
                         className="px-3.5 py-2 text-xs sm:text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 flex-shrink-0"
                       >
@@ -373,6 +382,15 @@ export default function GradeConsultationLog() {
                 ? 'No consultations were recorded for this class. Finalizing now records that nobody raised a concern during the window.'
                 : `${notes.length} consultation${notes.length === 1 ? '' : 's'} recorded for this class.`}
             </div>
+            {openPlans > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                <strong>{openPlans} action plan{openPlans === 1 ? '' : 's'} on this period {openPlans === 1 ? 'is' : 'are'} still open.</strong>
+                <span className="block text-slate-600 mt-0.5">
+                  Finalizing closes {openPlans === 1 ? 'it' : 'them'} and records {openPlans === 1 ? 'it' : 'them'} as
+                  unfinished unless every task has been verified. The student and the Dean are told. Review first, or finalize anyway.
+                </span>
+              </div>
+            )}
             <p className="text-[11px] text-slate-500">
               The scores behind this grade lock. Changing it afterwards needs a request from the
               student. This cannot be reopened.

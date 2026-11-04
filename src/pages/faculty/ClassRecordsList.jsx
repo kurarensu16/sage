@@ -99,7 +99,7 @@ export default function ClassRecordsList() {
         subjects ( subject_id, code, name, units, computation_id ),
         sections ( section_id, name, school_year, semester )
       `;
-      const [exactResult, legacyResult] = await Promise.all([
+      const [exactResult, legacyResult, carryOverResult] = await Promise.all([
         supabase
           .from('class_records')
           .select(classSelect)
@@ -111,14 +111,46 @@ export default function ClassRecordsList() {
           .eq('faculty_id', user.id)
           .is('term_id', null)
           .eq('school_year', term.school_year)
-          .eq('semester', term.semester)
+          .eq('semester', term.semester),
+        // Classes an earlier term left behind.
+        //
+        // perform_semester_transition archives only the classes whose Semestral
+        // Grade is posted for every enrolled student; the rest keep
+        // status = 'active' precisely so their instructor can still post it
+        // during the grace period. Loading strictly by term_id hid exactly those
+        // classes the moment the term rolled over, so the one view an instructor
+        // checks showed nothing while they still owed a grade -- and the SG
+        // reminder led here. The work was reachable only by picking the previous
+        // term out of the archive dropdown, which nobody would think to do.
+        //
+        // status = 'active' is already the system's own definition of "still this
+        // instructor's responsibility", so it is what decides, not the term.
+        archive
+          ? { data: [], error: null }
+          : await supabase
+              .from('class_records')
+              .select(classSelect)
+              .eq('faculty_id', user.id)
+              .eq('status', 'active')
+              .neq('term_id', term.term_id)
       ]);
 
       if (exactResult.error) throw exactResult.error;
       if (legacyResult.error) throw legacyResult.error;
+      if (carryOverResult.error) throw carryOverResult.error;
       if (requestId !== periodRequest.current) return false;
 
-      const classesData = [...(exactResult.data || []), ...(legacyResult.data || [])]
+      const seenClassIds = new Set();
+      const classesData = [
+        ...(exactResult.data || []),
+        ...(legacyResult.data || []),
+        ...(carryOverResult.data || [])
+      ]
+        .filter(cls => {
+          if (seenClassIds.has(cls.class_record_id)) return false;
+          seenClassIds.add(cls.class_record_id);
+          return true;
+        })
         .map(cls => ({ ...cls, termState: getClassTermState(availableTerms, cls) }));
 
       if (classesData.length === 0) {
@@ -155,9 +187,24 @@ export default function ClassRecordsList() {
         .in('status', ['pending', 'approved'])
         .order('requested_at', { ascending: false });
 
-      // Auto-sync regular block section students into enrollments for current-term classes only
+      // Auto-sync regular block section students into enrollments for current-term classes only.
+      //
+      // Deliberately excludes the carried-over classes above: their sections
+      // belong to a term that has ended, and auto-enrolling against them would
+      // write enrollments into last term's roster. Today that would find nobody,
+      // because the rollover moves students to the new term's sections -- but
+      // relying on an empty result for correctness is how a silent write gets in
+      // later. The filter states the rule instead.
+      const currentTermClassIds = new Set(
+        [...(exactResult.data || []), ...(legacyResult.data || [])].map(c => c.class_record_id)
+      );
       const sectionIds = !archive
-        ? Array.from(new Set(classesData.map(c => c.section_id).filter(Boolean)))
+        ? Array.from(new Set(
+            classesData
+              .filter(c => currentTermClassIds.has(c.class_record_id))
+              .map(c => c.section_id)
+              .filter(Boolean)
+          ))
         : [];
       if (sectionIds.length > 0) {
         try {

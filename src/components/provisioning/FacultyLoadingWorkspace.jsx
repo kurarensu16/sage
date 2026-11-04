@@ -9,6 +9,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 import { notifyAdminActivity } from '../../lib/notificationDispatcher';
 import { toUserMessage } from '../../lib/errorMessages';
+import { semesterLabelFromCode, subjectMatchesTermSemester } from '../../lib/subjectCode';
 import { cn } from '../../lib/utils';
 import {
   fetchActiveTerm, fetchColleges, fetchLoadingCatalog, fetchLoadState,
@@ -238,6 +239,9 @@ export default function FacultyLoadingWorkspace({
   const [pickYear, setPickYear] = useState('');
   const [pickSection, setPickSection] = useState('');
   const [pickSubject, setPickSubject] = useState('');
+  // Off by default: the term decides what is offered. A subject taught in both
+  // semesters, or a special offering, is the exception the registrar opts into.
+  const [showAllSubjects, setShowAllSubjects] = useState(false);
   const [pickDays, setPickDays] = useState([]);
   const [pickStart, setPickStart] = useState('');
   const [pickEnd, setPickEnd] = useState('');
@@ -459,10 +463,26 @@ export default function FacultyLoadingWorkspace({
 
   // The Class step: a subject already claimed for this section is left out
   // entirely rather than shown disabled, so a collision cannot be picked.
+  //
+  // Also scoped to the active term's semester. Sections here have always been
+  // term-scoped; subjects were fetched by college alone, so a second-semester
+  // subject could be loaded into a first-semester term with nothing objecting.
+  // That is how DSA123 -- a 2nd-semester code -- came to be taught in
+  // AY 2026-2027 1st Semester.
+  //
+  // The semester is not a column; it is the third digit of the subject code
+  // (see src/lib/subjectCode.js). A code that cannot be parsed is always shown.
+  const inTermSubjects = useMemo(
+    () => catalog.subjects.filter((s) => subjectMatchesTermSemester(s.code, term?.semester)),
+    [catalog.subjects, term?.semester]
+  );
+  const outOfTermCount = catalog.subjects.length - inTermSubjects.length;
+
   const subjectOptions = useMemo(() => {
     if (!pickSection) return [];
-    return catalog.subjects.filter((s) => !claimed.has(`${s.subject_id}|${pickSection}`));
-  }, [pickSection, catalog.subjects, claimed]);
+    const pool = showAllSubjects ? catalog.subjects : inTermSubjects;
+    return pool.filter((s) => !claimed.has(`${s.subject_id}|${pickSection}`));
+  }, [pickSection, catalog.subjects, inTermSubjects, showAllSubjects, claimed]);
 
   const canEdit = lock.status === 'mine' && !!departmentId && !!term;
 
@@ -842,6 +862,10 @@ export default function FacultyLoadingWorkspace({
                 yearOptions={yearOptions}
                 sectionOptions={sectionOptions}
                 subjectOptions={subjectOptions}
+                termSemester={term?.semester}
+                outOfTermCount={outOfTermCount}
+                showAllSubjects={showAllSubjects}
+                onToggleAllSubjects={setShowAllSubjects}
                 onAdd={handleAdd}
                 summary={summary}
               />
@@ -1249,7 +1273,8 @@ function Step({ n, label, children, enabled }) {
 
 // ── Tab 2: Cascading picker ──────────────────────────────────────────────────
 function AssignTab({
-  catalog, canEdit, busy, pick, set, yearOptions, sectionOptions, subjectOptions, onAdd, summary
+  catalog, canEdit, busy, pick, set, yearOptions, sectionOptions, subjectOptions,
+  termSemester, outOfTermCount, showAllSubjects, onToggleAllSubjects, onAdd, summary
 }) {
   const { pickFaculty, pickProgram, pickYear, pickSection, pickSubject, pickDays, pickStart, pickEnd } = pick;
   const { setPickFaculty, setPickProgram, setPickYear, setPickSection, setPickSubject, setPickDays, setPickStart, setPickEnd } = set;
@@ -1340,12 +1365,34 @@ function AssignTab({
               className={selectClass}
             >
               <option value="">Select subject…</option>
-              {subjectOptions.map((s) => (
-                <option key={s.subject_id} value={s.subject_id}>
-                  {s.code} — {s.name}
-                </option>
-              ))}
+              {subjectOptions.map((s) => {
+                // The semester a subject belongs to is the third digit of its
+                // code. Labelled only when it does not match the active term,
+                // which can only happen with the override on -- so the label
+                // marks the exception rather than repeating the obvious.
+                const label = semesterLabelFromCode(s.code);
+                const outOfTerm = !subjectMatchesTermSemester(s.code, termSemester);
+                return (
+                  <option key={s.subject_id} value={s.subject_id}>
+                    {s.code} — {s.name}{outOfTerm && label ? ` (${label})` : ''}
+                  </option>
+                );
+              })}
             </select>
+            {outOfTermCount > 0 && (
+              <label className="flex items-start gap-2 mt-2 text-[11px] text-slate-500 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showAllSubjects}
+                  onChange={(e) => onToggleAllSubjects(e.target.checked)}
+                  className="mt-0.5 cursor-pointer"
+                />
+                <span>
+                  Show all subjects, including the {outOfTermCount} for another semester.
+                  {' '}Normally only this term&rsquo;s subjects are offered.
+                </span>
+              </label>
+            )}
           </Step>
         </div>
 

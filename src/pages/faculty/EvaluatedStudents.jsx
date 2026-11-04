@@ -28,6 +28,15 @@ const EMPTY_RESULT = { cases: [], count: 0, standings: {}, followupMilestones: {
 
 function managementBlock(item, facultyId, history) {
   if (history || item.class_record?.faculty_id !== facultyId) return 'History is read-only';
+  // A plan closed because its grading period was finalized is not a fault, and
+  // "Class is inactive" read like one. The database refuses the write either
+  // way (trg_block_frozen_period_evaluations); this is the screen agreeing.
+  if (item.closure_state) {
+    return item.class_record?.status === 'archived'
+      ? 'Closed — the term has ended'
+      : 'This grading period is final';
+  }
+  if (item.class_record?.status === 'archived') return 'Closed — the term has ended';
   if (item.class_record?.status !== 'active') return 'Class is inactive';
   if (!['submitted', 'acknowledged_by_student'].includes(item.status) || !item.published_to_student_at) return 'Publish the evaluation first';
   return '';
@@ -35,6 +44,11 @@ function managementBlock(item, facultyId, history) {
 
 function followupBlock(item, facultyId, history, milestone, standing) {
   if (item.followup_snapshot) return 'Follow-up recorded';
+  // Said before the block below, because "available after the next grading
+  // period is posted" becomes a lie the moment the plan closes: it will never
+  // become available. The only window was posted -> finalized.
+  if (item.closure_state === 'closed_tasks_verified') return 'Closed — tasks verified, no outcome recorded';
+  if (item.closure_state) return 'Closed — the grading period is final';
   const blocked = managementBlock(item, facultyId, history);
   if (blocked) return blocked;
   if (!milestone) return 'Available after the next grading period (MR, TFR, or SG) is posted';
