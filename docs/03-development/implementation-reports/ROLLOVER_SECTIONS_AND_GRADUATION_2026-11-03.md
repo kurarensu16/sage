@@ -14,6 +14,8 @@ Each phase ends with what to click.
 | 3 | A dispute window a student can actually use |
 | 4 | Sections carry forward on their own |
 | 5 | Graduation |
+| 6 | Subjects follow the term |
+| 7 | When an AI feature does not answer |
 
 ---
 
@@ -254,6 +256,110 @@ at once. That silent shape is the one this release spent the day removing.
 **QA.** Record one graduation, then check the admin user record: `year_level` is
 Graduated and `status` is still active. Sign in as that student — the portal must
 still work.
+
+---
+
+## Phase 6 — Subjects follow the term
+
+Found 2026-11-04, after the phases above were written.
+
+Faculty loading fetched subjects by college alone. The sections query directly
+below it was term-scoped, so within one function sections respected the active
+term and subjects did not.
+
+**The semester is not a column.** `SubjectForm` offers a semester dropdown, but
+the payload it writes is `{ code, name, units, department_id, computation_id,
+fda_absence_threshold }`. The chosen semester survives only as the **third digit
+of the subject code**, which the form builds as `prefix + year + semester +
+units` and reads back by parsing. Nothing else in the system consumed it.
+
+| Code | Year | Semester | Units |
+| ---- | ---- | -------- | ----- |
+| `ITC113` | 1 | 1st | 3 |
+| `DSA123` | 1 | **2nd** | 3 |
+| `SEA103` | 1 | **Summer** (`0`) | 3 |
+
+### Scenario · A second-semester subject taught in first semester
+
+| | |
+| --- | --- |
+| **Before** | The registrar could pick any subject in the college. `DSA123` — a 2nd-semester code — was loaded into AY 2026-2027 1st Semester, and nothing objected because nothing checked. |
+| **After** | The picker scopes to the active term. In 2nd Semester, Technology and Engineering offers `DSA123` and `ITP123` only. |
+
+### Scenario · A subject genuinely offered in both semesters
+
+| | |
+| --- | --- |
+| **Result** | A checkbox, off by default, naming how many subjects belong to another semester. Switched on, they return labelled `(1st Sem)`. The exception is opted into rather than being the default. |
+
+### Scenario · A code that does not follow the convention
+
+| | |
+| --- | --- |
+| **Result** | Always shown, never hidden. Silently dropping a subject the registrar needs is worse than the problem being fixed — they would have no way to tell "missing" from "does not exist". All 12 subjects in the live catalogue parse; the rule is for the next one. |
+
+The rule lives in [`src/lib/subjectCode.js`](../../../src/lib/subjectCode.js) so
+there is one definition rather than a second copy. Its parser is stricter than
+`SubjectForm`'s: the form treats the last two digits as optional, which is right
+when recovering a half-typed code into a form and wrong here, because a code
+without them says nothing about the semester and must not be read as "first".
+
+**Known limitation.** The semester is still inferred from a string. Making it a
+real column needs a migration on an untracked table plus a backfill — cheaper
+now that the rule has one home.
+
+**QA.** Faculty Loading → Assign → step 5. Only this term's subjects appear.
+Tick "show all" and the others return, labelled.
+
+---
+
+## Phase 7 — When an AI feature does not answer
+
+Three surfaces called three different edge functions, and each rendered whatever
+string arrived:
+
+- **AI Study Advising** passed the raw error through a generic helper.
+- **Ask ASPIRE** replaced every cause with one hard-coded sentence, so a student
+  who was offline, one hitting a busy provider, and one whose account cannot use
+  the feature were all told the same thing — and two were told to wait for
+  something that would never change.
+- **AI task suggestions** put `err.message` straight on screen, so a network
+  failure surfaced as `FunctionsFetchError` above a half-filled form.
+
+`describeAiFailure()` now decides what to say and
+[`AiUnavailableNotice`](../../../src/components/common/AiUnavailableNotice.jsx)
+decides how it looks. Separating them means the wording is checkable without a
+browser, and the three cannot drift.
+
+### Scenario · The provider is busy
+
+| | |
+| --- | --- |
+| **Result** | "AI Study Advising is busy right now — it did not answer in time. This is usually heavy traffic rather than a problem with your work, and it clears on its own." Amber, with a Try again button. |
+
+### Scenario · The feature is not configured
+
+| | |
+| --- | --- |
+| **Result** | "This one needs someone to look at it — tell your instructor or administrator." Slate, **no** retry button, because waiting changes nothing. |
+
+### Scenario · The student is offline
+
+| | |
+| --- | --- |
+| **Result** | "You appear to be offline. Nothing you typed has been lost." |
+
+**The rule:** no status code, provider name, model id or function name reaches a
+user. Those go to the console. What the user gets is what happened, whether
+waiting helps, and what they can do now. Verified against seven real error
+shapes; none leaked technical detail.
+
+**Still not done:** this explains the silence well. It is **not** the
+deterministic fallback Objective 6 promises — guidance assembled from the
+student's own scores with no provider at all. That remains open as QA bug B-06.
+
+**QA.** Hard to force without breaking a key. Worth confirming each AI surface
+still succeeds normally, and that no raw error text appears if one fails.
 
 ---
 

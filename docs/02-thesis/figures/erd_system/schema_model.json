@@ -1,0 +1,5067 @@
+{
+ "users": {
+  "cols": {
+   "user_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "last_name": {
+    "type": "varchar(100)",
+    "nullable": false,
+    "default": null
+   },
+   "first_name": {
+    "type": "varchar(100)",
+    "nullable": false,
+    "default": null
+   },
+   "email": {
+    "type": "varchar(150)",
+    "nullable": false,
+    "default": null
+   },
+   "role": {
+    "type": "user_role",
+    "nullable": false,
+    "default": null
+   },
+   "section_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "department_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "latest_cor_url": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "cor_verified": {
+    "type": "boolean",
+    "nullable": true,
+    "default": "FALSE"
+   },
+   "created_at": {
+    "type": "timestamp",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "must_change_password": {
+    "type": "boolean",
+    "nullable": true,
+    "default": "TRUE"
+   },
+   "status": {
+    "type": "varchar(20)",
+    "nullable": true,
+    "default": "'active'"
+   },
+   "user_number": {
+    "type": "varchar(20)",
+    "nullable": true,
+    "default": null
+   },
+   "contact_number": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "avatar_path": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "user_id",
+   "last_name",
+   "first_name",
+   "email",
+   "role",
+   "section_id",
+   "department_id",
+   "latest_cor_url",
+   "cor_verified",
+   "created_at",
+   "must_change_password",
+   "status",
+   "user_number",
+   "contact_number",
+   "avatar_path"
+  ],
+  "pk": [
+   "user_id"
+  ],
+  "fks": [
+   {
+    "col": "department_id",
+    "parent": "departments",
+    "parent_col": "department_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "section_id",
+    "parent": "sections",
+    "parent_col": "section_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [
+   [
+    "email"
+   ],
+   [
+    "user_number"
+   ]
+  ],
+  "partial": true
+ },
+ "departments": {
+  "cols": {
+   "department_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "name": {
+    "type": "varchar(150)",
+    "nullable": false,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamp",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "short_name": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "department_id",
+   "name",
+   "created_at",
+   "short_name"
+  ],
+  "pk": [
+   "department_id"
+  ],
+  "fks": [],
+  "uq": [
+   [
+    "name"
+   ]
+  ],
+  "partial": true
+ },
+ "sections": {
+  "cols": {
+   "section_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "name": {
+    "type": "varchar(50)",
+    "nullable": false,
+    "default": null
+   },
+   "school_year": {
+    "type": "varchar(15)",
+    "nullable": false,
+    "default": null
+   },
+   "semester": {
+    "type": "semester_period",
+    "nullable": false,
+    "default": null
+   },
+   "department_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "term_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "section_id",
+   "name",
+   "school_year",
+   "semester",
+   "department_id",
+   "term_id"
+  ],
+  "pk": [
+   "section_id"
+  ],
+  "fks": [
+   {
+    "col": "department_id",
+    "parent": "departments",
+    "parent_col": "department_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "term_id",
+    "parent": "academic_terms",
+    "parent_col": "term_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [],
+  "partial": true
+ },
+ "subjects": {
+  "cols": {
+   "subject_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "code": {
+    "type": "varchar(20)",
+    "nullable": false,
+    "default": null
+   },
+   "name": {
+    "type": "varchar(150)",
+    "nullable": false,
+    "default": null
+   },
+   "units": {
+    "type": "int",
+    "nullable": false,
+    "default": null
+   },
+   "computation_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "department_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "fda_absence_threshold": {
+    "type": "smallint",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "subject_id",
+   "code",
+   "name",
+   "units",
+   "computation_id",
+   "department_id",
+   "fda_absence_threshold"
+  ],
+  "pk": [
+   "subject_id"
+  ],
+  "fks": [
+   {
+    "col": "department_id",
+    "parent": "departments",
+    "parent_col": "department_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "computation_id",
+    "parent": "grade_computations",
+    "parent_col": "computation_id",
+    "on_delete": "RESTRICT"
+   }
+  ],
+  "uq": [
+   [
+    "code"
+   ]
+  ],
+  "partial": true
+ },
+ "class_records": {
+  "cols": {
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "faculty_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "subject_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "section_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "join_code": {
+    "type": "varchar(6)",
+    "nullable": true,
+    "default": null
+   },
+   "joins_expire_at": {
+    "type": "timestamp",
+    "nullable": true,
+    "default": null
+   },
+   "accept_joins": {
+    "type": "boolean",
+    "nullable": true,
+    "default": "TRUE"
+   },
+   "midterm_posted": {
+    "type": "boolean",
+    "nullable": true,
+    "default": "FALSE"
+   },
+   "finals_posted": {
+    "type": "boolean",
+    "nullable": true,
+    "default": "FALSE"
+   },
+   "semestral_posted": {
+    "type": "boolean",
+    "nullable": true,
+    "default": "FALSE"
+   },
+   "is_released_to_faculty": {
+    "type": "boolean",
+    "nullable": true,
+    "default": "FALSE"
+   },
+   "status": {
+    "type": "class_status",
+    "nullable": true,
+    "default": "'active'"
+   },
+   "created_at": {
+    "type": "timestamp",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "term_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "grading_formula_snapshot": {
+    "type": "jsonb",
+    "nullable": true,
+    "default": null
+   },
+   "meeting_days": {
+    "type": "text[]",
+    "nullable": true,
+    "default": null
+   },
+   "start_time": {
+    "type": "time",
+    "nullable": true,
+    "default": null
+   },
+   "end_time": {
+    "type": "time",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "class_record_id",
+   "faculty_id",
+   "subject_id",
+   "section_id",
+   "join_code",
+   "joins_expire_at",
+   "accept_joins",
+   "midterm_posted",
+   "finals_posted",
+   "semestral_posted",
+   "is_released_to_faculty",
+   "status",
+   "created_at",
+   "term_id",
+   "grading_formula_snapshot",
+   "meeting_days",
+   "start_time",
+   "end_time"
+  ],
+  "pk": [
+   "class_record_id"
+  ],
+  "fks": [
+   {
+    "col": "faculty_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "subject_id",
+    "parent": "subjects",
+    "parent_col": "subject_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "section_id",
+    "parent": "sections",
+    "parent_col": "section_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "term_id",
+    "parent": "academic_terms",
+    "parent_col": "term_id",
+    "on_delete": "CASCADE"
+   }
+  ],
+  "uq": [],
+  "partial": true
+ },
+ "enrollments": {
+  "cols": {
+   "enrollment_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "section_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "subject_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "status": {
+    "type": "varchar(50)",
+    "nullable": true,
+    "default": "'active'"
+   },
+   "enrolled_at": {
+    "type": "timestamp",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   }
+  },
+  "order": [
+   "enrollment_id",
+   "student_id",
+   "section_id",
+   "subject_id",
+   "status",
+   "enrolled_at"
+  ],
+  "pk": [
+   "enrollment_id"
+  ],
+  "fks": [
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "section_id",
+    "parent": "sections",
+    "parent_col": "section_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "subject_id",
+    "parent": "subjects",
+    "parent_col": "subject_id",
+    "on_delete": "CASCADE"
+   }
+  ],
+  "uq": [],
+  "partial": true
+ },
+ "posted_grades": {
+  "cols": {
+   "posted_grade_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "grade_period": {
+    "type": "term_period",
+    "nullable": false,
+    "default": null
+   },
+   "computed_grade": {
+    "type": "decimal(5,2)",
+    "nullable": false,
+    "default": null
+   },
+   "effective_grade": {
+    "type": "decimal(5,2)",
+    "nullable": true,
+    "default": "NULL"
+   },
+   "remarks": {
+    "type": "grade_remarks",
+    "nullable": false,
+    "default": null
+   },
+   "posted_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "posted_at": {
+    "type": "timestamp",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "is_late_submission": {
+    "type": "boolean",
+    "nullable": true,
+    "default": "FALSE"
+   },
+   "grading_formula_snapshot": {
+    "type": "jsonb",
+    "nullable": true,
+    "default": null
+   },
+   "last_correction_request_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "sg_submission_status": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "official_source": {
+    "type": "text",
+    "nullable": false,
+    "default": "'faculty_post'"
+   },
+   "official_revision": {
+    "type": "integer",
+    "nullable": false,
+    "default": "1"
+   },
+   "calculation_engine_version": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "input_snapshot_hash": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "posted_grade_id",
+   "class_record_id",
+   "student_id",
+   "grade_period",
+   "computed_grade",
+   "effective_grade",
+   "remarks",
+   "posted_by",
+   "posted_at",
+   "is_late_submission",
+   "grading_formula_snapshot",
+   "last_correction_request_id",
+   "sg_submission_status",
+   "official_source",
+   "official_revision",
+   "calculation_engine_version",
+   "input_snapshot_hash"
+  ],
+  "pk": [
+   "posted_grade_id"
+  ],
+  "fks": [
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "posted_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "last_correction_request_id",
+    "parent": "remark_override_requests",
+    "parent_col": "request_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [],
+  "partial": true
+ },
+ "class_grading_columns": {
+  "cols": {
+   "id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   }
+  },
+  "order": [
+   "id"
+  ],
+  "pk": [
+   "id"
+  ],
+  "fks": [],
+  "uq": [],
+  "partial": true
+ },
+ "notifications": {
+  "cols": {
+   "title": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "link": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "severity": {
+    "type": "text",
+    "nullable": false,
+    "default": "'info'"
+   },
+   "payload": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": "'{}'::jsonb"
+   },
+   "dedupe_key": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "read_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "dismissed_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "notification_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   }
+  },
+  "order": [
+   "notification_id",
+   "title",
+   "link",
+   "severity",
+   "payload",
+   "dedupe_key",
+   "read_at",
+   "dismissed_at"
+  ],
+  "pk": [
+   "notification_id"
+  ],
+  "fks": [],
+  "uq": [],
+  "partial": true
+ },
+ "activity_logs": {
+  "cols": {
+   "actor_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "actor_role": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "entity_type": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "entity_id": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "operation": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "source": {
+    "type": "text",
+    "nullable": false,
+    "default": "'application'"
+   },
+   "id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   }
+  },
+  "order": [
+   "id",
+   "actor_id",
+   "actor_role",
+   "entity_type",
+   "entity_id",
+   "operation",
+   "source"
+  ],
+  "pk": [
+   "id"
+  ],
+  "fks": [],
+  "uq": [],
+  "partial": true
+ },
+ "programs": {
+  "cols": {
+   "program_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "name": {
+    "type": "varchar(255)",
+    "nullable": false,
+    "default": null
+   },
+   "department_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "abbreviation": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "program_id",
+   "name",
+   "department_id",
+   "created_at",
+   "abbreviation"
+  ],
+  "pk": [
+   "program_id"
+  ],
+  "fks": [
+   {
+    "col": "department_id",
+    "parent": "departments",
+    "parent_col": "department_id",
+    "on_delete": "CASCADE"
+   }
+  ],
+  "uq": [
+   [
+    "name"
+   ]
+  ],
+  "partial": false
+ },
+ "student_term_scores": {
+  "cols": {
+   "score_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "term": {
+    "type": "varchar(20)",
+    "nullable": false,
+    "default": null
+   },
+   "act1": {
+    "type": "int",
+    "nullable": true,
+    "default": "0"
+   },
+   "act2": {
+    "type": "int",
+    "nullable": true,
+    "default": "0"
+   },
+   "act3": {
+    "type": "int",
+    "nullable": true,
+    "default": "0"
+   },
+   "act4": {
+    "type": "int",
+    "nullable": true,
+    "default": "0"
+   },
+   "act5": {
+    "type": "int",
+    "nullable": true,
+    "default": "0"
+   },
+   "act6": {
+    "type": "int",
+    "nullable": true,
+    "default": "0"
+   },
+   "char_rating": {
+    "type": "int",
+    "nullable": true,
+    "default": "0"
+   },
+   "exam": {
+    "type": "int",
+    "nullable": true,
+    "default": "0"
+   },
+   "saved_at": {
+    "type": "timestamp",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "saved_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "score_id",
+   "class_record_id",
+   "student_id",
+   "term",
+   "act1",
+   "act2",
+   "act3",
+   "act4",
+   "act5",
+   "act6",
+   "char_rating",
+   "exam",
+   "saved_at",
+   "saved_by"
+  ],
+  "pk": [
+   "score_id"
+  ],
+  "fks": [
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "saved_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   }
+  ],
+  "uq": [
+   [
+    "class_record_id",
+    "student_id",
+    "term"
+   ]
+  ],
+  "partial": false
+ },
+ "student_academic_insights": {
+  "cols": {
+   "insight_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "generated_at": {
+    "type": "timestamp",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "summary": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "verdict": {
+    "type": "academic_verdict",
+    "nullable": false,
+    "default": null
+   },
+   "basis_snapshot": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": null
+   }
+  },
+  "order": [
+   "insight_id",
+   "student_id",
+   "generated_at",
+   "summary",
+   "verdict",
+   "basis_snapshot"
+  ],
+  "pk": [
+   "insight_id"
+  ],
+  "fks": [
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "remark_override_requests": {
+  "cols": {
+   "request_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "requested_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "requested_at": {
+    "type": "timestamp",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "subject_name": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "section_name": {
+    "type": "varchar(100)",
+    "nullable": true,
+    "default": null
+   },
+   "faculty_name": {
+    "type": "varchar(200)",
+    "nullable": true,
+    "default": null
+   },
+   "computed_grade": {
+    "type": "decimal(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "effective_grade": {
+    "type": "decimal(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "current_remark": {
+    "type": "varchar(30)",
+    "nullable": true,
+    "default": null
+   },
+   "requested_remark": {
+    "type": "varchar(30)",
+    "nullable": true,
+    "default": null
+   },
+   "note": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "status": {
+    "type": "varchar(20)",
+    "nullable": true,
+    "default": "'pending'"
+   },
+   "resolved_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "resolved_at": {
+    "type": "timestamp",
+    "nullable": true,
+    "default": null
+   },
+   "dean_note": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "posted_grade_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "original_computed_grade": {
+    "type": "numeric(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "original_effective_grade": {
+    "type": "numeric(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "original_remark": {
+    "type": "varchar(30)",
+    "nullable": true,
+    "default": null
+   },
+   "proposed_computed_grade": {
+    "type": "numeric(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "proposed_effective_grade": {
+    "type": "numeric(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "proposed_remark": {
+    "type": "varchar(30)",
+    "nullable": true,
+    "default": null
+   },
+   "proposed_score_changes": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": "'[]'::JSONB"
+   },
+   "evidence_url": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "decision_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "decision_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "applied_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "applied_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "cancelled_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "cancelled_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "final_computed_grade": {
+    "type": "numeric(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "final_effective_grade": {
+    "type": "numeric(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "final_remark": {
+    "type": "varchar(30)",
+    "nullable": true,
+    "default": null
+   },
+   "applied_posted_grade_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "correction_scope": {
+    "type": "text",
+    "nullable": false,
+    "default": "'result_only'"
+   },
+   "reason_type": {
+    "type": "varchar(30)",
+    "nullable": true,
+    "default": null
+   },
+   "reason_detail": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "grade_period": {
+    "type": "varchar(30)",
+    "nullable": true,
+    "default": null
+   },
+   "submitted_by_role": {
+    "type": "varchar(10)",
+    "nullable": true,
+    "default": "'faculty'"
+   },
+   "faculty_note": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "registrar_note": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "requires_registrar": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "FALSE"
+   }
+  },
+  "order": [
+   "request_id",
+   "class_record_id",
+   "student_id",
+   "requested_by",
+   "requested_at",
+   "subject_name",
+   "section_name",
+   "faculty_name",
+   "computed_grade",
+   "effective_grade",
+   "current_remark",
+   "requested_remark",
+   "note",
+   "status",
+   "resolved_by",
+   "resolved_at",
+   "dean_note",
+   "posted_grade_id",
+   "original_computed_grade",
+   "original_effective_grade",
+   "original_remark",
+   "proposed_computed_grade",
+   "proposed_effective_grade",
+   "proposed_remark",
+   "proposed_score_changes",
+   "evidence_url",
+   "decision_by",
+   "decision_at",
+   "applied_by",
+   "applied_at",
+   "cancelled_by",
+   "cancelled_at",
+   "final_computed_grade",
+   "final_effective_grade",
+   "final_remark",
+   "applied_posted_grade_id",
+   "correction_scope",
+   "reason_type",
+   "reason_detail",
+   "grade_period",
+   "submitted_by_role",
+   "faculty_note",
+   "registrar_note",
+   "requires_registrar"
+  ],
+  "pk": [
+   "request_id"
+  ],
+  "fks": [
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "requested_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "resolved_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "posted_grade_id",
+    "parent": "posted_grades",
+    "parent_col": "posted_grade_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "decision_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "applied_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "cancelled_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "applied_posted_grade_id",
+    "parent": "posted_grades",
+    "parent_col": "posted_grade_id",
+    "on_delete": "RESTRICT"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "academic_terms": {
+  "cols": {
+   "term_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "school_year": {
+    "type": "varchar(15)",
+    "nullable": false,
+    "default": null
+   },
+   "semester": {
+    "type": "semester_period",
+    "nullable": false,
+    "default": null
+   },
+   "is_active": {
+    "type": "boolean",
+    "nullable": true,
+    "default": "FALSE"
+   },
+   "is_evaluation_open": {
+    "type": "boolean",
+    "nullable": true,
+    "default": "FALSE"
+   },
+   "created_at": {
+    "type": "timestamp",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "sg_grace_days": {
+    "type": "integer",
+    "nullable": false,
+    "default": "30"
+   },
+   "ended_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "dispute_grace_days": {
+    "type": "integer",
+    "nullable": false,
+    "default": "30"
+   }
+  },
+  "order": [
+   "term_id",
+   "school_year",
+   "semester",
+   "is_active",
+   "is_evaluation_open",
+   "created_at",
+   "sg_grace_days",
+   "ended_at",
+   "dispute_grace_days"
+  ],
+  "pk": [
+   "term_id"
+  ],
+  "fks": [],
+  "uq": [],
+  "partial": false
+ },
+ "student_term_details": {
+  "cols": {
+   "mapping_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "term_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "year_level": {
+    "type": "varchar(20)",
+    "nullable": true,
+    "default": null
+   },
+   "section_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamp",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   }
+  },
+  "order": [
+   "mapping_id",
+   "student_id",
+   "term_id",
+   "year_level",
+   "section_id",
+   "created_at"
+  ],
+  "pk": [
+   "mapping_id"
+  ],
+  "fks": [
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "term_id",
+    "parent": "academic_terms",
+    "parent_col": "term_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "section_id",
+    "parent": "sections",
+    "parent_col": "section_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [
+   [
+    "student_id",
+    "term_id"
+   ]
+  ],
+  "partial": false
+ },
+ "attendance_records": {
+  "cols": {
+   "attendance_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "date": {
+    "type": "date",
+    "nullable": false,
+    "default": null
+   },
+   "status": {
+    "type": "attendance_status",
+    "nullable": false,
+    "default": "'Present'"
+   },
+   "remarks": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamp",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "term_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "attendance_id",
+   "student_id",
+   "class_record_id",
+   "date",
+   "status",
+   "remarks",
+   "created_at",
+   "term_id"
+  ],
+  "pk": [
+   "attendance_id"
+  ],
+  "fks": [
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "term_id",
+    "parent": "academic_terms",
+    "parent_col": "term_id",
+    "on_delete": "CASCADE"
+   }
+  ],
+  "uq": [
+   [
+    "student_id",
+    "class_record_id",
+    "date"
+   ]
+  ],
+  "partial": false
+ },
+ "grade_computations": {
+  "cols": {
+   "computation_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "name": {
+    "type": "varchar(150)",
+    "nullable": false,
+    "default": null
+   },
+   "description": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "formula_version": {
+    "type": "integer",
+    "nullable": false,
+    "default": "1"
+   },
+   "updated_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "passing_threshold": {
+    "type": "numeric(5,2)",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "computation_id",
+   "name",
+   "description",
+   "created_at",
+   "formula_version",
+   "updated_at",
+   "passing_threshold"
+  ],
+  "pk": [
+   "computation_id"
+  ],
+  "fks": [],
+  "uq": [
+   [
+    "name"
+   ]
+  ],
+  "partial": false
+ },
+ "grade_computation_components": {
+  "cols": {
+   "component_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "computation_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "name": {
+    "type": "varchar(100)",
+    "nullable": false,
+    "default": null
+   },
+   "weight": {
+    "type": "decimal(5,2)",
+    "nullable": false,
+    "default": null
+   },
+   "max_score": {
+    "type": "decimal(6,2)",
+    "nullable": false,
+    "default": null
+   },
+   "is_multiple": {
+    "type": "boolean",
+    "nullable": true,
+    "default": "FALSE"
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "semantic_type": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "display_order": {
+    "type": "integer",
+    "nullable": false,
+    "default": "0"
+   },
+   "is_required": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "TRUE"
+   }
+  },
+  "order": [
+   "component_id",
+   "computation_id",
+   "name",
+   "weight",
+   "max_score",
+   "is_multiple",
+   "created_at",
+   "semantic_type",
+   "display_order",
+   "is_required"
+  ],
+  "pk": [
+   "component_id"
+  ],
+  "fks": [
+   {
+    "col": "computation_id",
+    "parent": "grade_computations",
+    "parent_col": "computation_id",
+    "on_delete": "CASCADE"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "class_activities": {
+  "cols": {
+   "activity_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "term": {
+    "type": "varchar(20)",
+    "nullable": false,
+    "default": null
+   },
+   "name": {
+    "type": "varchar(150)",
+    "nullable": false,
+    "default": null
+   },
+   "max_score": {
+    "type": "numeric(6,2)",
+    "nullable": false,
+    "default": "20.00"
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "description": {
+    "type": "text",
+    "nullable": false,
+    "default": "'General Subject Assessment'"
+   },
+   "title": {
+    "type": "varchar(150)",
+    "nullable": false,
+    "default": "'Untitled Activity'"
+   },
+   "order_index": {
+    "type": "integer",
+    "nullable": true,
+    "default": "0"
+   },
+   "activity_type": {
+    "type": "varchar",
+    "nullable": true,
+    "default": "'formative'"
+   },
+   "is_released": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "FALSE"
+   },
+   "topic_tag": {
+    "type": "varchar(100)",
+    "nullable": true,
+    "default": null
+   },
+   "released_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "released_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "component_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "activity_id",
+   "class_record_id",
+   "term",
+   "name",
+   "max_score",
+   "created_at",
+   "description",
+   "title",
+   "order_index",
+   "activity_type",
+   "is_released",
+   "topic_tag",
+   "released_at",
+   "released_by",
+   "component_id"
+  ],
+  "pk": [
+   "activity_id"
+  ],
+  "fks": [
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "released_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "student_activity_scores": {
+  "cols": {
+   "score_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "activity_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "score": {
+    "type": "numeric(6,2)",
+    "nullable": false,
+    "default": "0.00"
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "updated_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   }
+  },
+  "order": [
+   "score_id",
+   "student_id",
+   "activity_id",
+   "score",
+   "created_at",
+   "updated_at"
+  ],
+  "pk": [
+   "score_id"
+  ],
+  "fks": [
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "activity_id",
+    "parent": "class_activities",
+    "parent_col": "activity_id",
+    "on_delete": "CASCADE"
+   }
+  ],
+  "uq": [
+   [
+    "student_id",
+    "activity_id"
+   ]
+  ],
+  "partial": false
+ },
+ "user_push_tokens": {
+  "cols": {
+   "id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "user_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "token": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "platform": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "updated_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   }
+  },
+  "order": [
+   "id",
+   "user_id",
+   "token",
+   "platform",
+   "updated_at"
+  ],
+  "pk": [
+   "id"
+  ],
+  "fks": [
+   {
+    "col": "user_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   }
+  ],
+  "uq": [
+   [
+    "token"
+   ]
+  ],
+  "partial": false
+ },
+ "student_risk_evaluations": {
+  "cols": {
+   "evaluation_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "faculty_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "term": {
+    "type": "varchar(20)",
+    "nullable": false,
+    "default": null
+   },
+   "evaluation_context": {
+    "type": "varchar(30)",
+    "nullable": false,
+    "default": null
+   },
+   "risk_level": {
+    "type": "varchar(20)",
+    "nullable": false,
+    "default": null
+   },
+   "risk_score": {
+    "type": "numeric(5,2)",
+    "nullable": false,
+    "default": null
+   },
+   "risk_breakdown": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": "'{}'::jsonb"
+   },
+   "professor_notes": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "advising_plan": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": "'[]'::jsonb"
+   },
+   "baseline_snapshot": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": "'{}'::jsonb"
+   },
+   "followup_snapshot": {
+    "type": "jsonb",
+    "nullable": true,
+    "default": "NULL"
+   },
+   "refer_to_dean": {
+    "type": "boolean",
+    "nullable": true,
+    "default": "FALSE"
+   },
+   "requires_tutoring": {
+    "type": "boolean",
+    "nullable": true,
+    "default": "FALSE"
+   },
+   "status": {
+    "type": "varchar(30)",
+    "nullable": true,
+    "default": "'submitted'"
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "updated_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "shared_academic_feedback": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "published_to_student_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "published_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "acknowledged_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "followup_recorded_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "followup_recorded_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "evaluation_id",
+   "class_record_id",
+   "student_id",
+   "faculty_id",
+   "term",
+   "evaluation_context",
+   "risk_level",
+   "risk_score",
+   "risk_breakdown",
+   "professor_notes",
+   "advising_plan",
+   "baseline_snapshot",
+   "followup_snapshot",
+   "refer_to_dean",
+   "requires_tutoring",
+   "status",
+   "created_at",
+   "updated_at",
+   "shared_academic_feedback",
+   "published_to_student_at",
+   "published_by",
+   "acknowledged_at",
+   "followup_recorded_at",
+   "followup_recorded_by"
+  ],
+  "pk": [
+   "evaluation_id"
+  ],
+  "fks": [
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "faculty_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "published_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "SET NULL"
+   },
+   {
+    "col": "followup_recorded_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "RESTRICT"
+   }
+  ],
+  "uq": [
+   [
+    "class_record_id",
+    "student_id",
+    "term"
+   ]
+  ],
+  "partial": false
+ },
+ "student_consultation_requests": {
+  "cols": {
+   "consultation_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "faculty_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "concern_category": {
+    "type": "varchar(50)",
+    "nullable": false,
+    "default": null
+   },
+   "preferred_schedule": {
+    "type": "varchar(100)",
+    "nullable": false,
+    "default": null
+   },
+   "message": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "status": {
+    "type": "varchar(20)",
+    "nullable": true,
+    "default": "'pending'"
+   },
+   "faculty_notes": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "updated_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "scheduled_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "consultation_mode": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "meeting_link": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "onsite_location": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "schedule_acknowledged_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "schedule_acknowledged_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "consultation_id",
+   "student_id",
+   "faculty_id",
+   "class_record_id",
+   "concern_category",
+   "preferred_schedule",
+   "message",
+   "status",
+   "faculty_notes",
+   "created_at",
+   "updated_at",
+   "scheduled_at",
+   "consultation_mode",
+   "meeting_link",
+   "onsite_location",
+   "schedule_acknowledged_at",
+   "schedule_acknowledged_by"
+  ],
+  "pk": [
+   "consultation_id"
+  ],
+  "fks": [
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "faculty_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "schedule_acknowledged_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "student_risk_private_notes": {
+  "cols": {
+   "note_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "evaluation_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "author_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "note_text": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "retention_class": {
+    "type": "text",
+    "nullable": false,
+    "default": "'academic_intervention'"
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "updated_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   }
+  },
+  "order": [
+   "note_id",
+   "evaluation_id",
+   "author_id",
+   "note_text",
+   "retention_class",
+   "created_at",
+   "updated_at"
+  ],
+  "pk": [
+   "note_id"
+  ],
+  "fks": [
+   {
+    "col": "evaluation_id",
+    "parent": "student_risk_evaluations",
+    "parent_col": "evaluation_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "author_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "RESTRICT"
+   }
+  ],
+  "uq": [
+   [
+    "evaluation_id",
+    "author_id"
+   ]
+  ],
+  "partial": false
+ },
+ "guardians": {
+  "cols": {
+   "guardian_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "full_name": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "relationship": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "email": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "phone": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "is_primary": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "false"
+   },
+   "consent_granted_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "consent_source": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "email_verified_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "NOW()"
+   }
+  },
+  "order": [
+   "guardian_id",
+   "student_id",
+   "full_name",
+   "relationship",
+   "email",
+   "phone",
+   "is_primary",
+   "consent_granted_at",
+   "consent_source",
+   "email_verified_at",
+   "created_at"
+  ],
+  "pk": [
+   "guardian_id"
+  ],
+  "fks": [
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "notification_deliveries": {
+  "cols": {
+   "delivery_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "notification_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "channel": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "recipient_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "target_address": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "status": {
+    "type": "text",
+    "nullable": false,
+    "default": "'pending'"
+   },
+   "attempts": {
+    "type": "integer",
+    "nullable": false,
+    "default": "0"
+   },
+   "max_attempts": {
+    "type": "integer",
+    "nullable": false,
+    "default": "3"
+   },
+   "last_attempt_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "sent_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "failed_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "error_message": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "provider_message_id": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "metadata": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": "'{}'::jsonb"
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "NOW()"
+   },
+   "updated_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "NOW()"
+   },
+   "guardian_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "honors_pace": {
+    "type": "boolean",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "delivery_id",
+   "notification_id",
+   "channel",
+   "recipient_id",
+   "target_address",
+   "status",
+   "attempts",
+   "max_attempts",
+   "last_attempt_at",
+   "sent_at",
+   "failed_at",
+   "error_message",
+   "provider_message_id",
+   "metadata",
+   "created_at",
+   "updated_at",
+   "guardian_id",
+   "honors_pace"
+  ],
+  "pk": [
+   "delivery_id"
+  ],
+  "fks": [
+   {
+    "col": "notification_id",
+    "parent": "notifications",
+    "parent_col": "notification_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "recipient_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "guardian_id",
+    "parent": "guardians",
+    "parent_col": "guardian_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "notification_preferences": {
+  "cols": {
+   "user_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "notification_type": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "in_app": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "true"
+   },
+   "push": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "true"
+   },
+   "email": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "true"
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "NOW()"
+   },
+   "updated_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "NOW()"
+   }
+  },
+  "order": [
+   "user_id",
+   "notification_type",
+   "in_app",
+   "push",
+   "email",
+   "created_at",
+   "updated_at"
+  ],
+  "pk": [
+   "user_id",
+   "notification_type"
+  ],
+  "fks": [
+   {
+    "col": "user_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "student_evaluation_referrals": {
+  "cols": {
+   "referral_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "evaluation_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "actor_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "request_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "reason": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "legacy": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "FALSE"
+   },
+   "referred_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "state": {
+    "type": "text",
+    "nullable": false,
+    "default": "'pending'"
+   },
+   "resolved_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "resolved_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "resolution_note": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "last_review_note": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "last_reviewed_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "last_reviewed_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "referral_id",
+   "evaluation_id",
+   "actor_id",
+   "request_id",
+   "reason",
+   "legacy",
+   "referred_at",
+   "state",
+   "resolved_at",
+   "resolved_by",
+   "resolution_note",
+   "last_review_note",
+   "last_reviewed_at",
+   "last_reviewed_by"
+  ],
+  "pk": [
+   "referral_id"
+  ],
+  "fks": [
+   {
+    "col": "evaluation_id",
+    "parent": "student_risk_evaluations",
+    "parent_col": "id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "actor_id",
+    "parent": "users",
+    "parent_col": "id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "resolved_by",
+    "parent": "users",
+    "parent_col": "id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "last_reviewed_by",
+    "parent": "users",
+    "parent_col": "id",
+    "on_delete": "RESTRICT"
+   }
+  ],
+  "uq": [
+   [
+    "actor_id",
+    "request_id"
+   ]
+  ],
+  "partial": false
+ },
+ "student_evaluation_referral_requests": {
+  "cols": {
+   "actor_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "request_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "referral_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   }
+  },
+  "order": [
+   "actor_id",
+   "request_id",
+   "referral_id"
+  ],
+  "pk": [
+   "actor_id",
+   "request_id"
+  ],
+  "fks": [
+   {
+    "col": "actor_id",
+    "parent": "users",
+    "parent_col": "id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "referral_id",
+    "parent": "student_evaluation_referrals",
+    "parent_col": "id",
+    "on_delete": "CASCADE"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "faculty_intervention_drafts": {
+  "cols": {
+   "draft_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "request_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "faculty_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "term": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "snapshot": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": null
+   },
+   "snapshot_hash": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "generated_tasks": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": null
+   },
+   "summary": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "model": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "prompt_version": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "status": {
+    "type": "text",
+    "nullable": false,
+    "default": "'generated'"
+   },
+   "accepted_evaluation_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "accepted_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "generation_mode": {
+    "type": "text",
+    "nullable": false,
+    "default": "'initial_plan'"
+   }
+  },
+  "order": [
+   "draft_id",
+   "request_id",
+   "faculty_id",
+   "class_record_id",
+   "student_id",
+   "term",
+   "snapshot",
+   "snapshot_hash",
+   "generated_tasks",
+   "summary",
+   "model",
+   "prompt_version",
+   "status",
+   "accepted_evaluation_id",
+   "created_at",
+   "accepted_at",
+   "generation_mode"
+  ],
+  "pk": [
+   "draft_id"
+  ],
+  "fks": [
+   {
+    "col": "faculty_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "accepted_evaluation_id",
+    "parent": "student_risk_evaluations",
+    "parent_col": "evaluation_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [
+   [
+    "faculty_id",
+    "request_id"
+   ]
+  ],
+  "partial": false
+ },
+ "grade_correction_history": {
+  "cols": {
+   "history_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "request_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "posted_grade_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "previous_computed_grade": {
+    "type": "numeric(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "previous_effective_grade": {
+    "type": "numeric(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "previous_remark": {
+    "type": "varchar(30)",
+    "nullable": true,
+    "default": null
+   },
+   "final_computed_grade": {
+    "type": "numeric(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "final_effective_grade": {
+    "type": "numeric(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "final_remark": {
+    "type": "varchar(30)",
+    "nullable": true,
+    "default": null
+   },
+   "applied_by": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "applied_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "applied_score_changes": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": "'[]'::JSONB"
+   },
+   "applied_milestone_changes": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": "'{}'::JSONB"
+   }
+  },
+  "order": [
+   "history_id",
+   "request_id",
+   "posted_grade_id",
+   "class_record_id",
+   "student_id",
+   "previous_computed_grade",
+   "previous_effective_grade",
+   "previous_remark",
+   "final_computed_grade",
+   "final_effective_grade",
+   "final_remark",
+   "applied_by",
+   "applied_at",
+   "applied_score_changes",
+   "applied_milestone_changes"
+  ],
+  "pk": [
+   "history_id"
+  ],
+  "fks": [
+   {
+    "col": "request_id",
+    "parent": "remark_override_requests",
+    "parent_col": "request_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "posted_grade_id",
+    "parent": "posted_grades",
+    "parent_col": "posted_grade_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "applied_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "RESTRICT"
+   }
+  ],
+  "uq": [
+   [
+    "request_id"
+   ]
+  ],
+  "partial": false
+ },
+ "faculty_intervention_working_drafts": {
+  "cols": {
+   "working_draft_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "faculty_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "term": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "evaluation_context": {
+    "type": "text",
+    "nullable": false,
+    "default": "'academic_intervention'"
+   },
+   "shared_academic_feedback": {
+    "type": "text",
+    "nullable": false,
+    "default": "''"
+   },
+   "private_note": {
+    "type": "text",
+    "nullable": false,
+    "default": "''"
+   },
+   "tasks": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": null
+   },
+   "plan_deadline": {
+    "type": "date",
+    "nullable": true,
+    "default": null
+   },
+   "refer_to_dean": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "FALSE"
+   },
+   "referral_reason": {
+    "type": "text",
+    "nullable": false,
+    "default": "''"
+   },
+   "status": {
+    "type": "text",
+    "nullable": false,
+    "default": "'active'"
+   },
+   "submitted_evaluation_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "updated_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   }
+  },
+  "order": [
+   "working_draft_id",
+   "faculty_id",
+   "class_record_id",
+   "student_id",
+   "term",
+   "evaluation_context",
+   "shared_academic_feedback",
+   "private_note",
+   "tasks",
+   "plan_deadline",
+   "refer_to_dean",
+   "referral_reason",
+   "status",
+   "submitted_evaluation_id",
+   "created_at",
+   "updated_at"
+  ],
+  "pk": [
+   "working_draft_id"
+  ],
+  "fks": [
+   {
+    "col": "faculty_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "submitted_evaluation_id",
+    "parent": "student_risk_evaluations",
+    "parent_col": "evaluation_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [
+   [
+    "faculty_id",
+    "class_record_id",
+    "student_id",
+    "term"
+   ]
+  ],
+  "partial": false
+ },
+ "posted_grade_revisions": {
+  "cols": {
+   "revision_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "posted_grade_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "grade_period": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "revision_number": {
+    "type": "integer",
+    "nullable": false,
+    "default": null
+   },
+   "computed_grade": {
+    "type": "numeric(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "effective_grade": {
+    "type": "numeric(5,2)",
+    "nullable": true,
+    "default": null
+   },
+   "remarks": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "official_source": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "calculation_engine_version": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "input_snapshot_hash": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "correction_request_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "recorded_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "recorded_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   }
+  },
+  "order": [
+   "revision_id",
+   "posted_grade_id",
+   "class_record_id",
+   "student_id",
+   "grade_period",
+   "revision_number",
+   "computed_grade",
+   "effective_grade",
+   "remarks",
+   "official_source",
+   "calculation_engine_version",
+   "input_snapshot_hash",
+   "correction_request_id",
+   "recorded_by",
+   "recorded_at"
+  ],
+  "pk": [
+   "revision_id"
+  ],
+  "fks": [
+   {
+    "col": "posted_grade_id",
+    "parent": "posted_grades",
+    "parent_col": "posted_grade_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "correction_request_id",
+    "parent": "remark_override_requests",
+    "parent_col": "request_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "recorded_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "RESTRICT"
+   }
+  ],
+  "uq": [
+   [
+    "posted_grade_id",
+    "revision_number"
+   ]
+  ],
+  "partial": false
+ },
+ "grade_posting_operations": {
+  "cols": {
+   "operation_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "grade_period": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "actor_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "request_hash": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "projection_hash": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "notification_count": {
+    "type": "integer",
+    "nullable": false,
+    "default": "0"
+   },
+   "status": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "result": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "committed_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   }
+  },
+  "order": [
+   "operation_id",
+   "class_record_id",
+   "grade_period",
+   "actor_id",
+   "request_hash",
+   "projection_hash",
+   "notification_count",
+   "status",
+   "result",
+   "created_at",
+   "committed_at"
+  ],
+  "pk": [
+   "operation_id"
+  ],
+  "fks": [
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "actor_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "RESTRICT"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "admin_grade_override_operations": {
+  "cols": {
+   "operation_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "posted_grade_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "actor_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "request_hash": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "status": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "result": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "committed_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "acknowledgement_state": {
+    "type": "text",
+    "nullable": false,
+    "default": "'pending'"
+   },
+   "acknowledged_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "acknowledged_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "acknowledgement_note": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "operation_id",
+   "posted_grade_id",
+   "actor_id",
+   "request_hash",
+   "status",
+   "result",
+   "created_at",
+   "committed_at",
+   "acknowledgement_state",
+   "acknowledged_by",
+   "acknowledged_at",
+   "acknowledgement_note"
+  ],
+  "pk": [
+   "operation_id"
+  ],
+  "fks": [
+   {
+    "col": "posted_grade_id",
+    "parent": "posted_grades",
+    "parent_col": "posted_grade_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "actor_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "acknowledged_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "RESTRICT"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "sg_correction_operations": {
+  "cols": {
+   "operation_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "request_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "posted_grade_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "actor_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "request_hash": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "status": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "result": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   },
+   "committed_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "CURRENT_TIMESTAMP"
+   }
+  },
+  "order": [
+   "operation_id",
+   "request_id",
+   "posted_grade_id",
+   "actor_id",
+   "request_hash",
+   "status",
+   "result",
+   "created_at",
+   "committed_at"
+  ],
+  "pk": [
+   "operation_id"
+  ],
+  "fks": [
+   {
+    "col": "request_id",
+    "parent": "remark_override_requests",
+    "parent_col": "request_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "posted_grade_id",
+    "parent": "posted_grades",
+    "parent_col": "posted_grade_id",
+    "on_delete": "RESTRICT"
+   },
+   {
+    "col": "actor_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "RESTRICT"
+   }
+  ],
+  "uq": [
+   [
+    "request_id"
+   ]
+  ],
+  "partial": false
+ },
+ "system_settings": {
+  "cols": {
+   "id": {
+    "type": "smallint",
+    "nullable": false,
+    "default": "1"
+   },
+   "maintenance_mode": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "FALSE"
+   },
+   "maintenance_message": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "updated_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "updated_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   },
+   "hosting_plan_tier": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "storage_quota_bytes": {
+    "type": "bigint",
+    "nullable": true,
+    "default": null
+   },
+   "database_quota_bytes": {
+    "type": "bigint",
+    "nullable": true,
+    "default": null
+   },
+   "maintenance_reason_id": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "maintenance_starts_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "maintenance_ends_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "maintenance_auto": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "FALSE"
+   },
+   "ai_call_budget": {
+    "type": "integer",
+    "nullable": false,
+    "default": "1500"
+   },
+   "ai_budget_started_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   },
+   "ai_daily_cap_per_student": {
+    "type": "integer",
+    "nullable": false,
+    "default": "25"
+   }
+  },
+  "order": [
+   "id",
+   "maintenance_mode",
+   "maintenance_message",
+   "updated_by",
+   "updated_at",
+   "hosting_plan_tier",
+   "storage_quota_bytes",
+   "database_quota_bytes",
+   "maintenance_reason_id",
+   "maintenance_starts_at",
+   "maintenance_ends_at",
+   "maintenance_auto",
+   "ai_call_budget",
+   "ai_budget_started_at",
+   "ai_daily_cap_per_student"
+  ],
+  "pk": [
+   "id"
+  ],
+  "fks": [
+   {
+    "col": "hosting_plan_tier",
+    "parent": "hosting_plan_tiers",
+    "parent_col": "id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "maintenance_reason_id",
+    "parent": "maintenance_reasons",
+    "parent_col": "id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "updated_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "student_account_requests": {
+  "cols": {
+   "request_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "last_name": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "first_name": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "middle_name": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "user_number": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "year_level": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "department_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "program_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "section_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "status": {
+    "type": "text",
+    "nullable": false,
+    "default": "'pending'"
+   },
+   "rejection_reason": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "submitted_by": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "submitted_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   },
+   "reviewed_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "reviewed_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "created_user_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "request_id",
+   "last_name",
+   "first_name",
+   "middle_name",
+   "user_number",
+   "year_level",
+   "department_id",
+   "program_id",
+   "section_id",
+   "status",
+   "rejection_reason",
+   "submitted_by",
+   "submitted_at",
+   "reviewed_by",
+   "reviewed_at",
+   "created_user_id"
+  ],
+  "pk": [
+   "request_id"
+  ],
+  "fks": [
+   {
+    "col": "department_id",
+    "parent": "departments",
+    "parent_col": "department_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "program_id",
+    "parent": "programs",
+    "parent_col": "program_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "section_id",
+    "parent": "sections",
+    "parent_col": "section_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "submitted_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "reviewed_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "created_user_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "provisioning_locks": {
+  "cols": {
+   "department_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "locked_by": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "locked_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   },
+   "last_heartbeat_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   }
+  },
+  "order": [
+   "department_id",
+   "locked_by",
+   "locked_at",
+   "last_heartbeat_at"
+  ],
+  "pk": [
+   "department_id"
+  ],
+  "fks": [
+   {
+    "col": "department_id",
+    "parent": "departments",
+    "parent_col": "department_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "locked_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "faculty_load_drafts": {
+  "cols": {
+   "id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "department_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "subject_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "section_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "faculty_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "school_year": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "semester": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "meeting_days": {
+    "type": "text[]",
+    "nullable": true,
+    "default": null
+   },
+   "start_time": {
+    "type": "time",
+    "nullable": true,
+    "default": null
+   },
+   "end_time": {
+    "type": "time",
+    "nullable": true,
+    "default": null
+   },
+   "status": {
+    "type": "text",
+    "nullable": false,
+    "default": "'draft'"
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "created_by": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   },
+   "finalized_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "finalized_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "id",
+   "department_id",
+   "subject_id",
+   "section_id",
+   "faculty_id",
+   "school_year",
+   "semester",
+   "meeting_days",
+   "start_time",
+   "end_time",
+   "status",
+   "class_record_id",
+   "created_by",
+   "created_at",
+   "finalized_by",
+   "finalized_at"
+  ],
+  "pk": [
+   "id"
+  ],
+  "fks": [
+   {
+    "col": "department_id",
+    "parent": "departments",
+    "parent_col": "department_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "subject_id",
+    "parent": "subjects",
+    "parent_col": "subject_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "section_id",
+    "parent": "sections",
+    "parent_col": "section_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "faculty_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "created_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "finalized_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "grade_consultation_windows": {
+  "cols": {
+   "id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "class_record_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "grade_period": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "opened_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   },
+   "finalized_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "finalized_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "id",
+   "class_record_id",
+   "grade_period",
+   "opened_at",
+   "finalized_at",
+   "finalized_by"
+  ],
+  "pk": [
+   "id"
+  ],
+  "fks": [
+   {
+    "col": "class_record_id",
+    "parent": "class_records",
+    "parent_col": "class_record_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "finalized_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   }
+  ],
+  "uq": [
+   [
+    "class_record_id",
+    "grade_period"
+   ]
+  ],
+  "partial": false
+ },
+ "grade_consultation_notes": {
+  "cols": {
+   "id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "window_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "note": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "logged_by": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   }
+  },
+  "order": [
+   "id",
+   "window_id",
+   "student_id",
+   "note",
+   "logged_by",
+   "created_at"
+  ],
+  "pk": [
+   "id"
+  ],
+  "fks": [
+   {
+    "col": "window_id",
+    "parent": "grade_consultation_windows",
+    "parent_col": "id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   },
+   {
+    "col": "logged_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "NO ACTION"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "backup_runs": {
+  "cols": {
+   "id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "kind": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "performed_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "performed_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   },
+   "table_count": {
+    "type": "integer",
+    "nullable": true,
+    "default": null
+   },
+   "row_count": {
+    "type": "integer",
+    "nullable": true,
+    "default": null
+   },
+   "backup_taken_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "schema_fingerprint": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "notes": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "id",
+   "kind",
+   "performed_by",
+   "performed_at",
+   "table_count",
+   "row_count",
+   "backup_taken_at",
+   "schema_fingerprint",
+   "notes"
+  ],
+  "pk": [
+   "id"
+  ],
+  "fks": [
+   {
+    "col": "performed_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "hosting_plan_tiers": {
+  "cols": {
+   "id": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "label": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "storage_bytes": {
+    "type": "bigint",
+    "nullable": true,
+    "default": null
+   },
+   "database_bytes": {
+    "type": "bigint",
+    "nullable": true,
+    "default": null
+   },
+   "egress_bytes": {
+    "type": "bigint",
+    "nullable": true,
+    "default": null
+   },
+   "sort_order": {
+    "type": "integer",
+    "nullable": false,
+    "default": "0"
+   },
+   "notes": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "id",
+   "label",
+   "storage_bytes",
+   "database_bytes",
+   "egress_bytes",
+   "sort_order",
+   "notes"
+  ],
+  "pk": [
+   "id"
+  ],
+  "fks": [],
+  "uq": [],
+  "partial": false
+ },
+ "maintenance_reasons": {
+  "cols": {
+   "id": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "label": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "category": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "message_template": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "sort_order": {
+    "type": "integer",
+    "nullable": false,
+    "default": "0"
+   },
+   "is_active": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "TRUE"
+   }
+  },
+  "order": [
+   "id",
+   "label",
+   "category",
+   "message_template",
+   "sort_order",
+   "is_active"
+  ],
+  "pk": [
+   "id"
+  ],
+  "fks": [],
+  "uq": [],
+  "partial": false
+ },
+ "maintenance_note_presets": {
+  "cols": {
+   "id": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "note_text": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "reason_id": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "sort_order": {
+    "type": "integer",
+    "nullable": false,
+    "default": "0"
+   },
+   "is_active": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "TRUE"
+   }
+  },
+  "order": [
+   "id",
+   "note_text",
+   "reason_id",
+   "sort_order",
+   "is_active"
+  ],
+  "pk": [
+   "id"
+  ],
+  "fks": [
+   {
+    "col": "reason_id",
+    "parent": "maintenance_reasons",
+    "parent_col": "id",
+    "on_delete": "NO ACTION"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "grade_change_evidence": {
+  "cols": {
+   "id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "request_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "object_key": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "storage": {
+    "type": "text",
+    "nullable": false,
+    "default": "'supabase'"
+   },
+   "content_type": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "uploaded_by": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "uploaded_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   }
+  },
+  "order": [
+   "id",
+   "request_id",
+   "object_key",
+   "storage",
+   "content_type",
+   "uploaded_by",
+   "uploaded_at"
+  ],
+  "pk": [
+   "id"
+  ],
+  "fks": [
+   {
+    "col": "request_id",
+    "parent": "remark_override_requests",
+    "parent_col": "request_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "uploaded_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   }
+  ],
+  "uq": [
+   [
+    "request_id",
+    "object_key"
+   ]
+  ],
+  "partial": false
+ },
+ "activity_resources": {
+  "cols": {
+   "resource_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "activity_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "label": {
+    "type": "varchar(150)",
+    "nullable": false,
+    "default": null
+   },
+   "url": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "kind": {
+    "type": "varchar(10)",
+    "nullable": false,
+    "default": "'link'"
+   },
+   "note": {
+    "type": "varchar(300)",
+    "nullable": true,
+    "default": null
+   },
+   "content_extract": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "extracted_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "sort_order": {
+    "type": "integer",
+    "nullable": false,
+    "default": "0"
+   },
+   "added_by": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   }
+  },
+  "order": [
+   "resource_id",
+   "activity_id",
+   "label",
+   "url",
+   "kind",
+   "note",
+   "content_extract",
+   "extracted_at",
+   "sort_order",
+   "added_by",
+   "created_at"
+  ],
+  "pk": [
+   "resource_id"
+  ],
+  "fks": [
+   {
+    "col": "activity_id",
+    "parent": "class_activities",
+    "parent_col": "activity_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "added_by",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "student_tutor_plans": {
+  "cols": {
+   "plan_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "subject_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "term_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "topic": {
+    "type": "varchar(150)",
+    "nullable": true,
+    "default": null
+   },
+   "topic_tag": {
+    "type": "varchar(100)",
+    "nullable": true,
+    "default": null
+   },
+   "horizon": {
+    "type": "varchar(30)",
+    "nullable": false,
+    "default": null
+   },
+   "items": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": "'[]'::jsonb"
+   },
+   "status": {
+    "type": "varchar(12)",
+    "nullable": false,
+    "default": "'active'"
+   },
+   "deadline_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "stale_since": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   },
+   "updated_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   }
+  },
+  "order": [
+   "plan_id",
+   "student_id",
+   "subject_id",
+   "term_id",
+   "topic",
+   "topic_tag",
+   "horizon",
+   "items",
+   "status",
+   "deadline_at",
+   "stale_since",
+   "created_at",
+   "updated_at"
+  ],
+  "pk": [
+   "plan_id"
+  ],
+  "fks": [
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "subject_id",
+    "parent": "subjects",
+    "parent_col": "subject_id",
+    "on_delete": "SET NULL"
+   },
+   {
+    "col": "term_id",
+    "parent": "academic_terms",
+    "parent_col": "term_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "student_tutor_practice_sets": {
+  "cols": {
+   "set_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "subject_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "topic": {
+    "type": "varchar(150)",
+    "nullable": true,
+    "default": null
+   },
+   "questions": {
+    "type": "jsonb",
+    "nullable": false,
+    "default": null
+   },
+   "difficulty": {
+    "type": "varchar(20)",
+    "nullable": true,
+    "default": null
+   },
+   "expires_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "(now() + INTERVAL '24 hours')"
+   },
+   "consumed_at": {
+    "type": "timestamptz",
+    "nullable": true,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   }
+  },
+  "order": [
+   "set_id",
+   "student_id",
+   "subject_id",
+   "topic",
+   "questions",
+   "difficulty",
+   "expires_at",
+   "consumed_at",
+   "created_at"
+  ],
+  "pk": [
+   "set_id"
+  ],
+  "fks": [
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "subject_id",
+    "parent": "subjects",
+    "parent_col": "subject_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "student_tutor_practice_attempts": {
+  "cols": {
+   "attempt_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "set_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "subject_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "topic": {
+    "type": "varchar(150)",
+    "nullable": true,
+    "default": null
+   },
+   "question": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "chosen_answer": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "correct_answer": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   },
+   "is_correct": {
+    "type": "boolean",
+    "nullable": true,
+    "default": null
+   },
+   "difficulty": {
+    "type": "varchar(20)",
+    "nullable": true,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   }
+  },
+  "order": [
+   "attempt_id",
+   "student_id",
+   "set_id",
+   "subject_id",
+   "topic",
+   "question",
+   "chosen_answer",
+   "correct_answer",
+   "is_correct",
+   "difficulty",
+   "created_at"
+  ],
+  "pk": [
+   "attempt_id"
+  ],
+  "fks": [
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "set_id",
+    "parent": "student_tutor_practice_sets",
+    "parent_col": "set_id",
+    "on_delete": "SET NULL"
+   },
+   {
+    "col": "subject_id",
+    "parent": "subjects",
+    "parent_col": "subject_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "student_tutor_log": {
+  "cols": {
+   "log_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "student_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": null
+   },
+   "subject_id": {
+    "type": "uuid",
+    "nullable": true,
+    "default": null
+   },
+   "topic": {
+    "type": "varchar(150)",
+    "nullable": true,
+    "default": null
+   },
+   "action": {
+    "type": "varchar(20)",
+    "nullable": false,
+    "default": null
+   },
+   "shape": {
+    "type": "varchar(40)",
+    "nullable": true,
+    "default": null
+   },
+   "used_ai": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "TRUE"
+   },
+   "request": {
+    "type": "jsonb",
+    "nullable": true,
+    "default": null
+   },
+   "response": {
+    "type": "jsonb",
+    "nullable": true,
+    "default": null
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   },
+   "prompt_tokens": {
+    "type": "integer",
+    "nullable": true,
+    "default": null
+   },
+   "completion_tokens": {
+    "type": "integer",
+    "nullable": true,
+    "default": null
+   },
+   "model_served": {
+    "type": "text",
+    "nullable": true,
+    "default": null
+   }
+  },
+  "order": [
+   "log_id",
+   "student_id",
+   "subject_id",
+   "topic",
+   "action",
+   "shape",
+   "used_ai",
+   "request",
+   "response",
+   "created_at",
+   "prompt_tokens",
+   "completion_tokens",
+   "model_served"
+  ],
+  "pk": [
+   "log_id"
+  ],
+  "fks": [
+   {
+    "col": "student_id",
+    "parent": "users",
+    "parent_col": "user_id",
+    "on_delete": "CASCADE"
+   },
+   {
+    "col": "subject_id",
+    "parent": "subjects",
+    "parent_col": "subject_id",
+    "on_delete": "SET NULL"
+   }
+  ],
+  "uq": [],
+  "partial": false
+ },
+ "search_destinations": {
+  "cols": {
+   "destination_id": {
+    "type": "uuid",
+    "nullable": false,
+    "default": "gen_random_uuid()"
+   },
+   "name": {
+    "type": "varchar(60)",
+    "nullable": false,
+    "default": null
+   },
+   "url_template": {
+    "type": "text",
+    "nullable": false,
+    "default": null
+   },
+   "action_label": {
+    "type": "varchar(40)",
+    "nullable": false,
+    "default": "'Search'"
+   },
+   "is_active": {
+    "type": "boolean",
+    "nullable": false,
+    "default": "TRUE"
+   },
+   "sort_order": {
+    "type": "integer",
+    "nullable": false,
+    "default": "0"
+   },
+   "created_at": {
+    "type": "timestamptz",
+    "nullable": false,
+    "default": "now()"
+   }
+  },
+  "order": [
+   "destination_id",
+   "name",
+   "url_template",
+   "action_label",
+   "is_active",
+   "sort_order",
+   "created_at"
+  ],
+  "pk": [
+   "destination_id"
+  ],
+  "fks": [],
+  "uq": [
+   [
+    "name"
+   ]
+  ],
+  "partial": false
+ }
+}

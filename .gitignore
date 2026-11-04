@@ -52,3 +52,10 @@ _figure-style.css
 AUDIT_REPORT.md
 REQUIRED_CHANGES.md
 
+# Figure build output. The generator scripts are tracked; what they render is
+# not -- 14 MB of PNG and SVG that is reproducible by re-running them, and that
+# gets swapped into the thesis .docx by hand anyway.
+docs/02-thesis/figures/*/out/
+__pycache__/
+*.pyc
+

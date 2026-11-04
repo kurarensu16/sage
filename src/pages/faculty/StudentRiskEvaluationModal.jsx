@@ -13,6 +13,8 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { getEvaluationDetails } from '../../lib/evaluationService';
+import { describeAiFailure } from '../../lib/aiFallbackMessage';
+import AiUnavailableNotice from '../../components/common/AiUnavailableNotice';
 import { EVALUATION_TERMS } from '../../lib/evaluationTracking';
 import { dispatchNotifications } from '../../lib/notificationDispatcher';
 import { cn } from '../../lib/utils';
@@ -94,6 +96,10 @@ export default function StudentRiskEvaluationModal({
   const [referToDean, setReferToDean] = useState(Boolean(restoredWorkingDraft?.refer_to_dean));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  // Separate from `error`, which carries validation and save failures. An AI
+  // failure may clear by itself and what to do about it depends on why, so it
+  // keeps the shape describeAiFailure returns.
+  const [aiError, setAiError] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(Boolean(student?.evaluation));
   const referralRequest = useRef(crypto.randomUUID());
@@ -265,6 +271,7 @@ export default function StudentRiskEvaluationModal({
     if (tasks.length >= 5 || addingAiTask || loadingExisting) return;
     setAddingAiTask(true);
     setError(null);
+    setAiError(null);
     try {
       const draft = await generateAdditionalInterventionTask({
         classRecordId,
@@ -287,8 +294,14 @@ export default function StudentRiskEvaluationModal({
         requires_evidence: defaultRequiresEvidence(draft.tasks[0]?.action_type)
       }]);
     } catch (err) {
+      // Raw err.message used to go straight to the screen here, so a network
+      // failure surfaced as "FunctionsFetchError" above a form an instructor was
+      // midway through filling in.
       console.error('Unable to generate an additional intervention task:', err);
-      setError(err.message || 'The additional AI task could not be generated. You can retry or add one manually.');
+      setAiError(describeAiFailure(err, {
+        feature: 'AI task suggestions',
+        fallbackAction: 'You can still add the task yourself; nothing you have typed is lost.'
+      }));
     } finally {
       setAddingAiTask(false);
     }
@@ -470,6 +483,12 @@ export default function StudentRiskEvaluationModal({
               <span>{error}</span>
             </div>
           )}
+
+          <AiUnavailableNotice
+            failure={aiError}
+            retrying={addingAiTask}
+            onRetry={handleAddAiTask}
+          />
 
           <div className="rounded-lg border border-sage-200 bg-sage-50 p-3">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-sage-700">Academic Intervention</p>

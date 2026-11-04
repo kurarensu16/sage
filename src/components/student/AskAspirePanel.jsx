@@ -9,6 +9,8 @@ import {
   X
 } from 'lucide-react';
 import { getAskAspireResponse } from '../../lib/openrouter';
+import { describeAiFailure } from '../../lib/aiFallbackMessage';
+import AiUnavailableNotice from '../common/AiUnavailableNotice';
 
 const SUGGESTED_QUESTIONS = {
   overall: [
@@ -38,7 +40,7 @@ export default function AskAspirePanel({ open, context, studentDisplayName, priv
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(null);
   const endRef = useRef(null);
 
   const contextKey = context?.contextKey;
@@ -80,7 +82,7 @@ export default function AskAspirePanel({ open, context, studentDisplayName, priv
       content: `${localFirstName}, I can explain the insight for ${subjectLabel}, show which records support it, and help you choose a practical next step. Current status: ${advisorHeadline || 'Reviewing available academic evidence'}.`
     }]);
     setQuestion('');
-    setError('');
+    setError(null);
   }, [open, contextKey, subjectCode, subjectName, advisorHeadline, localFirstName]);
 
   useEffect(() => {
@@ -98,7 +100,7 @@ export default function AskAspirePanel({ open, context, studentDisplayName, priv
     const priorMessages = messages.filter(message => !message.id.startsWith('welcome-'));
     setMessages(previous => [...previous, userMessage]);
     setQuestion('');
-    setError('');
+    setError(null);
     setLoading(true);
 
     try {
@@ -115,8 +117,15 @@ export default function AskAspirePanel({ open, context, studentDisplayName, priv
         { id: `assistant-${messageSequence}`, role: 'assistant', content: personalizeLocally(answer) }
       ]);
     } catch (err) {
+      // One hard-coded sentence used to cover every cause here, so a student
+      // offline, a student hitting a busy provider and a student whose account
+      // cannot use the feature at all were told the same thing -- and two of
+      // them were told to wait for something that would never change.
       console.warn('Ask ASPIRE response failed:', err);
-      setError('Ask ASPIRE is temporarily unavailable. Your academic insight and evidence are still available below.');
+      setError(describeAiFailure(err, {
+        feature: 'Ask ASPIRE',
+        fallbackAction: 'Your academic insight and evidence are still available below.'
+      }));
     } finally {
       setLoading(false);
     }
@@ -198,11 +207,7 @@ export default function AskAspirePanel({ open, context, studentDisplayName, priv
               </div>
             )}
 
-            {error && (
-              <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
-                {error}
-              </div>
-            )}
+            <AiUnavailableNotice failure={error} />
             <div ref={endRef} />
           </div>
 
