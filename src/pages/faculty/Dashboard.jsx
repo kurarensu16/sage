@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Clock,
   CheckCircle2,
+  AlertTriangle,
   X,
   Send
 } from 'lucide-react';
@@ -60,6 +61,10 @@ export default function Dashboard() {
   const [resolving, setResolving] = useState(false);
   const [resolveFeedback, setResolveFeedback] = useState(null);
   const [infoModalData, setInfoModalData] = useState(null);
+  // Classes from a term that has ended whose Semestral Grade is still unposted.
+  // Kept out of the term's figures and stated on its own, so neither number
+  // misleads.
+  const [outstandingPriorTermClasses, setOutstandingPriorTermClasses] = useState(0);
 
   // Analytics states
   const [trajectoryData, setTrajectoryData] = useState([]);
@@ -81,21 +86,52 @@ export default function Dashboard() {
 
         setActiveTerm(termData || null);
 
-        // 2. Fetch Classes
-        const { data: classesData, error: classesError } = await supabase
-          .from('class_records')
-          .select(`
+        // 2. Fetch this term's classes.
+        //
+        // This used to load every class with status = 'active' and no term
+        // filter, under a header that prints the active term. After a rollover
+        // that is two terms blended into one set of figures: the rollover
+        // deliberately leaves last term's classes active while their Semestral
+        // Grade is outstanding, so those classes joined the counts and every
+        // number on the page meant nothing in particular.
+        //
+        // My Classes DOES show them, and should -- that is work still owed
+        // (B-22). A dashboard is a different job: it answers "how is this term
+        // going". So the stats are scoped, and the outstanding work is stated
+        // separately below rather than folded into the totals.
+        const classSelect = `
             class_record_id,
             status,
+            term_id,
             school_year,
             semester,
             subject_id,
             section_id,
             subjects ( subject_id, code, name, units ),
             sections ( section_id, name, school_year, semester )
-          `)
-          .eq('faculty_id', user.id)
-          .eq('status', 'active');
+          `;
+        const [currentTermResult, legacyTermResult, carryOverResult] = await Promise.all([
+          termData?.term_id
+            ? supabase.from('class_records').select(classSelect)
+                .eq('faculty_id', user.id).eq('status', 'active').eq('term_id', termData.term_id)
+            : Promise.resolve({ data: [], error: null }),
+          termData?.school_year
+            ? supabase.from('class_records').select(classSelect)
+                .eq('faculty_id', user.id).eq('status', 'active').is('term_id', null)
+                .eq('school_year', termData.school_year).eq('semester', termData.semester)
+            : Promise.resolve({ data: [], error: null }),
+          // Counted, not listed: how many classes from an earlier term are still
+          // open because their Semestral Grade has not been posted.
+          termData?.term_id
+            ? supabase.from('class_records')
+                .select('class_record_id', { count: 'exact', head: true })
+                .eq('faculty_id', user.id).eq('status', 'active').neq('term_id', termData.term_id)
+            : Promise.resolve({ count: 0, error: null })
+        ]);
+
+        const classesError = currentTermResult.error || legacyTermResult.error;
+        const classesData = [...(currentTermResult.data || []), ...(legacyTermResult.data || [])];
+        setOutstandingPriorTermClasses(carryOverResult.count || 0);
 
         if (classesError) throw classesError;
 
@@ -457,6 +493,29 @@ export default function Dashboard() {
             </Link>
           </div>
         </div>
+
+        {/* Work carried over from a term that has ended.
+            Stated on its own rather than counted into the figures above, which
+            describe the active term. Both numbers are then true. */}
+        {outstandingPriorTermClasses > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 sm:p-4 flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs sm:text-sm font-bold text-amber-900">
+                {outstandingPriorTermClasses} class{outstandingPriorTermClasses === 1 ? '' : 'es'} from an earlier term still need a Semestral Grade
+              </p>
+              <p className="text-[11px] sm:text-xs text-amber-800 mt-0.5 leading-relaxed">
+                These are not counted in this term&rsquo;s figures. They stay open until you post the grade.
+              </p>
+              <Link
+                to="/faculty/classrecordslist"
+                className="inline-flex items-center gap-1 mt-1.5 text-[11px] sm:text-xs font-bold text-amber-900 underline"
+              >
+                Open My Classes <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          </div>
+        )}
 
         {/* Action Center / Alerts */}
         {urgentTasks.length > 0 && (

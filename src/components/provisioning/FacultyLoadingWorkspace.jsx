@@ -17,8 +17,11 @@ import {
   acquireLock, touchLock, releaseLock,
   addDraft, finalizeDraft, reassignLoad, deleteDraft, updateDraftSchedule,
   updateClassSchedule, reassignClassFaculty, deleteClassRecord,
-  exportLoadToExcel
+  exportLoadToExcel, fetchScheduleOccupancy, checkScheduleConflict,
+  fetchAvailableRooms, CLASS_TYPES
 } from '../../lib/facultyLoadingService';
+import SchedulePanel from './SchedulePanel';
+import LoadSummaryTable from './LoadSummaryTable';
 
 // The Faculty Loading & Provisioning workspace.
 //
@@ -84,10 +87,70 @@ const prettyTime = (value) => {
 
 // A labelled field that opens a picker, rather than a row of bare selects. Six
 // unlabelled dropdowns side by side gave no way to tell the start from the end.
-function TimeField({ label, value, onChange }) {
+// Common class lengths, offered once a start time exists.
+//
+// Picking an end used to be three more clicks -- period, hour, minute -- to
+// express something that is almost always "ninety minutes after the start".
+// These produce a valid end in one click, and an end produced this way cannot
+// precede its start or miss a quarter hour.
+const DURATIONS = [
+  { label: '1h', minutes: 60 },
+  { label: '1h30', minutes: 90 },
+  { label: '2h', minutes: 120 },
+  { label: '3h', minutes: 180 }
+];
+
+const addMinutes = (time, minutes) => {
+  const [h, m] = String(time).split(':').map(Number);
+  const total = h * 60 + m + minutes;
+  if (total > 20 * 60) return null;  // past the close of the teaching day
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+};
+
+// `minTime` makes an invalid end unpickable rather than rejected after the
+// fact: an hour entirely at or before the start is greyed out, and so are the
+// quarters within the start's own hour that would land too early.
+function TimeField({ label, value, onChange, minTime = null }) {
   const [open, setOpen] = useState(false);
+  // Which way the panel opens. The schedule sits low on a long form, so a panel
+  // anchored below the field ran off the bottom of the window and had to be
+  // scrolled to -- while the field it belongs to scrolled out of sight. Adding
+  // the duration row made it taller and the problem worse.
+  //
+  // Decided when it opens, from the room actually available, rather than fixed:
+  // the same field is near the top of the viewport on a tall screen and at the
+  // bottom on a short one.
+  const [dropUp, setDropUp] = useState(false);
+  const buttonRef = useRef(null);
+
+  // Roughly what the panel needs: period, hours, minutes, plus the duration row
+  // when there is one. Over-estimating is safe -- it only flips upward sooner.
+  const panelHeight = minTime ? 360 : 300;
+
+  const toggle = () => {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const below = window.innerHeight - rect.bottom;
+      const above = rect.top;
+      // Only flip when below genuinely cannot hold it AND above can do better.
+      setDropUp(below < panelHeight && above > below);
+    }
+    setOpen(!open);
+  };
+
   const { hour12, minute, meridiem } = splitTime(value);
   const hours = meridiem === 'AM' ? AM_HOURS : PM_HOURS;
+
+  const minMinutes = minTime
+    ? Number(String(minTime).split(':')[0]) * 60 + Number(String(minTime).split(':')[1])
+    : null;
+  const tooEarly = (h12, mins, mer) => {
+    if (minMinutes === null) return false;
+    return to24(Number(h12), mer) * 60 + Number(mins) <= minMinutes;
+  };
+  // An hour is offered only if at least one of its quarters is still valid.
+  const hourDisabled = (h) =>
+    minMinutes !== null && MINUTE_STEPS.every((m) => tooEarly(h, m, meridiem));
 
   const emit = (nextHour, nextMinute, nextMeridiem) => {
     const h24 = to24(Number(nextHour), nextMeridiem);
@@ -107,8 +170,9 @@ function TimeField({ label, value, onChange }) {
           was picked -- which is exactly when two adjacent fields need telling
           apart. */}
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={toggle}
         className={cn(
           'w-36 px-3 py-1.5 bg-white border rounded-xl text-left transition-colors cursor-pointer',
           open ? 'border-sage-400' : 'border-slate-200 hover:border-slate-300'
@@ -130,7 +194,43 @@ function TimeField({ label, value, onChange }) {
           {/* Backdrop rather than a document listener: it closes on any outside
               click without racing the button's own onClick. */}
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute z-30 mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-lg p-2.5 space-y-2.5">
+          <div className={cn(
+            'absolute z-30 w-56 bg-white border border-slate-200 rounded-xl shadow-lg p-2.5 space-y-2.5',
+            // A cap plus its own scroll, so even a screen too short for either
+            // direction shows a usable panel instead of a clipped one.
+            'max-h-[min(22rem,70vh)] overflow-y-auto',
+            dropUp ? 'bottom-full mb-1' : 'mt-1'
+          )}>
+            {/* One click for the common case. Only shown on a field that has a
+                start to measure from, and a length that would run past 8 PM is
+                simply not offered. */}
+            {minTime && (
+              <>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Length
+                </p>
+                <div className="grid grid-cols-4 gap-1">
+                  {DURATIONS.map((d) => {
+                    const end = addMinutes(minTime, d.minutes);
+                    return (
+                      <button
+                        key={d.label}
+                        type="button"
+                        disabled={!end}
+                        onClick={() => { onChange(end); setOpen(false); }}
+                        className={cn(pill, value && value === end ? chosen : unchosen)}
+                      >
+                        {d.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-400 pt-0.5 border-t border-slate-100">
+                  or set it exactly
+                </p>
+              </>
+            )}
+
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
               Period
             </p>
@@ -160,6 +260,7 @@ function TimeField({ label, value, onChange }) {
                 <button
                   key={h}
                   type="button"
+                  disabled={hourDisabled(h)}
                   onClick={() => emit(h, minute, meridiem)}
                   className={cn(pill, Number(hour12) === h ? chosen : unchosen)}
                 >
@@ -176,7 +277,11 @@ function TimeField({ label, value, onChange }) {
                 <button
                   key={m}
                   type="button"
-                  disabled={!hour12 || to24(Number(hour12), meridiem) >= 20}
+                  disabled={
+                    !hour12
+                    || to24(Number(hour12), meridiem) >= 20
+                    || tooEarly(hour12, m, meridiem)
+                  }
                   onClick={() => { emit(hour12, m, meridiem); setOpen(false); }}
                   className={cn(pill, minute === m && hour12 ? chosen : unchosen)}
                 >
@@ -200,6 +305,10 @@ export default function FacultyLoadingWorkspace({
 
   const [term, setTerm] = useState(null);
   const [colleges, setColleges] = useState([]);
+  // The target college, used only when the selected college teaches across
+  // colleges. General Education's own faculty teach other colleges' students,
+  // so "whose students" becomes a question the picker has to ask.
+  const [pickTargetCollege, setPickTargetCollege] = useState('');
   const [departmentId, setDepartmentId] = useState(fixedDepartmentId || '');
   const [catalog, setCatalog] = useState({ faculty: [], programs: [], sections: [], subjects: [] });
   const [loadState, setLoadState] = useState({ drafts: [], classes: [] });
@@ -242,6 +351,16 @@ export default function FacultyLoadingWorkspace({
   // Off by default: the term decides what is offered. A subject taught in both
   // semesters, or a special offering, is the exception the registrar opts into.
   const [showAllSubjects, setShowAllSubjects] = useState(false);
+  // What the chosen faculty member and section are already booked for, and
+  // whether the slot being typed clashes. Both advisory: add_faculty_load_draft
+  // runs the authoritative check inside its own transaction.
+  const [occupancy, setOccupancy] = useState([]);
+  const [liveConflict, setLiveConflict] = useState(null);
+  // A subject with both a lecture and a laboratory is TWO assignments: one
+  // meeting pattern cannot hold two different days, times and rooms.
+  const [pickClassType, setPickClassType] = useState('lecture');
+  const [pickRoom, setPickRoom] = useState('');
+  const [roomOptions, setRoomOptions] = useState([]);
   const [pickDays, setPickDays] = useState([]);
   const [pickStart, setPickStart] = useState('');
   const [pickEnd, setPickEnd] = useState('');
@@ -263,6 +382,13 @@ export default function FacultyLoadingWorkspace({
 
   const collegeName = useMemo(
     () => colleges.find((c) => c.department_id === departmentId)?.name || '',
+    [colleges, departmentId]
+  );
+
+  // Read from the row, never matched on the name -- a rename would silently
+  // switch the behaviour off.
+  const isCrossCollege = useMemo(
+    () => Boolean(colleges.find((c) => c.department_id === departmentId)?.teaches_across_colleges),
     [colleges, departmentId]
   );
 
@@ -298,7 +424,9 @@ export default function FacultyLoadingWorkspace({
       setLoading(true);
       setError('');
       try {
-        const [cat] = await Promise.all([fetchLoadingCatalog(departmentId, term)]);
+        const [cat] = await Promise.all([
+          fetchLoadingCatalog(departmentId, term, { crossCollege: isCrossCollege })
+        ]);
         if (cancelled) return;
         setCatalog(cat);
         await refreshLoad(departmentId, term);
@@ -326,7 +454,9 @@ export default function FacultyLoadingWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [departmentId, term, refreshLoad]);
+    // isCrossCollege decides how wide the catalogue is, so a change to it has
+    // to refetch -- it arrives with the colleges list, after the first render.
+  }, [departmentId, term, isCrossCollege, refreshLoad]);
 
   // Heartbeat while this page holds the college. Stopping on unmount lets the
   // lock lapse within its TTL, which covers a closed tab or a crash that an
@@ -451,15 +581,26 @@ export default function FacultyLoadingWorkspace({
     return [...digits].sort();
   }, [pickProgram, catalog]);
 
+  // For an ordinary college the catalogue already holds only its own programs,
+  // so this is every program it has. For General Education the catalogue spans
+  // every college, so it narrows to the one being taught for.
+  const programOptions = useMemo(() => {
+    if (!isCrossCollege) return catalog.programs;
+    if (!pickTargetCollege) return [];
+    return catalog.programs.filter((p) => p.department_id === pickTargetCollege);
+  }, [isCrossCollege, pickTargetCollege, catalog.programs]);
+
   const sectionOptions = useMemo(() => {
     if (!pickProgram || !pickYear) return [];
     const program = catalog.programs.find((p) => p.program_id === pickProgram);
     const abbr = (program?.abbreviation || '').toUpperCase();
     return catalog.sections.filter((s) => {
+      // Sections belong to the target college, not the one doing the loading.
+      if (isCrossCollege && pickTargetCollege && s.department_id !== pickTargetCollege) return false;
       const parsed = parseSectionName(s.name);
       return parsed.parsed && parsed.programAbbr === abbr && parsed.yearDigit === pickYear;
     });
-  }, [pickProgram, pickYear, catalog]);
+  }, [pickProgram, pickYear, catalog, isCrossCollege, pickTargetCollege]);
 
   // The Class step: a subject already claimed for this section is left out
   // entirely rather than shown disabled, so a collision cannot be picked.
@@ -477,6 +618,63 @@ export default function FacultyLoadingWorkspace({
     [catalog.subjects, term?.semester]
   );
   const outOfTermCount = catalog.subjects.length - inTermSubjects.length;
+
+  // Show what the chosen faculty member and section are already booked for, as
+  // soon as they are chosen -- before any time is typed. The registrar then
+  // schedules by looking instead of guessing and being refused.
+  useEffect(() => {
+    let cancelled = false;
+    if (!pickFaculty && !pickSection) {
+      setOccupancy([]);
+      return undefined;
+    }
+    fetchScheduleOccupancy({ facultyId: pickFaculty, sectionId: pickSection, term })
+      .then((rows) => { if (!cancelled) setOccupancy(rows); });
+    return () => { cancelled = true; };
+  }, [pickFaculty, pickSection, term]);
+
+  // And check the specific slot as it is typed. Debounced, and only once every
+  // part of a schedule exists -- before that there is nothing to check.
+  //
+  // Advisory only: add_faculty_load_draft runs the same check inside its
+  // transaction under an advisory lock, and that is the answer that counts. A
+  // snapshot taken while someone types cannot be authoritative.
+  useEffect(() => {
+    let cancelled = false;
+    if (!pickFaculty || !pickSection || !pickDays.length || !pickStart || !pickEnd) {
+      setLiveConflict(null);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      checkScheduleConflict({
+        facultyId: pickFaculty, sectionId: pickSection,
+        days: pickDays, startTime: pickStart, endTime: pickEnd, term
+      }).then((hit) => { if (!cancelled) setLiveConflict(hit); });
+    }, 350);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [pickFaculty, pickSection, pickDays, pickStart, pickEnd, term]);
+
+  // Only rooms of the right kind that are actually free at the chosen time.
+  // Offering a room that cannot be had is how two classes end up in one room.
+  useEffect(() => {
+    let cancelled = false;
+    fetchAvailableRooms({
+      roomType: pickClassType,
+      days: pickDays,
+      startTime: pickStart,
+      endTime: pickEnd,
+      term
+    }).then((rows) => {
+      if (cancelled) return;
+      setRoomOptions(rows);
+      // A room that was free a moment ago and is not any more must not stay
+      // selected: the server would refuse it, after the registrar had moved on.
+      setPickRoom((current) =>
+        current && !rows.some((r) => r.room_id === current) ? '' : current
+      );
+    });
+    return () => { cancelled = true; };
+  }, [pickClassType, pickDays, pickStart, pickEnd, term]);
 
   const subjectOptions = useMemo(() => {
     if (!pickSection) return [];
@@ -516,21 +714,30 @@ export default function FacultyLoadingWorkspace({
         term,
         days: pickDays,
         startTime: pickStart,
-        endTime: pickEnd
+        endTime: pickEnd,
+        classType: pickClassType,
+        roomId: pickRoom || null
       });
       await refreshLoad(departmentId, term);
-      // Reset to the Program step so the same faculty's next subject can be
-      // added immediately, which is how a whole load gets built in one sitting.
-      setPickProgram('');
-      setPickYear('');
-      setPickSection('');
+      // Several subjects for one faculty member and section, without walking
+      // the whole picker again each time.
+      //
+      // Program, year and section used to be cleared too, so adding a four-
+      // subject load meant four complete passes through seven steps. They are
+      // kept now: the next subject is almost always for the same section, and
+      // anything genuinely different is two clicks away.
+      //
+      // Subject is cleared, because adding the same one twice is the one thing
+      // this screen must not make easy. Days are cleared for the same reason --
+      // the next subject rarely meets at the identical slot, and an unchanged
+      // day set plus unchanged times is exactly the duplicate the conflict
+      // check would have to catch.
+      //
+      // Times, type and room are kept: a lecture block usually runs the same
+      // hour in the same room on different days.
       setPickSubject('');
-      // Times are kept, days are cleared. The next subject for the same faculty
-      // usually runs in the same hour on different days, so keeping the times
-      // saves re-typing while clearing the days stops an identical slot being
-      // added twice without a second look.
       setPickDays([]);
-      setNotice('Assignment drafted. Nothing is visible to students until it is finalized.');
+      setNotice('Assignment drafted. Add the next subject for this section, or change section. Nothing is visible to students until it is finalized.');
     } catch (err) {
       setError(toUserMessage(err, 'Could not add that assignment.'));
     } finally {
@@ -866,6 +1073,19 @@ export default function FacultyLoadingWorkspace({
                 outOfTermCount={outOfTermCount}
                 showAllSubjects={showAllSubjects}
                 onToggleAllSubjects={setShowAllSubjects}
+                occupancy={occupancy}
+                liveConflict={liveConflict}
+                pickClassType={pickClassType}
+                setPickClassType={setPickClassType}
+                pickRoom={pickRoom}
+                setPickRoom={setPickRoom}
+                roomOptions={roomOptions}
+                colleges={colleges}
+                departmentId={departmentId}
+                isCrossCollege={isCrossCollege}
+                pickTargetCollege={pickTargetCollege}
+                setPickTargetCollege={setPickTargetCollege}
+                programOptions={programOptions}
                 onAdd={handleAdd}
                 summary={summary}
               />
@@ -1124,7 +1344,7 @@ function FacultyLoadDialog({
                   </div>
                   <div className="flex items-end gap-3 flex-wrap">
                     <TimeField label="Start time" value={start} onChange={setStart} />
-                    <TimeField label="End time" value={end} onChange={setEnd} />
+                    <TimeField label="End time" value={end} onChange={setEnd} minTime={start} />
                     <button
                       onClick={() => save(chip)}
                       disabled={busy}
@@ -1274,7 +1494,11 @@ function Step({ n, label, children, enabled }) {
 // ── Tab 2: Cascading picker ──────────────────────────────────────────────────
 function AssignTab({
   catalog, canEdit, busy, pick, set, yearOptions, sectionOptions, subjectOptions,
-  termSemester, outOfTermCount, showAllSubjects, onToggleAllSubjects, onAdd, summary
+  termSemester, outOfTermCount, showAllSubjects, onToggleAllSubjects,
+  occupancy, liveConflict, pickClassType, setPickClassType,
+  pickRoom, setPickRoom, roomOptions,
+  colleges, departmentId, isCrossCollege,
+  pickTargetCollege, setPickTargetCollege, programOptions, onAdd, summary
 }) {
   const { pickFaculty, pickProgram, pickYear, pickSection, pickSubject, pickDays, pickStart, pickEnd } = pick;
   const { setPickFaculty, setPickProgram, setPickYear, setPickSection, setPickSubject, setPickDays, setPickStart, setPickEnd } = set;
@@ -1284,81 +1508,160 @@ function AssignTab({
 
   // Say what is still missing rather than leaving a grey button to be puzzled
   // over. Read in step order so the sentence matches the numbered fields.
-  const missing = [
-    !pickFaculty && 'a faculty member',
+  // Listed in the order the fields are actually asked, which differs between
+  // the two modes -- a sentence that names them out of order sends the reader
+  // up the form instead of down it.
+  const missing = (
+    isCrossCollege
+      ? [
+          !pickTargetCollege && 'the college being taught',
+          !pickProgram && 'a program',
+          !pickFaculty && 'a faculty member'
+        ]
+      : [!pickFaculty && 'a faculty member']
+  ).concat([
     !pickSection && 'a section',
     !pickSubject && 'a subject',
     !pickDays.length && 'at least one day',
-    (!pickStart || !pickEnd) && 'a start and end time'
-  ].filter(Boolean);
+    (!pickStart || !pickEnd) && 'a start and end time',
+    !pickRoom && 'a room'
+  ]).filter(Boolean);
 
   const selectClass =
     'w-full px-3 py-2 text-xs sm:text-sm bg-white border border-slate-200 rounded-xl outline-none focus:border-sage-400 cursor-pointer disabled:bg-slate-50';
+
+  // The picker asks its questions in a different ORDER for a college that
+  // teaches other colleges' students.
+  //
+  //   Ordinary college   faculty -> program -> year -> section -> subject
+  //   General Education  COLLEGE -> program -> faculty -> year -> section -> subject
+  //
+  // General Education teaches everyone, so "whose students" has to be settled
+  // before anything else means anything: the programs and sections on offer
+  // belong to the target college, not to the one doing the loading. Its own
+  // faculty are then chosen once the target is known.
+  //
+  // Each step is built once and placed by the order below, rather than written
+  // twice with different numbers -- two copies would drift the first time one
+  // of them was edited.
+  const stepFaculty = (n) => (
+    <Step key="faculty" n={n} label="Faculty" enabled={canEdit && (!isCrossCollege || !!pickProgram)}>
+      <select
+        value={pickFaculty}
+        onChange={(e) => {
+          setPickFaculty(e.target.value);
+          // Clearing the downstream picks only applies to the ordinary order,
+          // where program comes AFTER faculty. For General Education, program
+          // and college were settled first and changing the instructor must not
+          // throw them away.
+          if (!isCrossCollege) {
+            setPickProgram(''); setPickYear(''); setPickSection(''); setPickSubject('');
+          }
+        }}
+        className={selectClass}
+      >
+        <option value="">Select faculty…</option>
+        {catalog.faculty.map((f) => (
+          <option key={f.user_id} value={f.user_id}>
+            {f.last_name}, {f.first_name}
+          </option>
+        ))}
+      </select>
+    </Step>
+  );
+
+  const stepCollege = (n) => (
+    <Step key="college" n={n} label="College" enabled={canEdit}>
+      <select
+        value={pickTargetCollege}
+        onChange={(e) => {
+          setPickTargetCollege(e.target.value);
+          setPickProgram(''); setPickYear(''); setPickSection(''); setPickSubject('');
+        }}
+        className={selectClass}
+      >
+        <option value="">Select college…</option>
+        {colleges
+          .filter((c) => c.department_id !== departmentId)
+          .map((c) => (
+            <option key={c.department_id} value={c.department_id}>{c.name}</option>
+          ))}
+      </select>
+    </Step>
+  );
+
+  const stepProgram = (n) => (
+    <Step
+      key="program"
+      n={n}
+      label="Program"
+      enabled={canEdit && (isCrossCollege ? !!pickTargetCollege : !!pickFaculty)}
+    >
+      <select
+        value={pickProgram}
+        onChange={(e) => { setPickProgram(e.target.value); setPickYear(''); setPickSection(''); setPickSubject(''); }}
+        className={selectClass}
+      >
+        <option value="">Select program…</option>
+        {programOptions.map((p) => (
+          <option key={p.program_id} value={p.program_id}>{p.abbreviation || p.name}</option>
+        ))}
+      </select>
+    </Step>
+  );
+
+  const stepYear = (n) => (
+    <Step
+      key="year"
+      n={n}
+      label="Year Level"
+      enabled={canEdit && !!pickProgram && (!isCrossCollege || !!pickFaculty)}
+    >
+      <select
+        value={pickYear}
+        onChange={(e) => { setPickYear(e.target.value); setPickSection(''); setPickSubject(''); }}
+        className={selectClass}
+      >
+        <option value="">Select year…</option>
+        {yearOptions.map((d) => (
+          <option key={d} value={d}>{YEAR_LEVEL_BY_DIGIT[d] || `Year ${d}`}</option>
+        ))}
+      </select>
+    </Step>
+  );
+
+  const stepSection = (n) => (
+    <Step key="section" n={n} label="Section" enabled={canEdit && !!pickYear}>
+      <select
+        value={pickSection}
+        onChange={(e) => { setPickSection(e.target.value); setPickSubject(''); }}
+        className={selectClass}
+      >
+        <option value="">Select section…</option>
+        {sectionOptions.map((s) => (
+          <option key={s.section_id} value={s.section_id}>{s.name}</option>
+        ))}
+      </select>
+    </Step>
+  );
+
+  const orderedSteps = isCrossCollege
+    ? [stepCollege, stepProgram, stepFaculty, stepYear, stepSection]
+    : [stepFaculty, stepProgram, stepYear, stepSection];
 
   return (
     <>
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-3.5 sm:p-5 space-y-3.5">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <Step n={1} label="Faculty" enabled={canEdit}>
-            <select
-              value={pickFaculty}
-              onChange={(e) => {
-                setPickFaculty(e.target.value);
-                setPickProgram(''); setPickYear(''); setPickSection(''); setPickSubject('');
-              }}
-              className={selectClass}
-            >
-              <option value="">Select faculty…</option>
-              {catalog.faculty.map((f) => (
-                <option key={f.user_id} value={f.user_id}>
-                  {f.last_name}, {f.first_name}
-                </option>
-              ))}
-            </select>
-          </Step>
+          {orderedSteps.map((step, index) => step(index + 1))}
 
-          <Step n={2} label="Program" enabled={canEdit && !!pickFaculty}>
-            <select
-              value={pickProgram}
-              onChange={(e) => { setPickProgram(e.target.value); setPickYear(''); setPickSection(''); setPickSubject(''); }}
-              className={selectClass}
-            >
-              <option value="">Select program…</option>
-              {catalog.programs.map((p) => (
-                <option key={p.program_id} value={p.program_id}>{p.abbreviation || p.name}</option>
-              ))}
-            </select>
-          </Step>
-
-          <Step n={3} label="Year Level" enabled={canEdit && !!pickProgram}>
-            <select
-              value={pickYear}
-              onChange={(e) => { setPickYear(e.target.value); setPickSection(''); setPickSubject(''); }}
-              className={selectClass}
-            >
-              <option value="">Select year…</option>
-              {yearOptions.map((d) => (
-                <option key={d} value={d}>{YEAR_LEVEL_BY_DIGIT[d] || `Year ${d}`}</option>
-              ))}
-            </select>
-          </Step>
-
-          <Step n={4} label="Section" enabled={canEdit && !!pickYear}>
-            <select
-              value={pickSection}
-              onChange={(e) => { setPickSection(e.target.value); setPickSubject(''); }}
-              className={selectClass}
-            >
-              <option value="">Select section…</option>
-              {sectionOptions.map((s) => (
-                <option key={s.section_id} value={s.section_id}>{s.name}</option>
-              ))}
-            </select>
-          </Step>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
-          <Step n={5} label="Subject" enabled={canEdit && !!pickSection}>
+          {/* Subject sits in the SAME grid as the steps before it, spanning two
+              columns. In the General Education order that puts Section and
+              Subject side by side on the second row; in the ordinary order it
+              gives Subject the width its "CODE — Full Subject Name" options
+              need. A row of its own left Section stranded alone above it. */}
+          <div className="sm:col-span-2">
+          <Step n={orderedSteps.length + 1} label="Subject" enabled={canEdit && !!pickSection}>
             <select
               value={pickSubject}
               onChange={(e) => setPickSubject(e.target.value)}
@@ -1394,6 +1697,7 @@ function AssignTab({
               </label>
             )}
           </Step>
+          </div>
         </div>
 
         {/* Step 6: meeting pattern. REQUIRED -- conflict detection is driven
@@ -1402,7 +1706,7 @@ function AssignTab({
             express a split lecture/lab timetable. */}
         <div className={cn('pt-1', !(canEdit && pickSubject) && 'opacity-50 pointer-events-none')}>
           <label className="text-[11px] sm:text-xs font-semibold text-slate-600 uppercase tracking-wider block mb-1.5">
-            6. Schedule <span className="font-normal normal-case text-rose-500">— required</span>
+            {orderedSteps.length + 2}. Schedule <span className="font-normal normal-case text-rose-500">— required</span>
           </label>
           <div className="flex flex-wrap items-center gap-1.5 mb-2">
             {DAYS.map((d) => (
@@ -1423,7 +1727,7 @@ function AssignTab({
           </div>
           <div className="flex items-end gap-3 flex-wrap">
             <TimeField label="Start time" value={pickStart} onChange={setPickStart} />
-            <TimeField label="End time" value={pickEnd} onChange={setPickEnd} />
+            <TimeField label="End time" value={pickEnd} onChange={setPickEnd} minTime={pickStart} />
             {(pickDays.length > 0 || pickStart || pickEnd) && (
               <button
                 type="button"
@@ -1434,11 +1738,74 @@ function AssignTab({
               </button>
             )}
           </div>
+          {/* Kind and place. A subject with a laboratory is added twice --
+              once as a lecture, once as a laboratory -- because one meeting
+              pattern cannot hold two different days, times and rooms. */}
+          <div className="flex flex-wrap items-end gap-3 mt-3">
+            <div className="min-w-[9rem]">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                Class type
+              </label>
+              <select
+                value={pickClassType}
+                onChange={(e) => setPickClassType(e.target.value)}
+                disabled={!canEdit}
+                className={selectClass}
+              >
+                {CLASS_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-[12rem] flex-1">
+              {/* Required, like the schedule and for the same reason: a blank
+                  room skips find_room_conflict() entirely, so accepting one
+                  would let two classes share a room with nothing to catch it. */}
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                Room <span className="font-normal normal-case tracking-normal text-rose-500">— required</span>
+              </label>
+              <select
+                value={pickRoom}
+                onChange={(e) => setPickRoom(e.target.value)}
+                disabled={!canEdit}
+                className={selectClass}
+              >
+                <option value="">Select room…</option>
+                {roomOptions.map((r) => (
+                  <option key={r.room_id} value={r.room_id}>{r.code}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1">
+            {/* Availability, not a catalogue: a room that is busy at this time
+                is absent rather than shown and then refused.
+                An empty list has two very different causes, and saying "none
+                are free" when none EXIST sends the registrar hunting for a
+                clash that was never there. */}
+            {roomOptions.length === 0
+              ? (!pickDays.length || !pickStart || !pickEnd
+                  ? 'No rooms have been set up yet. Add them in Academic Setup.'
+                  : `Every ${pickClassType === 'laboratory' ? 'laboratory' : 'lecture room'} is taken at that time — or none have been set up yet.`)
+              : `${roomOptions.length} ${pickClassType === 'laboratory' ? 'laborator' + (roomOptions.length === 1 ? 'y' : 'ies') : 'lecture room' + (roomOptions.length === 1 ? '' : 's')} free at that time.`}
+          </p>
+
           <p className="text-[10px] text-slate-400 mt-1.5">
             Days and both times are needed before an assignment can be added. The system then
-            refuses a clash with any other class this faculty member or section already has —
+            refuses a clash with any other class this faculty member, section or room already has —
             checked across every college, since General Education faculty teach outside their own.
           </p>
+
+          {/* What is taken, and whether this slot clashes — shown while the
+              schedule is being chosen rather than after Add refuses it. */}
+          <div className="mt-3">
+            <SchedulePanel
+              occupancy={occupancy}
+              conflict={liveConflict}
+              hasFaculty={Boolean(pickFaculty)}
+              hasSection={Boolean(pickSection)}
+            />
+          </div>
         </div>
 
         {/* Add belongs AFTER step 6, not beside step 5. With the button inside
@@ -1453,6 +1820,13 @@ function AssignTab({
               // The schedule in step 6 counts toward "complete" now. handleAdd
               // still validates, so a stale render cannot slip a blank one past.
               || !pickDays.length || !pickStart || !pickEnd
+              // A room is required: without one, find_room_conflict() returns
+              // NULL and the room check is skipped altogether.
+              || !pickRoom
+              // A clash the panel is already showing. The server refuses it
+              // regardless, under an advisory lock; disabling here just stops
+              // the pointless round trip.
+              || Boolean(liveConflict)
             }
             className="px-3.5 py-2 text-xs sm:text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -1496,6 +1870,11 @@ function AssignTab({
           </div>
         </div>
       )}
+
+      {/* The whole term, in timetable order. The chips above answer "what does
+          this one person teach"; this answers "does the timetable work", which
+          is not visible from any single faculty card. */}
+      <LoadSummaryTable summary={summary} />
     </>
   );
 }

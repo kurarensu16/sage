@@ -57,17 +57,44 @@ export async function fetchActiveTerm() {
 export async function fetchColleges() {
   const { data, error } = await supabase
     .from('departments')
-    .select('department_id, name')
+    // teaches_across_colleges marks a college whose faculty teach other
+    // colleges' students -- General Education. Read from the row, never matched
+    // on the name: a rename would silently switch the rule off.
+    .select('department_id, name, teaches_across_colleges')
     .order('name');
   if (error) throw error;
   return data || [];
 }
 
 // Everything the picker needs for one college and term, in one round trip set.
-export async function fetchLoadingCatalog(departmentId, term) {
+//
+// `crossCollege` is for the Department of General Education, whose faculty
+// teach every college's students and which has no students of its own. Without
+// it the picker shows only that college's sections -- there are none -- and a
+// General Education instructor cannot be loaded at all.
+//
+// WHAT WIDENS AND WHAT DOES NOT
+//
+//   Faculty    stays General Education's own. You load your own staff.
+//   Subjects   stays General Education's own. GE101 is a General Education
+//              subject TAUGHT TO BSIT students; it is not a Technology and
+//              Engineering subject, and that college's own subjects are its
+//              own to assign.
+//   Programs   widens, then narrows to the college being taught.
+//   Sections   widens, then narrows to the college being taught.
+//
+// So a cross-college load is: this college's instructor, teaching this
+// college's subject, to another college's section. Only the target widens --
+// what General Education brings with it does not.
+export async function fetchLoadingCatalog(departmentId, term, { crossCollege = false } = {}) {
   if (!departmentId || !term) {
     return { faculty: [], programs: [], sections: [], subjects: [] };
   }
+
+  // A filter that is a no-op when the college teaches across colleges. Written
+  // once so the three reads below cannot drift apart.
+  const scopeToCollege = (query) =>
+    crossCollege ? query : query.eq('department_id', departmentId);
 
   const [faculty, programs, subjects] = await Promise.all([
     fetchAllPaged((from, to) =>
@@ -76,22 +103,28 @@ export async function fetchLoadingCatalog(departmentId, term) {
         .select('user_id, first_name, last_name, user_number')
         .eq('role', 'faculty')
         .eq('status', 'active')
+        // Never widened: you load your own faculty, whoever they teach.
         .eq('department_id', departmentId)
         .order('last_name')
         .range(from, to)
     ),
     fetchAllPaged((from, to) =>
-      supabase
-        .from('programs')
-        .select('program_id, name, abbreviation')
-        .eq('department_id', departmentId)
+      scopeToCollege(
+        supabase
+          .from('programs')
+          .select('program_id, name, abbreviation, department_id')
+      )
         .order('name')
         .range(from, to)
     ),
     fetchAllPaged((from, to) =>
       supabase
         .from('subjects')
-        .select('subject_id, code, name, units, computation_id')
+        .select('subject_id, code, name, units, computation_id, department_id')
+        // Never widened, for the same reason as faculty: General Education
+        // teaches ITS OWN subjects to other colleges' students. Widening this
+        // would have offered Technology and Engineering's subjects to a General
+        // Education instructor, which is that college's loading to do.
         .eq('department_id', departmentId)
         .order('code')
         .range(from, to)
@@ -103,18 +136,20 @@ export async function fetchLoadingCatalog(departmentId, term) {
   // Manage Sections uses, so both pages agree on which sections exist.
   const [scoped, legacy] = await Promise.all([
     fetchAllPaged((from, to) =>
-      supabase
-        .from('sections')
-        .select('section_id, name, department_id')
-        .eq('department_id', departmentId)
+      scopeToCollege(
+        supabase
+          .from('sections')
+          .select('section_id, name, department_id')
+      )
         .eq('term_id', term.term_id)
         .range(from, to)
     ),
     fetchAllPaged((from, to) =>
-      supabase
-        .from('sections')
-        .select('section_id, name, department_id')
-        .eq('department_id', departmentId)
+      scopeToCollege(
+        supabase
+          .from('sections')
+          .select('section_id, name, department_id')
+      )
         .is('term_id', null)
         .eq('school_year', term.school_year)
         .eq('semester', term.semester)
@@ -140,7 +175,10 @@ export async function fetchLoadState(departmentId, term) {
     fetchAllPaged((from, to) =>
       supabase
         .from('faculty_load_drafts')
-        .select('*')
+        // The embedded room comes back as `rooms`; class_type and room_id are
+        // already covered by the star, but the join is what gives the summary a
+        // room NAME rather than an id.
+        .select('*, rooms ( code, room_type )')
         .eq('department_id', departmentId)
         .eq('school_year', term.school_year)
         .eq('semester', term.semester)
@@ -150,7 +188,7 @@ export async function fetchLoadState(departmentId, term) {
     fetchAllPaged((from, to) =>
       supabase
         .from('class_records')
-        .select('class_record_id, subject_id, section_id, faculty_id, school_year, semester, meeting_days, start_time, end_time')
+        .select('class_record_id, subject_id, section_id, faculty_id, school_year, semester, meeting_days, start_time, end_time, class_type, room_id, rooms ( code, room_type )')
         .eq('school_year', term.school_year)
         .eq('semester', term.semester)
         .range(from, to)
@@ -215,6 +253,8 @@ export function buildLoadSummary({ faculty = [], drafts = [], classes = [], subj
             days: d.meeting_days || [],
             startTime: d.start_time,
             endTime: d.end_time,
+            classType: d.class_type || 'lecture',
+            room: d.rooms?.code || null,
             draft: d
           })),
         // A class with no draft row predates this page (or was provisioned
@@ -237,6 +277,8 @@ export function buildLoadSummary({ faculty = [], drafts = [], classes = [], subj
             days: c.meeting_days || [],
             startTime: c.start_time,
             endTime: c.end_time,
+            classType: c.class_type || 'lecture',
+            room: c.rooms?.code || null,
             draft: null
           }))
       ];
@@ -250,6 +292,9 @@ export function buildLoadSummary({ faculty = [], drafts = [], classes = [], subj
         return {
           ...entry,
           label: `${subject?.code || '—'} · ${section?.name || '—'}`,
+          subjectCode: subject?.code || '—',
+          subjectName: subject?.name || '',
+          sectionName: section?.name || '—',
           schedule: sched,
           units: Number(subject?.units) || 0
         };
@@ -303,7 +348,8 @@ export async function releaseLock(departmentId) {
 // ── Mutations ────────────────────────────────────────────────────────────────
 export async function addDraft({
   departmentId, subjectId, sectionId, facultyId, term,
-  days = null, startTime = null, endTime = null
+  days = null, startTime = null, endTime = null,
+  classType = 'lecture', roomId = null
 }) {
   // The schedule is REQUIRED. It used to be optional, which meant passing nulls
   // skipped conflict detection entirely -- so the one safeguard against
@@ -326,7 +372,20 @@ export async function addDraft({
     throw new Error('Class times run on the quarter hour: :00, :15, :30 or :45.');
   }
 
-  const { error } = await supabase.rpc('add_faculty_load_draft', {
+  // A room is REQUIRED, for the same reason the schedule is. find_room_conflict()
+  // returns NULL when no room is given, so a blank one does not merely leave a
+  // field empty -- it skips the room check entirely, and two classes can be put
+  // in one room with nothing to catch it. Checked here as well as in the RPC:
+  // this is the layer that can name the missing field in plain words.
+  if (!roomId) {
+    throw new Error('Pick a room before adding the assignment. Every class needs one.');
+  }
+
+  // v2 carries the class type and the room, and locks on all three before it
+  // checks. v1 is left in place and still works, so a client that has not
+  // reloaded during a deploy keeps functioning -- it simply cannot record a
+  // room.
+  const { error } = await supabase.rpc('add_faculty_load_draft_v2', {
     p_department_id: departmentId,
     p_subject_id: subjectId,
     p_section_id: sectionId,
@@ -335,7 +394,9 @@ export async function addDraft({
     p_semester: term.semester,
     p_days: days,
     p_start: startTime,
-    p_end: endTime
+    p_end: endTime,
+    p_class_type: classType,
+    p_room_id: roomId
   });
   if (error) throw new Error(toUserMessage(error, 'Could not add that assignment.'));
 }
@@ -477,6 +538,123 @@ export async function updateDraftSchedule(draftId, { days, startTime, endTime })
     }
     throw new Error(toUserMessage(error, 'Could not save that schedule.'));
   }
+}
+
+// ── Rooms ────────────────────────────────────────────────────────────────────
+//
+// Rooms are rows, never a list in code: "Room 201", "RM 201" and "Rm. 201" are
+// three different rooms to a string comparison, and a clash would slip through
+// exactly when two people typed it differently. A room needs identity before a
+// conflict check means anything.
+
+export const CLASS_TYPES = [
+  { value: 'lecture', label: 'Lecture' },
+  { value: 'laboratory', label: 'Laboratory' }
+];
+
+export async function fetchRooms() {
+  const { data, error } = await supabase
+    .from('rooms')
+    .select('room_id, code, room_type, is_active')
+    .order('code');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function saveRoom({ roomId = null, code, roomType, isActive = true }) {
+  const { data, error } = await supabase.rpc('save_room', {
+    p_room_id: roomId,
+    p_code: code,
+    p_room_type: roomType,
+    p_is_active: isActive
+  });
+  if (error) throw new Error(toUserMessage(error, 'Could not save that room.'));
+  return data;
+}
+
+/**
+ * Rooms of the right kind that are actually free at this time.
+ *
+ * Offering only what can be had makes a room clash close to impossible by
+ * construction; the advisory lock inside add_faculty_load_draft_v2 closes the
+ * millisecond that remains. With no schedule chosen yet every room of that kind
+ * comes back -- there is nothing to be busy during.
+ */
+export async function fetchAvailableRooms({ roomType, days, startTime, endTime, term }) {
+  if (!term?.school_year) return [];
+  const { data, error } = await supabase.rpc('aspire_available_rooms', {
+    p_room_type: roomType || null,
+    p_days: days?.length ? days : null,
+    p_start: startTime || null,
+    p_end: endTime || null,
+    p_school_year: term.school_year,
+    p_semester: term.semester
+  });
+  if (error) {
+    console.warn('Could not read room availability:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+// ── Availability, before a time is chosen ────────────────────────────────────
+//
+// The picker used to offer a faculty member and a time with no indication that
+// either was taken, so the only way to find a free slot was to guess and be
+// refused -- three round trips to learn three things the server already knew.
+//
+// Drafts count, because a draft reserves a slot. That is what makes
+// first-come-first-served true across colleges.
+//
+// Subject and section come back only for a registrar; a dean sees the days, the
+// times and the owning college. Enough to schedule around, not enough to read
+// another college's timetable. Enforced in aspire_schedule_occupancy, not here.
+
+export async function fetchScheduleOccupancy({ facultyId, sectionId, term }) {
+  if (!term?.school_year || (!facultyId && !sectionId)) return [];
+  const { data, error } = await supabase.rpc('aspire_schedule_occupancy', {
+    p_faculty_id: facultyId || null,
+    p_section_id: sectionId || null,
+    p_school_year: term.school_year,
+    p_semester: term.semester
+  });
+  if (error) {
+    // Availability is a convenience, not a guard: the conflict check inside
+    // add_faculty_load_draft is what actually prevents a clash. A failed read
+    // must not stop someone loading.
+    console.warn('Could not read schedule occupancy:', error.message);
+    return [];
+  }
+  return Array.isArray(data) ? data : [];
+}
+
+/**
+ * Would this slot clash? Asked while the picker is being filled in, not on Add.
+ *
+ * Advisory only. add_faculty_load_draft runs the same check inside its
+ * transaction, under an advisory lock, and that is the authoritative answer --
+ * a snapshot taken while someone types cannot be.
+ */
+export async function checkScheduleConflict({
+  facultyId, sectionId, days, startTime, endTime, term
+}) {
+  if (!facultyId || !sectionId || !days?.length || !startTime || !endTime || !term?.school_year) {
+    return null;
+  }
+  const { data, error } = await supabase.rpc('find_schedule_conflict', {
+    p_faculty_id: facultyId,
+    p_section_id: sectionId,
+    p_days: days,
+    p_start: startTime,
+    p_end: endTime,
+    p_school_year: term.school_year,
+    p_semester: term.semester
+  });
+  if (error) {
+    console.warn('Could not check for a schedule conflict:', error.message);
+    return null;
+  }
+  return data || null;
 }
 
 // ── Already-provisioned classes ──────────────────────────────────────────────

@@ -7,6 +7,8 @@ import {
   BookOpen, ExternalLink, Trash2
 } from 'lucide-react';
 import { toUserMessage } from '../../lib/errorMessages';
+import { describeAiFailure } from '../../lib/aiFallbackMessage';
+import AiUnavailableNotice from '../../components/common/AiUnavailableNotice';
 import { cn } from '../../lib/utils';
 import {
   TUTOR_ACTIONS, TUTOR_HORIZONS, PRACTICE_DIFFICULTIES, TUTOR_BOUNDARY,
@@ -350,6 +352,11 @@ export default function StudyTutor() {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Kept apart from `error`, which carries database and network failures as a
+  // plain string. An AI failure is a different kind of event -- it may clear on
+  // its own, and what to do about it depends on why -- so it gets the structure
+  // describeAiFailure returns rather than being flattened into a sentence.
+  const [aiError, setAiError] = useState(null);
   const [planBusy, setPlanBusy] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(null);
 
@@ -406,12 +413,13 @@ export default function StudyTutor() {
 
   const resetWizard = () => {
     setStep(1); setSubjectId(null); setFocusMode(''); setTopic(null);
-    setAction(''); setResult(null); setPracticeResults(null); setError('');
+    setAction(''); setResult(null); setPracticeResults(null); setError(''); setAiError(null);
   };
 
   const run = async (chosenAction) => {
     setRunning(true);
     setError('');
+    setAiError(null);
     setResult(null);
     setPracticeResults(null);
     try {
@@ -429,7 +437,13 @@ export default function StudyTutor() {
       setResult({ ...data, action: chosenAction });
       if (chosenAction === 'plan') await load();
     } catch (err) {
-      setError(toUserMessage(err, 'The tutor could not answer that. Please try again.'));
+      // An AI failure, not a database one: describeAiFailure decides whether
+      // waiting helps and never shows a status code or a function name.
+      console.error('Study tutor request failed:', err);
+      setAiError(describeAiFailure(err, {
+        feature: 'AI Study Advising',
+        fallbackAction: 'Your scores and activities are still on your Grade Report.'
+      }));
     } finally {
       setRunning(false);
     }
@@ -441,6 +455,7 @@ export default function StudyTutor() {
   const replacePlan = async () => {
     setRunning(true);
     setError('');
+    setAiError(null);
     try {
       const data = await buildStudyPlan({
         subjectId,
@@ -452,7 +467,11 @@ export default function StudyTutor() {
       setResult({ ...data, action: 'plan' });
       await load();
     } catch (err) {
-      setError(toUserMessage(err, 'The plan could not be replaced.'));
+      console.error('Study plan replacement failed:', err);
+      setAiError(describeAiFailure(err, {
+        feature: 'AI Study Advising',
+        fallbackAction: 'Your existing plan has not been changed.'
+      }));
     } finally {
       setRunning(false);
     }
@@ -531,6 +550,59 @@ export default function StudyTutor() {
             <AlertTriangle className="h-4 w-4 mt-px flex-shrink-0" />
             {error}
           </p>
+        )}
+
+        <AiUnavailableNotice
+          failure={aiError}
+          retrying={running}
+          onRetry={action ? () => run(action) : undefined}
+        />
+
+        {/* Deterministic fallback: topic-level study signals only, computed
+            client-side from the student's own recorded scores (summarizeTopics
+            in studyTutorRules.js). Never a grade, GWA, standing or risk tier --
+            this page's own boundary, kept even when the AI cannot answer. */}
+        {aiError && (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+              What ASPIRE can show you without AI
+            </p>
+            {(action === 'practice' || action === 'resources') ? (
+              <p className="text-xs leading-relaxed text-slate-700">
+                {action === 'practice'
+                  ? 'Practice questions need the AI service and cannot be generated without it.'
+                  : 'Curated resources need the AI service right now.'}{' '}
+                Check the materials your instructor has already shared for this subject in the meantime.
+              </p>
+            ) : topic ? (
+              <>
+                <p className="text-sm font-semibold text-slate-800">
+                  {topic.topic} ({topic.subjectCode}){' '}
+                  {topic.percent === null ? '— not yet graded' : `— ${topic.percent}%`}
+                  {topic.needsReview ? ', below the passing mark' : ', currently on track'}
+                </p>
+                <p className="text-xs leading-relaxed text-slate-600">
+                  {topic.percent === null
+                    ? 'No score has been recorded on this topic yet, so there is nothing to summarize.'
+                    : topic.needsReview
+                      ? 'This topic needs review based on your own recorded scores.'
+                      : 'No repeated weak pattern has been recorded on this topic.'}
+                </p>
+              </>
+            ) : menu.topics.some((t) => t.needsReview) ? (
+              <ul className="space-y-1">
+                {menu.topics.filter((t) => t.needsReview).slice(0, 5).map((t) => (
+                  <li key={t.key} className="text-xs text-slate-700">
+                    <span className="font-semibold">{t.topic}</span> ({t.subjectCode}) — {t.percent}%, below the passing mark
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs leading-relaxed text-slate-600">
+                No topic currently needs review based on your recorded scores.
+              </p>
+            )}
+          </div>
         )}
 
         {/* ── My Study Plans ─────────────────────────────────────────────── */}

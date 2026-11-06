@@ -212,25 +212,35 @@ export async function fetchRecordsIntegrity(term, enrolledSectionIds) {
   }
 
   return [
+    // Written for the registrar who reads them, not for the developer who
+    // wrote the query. "Bound to a term", "term_id" and "freeze a grading
+    // formula snapshot" describe how the system stores things; the reader needs
+    // to know whether it is their problem and what to do.
+    //
+    // Two of the three are usually NOT problems -- they are states a term
+    // passes through on its way to being ready -- so each says when it clears
+    // on its own. A count presented as a defect sends someone hunting for a
+    // fault that is not there, which is what happened with the Summer sections
+    // pre-created for the next rollover.
     {
       id: 'sections_no_term',
-      label: 'Sections not bound to a term',
+      label: 'Sections waiting for their term to start',
       count: sectionsNoTerm,
-      hint: 'Legacy sections matched by school year and semester instead of term_id.',
+      hint: 'Usually sections you created ahead of time for a term that has not begun. They attach themselves when that term starts — nothing to do.',
       to: '/registrar/sectionlist'
     },
     {
       id: 'subjects_no_template',
-      label: 'Subjects with no grading template',
+      label: 'Subjects with no grading formula',
       count: subjectsNoTemplate,
-      hint: 'A class provisioned from one of these cannot freeze a grading formula snapshot.',
+      hint: 'Grades cannot be computed for a class using one of these. Give each a grading template before its classes begin.',
       to: '/registrar/subjectlist'
     },
     {
       id: 'empty_sections',
-      label: 'Sections with no enrolled students',
+      label: 'Sections with nobody enrolled yet',
       count: emptySections,
-      hint: 'Either awaiting enrolment or left over from a previous term.',
+      hint: 'Students may already be assigned to the section but not yet enrolled in any subject. This clears as faculty loading fills in their classes.',
       to: '/registrar/sectionmasterlist'
     }
   ];

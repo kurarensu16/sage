@@ -408,6 +408,7 @@ export default function PostedGradesView() {
           .select(`
             class_record_id,
             status,
+            term_id,
             school_year,
             semester,
             grading_formula_snapshot,
@@ -466,22 +467,115 @@ export default function PostedGradesView() {
 
         if (studentErr) throw studentErr;
 
-        const studentList = (enrolls || [])
-          .map(e => e.users)
-          .filter(Boolean)
+        // The roster of a class whose term has ended is a historical fact, so it
+        // is reconstructed from the class's OWN records as well as from
+        // `enrollments`.
+        //
+        // `enrollments` carries no term or school_year column, so on its own it
+        // can only describe who is in this section NOW. That is correct while a
+        // class is running and wrong the moment the term rolls over and the
+        // students are moved to their next sections. Scores and posted grades,
+        // by contrast, are keyed to class_record_id and are never rewritten:
+        // anyone holding one for THIS class record sat in it, by definition.
+        //
+        // Without this union an archived class could render an empty sheet
+        // while its grades sat intact in the database -- an archive that cannot
+        // show what was archived, which is no archive at all.
+        const [classScoreResult, classPostedResult] = await Promise.all([
+          supabase
+            .from('student_term_scores')
+            .select('student_id')
+            .eq('class_record_id', classRecordId),
+          supabase
+            .from('posted_grades')
+            .select('student_id')
+            .eq('class_record_id', classRecordId)
+        ]);
+        if (classScoreResult.error) throw classScoreResult.error;
+        if (classPostedResult.error) throw classPostedResult.error;
+
+        const enrolledIds = new Set((enrolls || []).map(e => e.student_id).filter(Boolean));
+        const recordedIds = new Set(
+          [
+            ...(classScoreResult.data || []).map(r => r.student_id),
+            ...(classPostedResult.data || []).map(r => r.student_id)
+          ].filter(Boolean)
+        );
+        const missingIds = Array.from(recordedIds).filter(id => !enrolledIds.has(id));
+
+        let recoveredUsers = [];
+        if (missingIds.length > 0) {
+          const { data: recovered, error: recoveredErr } = await supabase
+            .from('users')
+            .select(`
+              user_id,
+              first_name,
+              last_name,
+              email,
+              user_number,
+              section_id,
+              sections:section_id ( name )
+            `)
+            .in('user_id', missingIds);
+          if (recoveredErr) throw recoveredErr;
+          recoveredUsers = recovered || [];
+        }
+
+        // Deduplicated by user_id: a student can appear in enrollments more than
+        // once, and must appear on the sheet exactly once.
+        const rosterById = new Map();
+        [...(enrolls || []).map(e => e.users), ...recoveredUsers]
+          .filter(u => u && u.user_id)
+          .forEach(u => {
+            if (!rosterById.has(u.user_id)) rosterById.set(u.user_id, u);
+          });
+
+        // Regular or Irregular is a fact about the term the class ran in, not
+        // about where the student sits today.
+        //
+        // The test is "was this the student's own block section?", and it was
+        // being answered with users.section_id -- a live value the rollover
+        // rewrites when it moves everyone into their next term's section. So
+        // every student in a past class failed the comparison at once and the
+        // whole sheet was stamped IRREGULAR, which on a posted-grade ledger is
+        // not a cosmetic slip: it is the document the registrar reads.
+        //
+        // student_term_details exists for exactly this. The rollover writes each
+        // student's section and year level for the term being closed BEFORE it
+        // moves them, so it is the record of where they actually were. Falling
+        // back to users.section_id keeps the current term correct, where no
+        // snapshot has been taken yet.
+        const rosterIds = Array.from(rosterById.keys());
+        const historicalSection = new Map();
+        if (cr.term_id && rosterIds.length > 0) {
+          const { data: termDetails, error: termDetailsErr } = await supabase
+            .from('student_term_details')
+            .select('student_id, section_id, sections:section_id ( name )')
+            .eq('term_id', cr.term_id)
+            .in('student_id', rosterIds);
+          if (termDetailsErr) throw termDetailsErr;
+          (termDetails || []).forEach(row => {
+            if (row.section_id) historicalSection.set(row.student_id, row);
+          });
+        }
+
+        const studentList = Array.from(rosterById.values())
           .map((u, idx) => {
             // Posted grades are what reaches the registrar, so this roster has to
             // carry the same class-contextual Regular/Irregular call the other
             // faculty screens use. Without it the export cannot tell the block
             // section from the students who joined this offering by code.
-            const enrollmentType = getEnrollmentType(u.section_id, cr.section_id);
+            const snapshot = historicalSection.get(u.user_id);
+            const homeSectionId = snapshot?.section_id || u.section_id || null;
+            const homeSectionName = snapshot?.sections?.name || u.sections?.name || '';
+            const enrollmentType = getEnrollmentType(homeSectionId, cr.section_id);
             return {
               id: u.user_id,
               studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
               name: `${u.last_name}, ${u.first_name}`,
               email: u.email,
-              home_section_id: u.section_id || null,
-              home_section_name: u.sections?.name || '',
+              home_section_id: homeSectionId,
+              home_section_name: homeSectionName,
               enrollment_type: enrollmentType,
               is_irregular: enrollmentType === 'Irregular'
             };

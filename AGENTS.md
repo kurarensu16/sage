@@ -23,6 +23,16 @@
 5. **Allowed without asking:** reading and searching files, explaining code, and read-only checks (`npm run lint`, `npm run build`, `npm run audit:freeze`, the `verify:*` scripts, `node scripts/verify*.js`).
 6. **Never** commit, push, run migrations against the remote Supabase project, or change `.env*` files unless the developer asks for that exact action.
 
+## Git: the developer decides, always
+
+This section applies **whether FREEZE is ON or OFF**, in every mode including auto, auto-accept, full-access, YOLO, and "skip permissions". It is deliberately outside the change-freeze section, because git control is not part of the polishing stage — it is permanent.
+
+1. **Never `git commit`. Never `git push`.** Not after finishing a batch, not after tests pass, not "while things are clean", not because the working tree is getting large. The developer runs these, or explicitly tells you to.
+2. **Do not ask whether to commit or push**, and do not offer to. No "want me to commit this?", no "shall I push?", no "this would be a good commit point". The developer raises it when they are ready; an unprompted offer is noise they have to decline.
+3. **A single instruction covers a single action.** "Push to ghost" authorises that one push. It does not authorise the next one, and it does not make later commits in the same session implied.
+4. **Report state, do not act on it.** Saying "18 files changed, lint clean" is useful. Staging them is not.
+5. Also never, without being asked for that exact action: rewrite git history, change branches, create tags or PRs, run migrations against the remote Supabase project, or edit `.env*` files.
+
 ## Documentation (read first)
 
 - **Start at [`docs/README.md`](docs/README.md).** It is the index of every document, with its status (Current / Reference / Needs update / Archived).

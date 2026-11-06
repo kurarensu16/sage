@@ -803,7 +803,7 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
     handleParseCSV(sampleCSV);
   };
 
-  const handleParseCSV = (textToParse = csvText) => {
+  const handleParseCSV = async (textToParse = csvText) => {
     setImportError('');
     setImportSuccess('');
 
@@ -814,6 +814,40 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
 
     const lines = textToParse.split('\n');
     const list = [];
+
+    // Handover rows are rebuilt from the Registrar's record, not from the file.
+    //
+    // Every field used to come from the CSV, and the RequestID was used only
+    // afterwards to mark the row created. Nothing compared the two, so an
+    // Administrator could export a handover, change the name, the ID number,
+    // the section or the role, upload it, and the system would create that
+    // different person while reporting the Registrar's record as created --
+    // and, now that the Registrar is notified, tell them an account is ready
+    // for somebody who does not have one.
+    //
+    // Fetching the requests here means the file's other columns are never read
+    // for those rows. There is nothing left to tamper with, rather than
+    // tampering being detected.
+    const referencedIds = [...new Set(
+      lines.slice(0).map((line) => {
+        const cols = line.split(',');
+        return cols.length >= 11 ? (cols[10] || '').trim() : '';
+      }).filter((id) => /^[0-9a-f-]{36}$/i.test(id))
+    )];
+
+    let requestById = new Map();
+    if (referencedIds.length > 0) {
+      const { data: requestRows, error: requestErr } = await supabase
+        .from('student_account_requests')
+        .select('request_id, last_name, first_name, middle_name, user_number, year_level, status, department_id, section_id, sections(name), departments(name)')
+        .in('request_id', referencedIds);
+      if (requestErr) {
+        setImportError(`The Registrar's records could not be checked: ${requestErr.message}`);
+        setParsedUsers([]);
+        return;
+      }
+      requestById = new Map((requestRows || []).map((r) => [r.request_id, r]));
+    }
 
     let startIndex = 0;
     if (lines.length > 0) {
@@ -873,7 +907,56 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
         const validRoles = ['admin', 'registrar', 'dean', 'faculty', 'student'];
         // Registrar, like Admin, is institution-wide and carries no college.
         const collegeExemptRoles = ['admin', 'registrar'];
-        if (!validRoles.includes(normalizedRole)) {
+        // ── The handover rules ────────────────────────────────────────────
+        //
+        // One question decides everything: does this row carry a RequestID?
+        //
+        //   Has one      -> the Registrar owns it. Must be a student, and every
+        //                   field comes from their record. The Administrator
+        //                   supplies the email and nothing else.
+        //   None, student-> refused. Students reach the system through a
+        //                   handover, or the queue stops being a complete record
+        //                   of who was added.
+        //   None, other  -> ordinary account creation. Faculty, deans,
+        //                   registrars and admins never come from the Registrar.
+        const handoverRequest = requestId ? requestById.get(requestId) : null;
+
+        if (requestId && !handoverRequest) {
+          importStatus = 'error';
+          importMessage = `RequestID ${requestId} is not a Registrar record. Re-export the handover instead of editing the file.`;
+        } else if (handoverRequest && handoverRequest.status !== 'pending') {
+          importStatus = 'error';
+          importMessage = `${handoverRequest.last_name}, ${handoverRequest.first_name} was already ${handoverRequest.status}. Re-export the handover to see what is still outstanding.`;
+        } else if (handoverRequest && normalizedRole !== 'student') {
+          importStatus = 'error';
+          importMessage = `A Registrar handover is always a student, but this row says "${role}". Remove the RequestID, or use the exported file unchanged.`;
+        } else if (!requestId && normalizedRole === 'student') {
+          importStatus = 'error';
+          importMessage = 'Student accounts are created from a Registrar handover. Ask the Registrar to submit this student, then import the exported file.';
+        }
+
+        if (handoverRequest && importStatus !== 'error') {
+          // The Registrar's record wins over whatever the file says. The email
+          // is the one column they left blank for the Administrator to fill.
+          lastName = handoverRequest.last_name || lastName;
+          firstName = handoverRequest.first_name || firstName;
+          middleName = handoverRequest.middle_name || '';
+          userNumber = handoverRequest.user_number || userNumber;
+          yearLevel = handoverRequest.year_level || yearLevel;
+          department = handoverRequest.departments?.name || department;
+          // The section is taken by NAME and resolved against the ACTIVE term
+          // below, not by the stored section_id. A handover left pending across
+          // a rollover points at a section belonging to a term that has ended;
+          // using that id would put the student in a dead section where they
+          // appear on no roster.
+          section = handoverRequest.sections?.name || section;
+          role = 'student';
+        }
+
+        if (importStatus === 'error') {
+          // One of the handover rules refused this row; the checks below would
+          // only add noise on top of a clear reason.
+        } else if (!validRoles.includes(normalizedRole)) {
           importStatus = 'error';
           importMessage = `Invalid role: "${role}". Valid values: admin, registrar, dean, faculty, student`;
         } else if (!collegeExemptRoles.includes(normalizedRole)) {
@@ -1025,6 +1108,19 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
           continue;
         }
 
+        // A handover row must never take the overwrite path. The submit RPC
+        // already refuses an ID that belongs to an existing account, so a
+        // conflict here means something inconsistent happened between submit
+        // and import -- and quietly updating a live account from a queued
+        // record would hide it while reporting the handover as completed.
+        if (u.importStatus === 'conflict' && u.requestId) {
+          failed.push({
+            ...u,
+            importMessage: `An account already exists for ${u.email}. This record was not linked; return it to the Registrar instead.`
+          });
+          continue;
+        }
+
         if (u.importStatus === 'conflict' && !allowOverwrite) {
           skipped.push({ ...u, importMessage: 'Skipped - User already exists' });
           continue;
@@ -1109,11 +1205,40 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                 });
                 if (linkErr) {
                   console.warn(`Created ${u.email} but could not link request ${u.requestId}:`, linkErr.message);
+                  // The Registrar must be able to see this. A console warning
+                  // leaves the record pending with no explanation, so both sides
+                  // wait on each other. Recorded against the row, which stays
+                  // pending -- a failed link is not a rejected record, and there
+                  // is no path back from rejected.
+                  await supabase.rpc('record_student_account_request_failure', {
+                    p_request_id: u.requestId,
+                    p_error: `The account ${u.email} was created but could not be linked to this record: ${linkErr.message}`
+                  }).catch(() => {});
                 }
               }
             }
             added.push(u);
           }
+        }
+      }
+
+      // Every handover row that did not get an account keeps its reason, and
+      // stays pending. Without this the Registrar sees a record sitting in the
+      // queue with nothing explaining why, and both sides wait on each other.
+      //
+      // Deliberately NOT a rejection: most import failures are not the
+      // Registrar's to fix -- a missing mailbox, an email the Administrator
+      // mistyped, a timeout -- and there is no path from rejected back to
+      // pending, so auto-rejecting would permanently eject a valid student over
+      // a transient failure.
+      const failedHandovers = failed.filter((row) => row.requestId);
+      for (const row of failedHandovers) {
+        const { error: recordErr } = await supabase.rpc('record_student_account_request_failure', {
+          p_request_id: row.requestId,
+          p_error: row.importMessage || 'The import did not complete for this record.'
+        });
+        if (recordErr) {
+          console.warn(`Could not record the failure for request ${row.requestId}:`, recordErr.message);
         }
       }
 

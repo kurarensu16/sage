@@ -135,9 +135,15 @@ export default function RegistrarDashboard() {
         </div>
 
         {/* ── 1. Records integrity: a work queue, not a statistic ─────────── */}
+        {/* Written for a registrar, not a developer. "Records integrity" and
+            "each linking to where it is resolved" describe the panel's
+            implementation; what the reader needs to know is whether any of this
+            is their problem today. Most of the time it is not -- these are
+            states a term passes through -- so the heading says so plainly
+            rather than implying a defect. */}
         <Panel
-          title="Records Integrity"
-          subtitle="Records work outstanding, each linking to where it is resolved"
+          title="Setup still to finish"
+          subtitle="Normal for a term that is being set up. Open a row to see what is left."
           icon={AlertTriangle}
         >
           {loading ? (

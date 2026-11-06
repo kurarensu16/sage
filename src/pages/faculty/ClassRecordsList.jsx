@@ -15,6 +15,7 @@ import {
   TrendingUp,
   Plus,
   CheckCircle2,
+  Clock,
   MoreVertical
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -30,6 +31,7 @@ import { cn } from '../../lib/utils';
 import { fetchAcademicTerms, getActiveAcademicTerm, getClassTermState } from '../../lib/termStatus';
 import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
+import { formatClassSchedule, NO_SCHEDULE_TEXT } from '../../lib/classSchedule';
 
 export default function ClassRecordsList() {
   const { user } = useAuth();
@@ -96,6 +98,11 @@ export default function ClassRecordsList() {
         semester,
         subject_id,
         section_id,
+        meeting_days,
+        start_time,
+        end_time,
+        class_type,
+        rooms ( code ),
         subjects ( subject_id, code, name, units, computation_id ),
         sections ( section_id, name, school_year, semester )
       `;
@@ -248,22 +255,71 @@ export default function ClassRecordsList() {
         }
       }
 
-      // Fetch active enrollments count
-      const { data: enrollments } = await supabase
-        .from('enrollments')
-        .select('student_id, section_id, subject_id')
-        .in('section_id', classesData.map(c => c.section_id));
+      // Roster size, counted per CLASS RECORD rather than per section+subject.
+      //
+      // `enrollments` is a present-tense table: it has no term or school_year
+      // column, so on its own it can only answer "who is in this section now".
+      // That is the wrong question for an archived class. The students who
+      // actually sat it are recorded against its class_record_id in
+      // student_term_scores and posted_grades -- rows keyed to the class, which
+      // the rollover never touches -- so an archived card can state what the
+      // class WAS instead of what today's section membership implies.
+      //
+      // The errors are no longer discarded. `const { data } = await ...` threw
+      // the error away, so a failed query left `enrollments` undefined, every
+      // count fell through `|| 0`, and the card rendered "0 Students Enrolled":
+      // pixel-identical to a genuinely empty class. A failure that is
+      // indistinguishable from a legitimate result cannot be noticed, let alone
+      // diagnosed, which is why this one survived as "the archive lost its
+      // students".
+      const sectionKeys = Array.from(
+        new Set(classesData.map(c => c.section_id).filter(Boolean))
+      );
+      const [enrollmentResult, termScoreResult, postedRosterResult] = await Promise.all([
+        sectionKeys.length > 0
+          ? supabase
+              .from('enrollments')
+              .select('student_id, section_id, subject_id')
+              .in('section_id', sectionKeys)
+          : { data: [], error: null },
+        supabase
+          .from('student_term_scores')
+          .select('class_record_id, student_id')
+          .in('class_record_id', classIds),
+        supabase
+          .from('posted_grades')
+          .select('class_record_id, student_id')
+          .in('class_record_id', classIds)
+      ]);
+      if (enrollmentResult.error) throw enrollmentResult.error;
+      if (termScoreResult.error) throw termScoreResult.error;
+      if (postedRosterResult.error) throw postedRosterResult.error;
 
-      const enrolledCountsMap = {};
-      const uniqueEnrollmentKeys = new Set();
-      (enrollments || []).forEach(e => {
-        const uniqueStudentKey = `${e.student_id}|${e.section_id}|${e.subject_id}`;
-        if (!uniqueEnrollmentKeys.has(uniqueStudentKey)) {
-          uniqueEnrollmentKeys.add(uniqueStudentKey);
-          const classKey = `${e.section_id}|${e.subject_id}`;
-          enrolledCountsMap[classKey] = (enrolledCountsMap[classKey] || 0) + 1;
-        }
+      // class_record_id -> Set of student_id. A Set because posted_grades holds
+      // one row per grade period per student, and a student may appear in more
+      // than one source.
+      const rosterByClass = new Map();
+      const addToRoster = (classRecordId, studentId) => {
+        if (!classRecordId || !studentId) return;
+        if (!rosterByClass.has(classRecordId)) rosterByClass.set(classRecordId, new Set());
+        rosterByClass.get(classRecordId).add(studentId);
+      };
+
+      // Enrollments are keyed by section+subject, so they fan out to every class
+      // record sharing that pair -- which is how a lecture and its laboratory
+      // correctly report the same roster.
+      const classesBySectionSubject = new Map();
+      classesData.forEach(c => {
+        const key = `${c.section_id}|${c.subject_id}`;
+        if (!classesBySectionSubject.has(key)) classesBySectionSubject.set(key, []);
+        classesBySectionSubject.get(key).push(c.class_record_id);
       });
+      (enrollmentResult.data || []).forEach(e => {
+        (classesBySectionSubject.get(`${e.section_id}|${e.subject_id}`) || [])
+          .forEach(id => addToRoster(id, e.student_id));
+      });
+      (termScoreResult.data || []).forEach(r => addToRoster(r.class_record_id, r.student_id));
+      (postedRosterResult.data || []).forEach(r => addToRoster(r.class_record_id, r.student_id));
 
       // Map classes
       const mappedClasses = classesData.map((cls) => {
@@ -289,13 +345,22 @@ export default function ClassRecordsList() {
           }
         }
 
-        const enrolledCount = enrolledCountsMap[`${cls.section_id}|${cls.subject_id}`] || 0;
+        const enrolledCount = rosterByClass.get(cls.class_record_id)?.size || 0;
 
         return {
           id: cls.class_record_id,
           subjectCode: cls.subjects?.code || 'N/A',
           subjectName: cls.subjects?.name || 'N/A',
           section: cls.sections?.name || 'N/A',
+          // Stored since 20261029093613 and shown nowhere until now: an
+          // instructor could not see their own timetable anywhere in ASPIRE.
+          schedule: formatClassSchedule({
+            days: cls.meeting_days,
+            startTime: cls.start_time,
+            endTime: cls.end_time,
+            room: cls.rooms?.code
+          }),
+          classType: cls.class_type || 'lecture',
           units: cls.subjects?.units || 0,
           enrolled: enrolledCount,
           status: statusLabel,
@@ -651,6 +716,15 @@ export default function ClassRecordsList() {
                   <div className="flex items-center gap-2">
                     <Users className="h-3.5 w-3.5 text-slate-400" />
                     <span><strong className="text-slate-900 font-mono">{cls.enrolled}</strong> Students Enrolled</span>
+                  </div>
+                  {/* Scheduling is optional per college, so an unscheduled class
+                      says so rather than showing a blank line that reads as a
+                      rendering fault. */}
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-3.5 w-3.5 text-slate-400" />
+                    {cls.schedule
+                      ? <span className="font-mono text-slate-700">{cls.schedule}</span>
+                      : <span className="text-slate-400">{NO_SCHEDULE_TEXT}</span>}
                   </div>
                 </div>
                 

@@ -460,6 +460,7 @@ export default function ScoreInput() {
           .select(`
             class_record_id,
             status,
+            term_id,
             school_year,
             semester,
             grading_formula_snapshot,
@@ -536,15 +537,80 @@ export default function ScoreInput() {
           }
         });
 
+        // Add anyone recorded against this class record but no longer in
+        // `enrollments`. An archived class is still openable here in view-only
+        // mode (see ARCHIVED_NOTICE), and `enrollments` has no term column, so
+        // it describes today's section membership rather than who sat this
+        // class. Scores and posted grades are keyed to class_record_id and are
+        // never rewritten, so they are what the sheet should be built from once
+        // the term has ended.
+        const [scoreRoster, postedRoster] = await Promise.all([
+          supabase
+            .from('student_term_scores')
+            .select('student_id')
+            .eq('class_record_id', classRecordId),
+          supabase
+            .from('posted_grades')
+            .select('student_id')
+            .eq('class_record_id', classRecordId)
+        ]);
+        if (scoreRoster.error) throw scoreRoster.error;
+        if (postedRoster.error) throw postedRoster.error;
+
+        const recordedOnlyIds = Array.from(new Set(
+          [
+            ...(scoreRoster.data || []).map(r => r.student_id),
+            ...(postedRoster.data || []).map(r => r.student_id)
+          ].filter(id => id && !uniqueUsersMap.has(id))
+        ));
+        if (recordedOnlyIds.length > 0) {
+          const { data: recovered, error: recoveredErr } = await supabase
+            .from('users')
+            .select(`
+              user_id,
+              first_name,
+              last_name,
+              email,
+              user_number,
+              section_id,
+              sections:section_id ( name )
+            `)
+            .in('user_id', recordedOnlyIds);
+          if (recoveredErr) throw recoveredErr;
+          (recovered || []).forEach(u => {
+            if (u?.user_id && !uniqueUsersMap.has(u.user_id)) uniqueUsersMap.set(u.user_id, u);
+          });
+        }
+
+        // Where each student sat during this class's term. Same reason as in
+        // the priority roster: users.section_id is rewritten by the rollover, so
+        // on a past class it marks everybody Irregular. The priority roster
+        // already resolves this, and this is the fallback for students it did
+        // not return (it is allowed to fail without blocking the sheet).
+        const rosterIds = Array.from(uniqueUsersMap.keys());
+        const historicalSection = new Map();
+        if (cr.term_id && rosterIds.length > 0) {
+          const { data: termDetails, error: termDetailsErr } = await supabase
+            .from('student_term_details')
+            .select('student_id, section_id')
+            .eq('term_id', cr.term_id)
+            .in('student_id', rosterIds);
+          if (termDetailsErr) throw termDetailsErr;
+          (termDetails || []).forEach(row => {
+            if (row.section_id) historicalSection.set(row.student_id, row.section_id);
+          });
+        }
+
         const studentList = Array.from(uniqueUsersMap.values()).map((u, idx) => {
           const pInfo = priorityMap[u.user_id] || {};
-          const enrollmentType = pInfo.enrollment_type || getEnrollmentType(u.section_id, cr.section_id);
+          const homeSectionId = historicalSection.get(u.user_id) || u.section_id;
+          const enrollmentType = pInfo.enrollment_type || getEnrollmentType(homeSectionId, cr.section_id);
           return {
             id: u.user_id,
             studentNo: u.user_number || (u.email ? u.email.split('@')[0].toUpperCase() : `STUD-${idx}`),
             name: `${u.last_name}, ${u.first_name}`,
             email: u.email,
-            home_section_id: u.section_id || null,
+            home_section_id: homeSectionId || null,
             home_section_name: u.sections?.name || '',
             enrollment_type: enrollmentType,
             is_irregular: pInfo.is_irregular ?? enrollmentType === 'Irregular',
