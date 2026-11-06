@@ -33,7 +33,7 @@ print(context(os.path.join(OUT, 'Figure-2.6-Existing-Level0'), '0.0',
 # ---------------- Figure 2.7: proposed ASPIRE ----------------
 left = [
     dict(name='Student',
-         to_sys=['Login credentials', 'Plan acknowledgment', 'Task completion reports',
+         to_sys=['Login credentials', 'Plan acknowledgment', 'Task completion reports with optional evidence',
                  'Practice attempts', 'Grade change request with evidence'],
          from_sys=['Tentative and posted grades', 'Attendance record', 'Advisories',
                    'Study guidance', 'Request status']),
@@ -61,7 +61,7 @@ right = [
          from_sys=['Grounded prompt', 'Activity metadata']),
     dict(name='Private File Storage\n(Supabase Storage and\nCloudflare R2)',
          to_sys=['Time-limited access links'],
-         from_sys=['Profile photos', 'Grade-dispute evidence']),
+         from_sys=['Profile photos', 'Grade-dispute evidence', 'Task completion evidence']),
     dict(name='Email Delivery',
          to_sys=[],
          from_sys=['Grade, advising and request notices']),

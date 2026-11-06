@@ -208,6 +208,28 @@ export default function AskAspirePanel({ open, context, studentDisplayName, priv
             )}
 
             <AiUnavailableNotice failure={error} />
+            {error && context?.deterministicAdvisor && (
+              <div className="rounded-2xl border border-sage-200 bg-sage-50 p-4 space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-sage-700">
+                  What ASPIRE can tell you without AI
+                </p>
+                <p className="text-sm font-semibold text-slate-800">
+                  {context.deterministicAdvisor.headline}
+                </p>
+                <p className="text-xs leading-relaxed text-slate-600">
+                  {context.deterministicAdvisor.summary}
+                </p>
+                {context.deterministicAdvisor.actions?.length > 0 && (
+                  <ul className="mt-2 space-y-1.5">
+                    {context.deterministicAdvisor.actions.map(item => (
+                      <li key={item.id} className="text-xs leading-relaxed text-slate-700">
+                        <span className="font-semibold">{item.title}.</span> {item.description}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
             <div ref={endRef} />
           </div>
 

@@ -9,7 +9,6 @@ import { supabase } from '../../lib/supabase';
 import { toUserMessage } from '../../lib/errorMessages';
 import { useAuth } from '../../lib/AuthContext';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { notifyAdminActivity } from '../../lib/notificationDispatcher';
 import { cn } from '../../lib/utils';
 
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
@@ -75,6 +74,8 @@ export default function StudentAccountRequests() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [statusTab, setStatusTab] = useState('pending');
+  const [activeTerm, setActiveTerm] = useState(null);
+  const [loadedAt, setLoadedAt] = useState(() => Date.now());
   const [confirming, setConfirming] = useState(false);
 
   const fetchAllPaged = async (build) => {
@@ -104,6 +105,13 @@ export default function StudentAccountRequests() {
       setPrograms(progRes.data || []);
       setSections(secRes.data || []);
 
+      const { data: termRow } = await supabase
+        .from('academic_terms')
+        .select('term_id, school_year, semester')
+        .eq('is_active', true)
+        .maybeSingle();
+      setActiveTerm(termRow || null);
+
       const all = await fetchAllPaged((from, to) =>
         supabase
           .from('student_account_requests')
@@ -112,6 +120,7 @@ export default function StudentAccountRequests() {
           .range(from, to)
       );
       setRequests(all);
+      setLoadedAt(Date.now());
     } catch (err) {
       setError(toUserMessage(err, 'Could not load the handover queue.'));
     } finally {
@@ -309,13 +318,13 @@ export default function StudentAccountRequests() {
         `Submitted ${count} new student record(s) to Admin for account creation.`,
         resolveActorName(profile, user)
       );
-      // Admin owns the next step, so they are told rather than left to notice.
-      await notifyAdminActivity({
-        type: 'system',
-        title: 'Student records awaiting account creation',
-        message: `${count} student record(s) were submitted by the Registrar and are awaiting Outlook mailboxes and account creation.`,
-        actorName: resolveActorName(profile, user)
-      });
+      // The notice to Admin is sent by submit_student_account_requests itself,
+      // in the same transaction as the records. It used to be sent from here
+      // through notifyAdminActivity(), which had two problems: the `title` was
+      // dropped (that function takes only type, message and actorName), and its
+      // failure path is console.warn -- so a swallowed dispatch left this screen
+      // reporting success while no Admin had been told, and the records sat in
+      // pending with each side believing the other had them.
 
       setNotice(`${count} record(s) submitted. Admin will create the accounts.`);
       setRows([]);
@@ -328,16 +337,68 @@ export default function StudentAccountRequests() {
     }
   };
 
+  // Archived by term -- except pending.
+  //
+  // A handover that was never completed is outstanding work, whatever term it
+  // was submitted in. Hiding it behind a term filter at rollover is exactly how
+  // three unposted Semestral Grades disappeared from the faculty class list
+  // (B-22): the record was still there, still open, and nobody could see it.
+  //
+  // So created and rejected belong to the term they were resolved in, and
+  // pending always shows with its term named.
+  const inScope = useMemo(() => {
+    if (!activeTerm?.term_id) return requests;
+    return requests.filter(
+      (r) => r.status === 'pending' || !r.term_id || r.term_id === activeTerm.term_id
+    );
+  }, [requests, activeTerm]);
+
   const tabCounts = useMemo(
     () => ({
-      pending: requests.filter((r) => r.status === 'pending').length,
-      created: requests.filter((r) => r.status === 'created').length,
-      rejected: requests.filter((r) => r.status === 'rejected').length
+      pending: inScope.filter((r) => r.status === 'pending').length,
+      created: inScope.filter((r) => r.status === 'created').length,
+      rejected: inScope.filter((r) => r.status === 'rejected').length
     }),
-    [requests]
+    [inScope]
   );
 
-  const visible = requests.filter((r) => r.status === statusTab);
+  const visible = inScope.filter((r) => r.status === statusTab);
+
+  // Grouped by the handover they came from. Forty students submitted together
+  // are one thing the Registrar recognises -- "the file I sent on Tuesday" --
+  // not forty unrelated rows.
+  const batches = useMemo(() => {
+    const byBatch = new Map();
+    visible.forEach((req) => {
+      const key = req.batch_id || req.request_id;
+      if (!byBatch.has(key)) {
+        byBatch.set(key, { key, submittedAt: req.submitted_at, rows: [] });
+      }
+      const group = byBatch.get(key);
+      group.rows.push(req);
+      if (req.submitted_at < group.submittedAt) group.submittedAt = req.submitted_at;
+    });
+    return [...byBatch.values()].sort(
+      (a, b) => new Date(b.submittedAt) - new Date(a.submittedAt)
+    );
+  }, [visible]);
+
+  // How long a handover has been waiting.
+  //
+  // Every notification in this flow fires because something happened. The
+  // failure worth catching is the opposite -- the Administrator never opens the
+  // page, the batch sits pending, and because nothing happened, nothing fires.
+  // Silence is indistinguishable from "not done yet", so the age is shown
+  // instead of waited for.
+  //
+  // Measured from when the data was fetched, not from the clock during render:
+  // reading the clock while rendering is impure, and a value that changes on
+  // every re-render is not something to lay out a page with.
+  const ageInDays = (iso) => {
+    if (!iso) return 0;
+    return Math.floor((loadedAt - new Date(iso).getTime()) / 86400000);
+  };
+
   const sectionName = (id) => sections.find((s) => s.section_id === id)?.name || '—';
 
   return (
@@ -548,32 +609,75 @@ export default function StudentAccountRequests() {
             <p className="text-sm font-medium text-slate-600">Nothing {statusTab}</p>
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-100">
-            {visible.map((req) => {
-              const style = STATUS_STYLE[req.status] || STATUS_STYLE.pending;
-              const Icon = style.icon;
+          <div className="space-y-3 sm:space-y-4">
+            {batches.map((batch) => {
+              const days = ageInDays(batch.submittedAt);
+              // Three working days is when a handover stops looking like "not
+              // yet" and starts looking like "forgotten". Nobody is pushed a
+              // reminder -- that needs a scheduler this system does not have --
+              // so the age is on the screen where it can be acted on.
+              const stale = statusTab === 'pending' && days >= 3;
               return (
-                <div key={req.request_id} className="p-3.5 sm:p-4 flex items-start gap-3">
-                  <div className={cn('w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0', style.chip)}>
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
-                      {req.last_name}, {req.first_name} {req.middle_name || ''}
-                    </h3>
-                    <p className="text-[10px] sm:text-xs text-slate-500 truncate">
-                      <span className="font-mono">{sectionName(req.section_id)}</span>
-                      {req.year_level && ` · ${req.year_level}`}
-                      {req.user_number && ` · ${req.user_number}`}
-                    </p>
-                    {req.status === 'rejected' && req.rejection_reason && (
-                      <p className="text-[10px] sm:text-xs text-rose-700 mt-1">
-                        Returned: {req.rejection_reason}
+                <div key={batch.key} className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                  <div className={cn(
+                    'px-3.5 sm:px-4 py-2.5 border-b flex flex-wrap items-center gap-x-3 gap-y-1 justify-between',
+                    stale ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'
+                  )}>
+                    <div className="min-w-0">
+                      <p className="text-[11px] sm:text-xs font-bold text-slate-800">
+                        {new Date(batch.submittedAt).toLocaleDateString('en-PH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {' · '}
+                        {batch.rows.length} student{batch.rows.length === 1 ? '' : 's'}
                       </p>
+                      <p className="text-[10px] text-slate-500">
+                        Sent {new Date(batch.submittedAt).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    {statusTab === 'pending' && (
+                      <span className={cn(
+                        'text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap',
+                        stale ? 'bg-white text-amber-800 border-amber-300' : 'bg-white text-slate-500 border-slate-200'
+                      )}>
+                        {days === 0 ? 'Waiting since today' : `Waiting ${days} day${days === 1 ? '' : 's'}`}
+                      </span>
                     )}
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      Sent {new Date(req.submitted_at).toLocaleString('en-PH')}
-                    </p>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {batch.rows.map((req) => {
+                      const style = STATUS_STYLE[req.status] || STATUS_STYLE.pending;
+                      const Icon = style.icon;
+                      return (
+                        <div key={req.request_id} className="p-3.5 sm:p-4 flex items-start gap-3">
+                          <div className={cn('w-8 h-8 rounded-lg border flex items-center justify-center flex-shrink-0', style.chip)}>
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
+                              {req.last_name}, {req.first_name} {req.middle_name || ''}
+                            </h3>
+                            <p className="text-[10px] sm:text-xs text-slate-500 truncate">
+                              <span className="font-mono">{sectionName(req.section_id)}</span>
+                              {req.year_level && ` · ${req.year_level}`}
+                              {req.user_number && ` · ${req.user_number}`}
+                            </p>
+                            {req.status === 'rejected' && req.rejection_reason && (
+                              <p className="text-[10px] sm:text-xs text-rose-700 mt-1">
+                                Returned: {req.rejection_reason}
+                              </p>
+                            )}
+                            {/* A failed import attempt. The record is still
+                                pending -- this is not a rejection -- so it says
+                                what stopped it rather than leaving the row
+                                looking untouched. */}
+                            {req.status === 'pending' && req.last_error && (
+                              <p className="text-[10px] sm:text-xs text-amber-800 mt-1">
+                                Import did not complete: {req.last_error}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );

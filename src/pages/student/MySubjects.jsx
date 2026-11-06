@@ -10,11 +10,13 @@ import {
   GraduationCap, 
   FileText,
   User,
+  Clock,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { fetchAcademicTerms, getClassTermState } from '../../lib/termStatus';
+import { formatClassSchedule, NO_SCHEDULE_TEXT } from '../../lib/classSchedule';
 import { TableSkeleton } from '../../components/common/Skeleton';
 
 // True when the enrollment's section belongs to the selected term option.
@@ -262,6 +264,11 @@ export default function MySubjects() {
               term_id,
               school_year,
               semester,
+              meeting_days,
+              start_time,
+              end_time,
+              class_type,
+              rooms ( code ),
               sections ( name ),
               faculty:users!faculty_id ( first_name, last_name )
             `)
@@ -303,6 +310,18 @@ export default function MySubjects() {
             credits: Number(subj?.units) || 3,
             instructor: facultyName,
             sectionName: sectionName || 'Section',
+            // Stored on every class since 20261029093613 and never once shown
+            // to the student it belongs to. Scheduling is optional per college,
+            // so this is null for a class nobody has timetabled yet.
+            schedule: matchingClass
+              ? formatClassSchedule({
+                  days: matchingClass.meeting_days,
+                  startTime: matchingClass.start_time,
+                  endTime: matchingClass.end_time,
+                  room: matchingClass.rooms?.code
+                })
+              : null,
+            classType: matchingClass?.class_type || 'lecture',
             status: e.status || 'Enrolled',
             gradeState: matchingClass ? getClassTermState(terms, matchingClass).state : 'current'
           };
@@ -554,6 +573,16 @@ export default function MySubjects() {
                         <span className="text-[10px] text-slate-400 block">Course Instructor</span>
                       </div>
                     </div>
+                  </div>
+
+                  {/* When the class actually meets. Until now a student could
+                      see their subject, their units and their instructor, and
+                      had no way to find out the one thing they need to turn up. */}
+                  <div className="flex items-center gap-2 px-2.5 text-xs">
+                    <Clock className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                    {sub.schedule
+                      ? <span className="font-mono text-slate-700 truncate">{sub.schedule}</span>
+                      : <span className="text-slate-400">{NO_SCHEDULE_TEXT}</span>}
                   </div>
                 </div>
 

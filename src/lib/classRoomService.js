@@ -357,7 +357,7 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
     // 1. Get class details
     const { data: cr } = await read(supabase
       .from('class_records')
-      .select('class_record_id, section_id, subject_id, semester, grading_formula_snapshot, subjects ( computation_id )')
+      .select('class_record_id, term_id, section_id, subject_id, semester, grading_formula_snapshot, subjects ( computation_id )')
       .eq('class_record_id', classRecordId)
       .single());
 
@@ -393,6 +393,30 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
       .eq('section_id', cr.section_id)
       .eq('subject_id', cr.subject_id));
 
+    // Students recorded against THIS class record, added to the enrollment
+    // roster above.
+    //
+    // `enrollments` has no term or school_year column, so it only answers "who
+    // is in this section now" -- right for a running class, wrong for one whose
+    // term has rolled over and whose students have been moved on. Scores and
+    // posted grades are keyed to class_record_id and never rewritten, so they
+    // are the durable record of who sat the class.
+    //
+    // This matters more here than elsewhere because of the early return below:
+    // an empty roster abandons the WHOLE class, grading formula and all, so a
+    // past class would render as if it had never happened while its grades sat
+    // untouched in the database.
+    const [scoreRoster, postedRoster] = await Promise.all([
+      read(supabase
+        .from('student_term_scores')
+        .select('student_id')
+        .eq('class_record_id', classRecordId)),
+      read(supabase
+        .from('posted_grades')
+        .select('student_id')
+        .eq('class_record_id', classRecordId))
+    ]);
+
     // Deduplicate enrolled users by user_id
     const uniqueMap = new Map();
     (enrolls || []).forEach(e => {
@@ -400,10 +424,48 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
         uniqueMap.set(e.users.user_id, e.users);
       }
     });
+
+    const recordedIds = Array.from(new Set(
+      [
+        ...(scoreRoster?.data || []).map(r => r.student_id),
+        ...(postedRoster?.data || []).map(r => r.student_id)
+      ].filter(id => id && !uniqueMap.has(id))
+    ));
+    if (recordedIds.length > 0) {
+      const { data: recovered } = await read(supabase
+        .from('users')
+        .select('user_id, first_name, last_name, email, user_number, section_id')
+        .in('user_id', recordedIds));
+      (recovered || []).forEach(u => {
+        if (u?.user_id && !uniqueMap.has(u.user_id)) uniqueMap.set(u.user_id, u);
+      });
+    }
+
     const students = Array.from(uniqueMap.values());
     if (students.length === 0) return [];
 
     const studentIds = students.map(s => s.user_id);
+
+    // Where each student sat during THIS class's term.
+    //
+    // Regular/Irregular asks "was this the student's own block section?", and
+    // users.section_id cannot answer it for a class that has ended: the rollover
+    // rewrites that column when it moves students into the next term, so every
+    // student in a past class compares unequal and the entire roster reads as
+    // Irregular. student_term_details is written by the rollover for the term
+    // being closed, before the move, so it is the record of where they were.
+    // No snapshot means the term is still running, where the live column is right.
+    const historicalSection = new Map();
+    if (cr.term_id && studentIds.length > 0) {
+      const { data: termDetails } = await read(supabase
+        .from('student_term_details')
+        .select('student_id, section_id')
+        .eq('term_id', cr.term_id)
+        .in('student_id', studentIds));
+      (termDetails || []).forEach(row => {
+        if (row.section_id) historicalSection.set(row.student_id, row.section_id);
+      });
+    }
 
     // 3. Fetch column setup configurations
     const { data: cols } = await read(supabase
@@ -485,7 +547,8 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
 
     // 6. Calculate risk score for each student
     const priorityList = students.map(stud => {
-      const enrollmentType = getEnrollmentType(stud.section_id, cr.section_id);
+      const homeSectionId = historicalSection.get(stud.user_id) || stud.section_id;
+      const enrollmentType = getEnrollmentType(homeSectionId, cr.section_id);
       const studScores = (scores || []).filter(sc => sc.student_id === stud.user_id);
       const studAbsences = (attendances || []).filter(
         at => at.student_id === stud.user_id && (at.status === 'Absent' || at.status?.toLowerCase() === 'absent')
@@ -575,7 +638,7 @@ export async function getClassPriorityRoster(classRecordId, { throwOnError = fal
         last_name: stud.last_name,
         student_id_number: stud.user_number || stud.email?.split('@')[0],
         email: stud.email,
-        home_section_id: stud.section_id || null,
+        home_section_id: homeSectionId || null,
         enrollment_type: enrollmentType,
         is_irregular: enrollmentType === 'Irregular',
         current_gwa: approxGwa,

@@ -558,6 +558,53 @@ export default function StudyTutor() {
           onRetry={action ? () => run(action) : undefined}
         />
 
+        {/* Deterministic fallback: topic-level study signals only, computed
+            client-side from the student's own recorded scores (summarizeTopics
+            in studyTutorRules.js). Never a grade, GWA, standing or risk tier --
+            this page's own boundary, kept even when the AI cannot answer. */}
+        {aiError && (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+              What ASPIRE can show you without AI
+            </p>
+            {(action === 'practice' || action === 'resources') ? (
+              <p className="text-xs leading-relaxed text-slate-700">
+                {action === 'practice'
+                  ? 'Practice questions need the AI service and cannot be generated without it.'
+                  : 'Curated resources need the AI service right now.'}{' '}
+                Check the materials your instructor has already shared for this subject in the meantime.
+              </p>
+            ) : topic ? (
+              <>
+                <p className="text-sm font-semibold text-slate-800">
+                  {topic.topic} ({topic.subjectCode}){' '}
+                  {topic.percent === null ? '— not yet graded' : `— ${topic.percent}%`}
+                  {topic.needsReview ? ', below the passing mark' : ', currently on track'}
+                </p>
+                <p className="text-xs leading-relaxed text-slate-600">
+                  {topic.percent === null
+                    ? 'No score has been recorded on this topic yet, so there is nothing to summarize.'
+                    : topic.needsReview
+                      ? 'This topic needs review based on your own recorded scores.'
+                      : 'No repeated weak pattern has been recorded on this topic.'}
+                </p>
+              </>
+            ) : menu.topics.some((t) => t.needsReview) ? (
+              <ul className="space-y-1">
+                {menu.topics.filter((t) => t.needsReview).slice(0, 5).map((t) => (
+                  <li key={t.key} className="text-xs text-slate-700">
+                    <span className="font-semibold">{t.topic}</span> ({t.subjectCode}) — {t.percent}%, below the passing mark
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs leading-relaxed text-slate-600">
+                No topic currently needs review based on your recorded scores.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* ── My Study Plans ─────────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-3.5 sm:p-5">
           <div className="flex items-center gap-2.5 mb-3">

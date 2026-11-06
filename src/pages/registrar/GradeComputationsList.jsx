@@ -24,6 +24,13 @@ export default function GradeComputationsList() {
   const [description, setDescription] = useState('');
   // Empty string means "institutional default", which is stored as NULL.
   const [passingThreshold, setPassingThreshold] = useState('');
+  // When an edit takes effect. 'next' is the historical behaviour and stays the
+  // default: a class already being graded holds a frozen copy of the formula,
+  // so nothing moves unless the Registrar deliberately says so.
+  const [applyTo, setApplyTo] = useState('next');
+  const [activeTerm, setActiveTerm] = useState(null);
+  // What applying now would actually do, read before committing to it.
+  const [applyPreview, setApplyPreview] = useState(null);
   const [components, setComponents] = useState([
     { name: 'Class Standing (Formative)', weight: 50, max_score: 20, is_multiple: true },
     { name: 'Major Examination', weight: 40, max_score: 40, is_multiple: false },
@@ -38,7 +45,52 @@ export default function GradeComputationsList() {
 
   useEffect(() => {
     loadTemplates();
+    // The term a change could be applied to. Without it the "current term"
+    // choice has nothing to point at and is not offered.
+    (async () => {
+      const { data } = await supabase
+        .from('academic_terms')
+        .select('term_id, school_year, semester')
+        .eq('is_active', true)
+        .maybeSingle();
+      setActiveTerm(data || null);
+    })();
   }, []);
+
+  // What this template currently touches in the running term.
+  //
+  // Read as soon as the editor opens on an existing template, not only when
+  // "Now" is chosen: BOTH options need the figures to say anything concrete.
+  // "Classes keep their current formula" means nothing without knowing there
+  // are three of them with 39 posted ratings between them.
+  useEffect(() => {
+    let cancelled = false;
+    if (!editingTemplate?.computation_id || !activeTerm?.term_id) {
+      setApplyPreview(null);
+      return undefined;
+    }
+    supabase
+      .rpc('aspire_preview_template_application', {
+        p_computation_id: editingTemplate.computation_id,
+        p_term_id: activeTerm.term_id
+      })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.warn('Could not preview the template application:', error.message);
+          setApplyPreview(null);
+          return;
+        }
+        setApplyPreview(data || null);
+      });
+    return () => { cancelled = true; };
+  }, [editingTemplate, activeTerm]);
+
+  // "AY 2026-2027 · 2nd Semester". Summer is a term, not a numbered semester,
+  // so it does not get the word appended.
+  const termLabel = activeTerm
+    ? `AY ${activeTerm.school_year} · ${activeTerm.semester === 'Summer' ? 'Summer' : `${activeTerm.semester} Semester`}`
+    : '';
 
   const loadTemplates = async () => {
     try {
@@ -62,6 +114,10 @@ export default function GradeComputationsList() {
     setName('');
     setDescription('');
     setPassingThreshold('');
+    // Never carried between editor sessions: applying to a running term is a
+    // deliberate choice each time, not a setting that stays switched on.
+    setApplyTo('next');
+    setApplyPreview(null);
     setComponents([
       { name: 'Class Standing (Formative)', weight: 50, max_score: 20, is_multiple: true },
       { name: 'Major Examination', weight: 40, max_score: 40, is_multiple: false },
@@ -78,6 +134,8 @@ export default function GradeComputationsList() {
     setName(temp.name);
     setDescription(temp.description || '');
     setPassingThreshold(temp.passing_threshold ?? '');
+    setApplyTo('next');
+    setApplyPreview(null);
     // Fetch components
     const mapped = (temp.grade_computation_components || []).map(c => ({
       component_id: c.component_id,
@@ -222,7 +280,38 @@ export default function GradeComputationsList() {
           message: `Grade Computation Templates: Template "${name}" was updated by ${actorName}.`,
           actorName
         });
-        setSuccessMsg('Grading template updated successfully!');
+        // Applying to the CURRENT term, when asked for.
+        //
+        // Editing a template changes nothing for a class already being graded:
+        // aspire_calculate_student_grade reads the frozen snapshot on the class,
+        // not the live template. That is why a change has always taken effect
+        // "next term" -- it was never a rule, just a consequence.
+        //
+        // CHED and DepEd sometimes mandate a change mid-semester, so the
+        // Registrar can now re-pin the formula and have posted ratings
+        // recalculated. A class whose Semestral Grade is posted is refused by
+        // the RPC, not skipped: that grade is final and belongs to the Registrar
+        // override, which the Dean acknowledges.
+        if (applyTo === 'current' && activeTerm?.term_id) {
+          const { data: applied, error: applyErr } = await supabase.rpc(
+            'aspire_apply_template_to_term',
+            { p_computation_id: targetId, p_term_id: activeTerm.term_id }
+          );
+          if (applyErr) throw applyErr;
+
+          await logActivity(
+            'Grading Template Applied',
+            `Applied "${name}" to ${activeTerm.school_year} ${activeTerm.semester}: ${applied?.classes_updated ?? 0} class(es), ${applied?.grades_recalculated ?? 0} posted rating(s) recalculated.`,
+            actorName
+          );
+          setSuccessMsg(
+            `Applied to ${activeTerm.school_year} ${activeTerm.semester}. ` +
+            `${applied?.classes_updated ?? 0} class(es) updated, ` +
+            `${applied?.grades_recalculated ?? 0} posted rating(s) recalculated.`
+          );
+        } else {
+          setSuccessMsg('Grading template updated. It applies to classes created from the next term onward.');
+        }
       } else {
         await logActivity(
           'Grading Template Creation',
@@ -372,25 +461,143 @@ export default function GradeComputationsList() {
                   </div>
                 )}
 
-                {/* Official Presets Quick-Select */}
-                <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Official DYCI Presets</span>
-                    <span className="text-[10px] text-slate-400 font-medium">Click to populate</span>
+                {/* Official Presets Quick-Select — new templates only.
+                    A preset replaces the whole component structure, and an
+                    existing template's structure is immutable: save_grade_template
+                    refuses anything but a weight change ("components cannot be
+                    added or removed; only their weights can change"). Offering
+                    the buttons while editing promised something the save would
+                    reject. */}
+                {!editingTemplate && (
+                  <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Official DYCI Presets</span>
+                      <span className="text-[10px] text-slate-400 font-medium">Click to populate</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {OFFICIAL_DYCI_PRESETS.map((p) => (
+                        <button
+                          key={p.name}
+                          type="button"
+                          onClick={() => handleApplyPreset(p)}
+                          className="px-2.5 py-1 text-[11px] font-medium bg-white hover:bg-sage-50 text-slate-700 hover:text-sage-700 border border-slate-200 hover:border-sage-300 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                        >
+                          {p.name}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {OFFICIAL_DYCI_PRESETS.map((p) => (
-                      <button
-                        key={p.name}
-                        type="button"
-                        onClick={() => handleApplyPreset(p)}
-                        className="px-2.5 py-1 text-[11px] font-medium bg-white hover:bg-sage-50 text-slate-700 hover:text-sage-700 border border-slate-200 hover:border-sage-300 rounded-lg transition-colors cursor-pointer shadow-2xs"
-                      >
-                        {p.name}
-                      </button>
-                    ))}
+                )}
+
+                {/* When the change takes effect.
+                    Only on an EDIT: a brand-new template has no classes using
+                    it yet, so there is nothing to apply it to. */}
+                {editingTemplate && activeTerm && (
+                  <div className="space-y-2 border border-slate-200 rounded-xl p-3.5 bg-slate-50">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wide block">
+                      Which classes should use this formula
+                    </label>
+                    <p className="text-[11px] text-slate-500 -mt-1">
+                      {applyPreview && applyPreview.class_count > 0
+                        ? <>Right now <strong>{applyPreview.class_count} class{applyPreview.class_count === 1 ? '' : 'es'}</strong> in {termLabel} {applyPreview.class_count === 1 ? 'uses' : 'use'} this template, holding <strong>{applyPreview.posted_grades} posted rating{applyPreview.posted_grades === 1 ? '' : 's'}</strong>.</>
+                        : <>No classes in {termLabel} use this template yet.</>}
+                    </p>
+
+                    <div className="flex flex-col gap-2.5 pt-0.5">
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="applyTo"
+                          value="next"
+                          checked={applyTo === 'next'}
+                          onChange={() => setApplyTo('next')}
+                          className="mt-0.5 cursor-pointer"
+                        />
+                        <span className="text-xs text-slate-700">
+                          <strong className="text-slate-900">Only classes created from the next term onward.</strong>
+                          <span className="block text-slate-500 mt-0.5">
+                            Nothing changes today. The {applyPreview?.class_count ?? 0} class
+                            {(applyPreview?.class_count ?? 0) === 1 ? '' : 'es'} in {termLabel} keep
+                            the formula {(applyPreview?.class_count ?? 0) === 1 ? 'it was' : 'they were'} graded
+                            with, and no student&rsquo;s grade moves.
+                          </span>
+                        </span>
+                      </label>
+
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="applyTo"
+                          value="current"
+                          checked={applyTo === 'current'}
+                          onChange={() => setApplyTo('current')}
+                          className="mt-0.5 cursor-pointer"
+                        />
+                        <span className="text-xs text-slate-700">
+                          <strong className="text-slate-900">
+                            Also the {applyPreview?.class_count ?? 0} class
+                            {(applyPreview?.class_count ?? 0) === 1 ? '' : 'es'} already running in {termLabel}.
+                          </strong>
+                          <span className="block text-slate-500 mt-0.5">
+                            Re-grades the {applyPreview?.posted_grades ?? 0} posted rating
+                            {(applyPreview?.posted_grades ?? 0) === 1 ? '' : 's'} under the new formula —
+                            students&rsquo; Midterm and Tentative Final Ratings will change. Use this only
+                            when CHED or DepEd requires it to take effect mid-semester.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+
+                    {/* What that would actually do, before it is done. */}
+                    {applyTo === 'current' && applyPreview && (
+                      <div className={
+                        applyPreview.blocked_by_sg > 0
+                          ? 'mt-1 rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-[11px] text-rose-900 space-y-1'
+                          : 'mt-1 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-900 space-y-1'
+                      }>
+                        {applyPreview.blocked_by_sg > 0 ? (
+                          <>
+                            <p>
+                              <strong>
+                                This cannot be applied: {applyPreview.blocked_by_sg} class
+                                {applyPreview.blocked_by_sg === 1 ? '' : 'es'} already
+                                {applyPreview.blocked_by_sg === 1 ? ' has' : ' have'} a posted Semestral Grade.
+                              </strong>
+                            </p>
+                            <p>
+                              A Semestral Grade is a final, official record. It can only be changed through
+                              the Registrar Override, where the Dean acknowledges the change. Saving with
+                              this option selected will be refused — choose the first option instead.
+                            </p>
+                          </>
+                        ) : applyPreview.class_count === 0 ? (
+                          <p>There is nothing to re-grade — no class in this term uses this template.</p>
+                        ) : (
+                          <>
+                            <p className="font-bold">Which classes are affected</p>
+                            <div className="font-mono text-[10px] bg-white/70 border border-amber-200 rounded p-1.5 max-h-20 overflow-y-auto">
+                              {applyPreview.classes.slice(0, 10).map((c) => (
+                                <div key={c.class_record_id}>
+                                  {c.subject_code} · {c.section_name} — {c.posted_count} posted rating
+                                  {c.posted_count === 1 ? '' : 's'}
+                                </div>
+                              ))}
+                              {applyPreview.classes.length > 10 && (
+                                <div>and {applyPreview.classes.length - 10} more…</div>
+                              )}
+                            </div>
+                            <p>
+                              Each instructor and the Dean&rsquo;s Office are notified, and every changed
+                              grade records that an institutional policy changed it.{' '}
+                              <strong>Students are not notified</strong> — tell them through the usual
+                              channel.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
 
                 {/* General Info */}
                 <div className="space-y-3 sm:space-y-4">

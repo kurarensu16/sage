@@ -47,6 +47,7 @@ export default function StudentAccountRequests() {
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusTab, setStatusTab] = useState('pending');
+  const [loadedAt, setLoadedAt] = useState(() => Date.now());
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [rejecting, setRejecting] = useState(null);
@@ -89,6 +90,7 @@ export default function StudentAccountRequests() {
             .range(from, to)
         )
       );
+      setLoadedAt(Date.now());
     } catch (err) {
       setError(toUserMessage(err, 'Could not load student account requests.'));
     } finally {
@@ -124,6 +126,29 @@ export default function StudentAccountRequests() {
   );
 
   const visible = requests.filter((r) => r.status === statusTab);
+
+  // Grouped by the handover they arrived in, so the Administrator works through
+  // "the file the Registrar sent on Tuesday" rather than a flat list in which
+  // two handovers are indistinguishable.
+  const batches = useMemo(() => {
+    const byBatch = new Map();
+    visible.forEach((req) => {
+      const key = req.batch_id || req.request_id;
+      if (!byBatch.has(key)) byBatch.set(key, { key, submittedAt: req.submitted_at, rows: [] });
+      const group = byBatch.get(key);
+      group.rows.push(req);
+      if (req.submitted_at < group.submittedAt) group.submittedAt = req.submitted_at;
+    });
+    return [...byBatch.values()].sort((a, b) => new Date(a.submittedAt) - new Date(b.submittedAt));
+  }, [visible]);
+
+  // Oldest first above, deliberately: the queue is work, and the thing waiting
+  // longest is the thing to do next.
+  //
+  // Measured from when the data was fetched rather than from the clock during
+  // render, which is impure and would give a different answer on every pass.
+  const ageInDays = (iso) =>
+    iso ? Math.floor((loadedAt - new Date(iso).getTime()) / 86400000) : 0;
 
   const exportPending = async () => {
     const pending = requests.filter((r) => r.status === 'pending');
@@ -271,8 +296,31 @@ export default function StudentAccountRequests() {
             </p>
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-100">
-            {visible.map((req) => {
+          <div className="space-y-3 sm:space-y-4">
+            {batches.map((batch) => {
+              const days = ageInDays(batch.submittedAt);
+              const stale = statusTab === 'pending' && days >= 3;
+              return (
+                <div key={batch.key} className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                  <div className={cn(
+                    'px-3.5 sm:px-4 py-2.5 border-b flex flex-wrap items-center gap-x-3 gap-y-1 justify-between',
+                    stale ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'
+                  )}>
+                    <p className="text-[11px] sm:text-xs font-bold text-slate-800 min-w-0">
+                      {new Date(batch.submittedAt).toLocaleDateString('en-PH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {' · '}{batch.rows.length} student{batch.rows.length === 1 ? '' : 's'}
+                    </p>
+                    {statusTab === 'pending' && (
+                      <span className={cn(
+                        'text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap',
+                        stale ? 'bg-white text-amber-800 border-amber-300' : 'bg-white text-slate-500 border-slate-200'
+                      )}>
+                        {days === 0 ? 'Received today' : `Waiting ${days} day${days === 1 ? '' : 's'}`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="divide-y divide-slate-100">
+            {batch.rows.map((req) => {
               const style = STATUS_STYLE[req.status] || STATUS_STYLE.pending;
               const Icon = style.icon;
               return (
@@ -293,9 +341,16 @@ export default function StudentAccountRequests() {
                     {req.status === 'rejected' && req.rejection_reason && (
                       <p className="text-[10px] sm:text-xs text-rose-700 mt-1">Returned: {req.rejection_reason}</p>
                     )}
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      Sent {new Date(req.submitted_at).toLocaleString('en-PH')}
-                    </p>
+                    {/* The last import attempt that did not complete. The record
+                        stays pending on purpose: a missing mailbox or a timeout
+                        is not a record the Registrar got wrong, and there is no
+                        way back from returned. Retry, or return it with a real
+                        reason once the record itself is at fault. */}
+                    {req.status === 'pending' && req.last_error && (
+                      <p className="text-[10px] sm:text-xs text-amber-800 mt-1">
+                        Last import failed: {req.last_error}
+                      </p>
+                    )}
                   </div>
                   {req.status === 'pending' && (
                     <button
@@ -305,6 +360,10 @@ export default function StudentAccountRequests() {
                       Return
                     </button>
                   )}
+                </div>
+              );
+            })}
+                  </div>
                 </div>
               );
             })}
