@@ -371,17 +371,28 @@ export default function SubjectForm() {
               </select>
             </div>
 
-            {/* Academic Program */}
+            {/* Academic Program. Not required when the college has no programs
+                of its own -- General Education and similar shared colleges --
+                since a required select with no real option would otherwise
+                block the form from ever being submitted. This value is never
+                saved to the subject anyway (see the payload below); it only
+                auto-fills the subject prefix as a convenience. */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Academic Program <span className="text-rose-500">*</span></label>
+              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                Academic Program {filteredPrograms.length > 0 && <span className="text-rose-500">*</span>}
+              </label>
               <select
-                required
+                required={filteredPrograms.length > 0}
                 value={formData.programName}
                 onChange={(e) => setFormData({...formData, programName: e.target.value})}
-                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer"
-                disabled={!formData.departmentId}
+                className="block w-full bg-white border border-slate-200 px-3.5 py-2 rounded-xl text-xs sm:text-sm hover:border-slate-300 focus:border-sage-500 outline-none transition-all focus:ring-1 focus:ring-sage-500 cursor-pointer disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed"
+                disabled={!formData.departmentId || filteredPrograms.length === 0}
               >
-                <option value="">Select Program</option>
+                <option value="">
+                  {formData.departmentId && filteredPrograms.length === 0
+                    ? 'No programs for this college'
+                    : 'Select Program'}
+                </option>
                 {filteredPrograms.map(prog => (
                   <option key={prog.program_id} value={prog.name}>{prog.name}</option>
                 ))}

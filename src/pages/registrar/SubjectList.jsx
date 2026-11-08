@@ -1,12 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, Plus, Edit2, Trash2, BookOpen, Upload, X, Check, FileSpreadsheet, AlertCircle, CheckCircle, SlidersHorizontal } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, BookOpen, Upload, X, Check, FileSpreadsheet, AlertCircle, CheckCircle, SlidersHorizontal, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import * as XLSX from 'xlsx';
+import { useAuth } from '../../lib/AuthContext';
+import { logActivity, resolveActorName } from '../../lib/auditLog';
+import { notifyAdminActivity } from '../../lib/notificationDispatcher';
 
 export default function SubjectList() {
   const navigate = useNavigate();
+  const { user, profile } = useAuth();
   const [subjects, setSubjects] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
@@ -19,11 +23,30 @@ export default function SubjectList() {
   const [parsedSubjects, setParsedSubjects] = useState([]);
   const [importError, setImportError] = useState('');
   const [importSuccess, setImportSuccess] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef(null);
 
-  const sampleCSV = `ACC101,Fundamentals of Accounting,3,College of Accountancy
-ACC102,Financial Accounting,3,College of Accountancy
-MGT101,Principles of Management,3,College of Business Administration`;
+  // Reference data the import resolves College and GradingTemplate names
+  // against -- loaded once, the same way SectionList resolves College names.
+  const [allDepartments, setAllDepartments] = useState([]);
+  const [allComputations, setAllComputations] = useState([]);
+
+  // Built from live reference data rather than written here, so the sample
+  // can never name a college or grading template that does not exist in
+  // this institution -- loading it and importing it unedited must succeed.
+  const sampleRows = useMemo(() => {
+    const dept = allDepartments[0];
+    const comp = allComputations[0];
+    if (!dept || !comp) return [];
+    return [
+      { Code: 'SAMPLE101', Name: 'Sample Subject Title', Units: 3, College: dept.name, GradingTemplate: comp.name }
+    ];
+  }, [allDepartments, allComputations]);
+
+  const sampleCSV = useMemo(
+    () => sampleRows.map(r => `${r.Code},${r.Name},${r.Units},${r.College},${r.GradingTemplate}`).join('\n'),
+    [sampleRows]
+  );
 
   const [loading, setLoading] = useState(true);
 
@@ -51,6 +74,13 @@ MGT101,Principles of Management,3,College of Business Administration`;
         };
       });
       setSubjects(mappedSubjects);
+
+      const [deptRes, compRes] = await Promise.all([
+        supabase.from('departments').select('department_id, name').order('name'),
+        supabase.from('grade_computations').select('computation_id, name').order('name')
+      ]);
+      setAllDepartments(deptRes.data || []);
+      setAllComputations(compRes.data || []);
     } catch (err) {
       console.error('Failed to load subjects:', err);
     } finally {
@@ -156,6 +186,15 @@ MGT101,Principles of Management,3,College of Business Administration`;
     handleParseCSV(sampleCSV);
   };
 
+  const downloadTemplate = () => {
+    const ws = XLSX.utils.json_to_sheet(sampleRows, {
+      header: ['Code', 'Name', 'Units', 'College', 'GradingTemplate']
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Subjects');
+    XLSX.writeFile(wb, 'ASPIRE_Subjects_Import_Template.xlsx');
+  };
+
   const handleParseCSV = (textToParse = csvText) => {
     setImportError('');
     setImportSuccess('');
@@ -180,17 +219,13 @@ MGT101,Principles of Management,3,College of Business Administration`;
       }
 
       const parts = line.split(',');
-      if (parts.length < 4) {
-        setImportError(`Row ${i + 1} has insufficient columns. Required format: Code,Name,Units,Department`);
+      if (parts.length < 5) {
+        setImportError(`Row ${i + 1} has insufficient columns. Required format: Code,Name,Units,Department,GradingTemplate`);
         hasError = true;
         break;
       }
 
-      let [code, name, units, department] = parts.map(p => p.trim());
-
-      if (department === 'College of IT' || department === 'College of CS') {
-        // Left as given; the college is matched against the database by exact name.
-      }
+      let [code, name, units, department, gradingTemplate] = parts.map(p => p.trim());
 
       if (existingCodes.includes(code.toLowerCase())) {
         setImportError(`Row ${i + 1}: Subject Code "${code}" already exists in the database.`);
@@ -205,11 +240,21 @@ MGT101,Principles of Management,3,College of Business Administration`;
         break;
       }
 
+      // Every subject needs a grading template -- the database column is
+      // NOT NULL (20261001090000_unify_academic_policy_templates.sql) -- so
+      // this is caught here rather than surfacing as a database error later.
+      if (!gradingTemplate) {
+        setImportError(`Row ${i + 1}: GradingTemplate is required.`);
+        hasError = true;
+        break;
+      }
+
       list.push({
         code: code.toUpperCase(),
         name,
         units: parsedUnits,
-        department
+        department,
+        gradingTemplate
       });
     }
 
@@ -221,11 +266,98 @@ MGT101,Principles of Management,3,College of Business Administration`;
     }
   };
 
+  // Write the parsed rows.
+  //
+  // Until 2026-11-08 this function parsed, validated, rendered a preview
+  // saying "Successfully parsed N subject records" -- and then alerted "will
+  // be enabled in a future update" and wrote nothing. Every check above it
+  // was real; only the write was missing (the same bug SectionList's import
+  // had until 2026-11-03).
+  //
+  // Same two rules as that fix:
+  //
+  //   * ALL OR NOTHING. A single insert() is one statement, so Postgres
+  //     either takes every row or none. Importing nine of ten and reporting
+  //     success is the failure shape behind B-02, B-10 and B-14.
+  //   * EVERY NAME MUST RESOLVE. The CSV names a college and a grading
+  //     template in words; the table stores department_id and
+  //     computation_id (NOT NULL). An unmatched name stops the whole file
+  //     rather than inserting a null or guessing.
   const handleSaveImport = async () => {
     if (parsedSubjects.length === 0) return;
+    setImportError('');
+    setImportSuccess('');
 
-    alert("Batch CSV import will be enabled for Supabase in a future update.");
-    setIsImportOpen(false);
+    const deptIdByName = new Map(
+      allDepartments.map(d => [String(d.name).trim().toLowerCase(), d.department_id])
+    );
+    const compIdByName = new Map(
+      allComputations.map(c => [String(c.name).trim().toLowerCase(), c.computation_id])
+    );
+
+    const unresolvedDepts = [];
+    const unresolvedTemplates = [];
+    const rows = parsedSubjects.map((s, index) => {
+      const departmentId = deptIdByName.get(String(s.department || '').trim().toLowerCase());
+      const computationId = compIdByName.get(String(s.gradingTemplate || '').trim().toLowerCase());
+      if (!departmentId) unresolvedDepts.push(`row ${index + 1} ("${s.department || 'blank'}")`);
+      if (!computationId) unresolvedTemplates.push(`row ${index + 1} ("${s.gradingTemplate || 'blank'}")`);
+      return {
+        code: s.code,
+        name: s.name,
+        units: s.units,
+        department_id: departmentId || null,
+        computation_id: computationId || null
+      };
+    });
+
+    if (unresolvedDepts.length > 0) {
+      setImportError(
+        `Nothing was imported. These colleges are not in the database: ${unresolvedDepts.join(', ')}. ` +
+        `Use the exact college name shown in Academic Setup: ${allDepartments.map(d => d.name).join(', ')}.`
+      );
+      return;
+    }
+    if (unresolvedTemplates.length > 0) {
+      setImportError(
+        `Nothing was imported. These grading templates are not in the database: ${unresolvedTemplates.join(', ')}. ` +
+        `Use the exact template name: ${allComputations.map(c => c.name).join(', ')}.`
+      );
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const { error } = await supabase.from('subjects').insert(rows);
+      if (error) {
+        if (error.code === '23505') {
+          throw new Error('One of these subject codes, or a name already used in that college, is already registered. Nothing was imported.');
+        }
+        throw error;
+      }
+
+      const actorName = resolveActorName(profile, user);
+      await logActivity(
+        'Subject Creation',
+        `Batch imported ${rows.length} subject(s) via CSV.`,
+        actorName
+      );
+      await notifyAdminActivity({
+        type: 'system',
+        message: `Subjects Database: ${rows.length} subject(s) were batch imported by ${actorName}.`,
+        actorName
+      });
+
+      setImportSuccess(`${rows.length} subject(s) imported.`);
+      setCsvText('');
+      setParsedSubjects([]);
+      loadSubjects();
+      setTimeout(() => setIsImportOpen(false), 1200);
+    } catch (err) {
+      setImportError(err.message || 'The import could not be saved.');
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   return (
@@ -554,14 +686,24 @@ MGT101,Principles of Management,3,College of Business Administration`;
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between items-center">
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                    Or Paste Raw Data (Format: <code className="font-mono text-sage-700 bg-sage-50 px-1 py-0.5 rounded border border-sage-200">Code,Name,Units,College</code>)
+                    Or Paste Raw Data (Format: <code className="font-mono text-sage-700 bg-sage-50 px-1 py-0.5 rounded border border-sage-200">Code,Name,Units,College,GradingTemplate</code>)
                   </label>
-                  <button
-                    onClick={handleLoadSample}
-                    className="px-2.5 py-1 text-[11px] font-bold border border-sage-200 text-sage-700 hover:bg-sage-50 rounded"
-                  >
-                    Load Sample Template
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={downloadTemplate}
+                      disabled={sampleRows.length === 0}
+                      className="px-2.5 py-1 text-[11px] font-bold border border-slate-200 text-slate-700 hover:bg-slate-50 rounded disabled:opacity-50"
+                    >
+                      Download Template
+                    </button>
+                    <button
+                      onClick={handleLoadSample}
+                      disabled={sampleRows.length === 0}
+                      className="px-2.5 py-1 text-[11px] font-bold border border-sage-200 text-sage-700 hover:bg-sage-50 rounded disabled:opacity-50"
+                    >
+                      Load Sample Template
+                    </button>
+                  </div>
                 </div>
 
                 <textarea
@@ -572,7 +714,7 @@ MGT101,Principles of Management,3,College of Business Administration`;
                 }}
                 onBlur={() => handleParseCSV()}
                 rows="6"
-                placeholder="ACC101,Fundamentals of Accounting,3,College of Accountancy"
+                placeholder="ACC101,Fundamentals of Accounting,3,College of Accountancy,General Education Core"
                 className="block w-full p-3 border border-slate-200 rounded-lg text-xs font-mono focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors"
               />
 
@@ -598,6 +740,7 @@ MGT101,Principles of Management,3,College of Business Administration`;
                           <th className="px-4 py-2 font-bold text-slate-500">Name</th>
                           <th className="px-4 py-2 font-bold text-slate-500">Units</th>
                           <th className="px-4 py-2 font-bold text-slate-500">College</th>
+                          <th className="px-4 py-2 font-bold text-slate-500">Grading Template</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-slate-100">
@@ -607,6 +750,7 @@ MGT101,Principles of Management,3,College of Business Administration`;
                             <td className="px-4 py-2 font-semibold text-slate-750">{s.name}</td>
                             <td className="px-4 py-2 font-mono text-slate-600">{s.units} Units</td>
                             <td className="px-4 py-2 text-slate-600">{s.department}</td>
+                            <td className="px-4 py-2 text-slate-600">{s.gradingTemplate}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -627,16 +771,18 @@ MGT101,Principles of Management,3,College of Business Administration`;
                   setImportError('');
                   setImportSuccess('');
                 }}
-                className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors"
+                disabled={isImporting}
+                className="px-4 py-2 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={handleSaveImport}
-                disabled={parsedSubjects.length === 0}
+                disabled={parsedSubjects.length === 0 || isImporting}
                 className="px-4 py-2 bg-sage-600 hover:bg-sage-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2 shadow-sm"
               >
-                <Check className="h-4 w-4" /> Save Imported Subjects
+                {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {isImporting ? 'Saving…' : 'Save Imported Subjects'}
               </button>
             </div>
           </div>

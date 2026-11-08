@@ -56,7 +56,7 @@ left = [
          from_sys=['Audit trail', 'Service and storage health']),
 ]
 right = [
-    dict(name='AI Model Provider\n(Gemini 2.5 Flash\nvia OpenRouter)',
+    dict(name='AI Model Provider\n(Gemini 2.5 Flash)',
          to_sys=['Study diagnostics', 'Practice sets', 'Task drafts'],
          from_sys=['Grounded prompt', 'Activity metadata']),
     dict(name='Private File Storage\n(Supabase Storage and\nCloudflare R2)',
