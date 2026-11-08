@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, Plus, Edit2, Power, CheckCircle, AlertCircle, Upload, X, Check, FileSpreadsheet, MoreVertical, Archive, RotateCcw, FileText, Eye, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, SlidersHorizontal, Table, HelpCircle, FileCheck } from 'lucide-react';
+import { Search, Plus, Edit2, Power, CheckCircle, AlertCircle, Upload, X, Check, FileSpreadsheet, MoreVertical, Archive, RotateCcw, FileText, Eye, Download, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, SlidersHorizontal, Table, HelpCircle, FileCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import * as XLSX from 'xlsx';
 import { getProgramAbbrFromSectionName } from '../../lib/constants';
@@ -174,9 +174,118 @@ export default function UserList() {
   const [userLogs, setUserLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
 
-  const sampleCSV = `Smith,Jane,A.,jane.smith@student.sage.edu,student,College of Accountancy,Bachelor of Science in Accountancy,BSA-1A,1st Year,2026-00005
-Cruz,Patricia,N.,p.cruz@sage.edu.ph,dean,College of Accountancy,,,,DN-2026-00002
-Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelor of Science in Accountancy,,,FAC-2026-00003`;
+  // Built from live reference data rather than written here, so the sample
+  // can never name a college, program or section that does not exist in
+  // this institution -- loading it and importing it unedited must succeed.
+  // The old version named "College of Accountancy" and "Bachelor of Science
+  // in Accountancy" unconditionally, which this database has never had.
+  const sampleRows = useMemo(() => {
+    const dept = departments[0];
+    if (!dept) return [];
+    const prog = programs.find(p => p.department_id === dept.department_id) || null;
+    const section = dbSections.find(s => s.department_id === dept.department_id) || null;
+    return [
+      {
+        'Last Name': 'Smith', 'First Name': 'Jane', 'Middle Name': 'A.',
+        Email: 'jane.smith@example.edu', Role: 'student',
+        College: dept.name, Program: prog?.name || '', Section: section?.name || '',
+        'Year Level': '1st Year', 'ID Number': '2026-00001'
+      },
+      {
+        'Last Name': 'Cruz', 'First Name': 'Patricia', 'Middle Name': 'N.',
+        Email: 'p.cruz@example.edu', Role: 'dean',
+        College: dept.name, Program: '', Section: '', 'Year Level': '', 'ID Number': 'DN-2026-00001'
+      },
+      {
+        'Last Name': 'Rivera', 'First Name': 'Amanda', 'Middle Name': 'Santos',
+        Email: 'a.rivera@example.edu', Role: 'faculty',
+        College: dept.name, Program: prog?.name || '', Section: '', 'Year Level': '', 'ID Number': 'FAC-2026-00001'
+      }
+    ];
+  }, [departments, programs, dbSections]);
+
+  const sampleCSV = useMemo(
+    () => sampleRows.map(r => [
+      r['Last Name'], r['First Name'], r['Middle Name'], r.Email, r.Role,
+      r.College, r.Program, r.Section, r['Year Level'], r['ID Number']
+    ].join(',')).join('\n'),
+    [sampleRows]
+  );
+
+  // Downloadable per-college template. One example STUDENT row per program
+  // the college actually has, not just one -- same approach as the New
+  // Student Accounts template, and for the same reason: a registrar typing a
+  // different college's program from memory is exactly how "College/Program
+  // not found" import errors happen. Dean and faculty stay single generic
+  // rows, since neither carries a program.
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+  const templateMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!templateMenuOpen) return;
+    const onClick = (e) => {
+      if (templateMenuRef.current && !templateMenuRef.current.contains(e.target)) {
+        setTemplateMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [templateMenuOpen]);
+
+  const buildUserTemplateRows = (dept) => {
+    const deptPrograms = programs
+      .filter(p => p.department_id === dept.department_id)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    // Every student row shares the same obviously-fake name, email and ID on
+    // purpose: if a registrar forgets to delete them before uploading, the
+    // duplicate email trips this page's own "Duplicate email found inside
+    // the CSV" check instead of quietly creating junk accounts.
+    const studentRow = (prog) => ({
+      'Last Name': 'SAMPLE', 'First Name': 'DELETE THIS ROW', 'Middle Name': '',
+      Email: 'sample.delete@example.edu', Role: 'student',
+      College: dept.name, Program: prog?.name || '', Section: '',
+      'Year Level': '1st Year', 'ID Number': 'SAMPLE-DELETE'
+    });
+    const students = deptPrograms.length ? deptPrograms.map(studentRow) : [studentRow(null)];
+
+    return [
+      ...students,
+      {
+        'Last Name': 'SAMPLE', 'First Name': 'DELETE THIS ROW', 'Middle Name': '',
+        Email: 'sample.delete.dean@example.edu', Role: 'dean',
+        College: dept.name, Program: '', Section: '', 'Year Level': '', 'ID Number': 'SAMPLE-DELETE-DN'
+      },
+      {
+        'Last Name': 'SAMPLE', 'First Name': 'DELETE THIS ROW', 'Middle Name': '',
+        Email: 'sample.delete.faculty@example.edu', Role: 'faculty',
+        College: dept.name, Program: deptPrograms[0]?.name || '', Section: '', 'Year Level': '', 'ID Number': 'SAMPLE-DELETE-FAC'
+      }
+    ];
+  };
+
+  const buildProgramReference = (dept) =>
+    programs
+      .filter(p => p.department_id === dept.department_id)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      .map(p => ({ Program: p.name, Abbreviation: p.abbreviation || '' }));
+
+  const downloadTemplateForCollege = (dept) => {
+    const sample = buildUserTemplateRows(dept);
+    const reference = buildProgramReference(dept);
+    const header = ['Last Name', 'First Name', 'Middle Name', 'Email', 'Role', 'College', 'Program', 'Section', 'Year Level', 'ID Number'];
+
+    const ws = XLSX.utils.json_to_sheet(sample, { header });
+    const refWs = XLSX.utils.json_to_sheet(reference, { header: ['Program', 'Abbreviation'] });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Users');
+    XLSX.utils.book_append_sheet(wb, refWs, 'Programs');
+
+    const safeName = dept.name.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
+    XLSX.writeFile(wb, `ASPIRE_Users_Import_Template_${safeName}.xlsx`);
+    setTemplateMenuOpen(false);
+  };
 
   // Load users, departments, programs and sections from Supabase
   const loadUsers = async () => {
@@ -2462,14 +2571,42 @@ Rivera,Amanda,Santos,a.rivera@sage.edu.ph,faculty,College of Accountancy,Bachelo
                       <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 font-display">
                         <Table className="h-4 w-4 text-sage-600" /> Required Column Structure
                       </span>
-                      <button
-                        disabled={isImporting}
-                        onClick={handleLoadSample}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold border border-sage-200 bg-white hover:bg-sage-50 text-sage-700 rounded-lg transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        <span>Load Sample Demo Data</span>
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <div className="relative" ref={templateMenuRef}>
+                          <button
+                            disabled={isImporting || departments.length === 0}
+                            onClick={() => setTemplateMenuOpen(v => !v)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            <span>Download Template</span>
+                            <ChevronDown className="h-3 w-3" />
+                          </button>
+                          {templateMenuOpen && (
+                            <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-xl border border-slate-200 shadow-lg z-20 py-1.5 max-h-72 overflow-y-auto">
+                              <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                                Template for a college
+                              </p>
+                              {departments.map(dept => (
+                                <button
+                                  key={dept.department_id}
+                                  onClick={() => downloadTemplateForCollege(dept)}
+                                  className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-sage-50 hover:text-sage-900 transition-colors truncate"
+                                >
+                                  {dept.name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          disabled={isImporting || sampleRows.length === 0}
+                          onClick={handleLoadSample}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold border border-sage-200 bg-white hover:bg-sage-50 text-sage-700 rounded-lg transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+                        >
+                          <span>Load Sample Data</span>
+                        </button>
+                      </div>
                     </div>
 
                     <div className="bg-white p-3 rounded-xl border border-slate-200/70 font-mono text-[11px] text-slate-700 overflow-x-auto whitespace-nowrap shadow-2xs">

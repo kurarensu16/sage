@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
-import { Search, Plus, Edit2, Trash2, Layers, Upload, X, Check, FileSpreadsheet, AlertCircle, CheckCircle, SlidersHorizontal } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, Layers, Upload, X, Check, FileSpreadsheet, AlertCircle, CheckCircle, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import * as XLSX from 'xlsx';
 import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
@@ -41,17 +41,98 @@ export default function SectionList() {
   const [importSuccess, setImportSuccess] = useState('');
   const fileInputRef = useRef(null);
 
-  // Built from an existing section so the template never names a college, program or term
-  // that is not in the database — the import rejects unknown colleges and programs.
-  const sampleCSV = useMemo(() => {
+  // Quick-paste sample, used only by "Load Sample Template" to fill the
+  // textarea for a fast manual try. Built from an existing section, or
+  // failing that the first college and program, so it never names a college
+  // or program that is not in the database.
+  const sampleRows = useMemo(() => {
     const reference = sections[0];
-    if (!reference) return 'Section Name,School Year,Semester,College,Program';
-    const prefix = reference.programPrefix || reference.name.split('-')[0] || 'SECTION';
+    if (reference) {
+      const prefix = reference.programPrefix || reference.name.split('-')[0] || 'SECTION';
+      return [
+        { 'Section Name': `${prefix}-1B`, 'School Year': reference.schoolYear, Semester: reference.semester, College: reference.department, Program: reference.program },
+        { 'Section Name': `${prefix}-2A`, 'School Year': reference.schoolYear, Semester: reference.semester, College: reference.department, Program: reference.program }
+      ];
+    }
+    const dept = departments[0];
+    const prog = programs.find(p => dept && p.department_id === dept.department_id) || programs[0];
+    if (!dept || !prog) return [];
+    const prefix = prog.abbreviation || prog.name;
+    const year = new Date().getFullYear();
     return [
-      `${prefix}-1B,${reference.schoolYear},${reference.semester},${reference.department},${reference.program}`,
-      `${prefix}-2A,${reference.schoolYear},${reference.semester},${reference.department},${reference.program}`
-    ].join('\n');
-  }, [sections]);
+      { 'Section Name': `${prefix}-1A`, 'School Year': `${year}-${year + 1}`, Semester: '1st', College: dept.name, Program: prog.name }
+    ];
+  }, [sections, departments, programs]);
+
+  const sampleCSV = useMemo(
+    () => sampleRows.length
+      ? sampleRows.map(r => `${r['Section Name']},${r['School Year']},${r.Semester},${r.College},${r.Program}`).join('\n')
+      : 'Section Name,School Year,Semester,College,Program',
+    [sampleRows]
+  );
+
+  // Downloadable per-college template. One example row per program the
+  // college actually has -- not just one row for the whole file -- the same
+  // approach as the New Student Accounts template, and for the same reason:
+  // a registrar typing a different college's program from memory is exactly
+  // how "Program does not exist" import errors happen.
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
+  const templateMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!templateMenuOpen) return;
+    const onClick = (e) => {
+      if (templateMenuRef.current && !templateMenuRef.current.contains(e.target)) {
+        setTemplateMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [templateMenuOpen]);
+
+  const buildSectionTemplateRows = (dept) => {
+    const deptPrograms = programs
+      .filter(p => p.department_id === dept.department_id)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    const active = getActiveAcademicTerm(terms);
+    const year = active?.school_year || (() => {
+      const y = new Date().getFullYear();
+      return `${y}-${y + 1}`;
+    })();
+    const semester = active?.semester || '1st';
+
+    // Every row shares the same obviously-fake Section Name on purpose: if a
+    // registrar forgets to delete them before uploading, the duplicate name
+    // (same name, year and semester) trips this page's own "already
+    // registered" check instead of quietly creating junk sections.
+    const row = (prog) => ({
+      'Section Name': 'SAMPLE-DELETE', 'School Year': year, Semester: semester,
+      College: dept.name, Program: prog?.name || ''
+    });
+    return deptPrograms.length ? deptPrograms.map(row) : [row(null)];
+  };
+
+  const buildProgramReference = (dept) =>
+    programs
+      .filter(p => p.department_id === dept.department_id)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      .map(p => ({ Program: p.name, Abbreviation: p.abbreviation || '' }));
+
+  const downloadTemplateForCollege = (dept) => {
+    const sample = buildSectionTemplateRows(dept);
+    const reference = buildProgramReference(dept);
+
+    const ws = XLSX.utils.json_to_sheet(sample, { header: ['Section Name', 'School Year', 'Semester', 'College', 'Program'] });
+    const refWs = XLSX.utils.json_to_sheet(reference, { header: ['Program', 'Abbreviation'] });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sections');
+    XLSX.utils.book_append_sheet(wb, refWs, 'Programs');
+
+    const safeName = dept.name.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
+    XLSX.writeFile(wb, `ASPIRE_Sections_Import_Template_${safeName}.xlsx`);
+    setTemplateMenuOpen(false);
+  };
 
   const [loading, setLoading] = useState(true);
 
@@ -795,12 +876,40 @@ export default function SectionList() {
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wide">
                     Or Paste Raw Data (Format: <code className="font-mono text-sage-700 bg-sage-50 px-1 py-0.5 rounded border border-sage-200">Name,SchoolYear,Semester,College,Program</code>)
                   </label>
-                  <button
-                    onClick={handleLoadSample}
-                    className="px-2.5 py-1 text-[11px] font-bold border border-sage-200 text-sage-700 hover:bg-sage-50 rounded"
-                  >
-                    Load Sample Template
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <div className="relative" ref={templateMenuRef}>
+                      <button
+                        onClick={() => setTemplateMenuOpen(v => !v)}
+                        disabled={departments.length === 0}
+                        className="px-2.5 py-1 text-[11px] font-bold border border-slate-200 text-slate-700 hover:bg-slate-50 rounded disabled:opacity-50 flex items-center gap-1"
+                      >
+                        Download Template <ChevronDown className="h-3 w-3" />
+                      </button>
+                      {templateMenuOpen && (
+                        <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-xl border border-slate-200 shadow-lg z-20 py-1.5 max-h-72 overflow-y-auto">
+                          <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                            Template for a college
+                          </p>
+                          {departments.map(dept => (
+                            <button
+                              key={dept.department_id}
+                              onClick={() => downloadTemplateForCollege(dept)}
+                              className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-sage-50 hover:text-sage-900 transition-colors truncate"
+                            >
+                              {dept.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleLoadSample}
+                      disabled={sampleRows.length === 0}
+                      className="px-2.5 py-1 text-[11px] font-bold border border-sage-200 text-sage-700 hover:bg-sage-50 rounded disabled:opacity-50"
+                    >
+                      Load Sample Template
+                    </button>
+                  </div>
                 </div>
 
                 <textarea

@@ -12,28 +12,20 @@ import {
   TrendingUp,
   PieChart as PieChartIcon,
   BarChart3,
-  MessageSquare,
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
-  X,
-  Send
+  AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { DashboardSkeleton } from '../../components/common/Skeleton';
-import { dispatchNotifications } from '../../lib/notificationDispatcher';
-import { logActivity, resolveActorName } from '../../lib/auditLog';
-import { 
-  FacultyPerformanceTrajectoryChart, 
-  StudentRiskInterventionDonut, 
-  AssessmentComponentDistributionBar 
+import {
+  FacultyPerformanceTrajectoryChart,
+  StudentRiskInterventionDonut,
+  AssessmentComponentDistributionBar
 } from '../../components/faculty/FacultyCharts';
 import InfoModal from '../../components/InfoModal';
 import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 import { getClassPriorityRoster } from '../../lib/classRoomService';
 import { GRADE_MILESTONES, getCanonicalGradePeriod } from '../../lib/gradeMilestones';
-import { toUserMessage } from '../../lib/errorMessages';
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
@@ -46,20 +38,10 @@ export default function Dashboard() {
     interventionsCount: 0,
     deanReferralsCount: 0,
     notificationsCount: 0,
-    atRiskCount: 0,
-    pendingConsultationsCount: 0
+    atRiskCount: 0
   });
   const [recentEvaluations, setRecentEvaluations] = useState([]);
   const [urgentTasks, setUrgentTasks] = useState([]);
-
-  // Consultation Resolution Module states
-  const [consultationRequests, setConsultationRequests] = useState([]);
-  const [consultationFilter, setConsultationFilter] = useState('all'); // 'all' | 'pending' | 'scheduled' | 'completed' | 'declined'
-  const [selectedConsultation, setSelectedConsultation] = useState(null);
-  const [resolutionStatus, setResolutionStatus] = useState('completed');
-  const [facultyNotes, setFacultyNotes] = useState('');
-  const [resolving, setResolving] = useState(false);
-  const [resolveFeedback, setResolveFeedback] = useState(null);
   const [infoModalData, setInfoModalData] = useState(null);
   // Classes from a term that has ended whose Semestral Grade is still unposted.
   // Kept out of the term's figures and stated on its own, so neither number
@@ -230,44 +212,6 @@ export default function Dashboard() {
           .eq('is_read', false)
           .is('dismissed_at', null);
 
-        // 5. ASPIRE v3.1: Fetch Student Consultation Requests
-        let loadedConsultations = [];
-        try {
-          const { data: consultData } = await supabase
-            .from('student_consultation_requests')
-            .select(`
-              consultation_id,
-              student_id,
-              faculty_id,
-              class_record_id,
-              concern_category,
-              preferred_schedule,
-              message,
-              status,
-              faculty_notes,
-              created_at,
-              updated_at,
-              users:student_id ( first_name, last_name, email, user_number ),
-              class_records (
-                subjects ( code, name ),
-                sections ( name )
-              )
-            `)
-            .eq('faculty_id', user.id)
-            .order('created_at', { ascending: false });
-
-          if (consultData) loadedConsultations = consultData;
-        } catch (err) {
-          // Supabase is the only store. The old localStorage copy was a
-          // leftover of the mockDb era and could show stale consultations as
-          // though they were live, which is worse than showing none.
-          console.error('[ASPIRE] could not load consultation requests:', err);
-          loadedConsultations = [];
-        }
-
-        setConsultationRequests(loadedConsultations);
-        const pendingConsultations = loadedConsultations.filter(c => c.status === 'pending').length;
-
         // Unified risk threshold: Only HIGH and CRITICAL count as "At-Risk" (single source of truth via riskUtils.js)
         const atRiskStudents = combinedStudents.filter(s => s.risk_level === 'high' || s.risk_level === 'critical');
 
@@ -277,8 +221,7 @@ export default function Dashboard() {
           interventionsCount,
           deanReferralsCount,
           notificationsCount: notificationsCount || 0,
-          atRiskCount: atRiskStudents.length,
-          pendingConsultationsCount: pendingConsultations
+          atRiskCount: atRiskStudents.length
         });
 
         // 5. ASPIRE v4.0: Calculate Visual Analytics Data + PL Eligibility Tracking
@@ -374,93 +317,6 @@ export default function Dashboard() {
 
     fetchDashboardData();
   }, [user, profile]);
-
-  const handleOpenResolutionModal = (consult) => {
-    setSelectedConsultation(consult);
-    // Only the two outcomes this modal offers; scheduling happens on the
-    // Consultation Requests page, where a date and mode are required.
-    setResolutionStatus(consult.status === 'declined' ? 'declined' : 'completed');
-    setFacultyNotes(consult.faculty_notes || '');
-    setResolveFeedback(null);
-  };
-
-  const handleResolveConsultation = async (e) => {
-    e.preventDefault();
-    if (!selectedConsultation) return;
-    setResolving(true);
-    setResolveFeedback(null);
-
-    const updatedPayload = {
-      status: resolutionStatus,
-      faculty_notes: facultyNotes.trim(),
-      updated_at: new Date().toISOString()
-    };
-
-    try {
-      const { error } = await supabase
-        .from('student_consultation_requests')
-        .update(updatedPayload)
-        .eq('consultation_id', selectedConsultation.consultation_id);
-
-      if (error) throw error;
-
-      // Update local state
-      setConsultationRequests(prev => prev.map(c => 
-        c.consultation_id === selectedConsultation.consultation_id 
-          ? { ...c, ...updatedPayload } 
-          : c
-      ));
-
-      // Update pending count in stats
-      setStats(prev => ({
-        ...prev,
-        pendingConsultationsCount: Math.max(
-          0, 
-          prev.pendingConsultationsCount - (selectedConsultation.status === 'pending' && resolutionStatus !== 'pending' ? 1 : 0)
-        )
-      }));
-
-      // Realtime notification to student
-      const facultyName = resolveActorName(profile, user);
-      const subjectCode = selectedConsultation.class_records?.subjects?.code || 'your course';
-
-      await dispatchNotifications([{
-        recipient_id: selectedConsultation.student_id,
-        type: 'system',
-        message: `Consultation update from ${facultyName} (${subjectCode}): Status is now "${resolutionStatus}". ${facultyNotes.trim() ? `Notes: ${facultyNotes.trim()}` : ''}`
-      }]);
-
-      // Audit Log
-      await logActivity(
-        'Resolved Consultation Request',
-        `${facultyName} updated consultation request to "${resolutionStatus}" for student (${selectedConsultation.users?.email || 'Student'}).`,
-        facultyName
-      );
-
-      setResolveFeedback({ type: 'success', message: `Consultation request marked as ${resolutionStatus}.` });
-      setTimeout(() => {
-        setSelectedConsultation(null);
-        setResolveFeedback(null);
-      }, 1000);
-    } catch (err) {
-      // This used to write the change to localStorage and report SUCCESS, so a
-      // failed save looked exactly like a saved one -- the instructor believed
-      // a consultation was resolved that the database never recorded. The
-      // modal now stays open with the record untouched, so the only way to
-      // leave it resolved is to actually resolve it.
-      setResolveFeedback({
-        type: 'error',
-        message: toUserMessage(err, 'This could not be saved, so nothing was changed. Please try again.')
-      });
-    } finally {
-      setResolving(false);
-    }
-  };
-
-  const filteredConsultations = consultationRequests.filter(c => {
-    if (consultationFilter === 'all') return true;
-    return c.status === consultationFilter;
-  });
 
   if (loading) {
     return <DashboardSkeleton />;
@@ -567,7 +423,7 @@ export default function Dashboard() {
         )}
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-4">
           
           <div className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-sage-300 transition-all flex flex-col justify-between">
             <div className="flex justify-between items-start">
@@ -601,26 +457,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div 
-            className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-sky-300 transition-all flex flex-col justify-between cursor-pointer group"
-            onClick={() => setInfoModalData({
-              title: "Consultations",
-              message: "The number of pending consultation requests from your students that require your approval or scheduling."
-            })}
-          >
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider group-hover:text-sky-600 transition-colors">Consultations</span>
-              <div className="p-1.5 sm:p-2 bg-sky-50 text-sky-600 rounded-xl group-hover:bg-sky-100 transition-colors">
-                <MessageSquare className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="mt-3 sm:mt-4">
-              <h3 className={`text-xl sm:text-2xl font-extrabold font-mono ${stats.pendingConsultationsCount > 0 ? 'text-sky-600' : 'text-slate-900'}`}>{String(stats.pendingConsultationsCount).padStart(2, '0')}</h3>
-              <p className="text-micro sm:text-[10px] text-slate-500 mt-0.5">Pending requests</p>
-            </div>
-          </div>
-
-          <div 
+          <div
             className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 shadow-2xs hover:border-indigo-300 transition-all flex flex-col justify-between cursor-pointer group"
             onClick={() => setInfoModalData({
               title: "Active Intervention Cases",
@@ -941,289 +778,7 @@ export default function Dashboard() {
 
         </div>
 
-        {/* ========================================================================= */}
-        {/* ASPIRE v3.1 CONSULTATION RESOLUTION MODULE                                */}
-        {/* ========================================================================= */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-4 sm:p-6 space-y-4 text-left">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-sage-50 text-sage-700 rounded-lg">
-                  <MessageSquare className="h-4 w-4" />
-                </div>
-                <h3 className="text-base sm:text-lg font-bold font-display text-slate-900">
-                  Student Consultation Inbox &amp; Resolution
-                </h3>
-                {stats.pendingConsultationsCount > 0 && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 animate-pulse">
-                    {stats.pendingConsultationsCount} Pending
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] sm:text-xs text-slate-500 mt-1">
-                Receive, schedule, and resolve student-initiated academic inquiries per DYCI institutional policy.
-              </p>
-            </div>
-
-            {/* Filter Pills */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              {[
-                { id: 'all', label: 'All' },
-                { id: 'pending', label: 'Pending' },
-                { id: 'scheduled', label: 'Scheduled' },
-                { id: 'completed', label: 'Completed' },
-                { id: 'declined', label: 'Declined' }
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setConsultationFilter(tab.id)}
-                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    consultationFilter === tab.id
-                      ? 'bg-sage-600 text-white shadow-2xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200/70'
-                  }`}
-                >
-                  {tab.label}
-                  {tab.id === 'pending' && stats.pendingConsultationsCount > 0 && (
-                    <span className={`ml-1.5 px-1.5 py-0.2 rounded-full text-micro font-mono ${
-                      consultationFilter === tab.id ? 'bg-white/30 text-white' : 'bg-amber-100 text-amber-800'
-                    }`}>
-                      {stats.pendingConsultationsCount}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {filteredConsultations.length === 0 ? (
-            <div className="text-center py-12 px-4 border border-dashed border-slate-200 rounded-xl">
-              <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mx-auto mb-2">
-                <MessageSquare className="h-5 w-5" />
-              </div>
-              <h4 className="text-sm font-bold text-slate-700">No consultation requests found</h4>
-              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                {consultationFilter === 'all' 
-                  ? 'Students have not submitted any consultation inquiries for your handled courses yet.'
-                  : `There are currently no consultation requests with status "${consultationFilter}".`}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4">
-              {filteredConsultations.map(consult => {
-                const studentName = consult.users ? `${consult.users.first_name} ${consult.users.last_name}` : 'Student';
-                const studentNo = consult.users?.user_number || (consult.users?.email ? consult.users.email.split('@')[0].toUpperCase() : 'N/A');
-                const subjectCode = consult.class_records?.subjects?.code || 'SUBJ';
-                const sectionName = consult.class_records?.sections?.name || 'Section';
-
-                const statusColor = 
-                  consult.status === 'pending' ? 'bg-amber-50 text-amber-800 border-amber-200' :
-                  consult.status === 'scheduled' ? 'bg-sky-50 text-sky-800 border-sky-200' :
-                  consult.status === 'completed' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-                  'bg-slate-100 text-slate-600 border-slate-200';
-
-                return (
-                  <div 
-                    key={consult.consultation_id} 
-                    className="p-4 rounded-2xl border border-slate-200/90 bg-slate-50/50 hover:bg-white hover:border-sage-300 transition-all shadow-2xs flex flex-col justify-between space-y-3"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-900 text-sm">{studentName}</span>
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200/80 text-slate-700">
-                              {studentNo}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-500 mt-0.5 font-mono">
-                            {subjectCode} • {sectionName}
-                          </p>
-                        </div>
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border capitalize ${statusColor}`}>
-                          {consult.status}
-                        </span>
-                      </div>
-
-                      <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 text-xs space-y-1.5">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-slate-700 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-sage-500"></span>
-                            {consult.concern_category}
-                          </span>
-                          <span className="text-slate-400 font-mono text-[10px]">
-                            {consult.created_at ? new Date(consult.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Recent'}
-                          </span>
-                        </div>
-                        <p className="text-slate-600 text-xs italic">
-                          "{consult.message}"
-                        </p>
-                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 pt-1 border-t border-slate-100 font-sans">
-                          <Clock className="h-3 w-3 text-slate-400" />
-                          <span>Preferred Schedule: <strong>{consult.preferred_schedule}</strong></span>
-                        </div>
-                      </div>
-
-                      {consult.faculty_notes && (
-                        <div className="p-2.5 bg-sage-50/60 rounded-xl border border-sage-200/70 text-xs space-y-0.5">
-                          <span className="text-[10px] font-bold text-sage-800 uppercase tracking-wider block">Faculty Notes:</span>
-                          <p className="text-slate-700 text-[11px]">{consult.faculty_notes}</p>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-200/70 flex items-center justify-between">
-                      <span className="text-[10px] text-slate-400">
-                        {consult.status === 'pending' ? 'Needs faculty response' : `Last updated: ${new Date(consult.updated_at || consult.created_at).toLocaleDateString()}`}
-                      </span>
-                      <button
-                        onClick={() => handleOpenResolutionModal(consult)}
-                        className="px-3 py-1.5 bg-sage-600 hover:bg-sage-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1 cursor-pointer"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        <span>Respond / Resolve</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
       </div>
-
-      {/* ========================================================================= */}
-      {/* CONSULTATION RESOLUTION MODAL                                             */}
-      {/* ========================================================================= */}
-      {selectedConsultation && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full p-5 sm:p-6 space-y-4 text-left animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-base font-bold font-display text-slate-900">
-                  Respond to Consultation Request
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Set meeting status and provide advising feedback to student.
-                </p>
-              </div>
-              <button
-                onClick={() => setSelectedConsultation(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Student Request Summary */}
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-900">
-                  {selectedConsultation.users?.first_name} {selectedConsultation.users?.last_name}
-                </span>
-                <span className="text-slate-500 font-mono text-[11px]">
-                  {selectedConsultation.class_records?.subjects?.code} ({selectedConsultation.class_records?.sections?.name})
-                </span>
-              </div>
-              <div className="text-[11px] text-slate-600">
-                <span className="font-semibold text-slate-700">Category:</span> {selectedConsultation.concern_category}
-              </div>
-              <div className="text-[11px] text-slate-600">
-                <span className="font-semibold text-slate-700">Preferred Schedule:</span> {selectedConsultation.preferred_schedule}
-              </div>
-              <div className="p-2 bg-white rounded-lg border border-slate-200 text-slate-700 italic text-[11px]">
-                "{selectedConsultation.message}"
-              </div>
-            </div>
-
-            <form onSubmit={handleResolveConsultation} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Resolution / Meeting Status
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { id: 'completed', label: 'Completed', color: 'border-emerald-300 bg-emerald-50 text-emerald-800' },
-                    { id: 'declined', label: 'Declined', color: 'border-rose-300 bg-rose-50 text-rose-800' }
-                  ].map(opt => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => setResolutionStatus(opt.id)}
-                      className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all text-center cursor-pointer ${
-                        resolutionStatus === opt.id
-                          ? `${opt.color} ring-2 ring-sage-500 shadow-2xs`
-                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-                {/* Scheduling lives on the Consultation Requests page, which captures the
-                    date, time and mode. Offering "Scheduled" here too would let a request
-                    be marked scheduled with no schedule attached. */}
-                <Link
-                  to="/faculty/consultations"
-                  className="mt-2 inline-block text-[11px] font-bold text-sage-700 hover:text-sage-900 hover:underline"
-                >
-                  Need to set a date and time? Schedule it in Consultation Requests →
-                </Link>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Faculty Advising Notes
-                </label>
-                <textarea
-                  rows={3}
-                  value={facultyNotes}
-                  onChange={(e) => setFacultyNotes(e.target.value)}
-                  placeholder="e.g., Reviewed the exam papers together and agreed on a study plan for the Final period."
-                  className="w-full text-xs p-3 rounded-xl border border-slate-200 focus:border-sage-500 focus:ring-1 focus:ring-sage-500 outline-none resize-none transition-all placeholder:text-slate-400"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">
-                  These notes will be delivered to the student and recorded in their consultation history.
-                </p>
-              </div>
-
-              {resolveFeedback && (
-                <div className={`p-2.5 rounded-xl text-xs font-semibold ${
-                  resolveFeedback.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
-                }`}>
-                  {resolveFeedback.message}
-                </div>
-              )}
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setSelectedConsultation(null)}
-                  disabled={resolving}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={resolving}
-                  className="px-4 py-2 bg-sage-600 hover:bg-sage-700 text-white text-xs font-bold rounded-xl transition-all shadow-2xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-                >
-                  {resolving ? (
-                    <span>Saving...</span>
-                  ) : (
-                    <>
-                      <Send className="h-3.5 w-3.5" />
-                      <span>Save &amp; Notify Student</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Info Modal */}
       <InfoModal 

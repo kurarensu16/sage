@@ -3,7 +3,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import * as XLSX from 'xlsx';
 import {
   Upload, Download, Send, AlertTriangle, CheckCircle2, XCircle,
-  Clock, Loader2, Info, FileSpreadsheet
+  Clock, Loader2, Info, FileSpreadsheet, ChevronDown
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { toUserMessage } from '../../lib/errorMessages';
@@ -30,27 +30,46 @@ const TEMPLATE_HEADERS = [
   'LastName', 'FirstName', 'MiddleName', 'IDNumber', 'College', 'Program', 'Section', 'YearLevel'
 ];
 
-// The sample row is built from LIVE reference data rather than written here, so
-// the example can never name a college, program or section that has since been
-// renamed or retired. A template that demonstrates an invalid value teaches
-// people to produce files the import will reject.
-function buildTemplateSample({ departments, programs, sections }) {
-  const dept = departments[0] || null;
-  const prog =
-    programs.find((p) => dept && p.department_id === dept.department_id) || programs[0] || null;
-  const section =
-    sections.find((s) => dept && s.department_id === dept.department_id) || sections[0] || null;
+// One template per college, not one template covering all of them. A
+// registrar typing a different college's program from memory is exactly how
+// "Program does not exist" errors happen, so the template is scoped to a
+// single college and carries that college's own programs as a reference --
+// nothing to mistype when it can be copied instead.
+//
+// One example row per program, built from LIVE reference data rather than
+// written here, so the example can never name a program or section that has
+// since been renamed or retired. Every row shares the same obviously-fake
+// name and the same IDNumber on purpose: if a registrar forgets to delete
+// them before uploading, the duplicate IDNumber trips this page's own
+// "appears more than once in this file" check instead of quietly creating
+// fake student accounts.
+function buildTemplateSample({ dept, programs, sections }) {
+  const deptPrograms = programs
+    .filter((p) => p.department_id === dept.department_id)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const section = sections.find((s) => s.department_id === dept.department_id) || null;
 
-  return [{
-    LastName: 'Dela Cruz',
-    FirstName: 'Juan',
-    MiddleName: 'Santos',
-    IDNumber: '2026-00001',
-    College: dept?.name || '',
-    Program: prog?.abbreviation || prog?.name || '',
+  const row = (program) => ({
+    LastName: 'SAMPLE',
+    FirstName: 'DELETE THIS ROW',
+    MiddleName: '',
+    IDNumber: 'SAMPLE-DELETE',
+    College: dept.name,
+    Program: program?.abbreviation || program?.name || '',
     Section: section?.name || '',
     YearLevel: '1st Year'
-  }];
+  });
+
+  return deptPrograms.length ? deptPrograms.map(row) : [row(null)];
+}
+
+// Reference-only rows: every program the college actually has, for the
+// registrar to copy into the Program column instead of guessing the spelling.
+function buildProgramReference({ dept, programs }) {
+  return programs
+    .filter((p) => p.department_id === dept.department_id)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    .map((p) => ({ Program: p.name, Abbreviation: p.abbreviation || '' }));
 }
 
 const STATUS_STYLE = {
@@ -62,6 +81,8 @@ const STATUS_STYLE = {
 export default function StudentAccountRequests() {
   const { user, profile } = useAuth();
   const fileRef = useRef(null);
+  const templateMenuRef = useRef(null);
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
 
   const [requests, setRequests] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -132,12 +153,32 @@ export default function StudentAccountRequests() {
     load();
   }, []);
 
-  const downloadTemplate = () => {
-    const sample = buildTemplateSample({ departments, programs, sections });
+  // Closes the college picker on an outside click, same as any other dropdown.
+  useEffect(() => {
+    if (!templateMenuOpen) return;
+    const onClick = (e) => {
+      if (templateMenuRef.current && !templateMenuRef.current.contains(e.target)) {
+        setTemplateMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [templateMenuOpen]);
+
+  const downloadTemplate = (dept) => {
+    const sample = buildTemplateSample({ dept, programs, sections });
+    const reference = buildProgramReference({ dept, programs });
+
     const ws = XLSX.utils.json_to_sheet(sample, { header: TEMPLATE_HEADERS });
+    const refWs = XLSX.utils.json_to_sheet(reference, { header: ['Program', 'Abbreviation'] });
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Students');
-    XLSX.writeFile(wb, 'ASPIRE_New_Student_Accounts_Template.xlsx');
+    XLSX.utils.book_append_sheet(wb, ws, 'Student Accounts');
+    XLSX.utils.book_append_sheet(wb, refWs, 'Programs');
+
+    const safeName = dept.name.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
+    XLSX.writeFile(wb, `ASPIRE_New_Student_Accounts_Template_${safeName}.xlsx`);
+    setTemplateMenuOpen(false);
   };
 
   const deptByName = useMemo(
@@ -404,13 +445,33 @@ export default function StudentAccountRequests() {
   return (
     <>
       <PageHeader title="New Student Accounts" breadcrumb="Registrar Portal">
-        <button
-          onClick={downloadTemplate}
-          className="px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-        >
-          <Download className="h-4 w-4" />
-          <span className="hidden sm:inline">Template</span>
-        </button>
+        <div className="relative" ref={templateMenuRef}>
+          <button
+            onClick={() => setTemplateMenuOpen((v) => !v)}
+            disabled={departments.length === 0}
+            className="px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Template</span>
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+          {templateMenuOpen && (
+            <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-xl border border-slate-200 shadow-lg z-20 py-1.5 max-h-80 overflow-y-auto">
+              <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                Template for a college
+              </p>
+              {departments.map((dept) => (
+                <button
+                  key={dept.department_id}
+                  onClick={() => downloadTemplate(dept)}
+                  className="w-full text-left px-3 py-2 text-xs sm:text-sm text-slate-700 hover:bg-sage-50 hover:text-sage-900 transition-colors cursor-pointer truncate"
+                >
+                  {dept.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </PageHeader>
 
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-3.5 sm:space-y-6">
@@ -449,10 +510,14 @@ export default function StudentAccountRequests() {
               </h2>
               <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
                 Columns: <span className="font-mono">{TEMPLATE_HEADERS.join(', ')}</span>. College,
-                program and section are matched against the database by exact name.{' '}
+                program and section are matched against the database by exact name — download the
+                template for each college from the button above. It has one example row per
+                program in that college (plus a <strong>Programs</strong> sheet to copy exact
+                spellings from); <strong>replace every SAMPLE row with a real student before
+                uploading</strong>.{' '}
                 <strong>IDNumber is required</strong> and must be unique across the whole
                 institution — it is checked against existing accounts, the queue, and the rest of
-                your file.
+                your file. A single upload may still combine several colleges.
               </p>
             </div>
           </div>

@@ -3,7 +3,7 @@ ins  = entity -> process      outs = process -> entity
 stores: (id, table, flow label, mode)  mode r = store->process, w = process->store, rw = both
 Sources: the 2026-10-30 .mmd files in the parent folder. Each flow is now directed.
 """
-AI = ('X', 'AI Model Provider\n(Gemini 2.5 Flash via OpenRouter)')
+AI = ('X', 'AI Model Provider\n(Gemini 2.5 Flash)')
 
 
 def M(num, name, ins, outs, stores):
@@ -51,7 +51,7 @@ STUDENT = [
        ('D41', 'student_tutor_log', 'metered call, tokens, model', 'w'),
        ('D42', 'search_destinations', 'curated further reading', 'r'),
        ('D16', 'student_risk_evaluations', 'published plan, acknowledgment, verified tasks', 'rw'),
-       ('X', 'AI Model Provider\n(Gemini 2.5 Flash\nvia OpenRouter)', 'Grounded prompt', 'JSON diagnostics')]),
+       ('X', 'AI Model Provider\n(Gemini 2.5 Flash)', 'Grounded prompt', 'JSON diagnostics')]),
     M('6.0', 'Grades and|Consultation', ['Grade change request', 'Evidence files (one to three)'],
       ['Consultation history', 'Request status'],
       [('D43', 'grade_consultation_notes', 'logged consultations', 'r'),
@@ -95,7 +95,7 @@ FACULTY = [
        ('D32', 'faculty_intervention_drafts', 'AI task drafts', 'rw'),
        ('D31', 'student_evaluation_referrals', 'Dean referral and reason', 'w'),
        ('D25', 'activity_logs', 'audit entry', 'w'),
-       ('X', 'AI Model Provider\n(Gemini 2.5 Flash\nvia OpenRouter)', 'Evaluation snapshot', 'Three draft tasks')]),
+       ('X', 'AI Model Provider\n(Gemini 2.5 Flash)', 'Evaluation snapshot', 'Three draft tasks')]),
     M('6.0', 'Attendance', ['Attendance entries'], ['FDA warning badges'],
       [('D15', 'attendance_records', 'Present, Late or Absent marks', 'rw')]),
     M('7.0', 'Performance|Reports', ['Report filters'], ['Class performance', 'Comparison', 'Excel export'],
