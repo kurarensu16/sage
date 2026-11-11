@@ -66,6 +66,35 @@ export async function fetchColleges() {
   return data || [];
 }
 
+// Who signs the official Class Schedule export. The Registrar isn't scoped to
+// a college (there is no college-specific Registrar in ASPIRE), so the first
+// active one is used institution-wide; the Dean is specific to the college
+// being exported. Either can come back empty -- a vacant post is a real state,
+// not a bug -- and the export just leaves that signature line blank.
+export async function fetchCollegeSignatories(departmentId) {
+  const [{ data: deanRows }, { data: registrarRows }] = await Promise.all([
+    supabase
+      .from('users')
+      .select('first_name, last_name')
+      .eq('role', 'dean')
+      .eq('status', 'active')
+      .eq('department_id', departmentId)
+      .limit(1),
+    supabase
+      .from('users')
+      .select('first_name, last_name')
+      .eq('role', 'registrar')
+      .eq('status', 'active')
+      .limit(1)
+  ]);
+  const dean = deanRows?.[0];
+  const registrar = registrarRows?.[0];
+  return {
+    deanName: dean ? `${dean.first_name} ${dean.last_name}`.trim() : '',
+    registrarName: registrar ? `${registrar.first_name} ${registrar.last_name}`.trim() : ''
+  };
+}
+
 // Everything the picker needs for one college and term, in one round trip set.
 //
 // `crossCollege` is for the Department of General Education, whose faculty
