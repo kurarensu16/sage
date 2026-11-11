@@ -36,6 +36,7 @@
     "@capacitor/share": "^8.0.1",
     "@supabase/supabase-js": "^2.106.2",
     "clsx": "^2.1.1",
+    "docx": "^9.5.1",
     "html2pdf.js": "^0.14.0",
     "lucide-react": "^1.16.0",
     "pg": "^8.21.0",

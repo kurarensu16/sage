@@ -18,8 +18,9 @@ import {
   addDraft, finalizeDraft, reassignLoad, deleteDraft, updateDraftSchedule,
   updateClassSchedule, reassignClassFaculty, deleteClassRecord,
   exportLoadToExcel, fetchScheduleOccupancy, checkScheduleConflict,
-  fetchAvailableRooms, CLASS_TYPES
+  fetchAvailableRooms, CLASS_TYPES, fetchCollegeSignatories
 } from '../../lib/facultyLoadingService';
+import { exportFacultyScheduleDocx, exportCollegeScheduleDocx } from '../../lib/classScheduleExport';
 import SchedulePanel from './SchedulePanel';
 import LoadSummaryTable from './LoadSummaryTable';
 
@@ -379,6 +380,11 @@ export default function FacultyLoadingWorkspace({
   const [reassignTo, setReassignTo] = useState('');
   const [confirmFinalized, setConfirmFinalized] = useState(false);
   const [rosterChip, setRosterChip] = useState(null);
+  // Who signs the official Class Schedule export. Fetched alongside the
+  // catalog rather than on export click, so the per-faculty button in the
+  // roster never has to await a round trip before it can work.
+  const [signatories, setSignatories] = useState({ deanName: '', registrarName: '' });
+  const [exportingSchedule, setExportingSchedule] = useState(false);
 
   const collegeName = useMemo(
     () => colleges.find((c) => c.department_id === departmentId)?.name || '',
@@ -457,6 +463,20 @@ export default function FacultyLoadingWorkspace({
     // isCrossCollege decides how wide the catalogue is, so a change to it has
     // to refetch -- it arrives with the colleges list, after the first render.
   }, [departmentId, term, isCrossCollege, refreshLoad]);
+
+  // Signature names for the Class Schedule export. Independent of the lock --
+  // reading who the Dean and Registrar are needs no editing right.
+  useEffect(() => {
+    if (!departmentId) {
+      setSignatories({ deanName: '', registrarName: '' });
+      return;
+    }
+    let cancelled = false;
+    fetchCollegeSignatories(departmentId)
+      .then((result) => { if (!cancelled) setSignatories(result); })
+      .catch(() => { if (!cancelled) setSignatories({ deanName: '', registrarName: '' }); });
+    return () => { cancelled = true; };
+  }, [departmentId]);
 
   // Heartbeat while this page holds the college. Stopping on unmount lets the
   // lock lapse within its TTL, which covers a closed tab or a crash that an
@@ -905,18 +925,79 @@ export default function FacultyLoadingWorkspace({
     else setNotice('Faculty load exported.');
   };
 
+  // The official Class Schedule form. FINALIZED classes only ('Open' chips) --
+  // a draft can still be reassigned or fail Finalize, and this is a document
+  // meant to be signed and filed, not a working copy.
+  const handleExportFacultySchedule = async (member) => {
+    setExportingSchedule(true);
+    setError('');
+    try {
+      await exportFacultyScheduleDocx({
+        collegeName,
+        term,
+        facultyName: member.name,
+        registrarName: signatories.registrarName,
+        deanName: signatories.deanName,
+        classes: member.chips.filter((c) => c.state === 'Open')
+      });
+      setNotice(`Class schedule exported for ${member.name}.`);
+    } catch (err) {
+      setError(toUserMessage(err, 'Could not export that schedule.'));
+    } finally {
+      setExportingSchedule(false);
+    }
+  };
+
+  const handleExportCollegeSchedule = async () => {
+    const facultyList = summary
+      .map((member) => ({ name: member.name, classes: member.chips.filter((c) => c.state === 'Open') }))
+      .filter((member) => member.classes.length > 0);
+    if (facultyList.length === 0) {
+      setError('No faculty member in this college has a finalized class to export yet.');
+      return;
+    }
+    setExportingSchedule(true);
+    setError('');
+    try {
+      await exportCollegeScheduleDocx({
+        collegeName,
+        term,
+        registrarName: signatories.registrarName,
+        deanName: signatories.deanName,
+        facultyList
+      });
+      setNotice(`Class schedule exported for ${facultyList.length} faculty member${facultyList.length === 1 ? '' : 's'}.`);
+    } catch (err) {
+      setError(toUserMessage(err, 'Could not export the college schedule.'));
+    } finally {
+      setExportingSchedule(false);
+    }
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
       <PageHeader title="Faculty Loading & Provisioning" breadcrumb={portalLabel}>
-        <button
-          onClick={handleExport}
-          disabled={loading || !departmentId}
-          className="px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
-        >
-          <Download className="h-4 w-4" />
-          <span className="hidden sm:inline">Export</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExport}
+            disabled={loading || !departmentId}
+            title="A flat spreadsheet of every draft and finalized assignment"
+            className="px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Load Summary (xlsx)</span>
+          </button>
+          <button
+            onClick={handleExportCollegeSchedule}
+            disabled={loading || !departmentId || exportingSchedule}
+            title="The official Registrar Class Schedule form, one page per faculty member with a finalized class"
+            className="px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap disabled:opacity-50"
+          >
+            {exportingSchedule ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            <span className="hidden sm:inline">Class Schedule (College)</span>
+          </button>
+        </div>
       </PageHeader>
 
       <div className="p-3.5 sm:p-6 md:p-8 overflow-y-auto flex-1 space-y-3.5 sm:space-y-6">
@@ -1058,6 +1139,8 @@ export default function FacultyLoadingWorkspace({
                 busy={busy}
                 onFinalizeFaculty={askFinalizeFaculty}
                 onViewLoad={setViewingLoad}
+                onExportFaculty={handleExportFacultySchedule}
+                exportingSchedule={exportingSchedule}
               />
             ) : (
               <AssignTab
@@ -1107,6 +1190,8 @@ export default function FacultyLoadingWorkspace({
           onFinalizeOne={askFinalizeOne}
           onReassign={openReassign}
           onOpenRoster={setRosterChip}
+          onExportFaculty={handleExportFacultySchedule}
+          exportingSchedule={exportingSchedule}
         />
       )}
 
@@ -1211,8 +1296,10 @@ function FinalizeDialog({ scopeLabel, chips, collegeName, busy, destructive = fa
 // finalized here; already-open classes are shown but inert, because retiming a
 // class that students are enrolled in is a different act with people to tell.
 function FacultyLoadDialog({
-  member, canEdit, busy, onClose, onEditSchedule, onDelete, onFinalizeOne, onReassign, onOpenRoster
+  member, canEdit, busy, onClose, onEditSchedule, onDelete, onFinalizeOne, onReassign, onOpenRoster,
+  onExportFaculty, exportingSchedule
 }) {
+  const openCount = member.chips.filter((c) => c.state === 'Open').length;
   const [editing, setEditing] = useState(null);
   const [days, setDays] = useState([]);
   const [start, setStart] = useState('');
@@ -1245,10 +1332,24 @@ function FacultyLoadDialog({
             <h3 className="text-base font-bold font-display text-slate-900 truncate">{member.name}</h3>
             <p className="text-[11px] text-slate-500 font-mono">{member.userNumber}</p>
           </div>
-          <div className="text-right text-[11px] text-slate-500 flex-shrink-0">
-            {member.days.length ? member.days.join(' · ') : 'No days yet'}
-            <br />
-            {member.classCount} {member.classCount === 1 ? 'class' : 'classes'} · {member.units} units
+          <div className="text-right text-[11px] text-slate-500 flex-shrink-0 space-y-1.5">
+            <div>
+              {member.days.length ? member.days.join(' · ') : 'No days yet'}
+              <br />
+              {member.classCount} {member.classCount === 1 ? 'class' : 'classes'} · {member.units} units
+            </div>
+            {onExportFaculty && (
+              <button
+                onClick={() => onExportFaculty(member)}
+                disabled={exportingSchedule || openCount === 0}
+                title={openCount === 0
+                  ? 'No finalized class yet -- only finalized classes can be printed and signed'
+                  : 'Download the official Registrar Class Schedule form for this faculty member'}
+                className="px-2.5 py-1.5 text-[11px] font-semibold text-sage-700 border border-sage-200 bg-sage-50 hover:bg-sage-100 rounded-lg transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {exportingSchedule ? 'Exporting…' : 'Class Schedule'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -1380,7 +1481,7 @@ function FacultyLoadDialog({
 
 // Finalize-all moved up into the tab row, and the per-subject actions moved
 // into the Load dialog, so this renders the table and nothing else.
-function SummaryTab({ summary, canEdit, busy, onFinalizeFaculty, onViewLoad }) {
+function SummaryTab({ summary, canEdit, busy, onFinalizeFaculty, onViewLoad, onExportFaculty, exportingSchedule }) {
   return (
     <>
       <div className="bg-sage-50 border border-sage-200 rounded-xl px-3.5 py-2.5 text-[11px] sm:text-xs text-sage-900 flex items-start gap-2">
@@ -1408,7 +1509,7 @@ function SummaryTab({ summary, canEdit, busy, onFinalizeFaculty, onViewLoad }) {
             <span className="hidden lg:block flex-1 text-center">Status</span>
             <span className="w-16 text-center flex-shrink-0">Classes</span>
             <span className="w-16 text-center flex-shrink-0">Units</span>
-            <span className="w-36 text-right flex-shrink-0">Load</span>
+            <span className="w-48 text-right flex-shrink-0">Load</span>
           </div>
 
           {summary.map((member) => (
@@ -1448,7 +1549,7 @@ function SummaryTab({ summary, canEdit, busy, onFinalizeFaculty, onViewLoad }) {
                 <span className="w-16 text-center text-xs sm:text-sm font-mono font-bold text-slate-900 tabular-nums flex-shrink-0">
                   {member.units} <span className="font-sans font-normal text-slate-400 sm:hidden">units</span>
                 </span>
-                <span className="w-36 flex-shrink-0 flex items-center justify-end gap-1.5">
+                <span className="w-auto sm:w-48 flex-shrink-0 flex items-center justify-end gap-1.5">
                   {canEdit && member.draftCount > 0 && (
                     <button
                       onClick={() => onFinalizeFaculty(member)}
@@ -1464,6 +1565,18 @@ function SummaryTab({ summary, canEdit, busy, onFinalizeFaculty, onViewLoad }) {
                       className="px-2.5 py-1.5 text-[11px] sm:text-xs font-semibold text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
                     >
                       View
+                    </button>
+                  )}
+                  {onExportFaculty && (
+                    <button
+                      onClick={() => onExportFaculty(member)}
+                      disabled={exportingSchedule || member.openCount === 0}
+                      title={member.openCount === 0
+                        ? 'No finalized class yet -- only finalized classes can be printed and signed'
+                        : 'Download the official Registrar Class Schedule form for this faculty member'}
+                      className="p-1.5 text-slate-600 border border-slate-200 bg-white hover:bg-slate-50 rounded-lg transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                    >
+                      <Download className="h-3.5 w-3.5" />
                     </button>
                   )}
                 </span>

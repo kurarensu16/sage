@@ -10,7 +10,8 @@ import {
   ListTodo,
   CheckCircle2,
   Lock,
-  Info
+  Info,
+  Clock
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -20,6 +21,7 @@ import { findMostAdvancedPostedGrade } from '../../lib/gradeMilestones';
 import { computeAcademicVerdict, countFdaSubjects, getGwaBand, resolveOfficialGwa } from '../../lib/academicPolicy';
 import { loadStudentRunningGrades, RUNNING_GRADE_BASIS } from '../../lib/studentRunningGrade';
 import { isStudentVisibleEvaluation } from '../../lib/evaluationTracking';
+import { formatClassSchedule, NO_SCHEDULE_TEXT } from '../../lib/classSchedule';
 import {
   createPostedMilestoneKey,
   shouldAutoRegenerateOverallInsight,
@@ -204,6 +206,10 @@ export default function Dashboard() {
             term_id,
             school_year,
             semester,
+            meeting_days,
+            start_time,
+            end_time,
+            rooms ( code ),
             faculty:users!faculty_id ( first_name, last_name )
           `;
         const [currentTermClasses, legacyTermClasses] = await Promise.all([
@@ -262,6 +268,12 @@ export default function Dashboard() {
             name: e.subjects?.name || 'Subject Name',
             credits: Number(e.subjects?.units || 0),
             professor: matchingClass?.faculty ? `Prof. ${matchingClass.faculty.first_name} ${matchingClass.faculty.last_name}` : 'Faculty Instructor',
+            schedule: formatClassSchedule({
+              days: matchingClass?.meeting_days,
+              startTime: matchingClass?.start_time,
+              endTime: matchingClass?.end_time,
+              room: matchingClass?.rooms?.code
+            }),
             grade: pGrade ? resolveOfficialGwa(pGrade).gwa : null,
             status: pGrade ? 'Grades Posted' : 'Active'
           };
@@ -602,8 +614,14 @@ export default function Dashboard() {
                     </div>
                     <h4 className="font-bold text-xs sm:text-sm text-slate-900 mt-1.5 line-clamp-2 leading-snug">{sub.name}</h4>
                     <p className="text-xs text-slate-500 mt-0.5 truncate">{sub.professor}</p>
+                    <div className="flex items-center gap-1.5 mt-1.5 text-[10px]">
+                      <Clock className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                      {sub.schedule
+                        ? <span className="font-mono text-slate-600 truncate">{sub.schedule}</span>
+                        : <span className="text-slate-400">{NO_SCHEDULE_TEXT}</span>}
+                    </div>
                   </div>
-                  
+
                   <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold border-t border-slate-200/60 pt-2 mt-2">
                     <span>{sub.credits} Credit Units</span>
                     <Link to={`/student/mygradesdetail?id=${sub.class_record_id}`} className="text-sage-600 hover:text-sage-700 flex items-center gap-0.5">

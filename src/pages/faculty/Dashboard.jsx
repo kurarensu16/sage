@@ -17,6 +17,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
 import { DashboardSkeleton } from '../../components/common/Skeleton';
+import { formatClassSchedule, NO_SCHEDULE_TEXT } from '../../lib/classSchedule';
 import {
   FacultyPerformanceTrajectoryChart,
   StudentRiskInterventionDonut,
@@ -89,6 +90,11 @@ export default function Dashboard() {
             semester,
             subject_id,
             section_id,
+            meeting_days,
+            start_time,
+            end_time,
+            class_type,
+            rooms ( code ),
             subjects ( subject_id, code, name, units ),
             sections ( section_id, name, school_year, semester )
           `;
@@ -162,6 +168,12 @@ export default function Dashboard() {
               subjectCode: cls.subjects?.code || 'N/A',
               subjectName: cls.subjects?.name || 'N/A',
               section: cls.sections?.name || 'N/A',
+              schedule: formatClassSchedule({
+                days: cls.meeting_days,
+                startTime: cls.start_time,
+                endTime: cls.end_time,
+                room: cls.rooms?.code
+              }),
               units: cls.subjects?.units || 0,
               enrolled: classRoster.length,
               status: statusLabel,
@@ -637,6 +649,9 @@ export default function Dashboard() {
                       <span>{cls.schoolYear} • {cls.semester} Sem ({cls.units} Units)</span>
                       <span className="font-mono font-bold text-slate-800">{cls.enrolled} Enrolled</span>
                     </div>
+                    <div className="text-[11px] text-slate-500 font-sans">
+                      {cls.schedule || <span className="text-slate-400">{NO_SCHEDULE_TEXT}</span>}
+                    </div>
 
                     <div className="pt-1">
                       {cls.status === 'Pending Setup' ? (
@@ -672,6 +687,7 @@ export default function Dashboard() {
                     <tr className="text-slate-400 text-xs font-semibold tracking-wider">
                       <th className="pb-3 font-medium">Class / Section</th>
                       <th className="pb-3 font-medium">Term / Units</th>
+                      <th className="pb-3 font-medium">Schedule</th>
                       <th className="pb-3 font-medium text-center">Students</th>
                       <th className="pb-3 font-medium">Status</th>
                       <th className="pb-3 font-medium text-right">Actions</th>
@@ -687,6 +703,11 @@ export default function Dashboard() {
                         <td className="py-4 text-slate-500">
                           <div>{cls.schoolYear} • {cls.semester} Sem</div>
                           <div className="text-[10px] text-slate-400">{cls.units} Units</div>
+                        </td>
+                        <td className="py-4 text-slate-500">
+                          {cls.schedule
+                            ? <span className="font-mono text-[11px] text-slate-700">{cls.schedule}</span>
+                            : <span className="text-[11px] text-slate-400">{NO_SCHEDULE_TEXT}</span>}
                         </td>
                         <td className="py-4 text-center font-mono font-semibold text-slate-900">
                           {cls.enrolled}
