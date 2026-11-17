@@ -2635,7 +2635,11 @@ export default function UserList() {
                     }}
                     onBlur={() => handleParseCSV()}
                     rows="6"
-                    placeholder="Smith,Jane,A.,jane.smith@student.sage.edu,student,College of Accountancy,Bachelor of Science in Accountancy,BSA-1A,1st Year,2026-00001"
+                    // The live sample, not an invented one: the old placeholder
+                    // named a college and a program this instance does not
+                    // have, so anyone typing over it produced a row the import
+                    // would reject.
+                    placeholder={sampleCSV || 'Last,First,M.,name.college@dyci.edu.ph,student,College,Program,Section,1st Year,2026-00001'}
                     className="block w-full p-3.5 border border-slate-200 rounded-xl text-xs font-mono focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors disabled:bg-slate-50 disabled:text-slate-400 leading-relaxed bg-white shadow-2xs"
                   />
 

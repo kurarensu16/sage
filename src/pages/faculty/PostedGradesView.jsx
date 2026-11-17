@@ -19,6 +19,7 @@ import {
   Edit3,
   FileText,
   Calculator,
+  Loader2,
   Save
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -47,6 +48,13 @@ import {
   previewSgScoreCorrection,
   submitSgCorrectionRequest
 } from '../../lib/gradeCorrectionService';
+import {
+  uploadEvidenceFile, describeEvidenceFile, submitMilestoneCorrectionRequest,
+  EVIDENCE_ACCEPT_ATTR, EVIDENCE_MAX_FILES, REASON_TYPES
+} from '../../lib/gradeChangeRequestService';
+import { downscaleImage } from '../../lib/imageDownscale';
+import { MILESTONE_LABEL } from '../../lib/milestoneState';
+import { toUserMessage } from '../../lib/errorMessages';
 import ClassWorkflowNav from '../../components/faculty/ClassWorkflowNav';
 
 const REMARK_TO_DB = Object.freeze({
@@ -120,7 +128,28 @@ export default function PostedGradesView() {
   const [remarkReqEffective, setRemarkReqEffective] = useState('');
   const [remarkReqNote, setRemarkReqNote] = useState('');
   const [evidenceReference, setEvidenceReference] = useState('');
+  // Files, alongside the URL rather than instead of it: a link to a document
+  // already held elsewhere is still useful, and replacing the field would
+  // break the way corrections are evidenced today.
+  const [evidenceFiles, setEvidenceFiles] = useState([]);
+  const [evidencePreparing, setEvidencePreparing] = useState(false);
+  const [evidenceError, setEvidenceError] = useState('');
+  const [evidenceProgress, setEvidenceProgress] = useState('');
   const [remarkReqSent, setRemarkReqSent] = useState(false);
+  // Instructor-raised correction to a finalized Midterm / Tentative Final.
+  // Separate state from the SG modal above: that one proposes a remark and an
+  // effective grade, this one proposes nothing -- the scores are edited later,
+  // in the apply step, once the Dean has approved.
+  const [correctableRatings, setCorrectableRatings] = useState({});
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [ratingReqStudentId, setRatingReqStudentId] = useState('');
+  const [ratingReqMilestone, setRatingReqMilestone] = useState('');
+  const [ratingReqReasonType, setRatingReqReasonType] = useState('');
+  const [ratingReqDetail, setRatingReqDetail] = useState('');
+  const [ratingReqFiles, setRatingReqFiles] = useState([]);
+  const [ratingReqBusy, setRatingReqBusy] = useState(false);
+  const [ratingReqError, setRatingReqError] = useState('');
+  const [ratingReqProgress, setRatingReqProgress] = useState('');
   const [activeCorrectionRequests, setActiveCorrectionRequests] = useState([]);
   const [persistedScoresByStudent, setPersistedScoresByStudent] = useState({});
   const [cancellingCorrectionId, setCancellingCorrectionId] = useState(null);
@@ -713,6 +742,26 @@ export default function PostedGradesView() {
 
         setLockedMilestones(collectPostedMilestoneCoverage(pgData || [], { lockedOnly: true }));
 
+        // Which Midterm and Tentative Final ratings this instructor could ask
+        // to correct, and the posted_grade_id each correction would be about.
+        // Semestral is deliberately absent: it keeps the SG correction path,
+        // which carries a proposed remark and cascades MR -> TFR -> SG.
+        const ratingTargets = {};
+        (pgData || []).forEach(row => {
+          const period = getCanonicalGradePeriod(row);
+          if (period !== GRADE_MILESTONES.MIDTERM_RATING
+            && period !== GRADE_MILESTONES.TENTATIVE_FINAL_RATING) return;
+          // Only a finalized rating can be disputed. An open one is still the
+          // instructor's to edit directly, which is faster than a request.
+          if (!row.is_locked) return;
+          if (!ratingTargets[row.student_id]) ratingTargets[row.student_id] = {};
+          ratingTargets[row.student_id][period] = {
+            postedGradeId: row.posted_grade_id,
+            effectiveGrade: row.effective_grade
+          };
+        });
+        setCorrectableRatings(ratingTargets);
+
         const { data: correctionRows, error: correctionError } = await supabase
           .from('remark_override_requests')
           .select('request_id, student_id, status, correction_scope, original_computed_grade, original_effective_grade, original_remark, proposed_computed_grade, proposed_effective_grade, proposed_remark, proposed_score_changes, requested_at, decision_at, decision_by')
@@ -1019,6 +1068,112 @@ export default function PostedGradesView() {
     setRemarkReqEffective(String(nextRemark === 'Passed' && rawGwa > 3 ? 3 : rawGwa));
   };
 
+  // Same preparation as a student's dispute: shrink a photo FIRST, then
+  // validate it, so a 7 MB phone picture becomes a 600 KB one and passes
+  // instead of being rejected for a size the instructor cannot control.
+  const handleEvidencePick = async (chosen) => {
+    const room = EVIDENCE_MAX_FILES - evidenceFiles.length;
+    if (!chosen?.length || room <= 0) return;
+    setEvidencePreparing(true);
+    setEvidenceError('');
+
+    const accepted = [];
+    try {
+      for (const raw of Array.from(chosen).slice(0, room)) {
+        const file = (await downscaleImage(raw)) || raw;
+        const check = describeEvidenceFile(file);
+        if (!check.ok) {
+          setEvidenceError(`${raw.name}: ${check.message}`);
+          continue;
+        }
+        accepted.push({
+          id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          file
+        });
+      }
+      setEvidenceFiles(prev => [...prev, ...accepted]);
+    } catch (err) {
+      console.error('[ASPIRE] could not prepare the attachment:', err);
+      setEvidenceError('That file could not be prepared. Try a different photo, or save it as a PDF.');
+    } finally {
+      setEvidencePreparing(false);
+    }
+  };
+
+  const handleRatingEvidencePick = async (chosen) => {
+    const room = EVIDENCE_MAX_FILES - ratingReqFiles.length;
+    if (!chosen?.length || room <= 0) return;
+    setRatingReqError('');
+    const accepted = [];
+    try {
+      for (const raw of Array.from(chosen).slice(0, room)) {
+        const file = (await downscaleImage(raw)) || raw;
+        const check = describeEvidenceFile(file);
+        if (!check.ok) {
+          setRatingReqError(`${raw.name}: ${check.message}`);
+          continue;
+        }
+        accepted.push({ id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, file });
+      }
+      setRatingReqFiles(prev => [...prev, ...accepted]);
+    } catch (err) {
+      console.error('[ASPIRE] could not prepare the attachment:', err);
+      setRatingReqError('That file could not be prepared. Try a different photo, or save it as a PDF.');
+    }
+  };
+
+  const resetRatingRequest = () => {
+    setShowRatingModal(false);
+    setRatingReqStudentId('');
+    setRatingReqMilestone('');
+    setRatingReqReasonType('');
+    setRatingReqDetail('');
+    setRatingReqFiles([]);
+    setRatingReqError('');
+    setRatingReqProgress('');
+  };
+
+  const handleSubmitRatingCorrection = async () => {
+    const target = correctableRatings[ratingReqStudentId]?.[ratingReqMilestone];
+    if (!target) return;
+    setRatingReqBusy(true);
+    setRatingReqError('');
+    try {
+      // Uploaded first, as everywhere else: if a file fails, no request is
+      // created at all rather than one standing without its evidence.
+      const keys = [];
+      for (let i = 0; i < ratingReqFiles.length; i += 1) {
+        setRatingReqProgress(`Uploading file ${i + 1} of ${ratingReqFiles.length}…`);
+        const up = await uploadEvidenceFile({ userId: user?.id, file: ratingReqFiles[i].file });
+        keys.push(up.objectKey);
+      }
+      setRatingReqProgress('Sending to the Dean…');
+
+      await submitMilestoneCorrectionRequest({
+        postedGradeId: target.postedGradeId,
+        reasonType: ratingReqReasonType,
+        reasonDetail: ratingReqDetail.trim(),
+        evidenceKeys: keys
+      });
+
+      await logActivity(
+        'Requested Rating Correction',
+        `Requested a correction to the ${MILESTONE_LABEL[ratingReqMilestone] || ratingReqMilestone} of a student in ${classInfo?.subjects?.code || 'a class'}.`,
+        resolveActorName(profile, user)
+      );
+
+      resetRatingRequest();
+      setPopupTitle('Correction Request Sent');
+      setPopupDesc('The Dean has been notified. Once approved, you can apply the corrected scores.');
+      setShowPopup(true);
+    } catch (err) {
+      setRatingReqError(toUserMessage(err, 'That correction could not be submitted.'));
+    } finally {
+      setRatingReqBusy(false);
+      setRatingReqProgress('');
+    }
+  };
+
   const handleSubmitRemarkRequest = async () => {
     const proposedComputedGrade = Number(remarkReqComputed);
     const proposedEffectiveGrade = Number(remarkReqEffective);
@@ -1037,11 +1192,24 @@ export default function PostedGradesView() {
       const subjCode = classInfo?.subjects?.code || '';
       const actorName = resolveActorName(profile, user);
       const evidenceUrl = evidenceReference.trim() || null;
+
+      // Upload FIRST, then submit with the keys. If any file fails, nothing is
+      // submitted at all -- the same ordering the student flow uses, and what
+      // makes "a correction always has evidence" true rather than hoped for.
+      const evidenceKeys = [];
+      for (let i = 0; i < evidenceFiles.length; i += 1) {
+        setEvidenceProgress(`Uploading file ${i + 1} of ${evidenceFiles.length}…`);
+        const up = await uploadEvidenceFile({ userId: user?.id, file: evidenceFiles[i].file });
+        evidenceKeys.push(up.objectKey);
+      }
+      setEvidenceProgress('');
+
       const correctionRequest = await submitSgCorrectionRequest({
         classRecordId,
         studentId: remarkReqStudentId,
         proposedRemark: REMARK_TO_DB[remarkReqTo],
         reason: remarkReqNote.trim(),
+        evidenceKeys,
         evidenceUrl,
         proposedComputedGrade,
         proposedEffectiveGrade,
@@ -1074,6 +1242,8 @@ export default function PostedGradesView() {
         setRemarkReqComputed('');
         setRemarkReqEffective('');
         setEvidenceReference('');
+        setEvidenceFiles([]);
+        setEvidenceError('');
         setPopupTitle('Correction Access Requested');
         setPopupDesc(`The student-scoped SG correction request for ${remarkReqStudent} was submitted to the Dean.`);
         setShowPopup(true);
@@ -1127,6 +1297,23 @@ export default function PostedGradesView() {
   const proposedComputedNumber = Number(remarkReqComputed);
   const proposedEffectiveNumber = Number(remarkReqEffective);
   const evidenceReferenceIsValid = !evidenceReference.trim() || /^https:\/\/\S+$/i.test(evidenceReference.trim());
+  // Students with at least one finalized MR/TFR, and the milestones offered
+  // for whichever is selected. Both read from what the server will accept, so
+  // the form cannot offer a correction the RPC would refuse.
+  const correctableStudents = students.filter(s => correctableRatings[s.id]);
+  const hasCorrectableRating = correctableStudents.length > 0;
+  const ratingMilestoneOptions = ratingReqStudentId
+    ? Object.keys(correctableRatings[ratingReqStudentId] || {})
+    : [];
+  const isRatingRequestValid = Boolean(
+    ratingReqStudentId
+    && ratingReqMilestone
+    && ratingReqReasonType
+    && ratingReqDetail.trim().length >= 20
+    && ratingReqFiles.length > 0
+    && !ratingReqBusy
+  );
+
   const isCorrectionProposalValid = Boolean(
     remarkReqStudent
     && remarkReqTo
@@ -1140,6 +1327,10 @@ export default function PostedGradesView() {
     && proposedEffectiveNumber >= 1
     && proposedEffectiveNumber <= 5
     && evidenceReferenceIsValid
+    // Required, not encouraged: the server refuses a correction with no files,
+    // so the button must not offer to send one.
+    && evidenceFiles.length > 0
+    && !evidencePreparing
   );
   const approvedCorrectionTargets = approvedCorrectionRequest
     ? getCorrectionTargets(approvedCorrectionRequest.student_id)
@@ -1183,7 +1374,7 @@ export default function PostedGradesView() {
               <div>
                 <h4 className="font-bold text-xs sm:text-sm text-slate-800">Posted Grade Ledger</h4>
                 <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  Posted semestral grades remain official and locked. Request correction access for one student; after Dean approval, faculty may edit that student's full score row and apply one audited server-side recalculation.
+                  Posted grades remain official and locked. Request correction access for one student; after Dean approval, faculty may edit that student's scores and apply one audited server-side recalculation. A semestral grade recalculates the whole term; a Midterm or Tentative Final Rating is corrected on its own.
                 </p>
                 <div className="flex flex-wrap gap-2 mt-2.5 sm:mt-3">
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 border border-emerald-250 text-emerald-700">
@@ -1193,14 +1384,31 @@ export default function PostedGradesView() {
               </div>
             </div>
 
-            {/* Request Remark Change button */}
-            <button
-              onClick={() => setShowRemarkModal(true)}
-              className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-300 rounded-xl transition-colors shadow-2xs outline-none flex-shrink-0 font-sans cursor-pointer"
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-              Request SG Correction
-            </button>
+            <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2 flex-shrink-0">
+              {/* A finalized rating is otherwise uncorrectable without a
+                  student raising it first -- which depends on the student
+                  noticing an error the instructor made. */}
+              <button
+                onClick={() => setShowRatingModal(true)}
+                disabled={!hasCorrectableRating}
+                title={hasCorrectableRating
+                  ? 'Ask the Dean to reopen a finalized Midterm or Tentative Final Rating'
+                  : 'No finalized Midterm or Tentative Final Rating in this class yet'}
+                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-xl transition-colors shadow-2xs outline-none font-sans cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                Request Rating Correction
+              </button>
+
+              {/* Request Remark Change button */}
+              <button
+                onClick={() => setShowRemarkModal(true)}
+                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-300 rounded-xl transition-colors shadow-2xs outline-none font-sans cursor-pointer"
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                Request SG Correction
+              </button>
+            </div>
           </div>
           {activeCorrectionRequests.length > 0 && (
             <div className="space-y-2 border-t border-slate-200 pt-3">
@@ -1522,6 +1730,161 @@ export default function PostedGradesView() {
 
       </div>
 
+      {/* ══════ Midterm / Tentative Final correction request ══════ */}
+      {/* Deliberately proposes nothing. The instructor states WHAT is wrong and
+          attaches proof; the corrected scores are entered later, in the apply
+          step, after the Dean has approved reopening the rating. */}
+      {showRatingModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center animate-in fade-in duration-200 sm:p-4 text-left">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-xs" onClick={resetRatingRequest} />
+
+          <div className="relative bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md p-5 sm:p-6 space-y-4 z-10 animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 max-h-[85vh] overflow-y-auto">
+            <div className="sm:hidden w-12 h-1.5 bg-slate-200 rounded-full mx-auto -mt-2 mb-1" />
+
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm sm:text-base font-bold font-display text-slate-900">
+                  Request a rating correction
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  For a finalized Midterm or Tentative Final Rating. The Dean decides;
+                  you enter the corrected scores afterwards.
+                </p>
+              </div>
+              <button
+                onClick={resetRatingRequest}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans">Student</label>
+              <select
+                value={ratingReqStudentId}
+                onChange={(e) => { setRatingReqStudentId(e.target.value); setRatingReqMilestone(''); }}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs sm:text-sm bg-white outline-none focus:border-sage-400 cursor-pointer"
+              >
+                <option value="">Choose a student…</option>
+                {correctableStudents.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans">Which rating</label>
+              <select
+                value={ratingReqMilestone}
+                onChange={(e) => setRatingReqMilestone(e.target.value)}
+                disabled={!ratingReqStudentId}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs sm:text-sm bg-white outline-none focus:border-sage-400 cursor-pointer disabled:bg-slate-50 disabled:text-slate-400"
+              >
+                <option value="">
+                  {ratingReqStudentId ? 'Choose a rating…' : 'Choose a student first'}
+                </option>
+                {ratingMilestoneOptions.map(m => (
+                  <option key={m} value={m}>{MILESTONE_LABEL[m] || m}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans">What is wrong</label>
+              <select
+                value={ratingReqReasonType}
+                onChange={(e) => setRatingReqReasonType(e.target.value)}
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs sm:text-sm bg-white outline-none focus:border-sage-400 cursor-pointer"
+              >
+                <option value="">Choose a reason…</option>
+                {REASON_TYPES.map(r => (
+                  <option key={r.id} value={r.id}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans flex items-center justify-between">
+                <span>Explain what happened</span>
+                <span className="text-micro text-slate-400 font-normal">{ratingReqDetail.trim().length}/20 min</span>
+              </label>
+              <textarea
+                rows={3}
+                value={ratingReqDetail}
+                onChange={(e) => setRatingReqDetail(e.target.value)}
+                placeholder="e.g. The Semi-Final major exam was entered as 17; the paper shows 37."
+                className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs sm:text-sm outline-none focus:border-sage-400 resize-none bg-white"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans flex items-center justify-between">
+                <span>Attach proof <span className="text-rose-500">*</span></span>
+                <span className="text-micro text-slate-400 font-normal">Required · up to {EVIDENCE_MAX_FILES}</span>
+              </label>
+
+              {ratingReqFiles.length > 0 && (
+                <ul className="space-y-1">
+                  {ratingReqFiles.map(item => (
+                    <li key={item.id} className="flex items-center gap-2 border border-slate-200 rounded-xl px-2.5 py-1.5 bg-white">
+                      <Paperclip className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                      <span className="text-micro text-slate-700 truncate flex-1">{item.file.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setRatingReqFiles(prev => prev.filter(f => f.id !== item.id))}
+                        className="text-micro font-bold text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {ratingReqFiles.length < EVIDENCE_MAX_FILES && (
+                <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-xl p-2.5 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+                  <Paperclip className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                  <span className="text-xs text-slate-600">Choose a photo or PDF</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept={EVIDENCE_ACCEPT_ATTR}
+                    onChange={(e) => { handleRatingEvidencePick(e.target.files); e.target.value = ''; }}
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
+
+            {ratingReqProgress && <p className="text-micro text-slate-500">{ratingReqProgress}</p>}
+            {ratingReqError && (
+              <p className="text-micro font-semibold text-rose-600">{ratingReqError}</p>
+            )}
+
+            <div className="flex gap-2.5 pt-1">
+              <button
+                onClick={resetRatingRequest}
+                disabled={ratingReqBusy}
+                className="flex-1 px-4 py-2.5 text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 rounded-xl transition-colors font-sans cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmitRatingCorrection}
+                disabled={!isRatingRequestValid}
+                className="flex-1 px-4 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 font-sans cursor-pointer shadow-2xs bg-sage-600 hover:bg-sage-700 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {ratingReqBusy
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Send className="h-3.5 w-3.5" />}
+                Send to the Dean
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ══════ Remark Override Request Modal (Responsive Bottom Sheet) ══════ */}
       {showRemarkModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center animate-in fade-in duration-200 sm:p-4 text-left">
@@ -1666,6 +2029,71 @@ export default function PostedGradesView() {
               <p className="text-micro text-slate-400">Paste an existing secure document URL. ASPIRE stores the reference for Dean review; this field does not upload a file.</p>
               {!evidenceReferenceIsValid && (
                 <p className="text-micro font-semibold text-rose-600">Use a complete HTTPS URL or leave this field empty.</p>
+              )}
+            </div>
+
+            {/* Attachments — the same three-file allowance a student's dispute
+                carries, so a marked paper or class record can be shown rather
+                than described. */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-sans flex items-center justify-between">
+                <span>Attach files <span className="text-rose-500">*</span></span>
+                <span className="text-micro text-slate-400 font-normal">
+                  Required · up to {EVIDENCE_MAX_FILES}
+                </span>
+              </label>
+
+              {evidenceFiles.length > 0 && (
+                <ul className="space-y-1">
+                  {evidenceFiles.map((item) => (
+                    <li
+                      key={item.id}
+                      className="flex items-center gap-2 border border-slate-200 rounded-xl px-2.5 py-1.5 bg-white"
+                    >
+                      <Paperclip className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                      <span className="text-micro text-slate-700 truncate flex-1">{item.file.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setEvidenceFiles(prev => prev.filter(f => f.id !== item.id))}
+                        className="text-micro font-bold text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {evidenceFiles.length < EVIDENCE_MAX_FILES && (
+                <label className="flex items-center gap-2 border border-dashed border-slate-300 rounded-xl p-2.5 bg-slate-50/50 cursor-pointer hover:bg-slate-50 transition-colors">
+                  {evidencePreparing
+                    ? <Loader2 className="h-4 w-4 text-slate-400 animate-spin flex-shrink-0" />
+                    : <Paperclip className="h-4 w-4 text-slate-400 flex-shrink-0" />}
+                  <span className="text-xs text-slate-600">
+                    {evidencePreparing ? 'Preparing…' : 'Choose a photo or PDF'}
+                  </span>
+                  <input
+                    type="file"
+                    multiple
+                    accept={EVIDENCE_ACCEPT_ATTR}
+                    disabled={evidencePreparing}
+                    onChange={(e) => { handleEvidencePick(e.target.files); e.target.value = ''; }}
+                    className="hidden"
+                  />
+                </label>
+              )}
+
+              {evidenceFiles.length === 0 && !evidencePreparing && (
+                <p className="text-micro text-slate-400">
+                  Show what the correction rests on — the marked paper, the class record,
+                  or a screenshot of the activity. The Dean sees these when deciding.
+                </p>
+              )}
+              {evidenceProgress && (
+                <p className="text-micro text-slate-500">{evidenceProgress}</p>
+              )}
+              {evidenceError && (
+                <p className="text-micro font-semibold text-rose-600">{evidenceError}</p>
               )}
             </div>
 

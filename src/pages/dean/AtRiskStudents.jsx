@@ -4,7 +4,7 @@ import PageHeader from '../../components/layout/PageHeader';
 import { 
   Search, AlertCircle, Building2, Loader2, AlertTriangle, 
   Bell, Check, Award, MessageSquare, TrendingUp, CheckCircle2, 
-  Clock, AlertOctagon, X, FileText, ShieldAlert, RefreshCw
+  Clock, AlertOctagon, X, FileText, ShieldAlert, RefreshCw, Eye
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -22,6 +22,7 @@ import { getCollegeRiskRecords, getHighestRiskByStudent } from '../../lib/colleg
 import { cn } from '../../lib/utils';
 import AcademicPeriodFilter from '../../components/common/AcademicPeriodFilter';
 import { fetchAcademicTerms, getActiveAcademicTerm } from '../../lib/termStatus';
+import RiskEducationNote from '../../components/faculty/RiskEducationNote';
 
 function SeverityBadge({ severity, score }) {
   if (severity === 'critical' || severity === 'high') {
@@ -71,6 +72,10 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [alertSentMap, setAlertSentMap] = useState({});
+  // One student's full picture. Holds the already-assembled row object rather
+  // than an id: every field it shows is computed during the load above, so
+  // opening this costs nothing and never refetches.
+  const [detailStudent, setDetailStudent] = useState(null);
   const [terms, setTerms] = useState([]);
   const [archiveMode, setArchiveMode] = useState(Boolean(queryParams.get('archiveTerm')));
   const [appliedTerm, setAppliedTerm] = useState(null);
@@ -1060,6 +1065,10 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
               </select>
             </div>
 
+            {/* Collapsed by default: the Dean who already knows the
+                vocabulary should not have to scroll past it every visit. */}
+            <RiskEducationNote variant="deanRoster" className="rounded-xl overflow-hidden" />
+
             {/* Desktop Table View */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
@@ -1072,6 +1081,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                       <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Failing Subjects</th>
                       <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Explainable Risk</th>
                       <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Highest-Risk Course Evidence</th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Details</th>
                       <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Advisory Notice</th>
                     </tr>
                   </thead>
@@ -1149,6 +1159,20 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                             )}
                           </td>
 
+                          {/* The counts above answer "how many"; this answers
+                              "which" -- a Dean deciding on an intervention
+                              needs the subject, not the tally. */}
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <button
+                              type="button"
+                              onClick={() => setDetailStudent(s)}
+                              className="px-2.5 py-1 rounded-md text-[11px] font-semibold inline-flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition-colors cursor-pointer shadow-2xs"
+                            >
+                              <Eye className="h-3 w-3" />
+                              View
+                            </button>
+                          </td>
+
                           {!archiveMode && <td className="px-6 py-4 whitespace-nowrap text-center">
                             <button
                               type="button"
@@ -1169,7 +1193,7 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan="7" className="px-6 py-12 text-center">
+                        <td colSpan="8" className="px-6 py-12 text-center">
                           <CheckCircle2 className="h-8 w-8 text-emerald-300 mx-auto mb-2" />
                           <p className="text-sm text-slate-500 font-medium">No Tier 1 academic at-risk students match the current filters.</p>
                         </td>
@@ -1658,6 +1682,216 @@ function DeanRiskView({ initialTab = 'tier1_at_risk', standalone = false }) {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ══════ Student detail sheet ══════════════════════════════════════════
+          Everything here is already computed during the roster load -- the
+          subject list, which of them are failing, and the per-course risk
+          records. The table was showing only the counts and discarding the
+          rest, which left the Dean reading "2 Course(s)" with no way to find
+          out which two. Nothing is refetched to open this. */}
+      {detailStudent && (
+        <div className="fixed inset-0 z-50 overflow-hidden flex items-end sm:items-stretch sm:justify-end">
+          <div
+            onClick={() => setDetailStudent(null)}
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity"
+          />
+
+          <div className="relative w-full sm:max-w-2xl bg-white shadow-2xl flex flex-col rounded-t-3xl sm:rounded-none max-h-[92vh] sm:max-h-full animate-in slide-in-from-bottom sm:slide-in-from-right duration-300 ease-out z-10">
+            <div className="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mt-3 mb-1 sm:hidden flex-shrink-0" />
+
+            {/* Header */}
+            <div className="p-4 sm:p-6 border-b border-slate-100 flex items-start justify-between bg-slate-50/50 flex-shrink-0">
+              <div className="space-y-1 text-left min-w-0">
+                <h3 className="text-base sm:text-lg font-bold font-display text-slate-900 truncate">
+                  {detailStudent.lastName}, {detailStudent.firstName}
+                </h3>
+                <p className="text-[11px] text-slate-500 font-mono truncate">{detailStudent.email}</p>
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
+                    {detailStudent.section}
+                  </span>
+                  <span className={cn(
+                    'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border',
+                    detailStudent.severity === 'critical' ? 'bg-rose-100 text-rose-800 border-rose-200'
+                      : detailStudent.severity === 'high' ? 'bg-rose-50 text-rose-700 border-rose-200'
+                        : detailStudent.severity === 'moderate' ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  )}>
+                    {String(detailStudent.severity || 'low').toUpperCase()} ({detailStudent.riskScore})
+                  </span>
+                  {detailStudent.runningGwa !== null && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-white text-slate-700 border border-slate-200">
+                      GWA {detailStudent.runningGwa.toFixed(2)}
+                      {detailStudent.isTentative && ' · tentative'}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setDetailStudent(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer flex-shrink-0"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 text-left">
+
+              {/* The question the table could not answer */}
+              <section>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Failing subjects ({detailStudent.failingCount})
+                </h4>
+                <p className="text-[11px] text-slate-500 mb-2">
+                  Subjects graded above 3.00. A tentative grade can still change.
+                </p>
+                {detailStudent.failingItems?.length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {detailStudent.failingItems.map((item, i) => (
+                      <li key={`${item.subjectCode}-${i}`} className="flex items-center justify-between gap-3 border border-rose-200 bg-rose-50/60 rounded-xl px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 font-mono">{item.subjectCode}</p>
+                          <p className="text-[11px] text-slate-600 truncate">{item.subjectName}</p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-sm font-mono font-bold text-rose-700">
+                            {typeof item.val === 'number' ? item.val.toFixed(2) : '—'}
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            {item.remarks || (item.isTentative ? 'Tentative' : '')}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-slate-500">No failing subjects on record.</p>
+                )}
+              </section>
+
+              {/* All subjects, so a borderline grade is visible too */}
+              <section>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  All subjects this term ({detailStudent.subjectGradeList?.length || 0})
+                </h4>
+                <p className="text-[11px] text-slate-500 mb-2">
+                  The full picture, so a borderline grade that is not failing yet is still visible.
+                </p>
+                {detailStudent.subjectGradeList?.length > 0 ? (
+                  <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
+                    {detailStudent.subjectGradeList.map((item, i) => (
+                      <div key={`${item.subjectCode}-all-${i}`} className="flex items-center justify-between gap-3 px-3 py-2 bg-white">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-slate-900 font-mono">{item.subjectCode}</p>
+                          <p className="text-[11px] text-slate-500 truncate">{item.subjectName}</p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {item.isTentative && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                              Tentative
+                            </span>
+                          )}
+                          <span className={cn(
+                            'text-sm font-mono font-bold',
+                            (item.isFailing ?? item.val > 3.00) ? 'text-rose-700' : 'text-slate-900'
+                          )}>
+                            {typeof item.val === 'number' ? item.val.toFixed(2) : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">No grades recorded yet.</p>
+                )}
+              </section>
+
+              {/* Why the risk engine flagged them, per course */}
+              <section>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Course risk evidence ({detailStudent.courseRiskRecords?.length || 0})
+                </h4>
+                <p className="text-[11px] text-slate-500 mb-2">
+                  Why each class was flagged. <strong>Abs</strong> is absences,
+                  {' '}<strong>Zeros</strong> is activities scored 0, and
+                  {' '}<strong>&Delta;</strong> is the change since the previous term —
+                  negative means declining.
+                </p>
+                {detailStudent.courseRiskRecords?.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {detailStudent.courseRiskRecords.map((r, i) => (
+                      <div key={`${r.subject_code}-risk-${i}`} className="border border-slate-200 rounded-xl px-3 py-2 bg-white">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-bold text-slate-900 font-mono">{r.subject_code}</p>
+                          <span className={cn(
+                            'text-[10px] font-bold px-1.5 py-0.5 rounded border',
+                            r.risk_level === 'critical' ? 'bg-rose-100 text-rose-800 border-rose-200'
+                              : r.risk_level === 'high' ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : r.risk_level === 'moderate' ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          )}>
+                            {String(r.risk_level || '').toUpperCase()} ({r.risk_score})
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 font-mono mt-1">
+                          GWA {r.current_gwa?.toFixed(2) ?? '—'} · Abs {r.absences} · Zeros {r.recorded_zero_count} · Δ {r.trajectory_delta > 0 ? '+' : ''}{r.trajectory_delta?.toFixed(1) ?? '—'}
+                          {r.standing_source && ` · ${r.standing_source}`}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">No active class risk records.</p>
+                )}
+              </section>
+
+              {/* Advisory */}
+              <section>
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Advisory
+                </h4>
+                <p className="text-[11px] text-slate-500 mb-2">
+                  A recommendation only. It changes no grade and records no intervention.
+                </p>
+                <p className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 leading-relaxed">
+                  {detailStudent.advisory}
+                </p>
+                {detailStudent.hasAi && (
+                  <p className="text-[10px] text-slate-400 mt-1">Includes an AI-generated summary.</p>
+                )}
+              </section>
+            </div>
+
+            {/* Footer: the action the Dean would take next, without going back */}
+            {!archiveMode && (
+              <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50/50 flex-shrink-0 flex items-center justify-end gap-2">
+                <button
+                  onClick={() => setDetailStudent(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => { handleAlertStudent(detailStudent); }}
+                  disabled={alertSentMap[detailStudent.id]}
+                  className={cn(
+                    'px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs disabled:cursor-not-allowed',
+                    alertSentMap[detailStudent.id]
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                  )}
+                >
+                  {alertSentMap[detailStudent.id]
+                    ? <Check className="h-3.5 w-3.5 text-emerald-600" />
+                    : <Bell className="h-3.5 w-3.5 text-amber-600" />}
+                  {alertSentMap[detailStudent.id] ? 'Alerted' : 'Notify student'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -157,7 +157,7 @@ export default function ClassRosterDialog({ chip, onClose }) {
               />
             </div>
             <p className="text-[10px] text-slate-400 mt-1">
-              No join code and no faculty approval — this places the student directly.
+              No faculty approval step — this places the student on the roster directly.
             </p>
 
             {searching && <p className="text-[11px] text-slate-400 mt-2">Searching…</p>}

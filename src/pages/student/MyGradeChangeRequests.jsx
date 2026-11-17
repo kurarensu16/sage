@@ -4,13 +4,13 @@ import PageHeader from '../../components/layout/PageHeader';
 import ConfirmModal from '../../components/ConfirmModal';
 import {
   FileWarning, AlertTriangle, CheckCircle2, Loader2, Info, Paperclip,
-  Plus, UserCheck
+  Plus, UserCheck, ShieldCheck
 } from 'lucide-react';
 import { toUserMessage } from '../../lib/errorMessages';
 import { cn } from '../../lib/utils';
 import { MILESTONE_LABEL } from '../../lib/milestoneState';
 import {
-  STATUS_PRESENTATION, isOpenStatus,
+  STATUS_PRESENTATION, isOpenStatus, REQUEST_ORIGIN,
   fetchGradeChangeRequests, withdrawGradeChangeRequest,
   uploadEvidenceFile, attachEvidence, describeEvidenceFile,
   EVIDENCE_ACCEPT_ATTR, EVIDENCE_MAX_FILES
@@ -70,8 +70,13 @@ export default function MyGradeChangeRequests() {
 
   useEffect(() => { load(); }, [load]);
 
-  const mine = rows.filter((r) => r.submittedByRole === 'student');
-  const raisedByFaculty = rows.filter((r) => r.submittedByRole !== 'student');
+  // Three origins, three headings. A Registrar override used to fall into the
+  // instructor bucket -- submitted_by_role defaults to 'faculty' and the
+  // override never sets it -- so the student was told their instructor raised
+  // something the Registrar did.
+  const mine = rows.filter((r) => r.origin === REQUEST_ORIGIN.STUDENT);
+  const raisedByFaculty = rows.filter((r) => r.origin === REQUEST_ORIGIN.INSTRUCTOR);
+  const editedByRegistrar = rows.filter((r) => r.origin === REQUEST_ORIGIN.REGISTRAR);
 
   const handleWithdraw = async () => {
     const row = confirmWithdraw;
@@ -150,7 +155,7 @@ export default function MyGradeChangeRequests() {
         </div>
       )}
 
-      <GradeChangeChain status={row.status} reachedRegistrar={row.reachedRegistrar} className="mb-2" />
+      <GradeChangeChain status={row.status} reachedRegistrar={row.reachedRegistrar} origin={row.origin} className="mb-2" />
       <EvidenceGallery request={row} />
 
       <div className="flex items-center gap-2 flex-wrap pt-0.5">
@@ -258,6 +263,24 @@ export default function MyGradeChangeRequests() {
                 </div>
                 <div className="divide-y divide-slate-100">
                   {raisedByFaculty.map((r) => renderRow(r, { ownedByStudent: false }))}
+                </div>
+              </section>
+            )}
+
+            {editedByRegistrar.length > 0 && (
+              <section className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+                <div className="px-3.5 sm:px-5 py-3 border-b border-slate-100">
+                  <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                    <ShieldCheck className="h-4 w-4 text-slate-400" />
+                    Corrections made by the Registrar
+                  </h2>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    An administrative correction to your record. It did not go through
+                    your instructor or the Dean.
+                  </p>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {editedByRegistrar.map((r) => renderRow(r, { ownedByStudent: false }))}
                 </div>
               </section>
             )}

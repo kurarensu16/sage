@@ -1,0 +1,34 @@
+===== ASPIRE_ISO_25010_End_User_Questionnaire.docx =====
+--- Score sheet (characteristics) ---
+['Quality Characteristic', 'Rating (1-4) for Q1', 'Rating (1-4) for Q2', 'Rating (1-4) for Q3', 'Rating (1-4) for Q4', 'Total Score']
+['1. Functional Suitability', '', '', '', '', '/16']
+['2. Performance Efficiency', '', '', '', '', '/16']
+['3. Interaction Capability', '', '', '', '', '/16']
+['4. Reliability', '', '', '', '', '/16']
+['5. Security', '', '', '', '', '/16']
+['6. Flexibility', '', '', '', '', '/16']
+['7. Safety', '', '', '', '', '/16']
+['GRAND TOTAL (ISO)', '', '', '', '', '/112']
+--- TAM score sheet ---
+['TAM Construct', 'Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Total Score (Max 20)']
+['Perceived Usefulness (PU)', '', '', '', '', '', '/20']
+['Perceived Ease of Use (PEOU)', '', '', '', '', '', '/20']
+['GRAND TOTAL (TAM)', '', '', '', '', '', '/40']
+===== ASPIRE_ISO_25010_Expert_Questionnaire (1).docx =====
+--- Score sheet (characteristics) ---
+['Quality Characteristic', 'Rating (1-4) for Q1', 'Rating (1-4) for Q2', 'Rating (1-4) for Q3', 'Rating (1-4) for Q4', 'Total Score']
+['1. Functional Suitability', '', '', '', '', '/16']
+['2. Performance Efficiency', '', '', '', '', '/16']
+['3. Compatibility', '', '', '', '', '/16']
+['4. Interaction Capability', '', '', '', '', '/16']
+['5. Reliability', '', '', '', '', '/16']
+['6. Security', '', '', '', '', '/16']
+['7. Maintainability', '', '', '', '', '/16']
+['8. Flexibility', '', '', '', '', '/16']
+['9. Safety', '', '', '', '', '/16']
+['GRAND TOTAL (ISO)', '', '', '', '', '/144']
+--- TAM score sheet ---
+['TAM Construct', 'Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Total Score (Max 20)']
+['Perceived Usefulness (PU)', '', '', '', '', '', '/20']
+['Perceived Ease of Use (PEOU)', '', '', '', '', '', '/20']
+['GRAND TOTAL (TAM)', '', '', '', '', '', '/40']

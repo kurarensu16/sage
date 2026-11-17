@@ -10,7 +10,7 @@ import * as XLSX from 'xlsx';
 // Provisioning itself is NOT reimplemented here. Finalize calls
 // provisionClassroomByAdmin() verbatim: it validates the slot, freezes the
 // grading formula snapshot including Phase 3's passing and FDA thresholds,
-// auto-enrols the block section and issues the join code. A second path would
+// and auto-enrols the block section. A second path would
 // drift from that snapshot logic, which is the one thing in this system that
 // must not diverge.
 
@@ -490,7 +490,7 @@ export async function searchStudents(queryText) {
   return data || [];
 }
 
-// Adds a student straight onto a roster -- no join code, no faculty approval.
+// Adds a student straight onto a roster -- no faculty approval step.
 // `force` is the deliberate second attempt after a timetable clash was reported:
 // an irregular student is exactly the case where the registrar may know more
 // than the schedule does.

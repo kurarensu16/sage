@@ -214,7 +214,7 @@ export default function FacultyGradeChangeRequests() {
                   </div>
                 )}
 
-                <GradeChangeChain status={row.status} reachedRegistrar={row.reachedRegistrar} className="mb-2" />
+                <GradeChangeChain status={row.status} reachedRegistrar={row.reachedRegistrar} origin={row.origin} className="mb-2" />
                 <EvidenceGallery request={row} />
 
                 <div className="flex items-center gap-2 flex-wrap">

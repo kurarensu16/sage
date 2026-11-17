@@ -54,21 +54,34 @@ export async function applyApprovedSgCorrection({ requestId, scoreChanges = [], 
   return data;
 }
 
+/**
+ * Raise a faculty SG correction, with its evidence, in one transaction.
+ *
+ * Evidence is REQUIRED: the files are uploaded first and their keys passed
+ * here, so there is no state where a correction exists with nothing supporting
+ * it -- the same guarantee a student's dispute has always had. The v1 RPC that
+ * accepted no files is no longer granted to clients, so this is the only way
+ * in; a correction and its evidence are created together or not at all.
+ */
 export async function submitSgCorrectionRequest({
   classRecordId,
   studentId,
   proposedRemark,
   reason,
+  evidenceKeys = [],
+  evidenceStorage = 'supabase',
   evidenceUrl = null,
   proposedComputedGrade = null,
   proposedEffectiveGrade = null,
   proposedScoreChanges = []
 }) {
-  const { data, error } = await supabase.rpc('submit_sg_correction_request', {
+  const { data, error } = await supabase.rpc('submit_sg_correction_request_v2', {
     p_class_record_id: classRecordId,
     p_student_id: studentId,
     p_proposed_remark: proposedRemark,
     p_reason: reason,
+    p_evidence_keys: evidenceKeys,
+    p_evidence_storage: evidenceStorage,
     p_evidence_url: evidenceUrl,
     p_proposed_computed_grade: proposedComputedGrade,
     p_proposed_effective_grade: proposedEffectiveGrade,

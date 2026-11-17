@@ -239,7 +239,7 @@ export default function ApplyMilestoneCorrection() {
                 )}
               </div>
 
-              <GradeChangeChain status={request.status} reachedRegistrar={request.reachedRegistrar} className="mb-2" />
+              <GradeChangeChain status={request.status} reachedRegistrar={request.reachedRegistrar} origin={request.origin} className="mb-2" />
               <EvidenceGallery request={request} />
             </section>
 

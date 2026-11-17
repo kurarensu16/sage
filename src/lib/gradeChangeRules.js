@@ -55,7 +55,59 @@ export const REQUEST_STATUS = Object.freeze({
   APPROVED: 'approved',
   REJECTED: 'rejected',
   APPLIED: 'applied',
-  CANCELLED: 'cancelled'
+  CANCELLED: 'cancelled',
+  // The faculty-raised SG correction flow predates the statuses above and
+  // still files at this one. Named rather than written as a bare string,
+  // because three screens branch on it.
+  LEGACY_PENDING: 'pending'
+});
+
+// WHERE A REQUEST CAME FROM, which is not the same question as what state it
+// is in -- and the three answers run through different numbers of hands.
+//
+// WHY THIS IS NOT submitted_by_role ALONE
+//   That column has exactly two legal values, 'student' and 'faculty', and
+//   DEFAULTS to 'faculty'. The Registrar's administrative override never sets
+//   it, so it inherits that default and a Registrar edit reads as though the
+//   instructor raised it. It does, however, stamp correction_scope =
+//   'admin_override', so that is tested FIRST and submitted_by_role is only
+//   consulted once an override has been ruled out.
+//
+// WHY STORED COLUMNS RATHER THAN THE REQUESTER'S ROLE
+//   Both columns are frozen at creation. Joining users.role would read the
+//   requester's role as it is TODAY, so a faculty member later promoted to
+//   Dean would silently relabel every request they ever raised.
+export const REQUEST_ORIGIN = Object.freeze({
+  STUDENT: 'student',
+  INSTRUCTOR: 'instructor',
+  REGISTRAR: 'registrar'
+});
+
+export const CORRECTION_SCOPE_ADMIN = 'admin_override';
+
+/** The origin of one request, from the two columns that record it. */
+export function resolveRequestOrigin({ correctionScope, submittedByRole } = {}) {
+  if (correctionScope === CORRECTION_SCOPE_ADMIN) return REQUEST_ORIGIN.REGISTRAR;
+  if (submittedByRole === 'student') return REQUEST_ORIGIN.STUDENT;
+  return REQUEST_ORIGIN.INSTRUCTOR;
+}
+
+export const ORIGIN_PRESENTATION = Object.freeze({
+  [REQUEST_ORIGIN.STUDENT]: {
+    label: 'Raised by student',
+    tone: 'bg-sky-50 text-sky-700 border-sky-200'
+  },
+  [REQUEST_ORIGIN.INSTRUCTOR]: {
+    label: 'Raised by instructor',
+    tone: 'bg-slate-50 text-slate-600 border-slate-200'
+  },
+  // Deliberately not "raised": an override is not a request anybody decided
+  // on. It is inserted already approved, with the grade changed in the same
+  // transaction, so calling it a request would imply a review that never ran.
+  [REQUEST_ORIGIN.REGISTRAR]: {
+    label: 'Edited by registrar',
+    tone: 'bg-violet-50 text-violet-700 border-violet-200'
+  }
 });
 
 export const STATUS_PRESENTATION = Object.freeze({
@@ -93,6 +145,15 @@ export const STATUS_PRESENTATION = Object.freeze({
     label: 'Withdrawn',
     tone: 'bg-slate-50 text-slate-600 border-slate-200',
     student: 'You withdrew this request.'
+  },
+  // The faculty-raised flow's waiting state. Without an entry here every
+  // screen fell through to the raw column value and showed a bare "pending"
+  // chip, which says nothing about whose desk it is on -- and it is the
+  // Dean's, exactly like pending_dean_review.
+  [REQUEST_STATUS.LEGACY_PENDING]: {
+    label: 'With the Dean',
+    tone: 'bg-sky-50 text-sky-700 border-sky-200',
+    student: 'Your instructor has passed this to the Dean for a decision.'
   }
 });
 

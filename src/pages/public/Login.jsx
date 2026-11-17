@@ -138,7 +138,7 @@ export default function Login() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@sage.edu.ph"
+                  placeholder="name.college@dyci.edu.ph"
                   className="block w-full border border-slate-200 rounded-xl p-3 pl-10 text-sm focus:ring-2 focus:ring-sage-500/20 focus:border-sage-500 outline-none transition-all"
                 />
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />

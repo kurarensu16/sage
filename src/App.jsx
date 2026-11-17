@@ -219,10 +219,10 @@ function App() {
               <Route path="/faculty/consultations" element={<FacultyGradeConsultationLog />} />
               <Route path="/faculty/graderequests" element={<FacultyGradeChangeRequests />} />
               <Route path="/faculty/graderequests/:requestId/apply" element={<FacultyApplyMilestoneCorrection />} />
-              {/* Retired with the class join code. The URL is kept and
-                  redirected rather than removed, so an old bookmark or a link
-                  in a past notification lands somewhere useful instead of on
-                  the 404 page. */}
+              {/* Retired with the student self-enrolment path. The URL is kept
+                  and redirected rather than removed, so an old bookmark or a
+                  link in a past notification lands somewhere useful instead of
+                  on the 404 page. */}
               <Route path="/faculty/enrollmentrequests" element={<Navigate to="/faculty/classrecordslist" replace />} />
               <Route path="/faculty/classattendance" element={<FacultyClassAttendance />} />
               <Route path="/faculty/reports/class-performance" element={<FacultyClassPerformance />} />

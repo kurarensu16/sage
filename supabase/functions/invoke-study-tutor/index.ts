@@ -24,32 +24,41 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 // does.
 //
 // PROVIDER
-// OpenRouter today, because the model decision is still open. Every provider
-// detail is confined to callModel() below: switching to a direct Gemini or
-// DeepSeek API is a change to that one function plus environment variables.
-// Nothing else in this file knows who serves the model.
+// DeepSeek's own API, called directly. Every provider detail is confined to
+// callModel() below and to the four constants under it: switching to a gateway
+// or to another OpenAI-shaped provider is a change to those and to environment
+// variables. Nothing else in this file knows who serves the model.
 
 const BOUNDARY_STATEMENT =
   'This is practice guidance for self-study, not an official grade or faculty decision.'
 
 // PROVIDER
 // Both DeepSeek and OpenRouter speak the OpenAI chat-completions shape, so the
-// provider is a base URL and a key rather than a code path. Switching back is
-// two environment variables.
+// provider is a base URL and a key rather than a code path. Going back to a
+// gateway is two environment variables.
+//
+// API_KEY_NAME is what makes that true in practice: TUTOR_API_KEY wins when it
+// is set, and OPENROUTER_API_KEY is the fallback, so neither this file nor the
+// handler below names a single provider's variable.
 //
 // WEB SEARCH IS NOT AVAILABLE ON THE FLASH MODEL. DeepSeek documents the
-// web_search tool as supported on deepseek-v4-pro only; Flash accepts the
-// request and IGNORES the tool, which means a search that never happens looks
-// exactly like a search that found nothing. Do not add a tools or web_search
-// parameter here expecting it to work. Links reach students only from
-// faculty-attached resources and from search URLs this system builds out of the
-// admin-curated search_destinations table.
+// web_search tool on the Pro tier only; Flash accepts the request and IGNORES
+// the tool, which means a search that never happens looks exactly like a search
+// that found nothing. Do not add a tools or web_search parameter here expecting
+// it to work. Links reach students only from faculty-attached resources and
+// from search URLs this system builds out of the admin-curated
+// search_destinations table.
 const API_BASE = (Deno.env.get('TUTOR_API_BASE') || 'https://api.deepseek.com').replace(/\/+$/, '')
 const API_KEY_NAME = Deno.env.get('TUTOR_API_KEY') ? 'TUTOR_API_KEY' : 'OPENROUTER_API_KEY'
+const API_KEY = Deno.env.get(API_KEY_NAME)
 
+// deepseek-flash is the current alias on DeepSeek's own API. It is repointed at
+// newer snapshots without notice, which is exactly why result.modelServed is
+// logged alongside it -- the configured name answers "what did we ask for", the
+// served name answers "what actually replied".
 const PRIMARY_MODEL = Deno.env.get('TUTOR_MODEL')
   || Deno.env.get('OPENROUTER_MODEL')
-  || 'DeepSeek-V4.1-Flash-1017'
+  || 'deepseek-flash'
 const DEFAULT_FALLBACK_MODEL = ''
 
 // Effort costs money, so it is spent where it changes the answer. Writing five
@@ -253,6 +262,9 @@ async function callModel(apiKey: string, system: string, user: string, action = 
         ],
         max_tokens: MAX_PROVIDER_TOKENS,
         temperature: 0.4,
+        // DeepSeek's JSON mode requires the word "json" to appear in the
+        // prompt. Every system prompt below says "STRICT JSON", which is what
+        // satisfies that -- do not reword those lines without checking this.
         response_format: { type: 'json_object' }
       }
       if (EFFORT_PARAM && EFFORT_BY_ACTION[action]) {
@@ -285,6 +297,16 @@ async function callModel(apiKey: string, system: string, user: string, action = 
             })
             return { ok: false as const, error: 'model_not_recognised', detail }
           }
+        }
+        // 401/403 mean the key is wrong or the balance is gone, and retrying
+        // another model cannot fix either. Named separately so it does not
+        // reach a student as a generic outage, and so the log says which.
+        if (response.status === 401 || response.status === 403) {
+          console.error('invoke-study-tutor provider_auth_failed', {
+            base: API_BASE, keyVar: API_KEY_NAME, status: response.status,
+            detail: detail.slice(0, 300)
+          })
+          return { ok: false as const, error: 'provider_auth_failed', detail }
         }
         if (PROVIDER_FAILOVER_STATUSES.has(response.status)) {
           console.warn('invoke-study-tutor provider_model_failed', {
@@ -395,15 +417,15 @@ async function buildGroundingContext(
   const [{ data: scores }, { data: resources }] = await Promise.all([
     activityIds.length
       ? admin.from('student_activity_scores')
-          .select('activity_id, score')
-          .eq('student_id', studentId)
-          .in('activity_id', activityIds)
+        .select('activity_id, score')
+        .eq('student_id', studentId)
+        .in('activity_id', activityIds)
       : Promise.resolve({ data: [] as Array<{ activity_id: string; score: number }> }),
     activityIds.length
       ? admin.from('activity_resources')
-          .select('resource_id, activity_id, label, url, note, kind')
-          .in('activity_id', activityIds)
-          .order('sort_order', { ascending: true })
+        .select('resource_id, activity_id, label, url, note, kind')
+        .in('activity_id', activityIds)
+        .order('sort_order', { ascending: true })
       : Promise.resolve({ data: [] as Array<Record<string, unknown>> })
   ])
 
@@ -471,7 +493,7 @@ function systemPrompt(action: string, hasEvidence: boolean) {
   const shapes: Record<string, string> = {
     explain: 'Return {"message": string, "follow_ups": [string, string, string]}. message explains the concept in at most 220 words, in short paragraphs. follow_ups are three short suggested next questions.',
     plan: `Return {"message": string, "items": [{"topic": string, "action": string, "by": string}]}. Provide 3 to 5 items. action is one concrete study step. by is a short relative timeframe such as "in 2 days". message is a one-paragraph summary under 80 words.`,
-    practice: `Return {"message": string, "questions": [{"question": string, "choices": [string, string, string, string], "answer": string, "explanation": string}]}. Provide exactly ${PRACTICE_QUESTIONS} multiple-choice questions. answer MUST be the exact text of the correct choice. explanation is one sentence. message is a one-line lead-in.`
+    practice: `Return {"message": string, "questions": [{"question": string, "choices": [string, string, string, string], "answer": string, "explanation": string}]}. Provide exactly ${PRACTICE_QUESTIONS} multiple-choice questions. answer MUST be the exact text of the correct choice. explanation is one sentence. message is a one-line lead-in. The user content includes already_answered (this student's recent attempts on this exact topic, each with was_correct) and recent_performance.correct_streak (a count computed in code, not by you: how many of the most recent attempts in a row were correct, most-recent first; 0 if the latest was wrong or there is no history). Use them exactly like this, and nothing else: (1) If already_answered is empty, write at the requested difficulty with no bias either way. (2) If correct_streak is 2 or more, raise the difficulty one notch above the requested difficulty and write less obvious variants of the same concepts — never reuse a question from already_answered verbatim, and never raise the effective difficulty past "hard". (3) If any already_answered item has was_correct:false, read the concept behind that item's question text and write a new question testing that SAME concept with different wording or a different scenario — not the identical question — so the student can show they understood the correction rather than memorised an answer key. (4) If attempts are mixed with no current streak, keep difficulty at the requested level but weight more of the ${PRACTICE_QUESTIONS} questions toward the concepts behind the missed ones.`
   }
 
   return `${common} ${shapes[action] || shapes.explain}`
@@ -490,10 +512,15 @@ Deno.serve(async req => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const serviceRoleKey = Deno.env.get('SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    const openRouterKey = Deno.env.get('OPENROUTER_API_KEY')
     const authHeader = req.headers.get('Authorization') || ''
 
-    if (!supabaseUrl || !serviceRoleKey) return json({ error: 'The study tutor is not set up yet.' }, 503)
+    if (!supabaseUrl || !serviceRoleKey) {
+      // Logged, because this path and the missing-API-key path below return the
+      // same sentence to the student and would otherwise be indistinguishable
+      // from the outside.
+      console.error('invoke-study-tutor missing_supabase_env')
+      return json({ error: 'The study tutor is not set up yet.' }, 503)
+    }
     if (!authHeader.startsWith('Bearer ')) return json({ error: 'Please sign in again.' }, 401)
 
     const admin = createClient(supabaseUrl, serviceRoleKey, {
@@ -641,7 +668,8 @@ Deno.serve(async req => {
       // and is not. When a provider with real grounded search is adopted, this
       // branch returns verified URLs instead and the client renders them the
       // same way.
-      if (!openRouterKey) {
+      if (!API_KEY) {
+        console.error('invoke-study-tutor missing_api_key', { keyVar: API_KEY_NAME })
         return json({
           message: 'Your instructor has not attached any materials for this topic yet.',
           resources: [],
@@ -662,7 +690,7 @@ Deno.serve(async req => {
       }
 
       const keywordResult = await callModel(
-        openRouterKey,
+        API_KEY,
         'You help a college student find study material. Return STRICT JSON only: {"keywords": [string, string, string], "message": string}. keywords are three short web-search phrases for the topic, each under 8 words. NEVER include a URL, a domain name, or a site name. message is one short sentence on what to look for.',
         redactDirectIdentifiers(JSON.stringify({
           topic: topic || 'general study skills',
@@ -673,11 +701,11 @@ Deno.serve(async req => {
 
       const keywords = keywordResult.ok && Array.isArray((keywordResult.data as Record<string, unknown>)?.keywords)
         ? ((keywordResult.data as Record<string, unknown>).keywords as unknown[])
-            .slice(0, 3)
-            .map(k => text(k, 90))
-            // Belt and braces: strip anything that still looks like a link, in
-            // case a model ignores the instruction above.
-            .filter(k => k && !/https?:\/\/|www\.|\.(com|org|net|edu|io|ph)\b/i.test(k))
+          .slice(0, 3)
+          .map(k => text(k, 90))
+          // Belt and braces: strip anything that still looks like a link, in
+          // case a model ignores the instruction above.
+          .filter(k => k && !/https?:\/\/|www\.|\.(com|org|net|edu|io|ph)\b/i.test(k))
         : []
 
       // The destinations are an institution-maintained list, not a constant in
@@ -790,7 +818,10 @@ Deno.serve(async req => {
     }
 
     // ---- everything below calls the model -----------------------------------
-    if (!openRouterKey) return json({ error: 'The study tutor is not set up yet.' }, 503)
+    if (!API_KEY) {
+      console.error('invoke-study-tutor missing_api_key', { keyVar: API_KEY_NAME })
+      return json({ error: 'The study tutor is not set up yet.' }, 503)
+    }
 
     const context = await buildGroundingContext(admin, user.id, subjectId, topicTag)
 
@@ -810,6 +841,18 @@ Deno.serve(async req => {
         .order('created_at', { ascending: false })
         .limit(20)
       priorAttempts = data || []
+    }
+
+    // Computed here, not left for the model to infer: a deterministic count
+    // of how many of the most recent attempts on this exact topic were
+    // correct IN A ROW, most-recent first (0 the moment one is wrong, or if
+    // there is no history yet). This is the only input the practice prompt
+    // uses to decide whether to raise difficulty -- the model never sees raw
+    // attempt order and has to guess a trend from it.
+    let correctStreak = 0
+    for (const attempt of priorAttempts) {
+      if (attempt.is_correct) correctStreak++
+      else break
     }
 
     // CONTINUITY — what this student was last told about THIS topic.
@@ -853,11 +896,15 @@ Deno.serve(async req => {
       previously_told_this_student: lastExchange,
       already_answered: priorAttempts.map(a => ({
         question: text(a.question, 200), was_correct: a.is_correct
-      }))
+      })),
+      // See systemPrompt's practice shape for exactly how this pair is meant
+      // to be used. Present on every action for simplicity; only the practice
+      // prompt gives it meaning, so it is inert elsewhere.
+      recent_performance: { correct_streak: correctStreak }
     }), identityValues)
 
     const result = await callModel(
-      openRouterKey,
+      API_KEY,
       systemPrompt(action === 'practice_submit' ? 'practice' : action, context.hasEvidence),
       userPrompt,
       action
@@ -865,11 +912,18 @@ Deno.serve(async req => {
 
     if (!result.ok) {
       console.error('invoke-study-tutor model_unavailable', { error: result.error })
-      // Separated because the fixes are different: one is a setting, the other
-      // is waiting. Model ids differ between a provider's own API and the
-      // gateways that resell it, so a wrong one is a real way to be wrong.
+      // Separated because the fixes are different, and a student-facing
+      // "could not be reached" would send an administrator looking for an
+      // outage in all three cases.
+      //
+      // model_not_recognised  -> the configured model id is wrong for this base
+      // provider_auth_failed  -> the key is wrong, or the balance is spent
+      // anything else         -> an actual outage, and waiting is the fix
       if (result.error === 'model_not_recognised') {
         return json({ error: 'The study tutor is not set up correctly. Please tell your administrator the AI model name needs checking.' }, 503)
+      }
+      if (result.error === 'provider_auth_failed') {
+        return json({ error: 'The study tutor is not set up correctly. Please tell your administrator the AI key or balance needs checking.' }, 503)
       }
       return json({ error: 'The tutor could not be reached just now. Please try again in a moment.' }, 503)
     }

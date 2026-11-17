@@ -148,7 +148,7 @@ export default function ForgotPassword() {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@sage.edu.ph"
+                    placeholder="name.college@dyci.edu.ph"
                     className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 focus:border-sage-500 rounded-xl text-sm font-mono outline-none transition-all focus:ring-1 focus:ring-sage-500 bg-slate-50/30 focus:bg-white"
                   />
                 </div>
