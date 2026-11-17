@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import PageHeader from '../../components/layout/PageHeader';
 import {
   Gavel, AlertTriangle, CheckCircle2, Info, Search,
-  XCircle, Clock, GraduationCap, UserCheck, Archive
+  XCircle, Clock, GraduationCap, UserCheck, ShieldCheck, Archive
 } from 'lucide-react';
 import { useAuth } from '../../lib/AuthContext';
 import { toUserMessage } from '../../lib/errorMessages';
@@ -11,7 +11,7 @@ import { cn } from '../../lib/utils';
 import { MILESTONE_LABEL } from '../../lib/milestoneState';
 import { GRADE_MILESTONES } from '../../lib/gradeMilestones';
 import {
-  STATUS_PRESENTATION, REQUEST_STATUS,
+  STATUS_PRESENTATION, REQUEST_STATUS, REQUEST_ORIGIN, ORIGIN_PRESENTATION,
   fetchGradeChangeRequests, deanReviewRequest
 } from '../../lib/gradeChangeRequestService';
 import EvidenceGallery from '../../components/grades/EvidenceGallery';
@@ -183,7 +183,8 @@ export default function DeanGradeChangeRequests() {
         ) : (
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-100">
             {visible.map((row) => {
-              const fromStudent = row.submittedByRole === 'student';
+              const fromStudent = row.origin === REQUEST_ORIGIN.STUDENT;
+              const fromRegistrar = row.origin === REQUEST_ORIGIN.REGISTRAR;
               const isSg = row.gradePeriod === GRADE_MILESTONES.SEMESTRAL_GRADE;
               const waiting = activeTab.id === 'waiting';
               return (
@@ -208,12 +209,14 @@ export default function DeanGradeChangeRequests() {
                     <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
                       <span className={cn(
                         'text-micro font-bold uppercase tracking-wide px-2 py-0.5 rounded-md border',
-                        fromStudent
-                          ? 'bg-sky-50 text-sky-700 border-sky-200'
-                          : 'bg-slate-50 text-slate-600 border-slate-200'
+                        ORIGIN_PRESENTATION[row.origin]?.tone || 'bg-slate-50 text-slate-600 border-slate-200'
                       )}>
-                        {fromStudent ? <GraduationCap className="h-3 w-3 inline-block mr-1 -mt-px" /> : <UserCheck className="h-3 w-3 inline-block mr-1 -mt-px" />}
-                        {fromStudent ? 'Raised by student' : 'Raised by instructor'}
+                        {fromStudent
+                          ? <GraduationCap className="h-3 w-3 inline-block mr-1 -mt-px" />
+                          : fromRegistrar
+                            ? <ShieldCheck className="h-3 w-3 inline-block mr-1 -mt-px" />
+                            : <UserCheck className="h-3 w-3 inline-block mr-1 -mt-px" />}
+                        {ORIGIN_PRESENTATION[row.origin]?.label || 'Raised by instructor'}
                       </span>
                       <span className={cn(
                         'text-micro font-bold uppercase tracking-wide px-2 py-0.5 rounded-md border',
@@ -255,7 +258,7 @@ export default function DeanGradeChangeRequests() {
                     </p>
                   )}
 
-                  <GradeChangeChain status={row.status} reachedRegistrar={row.reachedRegistrar} className="mb-2" />
+                  <GradeChangeChain status={row.status} reachedRegistrar={row.reachedRegistrar} origin={row.origin} className="mb-2" />
                   <EvidenceGallery request={row} />
 
                   <div className="flex items-center gap-2 flex-wrap">

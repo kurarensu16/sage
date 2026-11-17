@@ -45,7 +45,6 @@ const ACTION_BADGE_MAP = {
   'Grading Template Deletion': 'bg-rose-50 text-rose-700 border-rose-200',
   'Intervention Plan Generated':'bg-purple-50 text-purple-700 border-purple-200',
   'Risk Evaluation':           'bg-amber-50 text-amber-700 border-amber-200',
-  'Join Code Generated':       'bg-cyan-50 text-cyan-700 border-cyan-200',
   'Dean Remark Approval':      'bg-emerald-50 text-emerald-700 border-emerald-200',
   'APK Download':              'bg-emerald-50 text-emerald-700 border-emerald-200',
   'Mobile App Distribution':   'bg-teal-50 text-teal-700 border-teal-200',

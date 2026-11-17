@@ -18,6 +18,24 @@ FS = 24
 LH = 31
 NL = chr(10)
 FONT = 'Arial, Helvetica, sans-serif'
+PROC_H = 190         # every process box is this tall, no matter how many flows touch it
+JOG_MIN, JOG_MAX = 50, 170  # each flow's vertical run sits at its own distance from the
+                             # box, in this range, so two flows never share an x and look
+                             # like one merged line; text labels must start beyond JOG_MAX
+
+
+def spread(cy, i, n, margin=24):
+    """The i-th of n flows converging on a box gets its own point along the box's
+    edge, evenly spread, instead of every flow clamping to the same one or two
+    nearest points regardless of how many there are."""
+    span = PROC_H - 2 * margin
+    return cy - span / 2 + (span * i / (n - 1) if n > 1 else span / 2)
+
+
+def spread_jog(i, n):
+    """The i-th of n flows gets its own vertical-run distance from the box, so flows
+    converging on the same box don't all turn the corner at the same x."""
+    return JOG_MIN + ((JOG_MAX - JOG_MIN) * i / (n - 1) if n > 1 else (JOG_MAX - JOG_MIN) / 2)
 
 
 class Fig:
@@ -75,6 +93,25 @@ class Fig:
              (x2 - L * math.cos(a + sp), y2 - L * math.sin(a + sp))]
         self.s.append('<polygon points="' + ' '.join(f'{px:.1f},{py:.1f}' for px, py in p) + f'" fill="{INK}"/>')
 
+    def fan_arrow(self, box_x, box_y, far_x, row_y, arrow_at_box, jog=130, w=3):
+        """A flow between one specific point on a short, fixed-height process box's
+        edge (box_y, picked by the caller so each flow gets its own point rather than
+        every far-off row bunching onto the same clamped edge) and a far point whose
+        row may sit well outside the box's edge. Turns the corner at a right angle
+        right at the box, then runs level with row_y the rest of the way, so a label
+        anchored near the box still lines up with the run."""
+        mid_x = box_x + (jog if far_x > box_x else -jog)
+        if arrow_at_box:
+            self.s.append(f'<path d="M{far_x:.1f},{row_y:.1f} L{mid_x:.1f},{row_y:.1f} '
+                           f'L{mid_x:.1f},{box_y:.1f}" fill="none" stroke="{INK}" stroke-width="{w}"/>')
+            self._t(max(row_y, box_y) + 4)
+            self.arrow(mid_x, box_y, box_x, box_y, w)
+        else:
+            self.s.append(f'<path d="M{box_x:.1f},{box_y:.1f} L{mid_x:.1f},{box_y:.1f} '
+                           f'L{mid_x:.1f},{row_y:.1f}" fill="none" stroke="{INK}" stroke-width="{w}"/>')
+            self._t(max(row_y, box_y) + 4)
+            self.arrow(mid_x, row_y, far_x, row_y, w)
+
     def bullets(self, x, y_anchor, items, width_chars, up=True, anchor='start'):
         """Bulleted list above (up=True) or below the anchor y."""
         rows = []
@@ -104,22 +141,34 @@ def wrapn(items, width_chars):
     return sum(len(textwrap.wrap(i, width_chars)) or 1 for i in items)
 
 
-def context(path_base, sysnum, sysname, left, right, W=1800, BW=320, PW=420, store=None):
+def context(path_base, sysnum, sysname, left, right, W=1800, BW=320, PW=420, store=None, pad=300):
     """left/right: lists of dict(name, to_sys[list], from_sys[list]).
     to_sys = flows entity -> system, from_sys = flows system -> entity."""
     wc = 25
 
     def rowh(col):
-        return [(wrapn(e['to_sys'], wc) + wrapn(e['from_sys'], wc)) * LH + 300 for e in col]
+        return [(wrapn(e['to_sys'], wc) + wrapn(e['from_sys'], wc)) * LH + pad for e in col]
 
     lr = rowh(left)
     rr = rowh(right) if right else [0]
     ph = max(sum(lr), sum(rr), 360)
     fig = Fig(W)
     px, top = (W - PW) // 2, 40
-    fig.process(px, top, PW, ph, sysnum, sysname)
+    proc_cy = top + ph / 2
+    fig.process(px, proc_cy - PROC_H / 2, PW, PROC_H, sysnum, sysname)
 
     def draw(col, rh, side):
+        # Every entity's flows converge on the same short process box, so each one
+        # gets its own point along that box's edge (spread() below) instead of all
+        # landing near the same one or two points regardless of how many there are.
+        n_events = sum(bool(e['to_sys']) + bool(e['from_sys']) for e in col)
+        ei = [0]
+
+        def next_point():
+            v = spread(proc_cy, ei[0], n_events), spread_jog(ei[0], n_events)
+            ei[0] += 1
+            return v
+
         y = top
         extra = (ph - sum(rh)) / len(col)
         for e, h in zip(col, rh):
@@ -128,28 +177,37 @@ def context(path_base, sysnum, sysname, left, right, W=1800, BW=320, PW=420, sto
             y += h
             ya, yb = cy - 40, cy + 40
             ex = 30 if side == 'L' else W - 30 - BW
-            fig.entity(ex, cy - 45, BW, 90, e['name'])
+            eh = 90 if e['name'].count(NL) < 2 else 124
+            fig.entity(ex, cy - eh / 2, BW, eh, e['name'])
             if side == 'L':
-                x0, x1 = ex + BW, px
-                if e['to_sys']:
-                    fig.arrow(x0, ya, x1, ya)
-                if e['from_sys']:
-                    fig.arrow(x1, yb, x0, yb)
+                proc, ent = px, ex + BW
+                text_x = ent + 18  # labels sit by the entity; the jog is at the far end
             else:
-                x0, x1 = px + PW, ex
-                if e['to_sys']:
-                    fig.arrow(x1, ya, x0, ya)
-                if e['from_sys']:
-                    fig.arrow(x0, yb, x1, yb)
-            fig.bullets(x0 + 18, ya, e['to_sys'], wc, up=True)
-            fig.bullets(x0 + 18, yb, e['from_sys'], wc, up=False)
+                proc, ent = px + PW, ex
+                text_x = proc + JOG_MAX + 40  # labels sit by the process box, so they must
+                                           # start past where the jog has already levelled off
+            if e['to_sys']:
+                by, jg = next_point()
+                fig.fan_arrow(proc, by, ent, ya, arrow_at_box=True, jog=jg)
+            if e['from_sys']:
+                by, jg = next_point()
+                fig.fan_arrow(proc, by, ent, yb, arrow_at_box=False, jog=jg)
+            fig.bullets(text_x, ya, e['to_sys'], wc, up=True)
+            fig.bullets(text_x, yb, e['from_sys'], wc, up=False)
 
     draw(left, lr, 'L')
     if right:
         draw(right, rr, 'R')
+        if store:
+            sid, sl = store
+            sw, sy = 420, top + ph + 110
+            sx = (W - sw) // 2
+            fig.store(sx, sy, sw, 100, sid, sl)
+            fig.arrow(W // 2 - 40, proc_cy + PROC_H / 2, W // 2 - 40, sy)
+            fig.arrow(W // 2 + 40, sy, W // 2 + 40, proc_cy + PROC_H / 2)
     elif store:
         sid, sl = store
-        sy, sx = top + ph / 2 - 50, W - 30 - 330
+        sy, sx = proc_cy - 50, W - 30 - 330
         fig.store(sx, sy, 330, 100, sid, sl)
         x0 = px + PW
         fig.arrow(x0, sy + 28, sx, sy + 28)
@@ -207,7 +265,7 @@ def level1(path_base, entity, modules, chunk_h=2550, W=1780):
         y = 30
         for m, rows, H in ch:
             cy = y + H / 2
-            fig.process(px, y, PW, H, m['num'], m['name'].replace('|', '\n'))
+            fig.process(px, cy - PROC_H / 2, PW, PROC_H, m['num'], m['name'].replace('|', '\n'))
             fig.entity(ex, cy - 45, BW, 90, entity)
             ya, yb = cy - 40, cy + 40
             if m['ins']:
@@ -219,32 +277,54 @@ def level1(path_base, entity, modules, chunk_h=2550, W=1780):
             # stores column, vertically centred on the band
             sh = sum(r[2] * LH for r in rows)
             ry = cy - sh / 2
+            # Every flow into this band's process box gets its own point along the box's
+            # edge, spread in the same top-to-bottom order as the rows are drawn, instead
+            # of each one clamping independently to wherever happens to be nearest --
+            # which is what made far rows bunch onto the same one or two points.
+            n_events = sum((2 if r[1][3] == 'rw' else 1) if r[0] == 'S'
+                            else (bool(r[1][2]) + bool(r[1][3])) for r in rows)
+            margin = 24
+            span = PROC_H - 2 * margin
+            ei = [0]
+
+            def next_point():
+                v = (cy - span / 2 + (span * ei[0] / (n_events - 1) if n_events > 1 else span / 2),
+                     spread_jog(ei[0], n_events))
+                ei[0] += 1
+                return v
+
             for kind, st, rh in rows:
                 rc = ry + rh * LH / 2
                 if kind == 'X':
                     fig.entity(sx, rc - 40, SW, 80, st[1])
                     ya2, yb2 = rc - 22, rc + 22
                     if st[2]:
-                        fig.arrow(px + PW, ya2, sx, ya2)
-                        fig.bullets(px + PW + 14, ya2 - 4, [st[2]], wc_s, up=True)
+                        by, jg = next_point()
+                        fig.fan_arrow(px + PW, by, sx, ya2, arrow_at_box=False, jog=jg)
+                        fig.bullets(px + PW + JOG_MAX + 20, ya2 - 4, [st[2]], wc_s, up=True)
                     if st[3]:
-                        fig.arrow(sx, yb2, px + PW, yb2)
-                        fig.bullets(px + PW + 14, yb2 + 4, [st[3]], wc_s, up=False)
+                        by, jg = next_point()
+                        fig.fan_arrow(px + PW, by, sx, yb2, arrow_at_box=True, jog=jg)
+                        fig.bullets(px + PW + JOG_MAX + 20, yb2 + 4, [st[3]], wc_s, up=False)
                 else:
                     fig.store(sx, rc - 42, SW, 84, st[0], NL.join(textwrap.wrap(_human(st[1]), 22)))
                     mode = st[3]
                     if mode == 'rw':
                         a, b = rc - 22, rc + 22
-                        fig.arrow(px + PW, a, sx, a)
-                        fig.bullets(px + PW + 14, a - 4, [_lbl('Save', st[2])], wc_s, up=True)
-                        fig.arrow(sx, b, px + PW, b)
-                        fig.bullets(px + PW + 14, b + 4, [_lbl('Retrieve', st[2])], wc_s, up=False)
+                        by, jg = next_point()
+                        fig.fan_arrow(px + PW, by, sx, a, arrow_at_box=False, jog=jg)
+                        fig.bullets(px + PW + JOG_MAX + 20, a - 4, [_lbl('Save', st[2])], wc_s, up=True)
+                        by, jg = next_point()
+                        fig.fan_arrow(px + PW, by, sx, b, arrow_at_box=True, jog=jg)
+                        fig.bullets(px + PW + JOG_MAX + 20, b + 4, [_lbl('Retrieve', st[2])], wc_s, up=False)
                     elif mode == 'w':
-                        fig.arrow(px + PW, rc, sx, rc)
-                        fig.bullets(px + PW + 14, rc - 4, [_lbl('Save', st[2])], wc_s, up=True)
+                        by, jg = next_point()
+                        fig.fan_arrow(px + PW, by, sx, rc, arrow_at_box=False, jog=jg)
+                        fig.bullets(px + PW + JOG_MAX + 20, rc - 4, [_lbl('Save', st[2])], wc_s, up=True)
                     else:
-                        fig.arrow(sx, rc, px + PW, rc)
-                        fig.bullets(px + PW + 14, rc - 4, [_lbl('Retrieve', st[2])], wc_s, up=True)
+                        by, jg = next_point()
+                        fig.fan_arrow(px + PW, by, sx, rc, arrow_at_box=True, jog=jg)
+                        fig.bullets(px + PW + JOG_MAX + 20, rc - 4, [_lbl('Retrieve', st[2])], wc_s, up=True)
                 ry += rh * LH
             y += H + 50
         suffix = '' if len(chunks) == 1 else '-' + 'ABCDEFG'[ci]

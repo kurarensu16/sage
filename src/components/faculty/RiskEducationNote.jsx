@@ -33,6 +33,25 @@ const content = {
     ['Tentative', 'The result uses incomplete grades and may change as scores are added.'],
     ['At Risk', 'High and Critical students need timely faculty review.']
   ],
+  // The Dean's college-wide roster. Two tables and a detail sheet all use the
+  // same vocabulary, and the abbreviations in the evidence line (Abs, Zeros,
+  // the delta) are the part nobody can guess.
+  deanRoster: [
+    ['Risk tiers', null],
+    ['Low · 0–24 points', 'Routine monitoring. No rule-based intervention trigger.'],
+    ['Moderate · 25–49 points', 'An early concern is present and worth watching.'],
+    ['High · 50–74 points', 'Significant concern. Timely faculty review and a documented support plan are needed.'],
+    ['Critical · 75–100 points', 'Severe or combined concerns. Prioritize prompt intervention and Dean review.'],
+    ['How the score is formed', 'Current GWA contributes up to 60 points, attendance up to 50, recorded zero scores up to 15, and a declining term trajectory up to 10. The total is capped at 100, so the four parts do not add up to it.'],
+    ['Reading the table', null],
+    ['Running GWA', 'The average across this term\'s subjects. Lower is better; above 3.00 is failing.'],
+    ['Tentative', 'Computed from scores that are not final yet. It can still change as grades are posted.'],
+    ['Failing Subjects', 'How many subjects are above 3.00. Open Details to see which ones.'],
+    ['Explainable Risk', 'The tier and points for the student\'s single highest-risk course, not an average across their subjects.'],
+    ['Highest-Risk Course Evidence', 'Abs is recorded absences, Zeros is activities scored 0, and the delta is the change in standing since the previous term — a negative value means the student is declining.'],
+    ['Pending versus recorded zero', 'An activity saved without a score is pending and adds no points. A numerical 0 is a recorded result and can increase risk.'],
+    ['Tier 1 and Tier 2', 'Tier 1 lists students at academic risk. Tier 2 lists President\'s Lister candidates whose honor standing is threatened — a student can be strong overall and still appear there.']
+  ],
   evaluationRoster: [
     ['Current risk', 'A live, rule-based score for the selected subject. It is recalculated from the latest recorded data and is not an AI prediction.'],
     ['Low · 0–24 points', 'Routine monitoring. No current rule-based intervention trigger.'],
@@ -69,7 +88,9 @@ export default function RiskEducationNote({ variant = 'roster', defaultOpen = fa
       ? 'How current risk and evaluation priority work'
       : variant === 'evaluationHistory'
         ? 'How evaluation history and current standing differ'
-        : 'How badges and student status work';
+        : variant === 'deanRoster'
+          ? 'How to read these risk tiers, columns and badges'
+          : 'How badges and student status work';
   return (
     <details open={defaultOpen || undefined} className={`group border-y border-sage-200 bg-sage-50/70 ${className}`}>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-xs font-semibold text-sage-800">

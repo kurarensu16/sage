@@ -543,7 +543,7 @@ export default function ClassRecordsList() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="block w-full pl-10 pr-9 py-2.5 sm:py-2 border border-slate-200 rounded-lg text-xs sm:text-sm bg-white focus:ring-1 focus:ring-sage-500 focus:border-sage-500 outline-none transition-colors shadow-xs" 
-              placeholder="Search subject code, section, or join code..." 
+              placeholder="Search subject code or section..."
             />
             {searchTerm && (
               <button 
@@ -702,9 +702,8 @@ export default function ClassRecordsList() {
                     <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{cls.subjectName}</p>
                   </div>
 
-                  {/* The classroom join code display was removed with the self-join
-                      path: Registrar and Dean now place students on a roster, so a
-                      code nobody can redeem would only invite support questions. */}
+                  {/* Students do not enrol themselves: the Registrar and Dean
+                      place them on the roster directly. */}
                                   </div>
                 
                 {/* Card Body */}

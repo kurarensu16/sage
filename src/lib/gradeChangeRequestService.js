@@ -1,13 +1,15 @@
 import { supabase } from './supabase';
 import {
   EVIDENCE_BUCKET, EVIDENCE_STORES, REASON_LABEL,
-  describeEvidenceFile, evidenceObjectPath, resolveFileType, evidenceTypeFromKey
+  describeEvidenceFile, evidenceObjectPath, resolveFileType, evidenceTypeFromKey,
+  resolveRequestOrigin
 } from './gradeChangeRules';
 
 // The pure rules live in gradeChangeRules.js so the verify scripts can load
 // them without a browser. Re-exported here so every page keeps one import.
 export {
   REASON_TYPES, REASON_LABEL, REQUEST_STATUS, STATUS_PRESENTATION,
+  REQUEST_ORIGIN, ORIGIN_PRESENTATION, resolveRequestOrigin,
   DISPUTABLE_MILESTONES, isOpenStatus, EVIDENCE_BUCKET, EVIDENCE_STORES,
   EVIDENCE_MIN_FILES, EVIDENCE_MAX_FILES, EVIDENCE_MAX_BYTES,
   EVIDENCE_ACCEPTED, EVIDENCE_ACCEPT_ATTR, isImageEvidence,
@@ -60,6 +62,41 @@ export async function submitGradeChangeRequest({
   evidenceStorage = EVIDENCE_STORES.SUPABASE
 }) {
   const { data, error } = await supabase.rpc('submit_grade_change_request', {
+    p_posted_grade_id: postedGradeId,
+    p_reason_type: reasonType,
+    p_reason_detail: reasonDetail,
+    p_evidence_keys: evidenceKeys,
+    p_evidence_storage: evidenceStorage
+  });
+  if (error) throw error;
+  return data;
+}
+
+// --- Instructor-raised milestone correction ---------------------------------
+
+/**
+ * The instructor's own correction to a finalized Midterm or Tentative Final
+ * Rating they posted. Returns { request_id, status }.
+ *
+ * Mirrors the student's dispute -- evidence uploaded first, required, one to
+ * three files -- and differs in the two ways the server enforces: it files at
+ * pending_dean_review, because the instructor is the requester and has nothing
+ * to validate, and it refuses a Semestral Grade, which keeps the richer
+ * submitSgCorrectionRequest path that cascades MR -> TFR -> SG.
+ *
+ * A request raised after the dispute window closes is NOT refused: the Dean's
+ * decision routes it to the Registrar, exactly as it does for a late student
+ * dispute. Blocking here would recreate the gap this closes -- an instructor
+ * finding their own error late and having nowhere to take it.
+ */
+export async function submitMilestoneCorrectionRequest({
+  postedGradeId,
+  reasonType,
+  reasonDetail,
+  evidenceKeys = [],
+  evidenceStorage = EVIDENCE_STORES.SUPABASE
+}) {
+  const { data, error } = await supabase.rpc('submit_milestone_correction_request', {
     p_posted_grade_id: postedGradeId,
     p_reason_type: reasonType,
     p_reason_detail: reasonDetail,
@@ -125,7 +162,7 @@ export async function fetchGradeChangeRequests({ statuses = null } = {}) {
     .from('remark_override_requests')
     .select(`
       request_id, status, reason_type, reason_detail, grade_period,
-      submitted_by_role, faculty_note, dean_note, registrar_note,
+      submitted_by_role, correction_scope, faculty_note, dean_note, registrar_note,
       requires_registrar, requested_at, resolved_at,
       posted_grade_id, class_record_id, student_id,
       original_effective_grade, final_remark,
@@ -158,6 +195,14 @@ function normalizeRequest(row) {
     reasonDetail: row.reason_detail,
     gradePeriod: row.grade_period,
     submittedByRole: row.submitted_by_role,
+    correctionScope: row.correction_scope,
+    // Who this came from, which the status never said. Derived once here so
+    // the five screens that show it cannot reach different conclusions about
+    // the same row.
+    origin: resolveRequestOrigin({
+      correctionScope: row.correction_scope,
+      submittedByRole: row.submitted_by_role
+    }),
     facultyNote: row.faculty_note,
     deanNote: row.dean_note,
     registrarNote: row.registrar_note,

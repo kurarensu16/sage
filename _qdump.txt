@@ -1,0 +1,26 @@
+===== ASPIRE_ISO_25010_End_User_Questionnaire.docx =====
+TABLE 0 rows 5 cols 2
+ header: ['Field', '']
+TABLE 1 rows 5 cols 2
+ header: ['Rating', 'Meaning']
+TABLE 2 rows 36 cols 7
+ header: ['#', 'Statement / Indicator', 'Statement / Indicator', '1', '2', '3', '4']
+TABLE 3 rows 13 cols 6
+ header: ['#', 'Statement / Indicator', '1', '2', '3', '4']
+TABLE 4 rows 9 cols 6
+ header: ['Quality Characteristic', 'Rating (1-4) for Q1', 'Rating (1-4) for Q2', 'Rating (1-4) for Q3', 'Rating (1-4) for Q4', 'Total Score']
+TABLE 5 rows 4 cols 7
+ header: ['TAM Construct', 'Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Total Score (Max 20)']
+===== ASPIRE_ISO_25010_Expert_Questionnaire (1).docx =====
+TABLE 0 rows 7 cols 2
+ header: ['Field', '']
+TABLE 1 rows 5 cols 2
+ header: ['Rating', 'Meaning']
+TABLE 2 rows 46 cols 7
+ header: ['#', '', 'Question / Statement', '1', '2', '3', '4']
+TABLE 3 rows 13 cols 6
+ header: ['#', 'Statement / Indicator', '1', '2', '3', '4']
+TABLE 4 rows 11 cols 6
+ header: ['Quality Characteristic', 'Rating (1-4) for Q1', 'Rating (1-4) for Q2', 'Rating (1-4) for Q3', 'Rating (1-4) for Q4', 'Total Score']
+TABLE 5 rows 4 cols 7
+ header: ['TAM Construct', 'Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Total Score (Max 20)']

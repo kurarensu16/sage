@@ -1,0 +1,164 @@
+18 TOC1 | CHAPTER 15
+36 TOC1 | CHAPTER 235
+92 TOC1 | CHAPTER 3156
+102 TOC1 | CHAPTER 4161
+109 Heading1 | CHAPTER 1
+110 Heading1 | PROJECT RATIONALE
+111 Heading2 | Introduction
+118 Heading2 | Review of Related Literature and Studies
+119 Heading3 | Related Literature
+121 Heading4 | Technology Acceptance, System Quality, and User-Centered Design
+127 Heading4 | Explainable Multi-Factor Risk Scoring and Trajectory Analysis
+131 Heading4 | Human-in-the-Loop (HITL) AI Governance in Education
+133 Heading4 | Pedagogical Prompt Grounding and Mandatory Metadata Enforcement
+135 Heading4 | Closed-Loop Intervention Lifecycles and Outcome Evaluation
+137 Heading4 | Student Engagement and Self-Monitoring Systems
+139 Heading4 | Data Privacy, Ethical Governance, and Role-Based Access Control
+143 Heading3 | Related Studies
+145 Heading4 | Early Warning Systems and Student Retention Systems
+148 Heading4 | Educational Data Mining and Explainable Risk Assessment
+150 Heading4 | Timely Academic Analytics and Advising Dashboards
+152 Heading4 | Automated Grade Computation and Transmutation Platforms
+154 Heading4 | Automated Faculty Loading and Scheduling
+156 Heading4 | AI-Assisted Academic Advising Systems
+160 Heading4 | Synthesis and Research Gap
+163 Heading2 | Statement of the Problem
+167 Heading3 | General Problem
+169 Heading3 | Specific Problems
+178 Heading2 | Objectives of the Study
+180 Heading3 | General Objective
+182 Heading3 | Specific Objectives
+191 Heading2 | Scope and Delimitation
+192 Heading3 | Scope
+193 Heading4 | Shared / Public Portal (Authentication and Security)
+197 Heading4 | Student Portal
+198 Heading5 | Dashboard Module
+200 Heading5 | Courses and Grades Module
+204 Heading5 | Attendance Module
+206 Heading5 | Academic Support Module
+210 Heading5 | Consultations Module
+213 Heading5 | Notifications Module
+215 Heading5 | Account Module
+217 Heading4 | Faculty Portal
+218 Heading5 | Dashboard Module
+220 Heading5 | Selected-Class Grading Workflow
+225 Heading5 | Classes Module
+227 Heading5 | Student Support Module
+231 Heading5 | Attendance Module
+233 Heading5 | Performance Reports Module
+236 Heading5 | Consultations Module
+239 Heading5 | Notifications Module
+241 Heading5 | Account Module
+243 Heading4 | Dean Portal
+244 Heading5 | Dashboard Module
+246 Heading5 | Grades Module
+251 Heading5 | Faculty Loading Module
+253 Heading5 | Risk and Interventions Module
+257 Heading5 | Reports Module
+259 Heading5 | Notifications Module
+261 Heading5 | Account Module
+263 Heading4 | Registrar Portal
+264 Heading5 | Dashboard Module
+266 Heading5 | People Module
+269 Heading5 | Academic Setup Module
+276 Heading5 | Enrollment and Loading Module
+280 Heading5 | Grade Records Module
+283 Heading5 | Reports Module
+285 Heading5 | Notifications Module
+287 Heading5 | Account Module
+289 Heading4 | Admin Portal
+290 Heading5 | Dashboard Module
+292 Heading5 | User Accounts Module
+296 Heading5 | System Module
+302 Heading5 | Notifications Module
+304 Heading5 | Account Module
+306 Heading4 | Grade Change Request Chain
+309 Heading4 | Academic Period and Archive Access
+311 Heading3 | Delimitation
+318 Heading2 | Theoretical Framework
+320 Heading4 | Technology Acceptance Model (TAM)
+322 Heading4 | DeLone and McLean Information Systems Success Model
+324 Heading4 | Cognitive Load Theory
+326 Heading4 | ISO/IEC 25010:2023 Product Quality Model
+328 Heading4 | Human-in-the-Loop Framework
+330 Heading4 | Role-Based Access Control Model
+332 Heading2 | Conceptual Framework
+340 Heading2 | Hypothesis of the Study
+345 Heading1 | CHAPTER 2
+346 Heading1 | SYSTEM DEVELOPMENT and METHODOLOGY
+348 Heading2 | Research Subjects
+382 Heading2 | Research Instruments
+383 Heading3 | TAM Questionnaire
+390 Heading3 | ISO/IEC 25010:2023 Evaluation Checklist
+403 Heading2 | Research Design
+405 Heading2 | Data Gathering Procedure
+408 Heading3 | Closed-Loop Functional Verification
+414 Heading2 | Data Analysis and Statistical Treatment
+434 Heading2 | Ethical Considerations
+440 Heading2 | System Development Methodology
+462 Heading2 | Requirements Specifications and Analysis
+463 Heading3 | Requirements Specifications
+465 Heading3 | Requirements Analysis
+467 Heading2 | Proposed System
+469 Heading3 | Proposed System for the Student
+471 Heading3 | Proposed System for the Faculty
+473 Heading3 | Proposed System for the Dean
+475 Heading3 | Proposed System for the Registrar
+479 Heading3 | Proposed System for the Admin
+481 Heading2 | Logical Specifications
+483 Heading2 | Grading Engine Specification
+485 Heading3 | Component Weighting and Program-Specific COG Templates
+502 Heading3 | Grading-Period Progression and Intermediate Rounding
+519 Heading3 | Transmutation Scale
+556 Heading2 | Academic Risk Score Specification
+558 Heading3 | Composite Model
+580 Heading3 | Factor 1 - GWA Deficit (0 to 60 points)
+596 Heading3 | Factor 2 - Attendance and FDA Trigger (0 to 50 points)
+616 Heading3 | Factor 3 — Recorded Zero Scores (0 to 15 points)
+631 Heading3 | Factor 4 — Prelim-to-Midterm Performance Trajectory (0 to 10 points)
+652 Heading3 | Classification Tiers
+670 Heading3 | Relationship to Honors Monitoring
+672 Heading2 | Physical Specifications
+674 Heading2 | System Design
+676 Heading2 | Process Design
+677 Heading3 | Data Flow Diagram
+679 Heading4 | Data Flow Diagram -- Existing System
+700 Heading4 | Data Flow Diagram -- Proposed System
+701 Heading5 | Level 0 Data Flow Diagram (ASPIRE Context Diagram)
+705 Heading5 | Level 1 Data Flow Diagram: Student Portal
+715 Heading5 | Level 1 Data Flow Diagram: Faculty Portal
+728 Heading5 | Level 1 Data Flow Diagram: Dean Portal
+752 Heading5 | Level 1 Data Flow Diagram: Admin Portal
+759 Heading2 | Visual Table of Contents
+766 Heading2 | Database Design
+768 Heading3 | Academic Structure
+775 Heading3 | Accounts and People
+779 Heading3 | Grading Inputs
+786 Heading3 | Grading Outcomes
+793 Heading3 | Evaluation and Intervention
+800 Heading3 | AI Study Advising
+804 Heading3 | Notifications and System
+811 Heading2 | User Interface Design
+887 Heading2 | System Implementation
+889 Heading2 | Tools and Technologies Used
+931 Heading2 | Schedule Timeline
+1015 Heading2 | Responsibilities
+1024 Heading2 | Implementation Plan
+1028 Heading2 | Verification, Validation and Testing
+1033 Heading2 | Definition of Terms
+1066 Heading1 | CHAPTER 3
+1067 Heading1 | RESULTS, DISCUSSION, AND INTERPRETATION OF DATA
+1069 Heading2 | System Testing Results
+1071 Heading3 | Functional Testing
+1114 Heading3 | Non-Functional Testing
+1117 Heading2 | System Evaluation Results
+1119 Heading3 | Profile of the Respondents
+1143 Heading3 | Evaluation Criteria
+1145 Heading3 | Results and Discussion
+1269 Heading3 | Hypothesis Testing Results
+1271 Heading1 | CHAPTER 4
+1272 Heading1 | CONCLUSION AND RECOMMENDATIONS
+1274 Heading2 | Summary of Findings
+1276 Heading2 | Conclusion
+1278 Heading2 | Recommendations
+1280 Heading1 | References

@@ -27,7 +27,7 @@ existing = [
 ]
 print(context(os.path.join(OUT, 'Figure-2.6-Existing-Level0'), '0.0',
               'Manual Academic\nGrading and Risk\nMonitoring Process',
-              existing, None, W=1800,
+              existing[:2], existing[2:], W=2300,
               store=('D0', 'Excel COG template,\npaper grade sheets,\nregistrar files')))
 
 # ---------------- Figure 2.7: proposed ASPIRE ----------------
@@ -46,6 +46,8 @@ left = [
          to_sys=['Loading decisions (own college)', 'Correction and dispute decisions',
                  'Case dispositions', 'Report parameters'],
          from_sys=['College analytics', 'Escalated cases', 'Conflict refusals (college scope)']),
+]
+right = [
     dict(name='Registrar',
          to_sys=['Subjects, programs, grading templates', 'Sections and academic terms',
                  'Faculty loading and enrolment', 'Authorized overrides', 'Late grade changes'],
@@ -54,8 +56,6 @@ left = [
          to_sys=['Account creation and changes', 'Bulk imports', 'Maintenance windows',
                  'Encrypted backups'],
          from_sys=['Audit trail', 'Service and storage health']),
-]
-right = [
     dict(name='AI Model Provider\n(Gemini 2.5 Flash)',
          to_sys=['Study diagnostics', 'Practice sets', 'Task drafts'],
          from_sys=['Grounded prompt', 'Activity metadata']),
@@ -68,4 +68,4 @@ right = [
 ]
 print(context(os.path.join(OUT, 'Figure-2.7-Proposed-Level0'), '0.0',
               'ASPIRE\nAcademic Support and\nPerformance Advising',
-              left, right, W=1800))
+              left, right, W=2300, pad=230))

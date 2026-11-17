@@ -1,5 +1,5 @@
 // src/lib/classRoomService.js
-// Service for Class Room Creation, Join Codes, and Irregular Student Verification
+// Service for Class Room Creation and Irregular Student Verification
 
 import { supabase } from './supabase';
 import { calculateAcademicRisk, computeTentativeGradeDetails } from './riskEngine';
@@ -180,12 +180,10 @@ export async function getSectionIrregularEnrollees(sectionId) {
     }));
 }
 
-// generateJoinCode() and getOrCreateJoinCode() were removed with the class
-// join code: Registrar and Dean place students on a roster directly, so a code
-// nobody can redeem was only generating rows in a table nothing read.
-
-
-
+// Students do not enrol themselves. The Registrar and Dean place them on a
+// roster directly, so there is no code to issue, display or redeem -- the
+// table behind it was dropped in 20261030140129_schema_cleanup. Kept as a note
+// so the generator functions are not reintroduced.
 
 /**
  * Admin Provisions an official Classroom (Subject + Section + Faculty + Term)

@@ -20,7 +20,8 @@ M = json.load(io.open(os.path.join(HERE, 'schema_model.json'), encoding='utf-8')
 
 GROUPS = [
     ('Academic Structure',
-     ['departments', 'programs', 'sections', 'subjects', 'academic_terms', 'class_records', 'enrollments']),
+     ['departments', 'programs', 'sections', 'subjects', 'academic_terms', 'class_records', 'enrollments',
+      'rooms']),
     ('Accounts and People',
      ['users', 'guardians', 'user_push_tokens', 'student_account_requests']),
     ('Grading Inputs',
@@ -47,6 +48,17 @@ assigned = {t for g in GROUPS for t in g[1]}
 extra = sorted(t for t in M if t not in assigned)
 if extra:
     GROUPS.append(('Other tables', extra))
+
+# Categories capped at 2 parts to kill dead space: previously 3-4 parts, some holding a
+# single table (e.g. Grading Outcomes' old part a/b were just posted_grades and
+# remark_override_requests alone). AI Study Advising is also forced to 1 part -- it was
+# already <=2 but its 2nd part held only search_destinations.
+MAX_PARTS = {
+    'Grading Outcomes': 2,
+    'Evaluation and Intervention': 2,
+    'Notifications and System': 2,
+    'AI Study Advising': 1,
+}
 
 FS, RH, HH = 15, 28, 40
 CW = 8.2
@@ -169,13 +181,17 @@ def draw(slug, tables, where, fig):
         else:
             pi = P['order'].index(f['parent_col']) if f['parent_col'] in P['order'] else 0
         yb = b['y'] + HH + RH * pi + RH / 2
-        lane = (i % 6) * 12
+        lane = (i % 12) * 14
         if (t, f) in corr:
             k = corr.index((t, f))
-            cy = 12 + 11 * k
+            # Each long cross-column connector gets its own lane on the way out of the
+            # child table, its own overhead row, and its own lane into the parent table --
+            # spread widely rather than cycling through a handful of positions, so lines
+            # entering or leaving a box visibly land at different points, not one bundle.
+            cy = 10 + 16 * k
             xa, xb = a['x'] + a['w'], b['x']
-            ga = xa + 26 + (k % 4) * 8
-            gb = xb - 26 - (k % 4) * 8
+            ga = xa + 20 + (k % 14) * 11
+            gb = xb - 20 - ((k + 7) % 14) * 11
             pts = [(xa, ya), (ga, ya), (ga, cy), (gb, cy), (gb, yb), (xb, yb)]
             da, db = 1, -1
         elif a['col'] == b['col']:
@@ -205,28 +221,11 @@ def draw(slug, tables, where, fig):
         for o in (9, 15):
             s.append(f'<line x1="{xb + db * o:.1f}" y1="{yb - 7:.1f}" x2="{xb + db * o:.1f}" y2="{yb + 7:.1f}" stroke="{LINE}" stroke-width="1.6"/>')
 
-    verticals = []
-    for ei, pts in enumerate(paths):
-        for j in range(len(pts) - 1):
-            (x0_, y0_), (x1_, y1_) = pts[j], pts[j + 1]
-            if abs(x1_ - x0_) < 0.5 and abs(y1_ - y0_) > 0.5:
-                verticals.append((ei, x0_, min(y0_, y1_), max(y0_, y1_)))
+    # Lines are left to cross plainly -- no hop arcs -- since the little bumps read as
+    # extra clutter rather than clarity once a figure has more than a few connectors.
     n_hops = 0
-    for ei, pts in enumerate(paths):
-        hops = {}
-        for j in range(len(pts) - 1):
-            (x0_, y0_), (x1_, y1_) = pts[j], pts[j + 1]
-            if abs(y1_ - y0_) < 0.5 and abs(x1_ - x0_) > 0.5:
-                lo, hi = sorted((x0_, x1_))
-                xs, last = [], -1e9
-                for fe, xv, ya_, yb_ in sorted(verticals, key=lambda v: v[1]):
-                    if fe != ei and lo + 20 < xv < hi - 20 and ya_ + 1 < y0_ < yb_ - 1 and xv - last > 16:
-                        xs.append(xv)
-                        last = xv
-                if xs:
-                    hops[j] = xs
-                    n_hops += len(xs)
-        s.append(f'<path d="{rounded(pts, hops=hops)}" fill="none" stroke="{LINE}" stroke-width="1.6"/>')
+    for pts in paths:
+        s.append(f'<path d="{rounded(pts)}" fill="none" stroke="{LINE}" stroke-width="1.6"/>')
 
     for t, b in boxes.items():
         x0, y0, w, h = b['x'], b['y'], b['w'], b['h']
@@ -263,7 +262,7 @@ def draw(slug, tables, where, fig):
             s.append(f'<text x="{x0 + w - 10}" y="{y + 19}" text-anchor="end" font-family="Arial" font-size="12" fill="{MUTED}">{escape(ty)}</text>')
 
     notes = []
-    notes.append('PK = primary key (underlined), FKn = foreign key, UQ = unique. Italic = nullable. A circle at a line end means the link is optional. Where two links cross, one arcs over the other. Dashed grey boxes are tables drawn in full in another figure.')
+    notes.append('PK = primary key (underlined), FKn = foreign key, UQ = unique. Italic = nullable. A circle at a line end means the link is optional. Dashed grey boxes are tables drawn in full in another figure.')
     if any(M[t].get('partial') for t in tables):
         notes.append('* partial: created outside the tracked migrations. Its columns come from the original schema document plus later migrations, so confirm them against the live database.')
     ny = H + 4
@@ -282,8 +281,14 @@ def draw(slug, tables, where, fig):
     return int(W), int(H), len(internal)
 
 
-def partition(tables):
-    """Fill parts in breadth-first order so tables that reference each other stay together."""
+def partition(tables, max_parts=None):
+    """Fill parts in breadth-first order so tables that reference each other stay together.
+
+    With max_parts set, the per-part row/table budget is loosened (never tightened) just
+    enough that the greedy fill lands at or under that many parts, instead of the fixed
+    MAXROWS/MAXTABLES caps that produced too many small, unevenly filled parts for a few
+    categories.
+    """
     tset = set(tables)
     deg = {t: sum(1 for f in M[t]['fks'] if f['parent'] in tset) +
               sum(1 for u in tables for f in M[u]['fks'] if f['parent'] == t) for t in tables}
@@ -302,23 +307,38 @@ def partition(tables):
                 if n not in seen:
                     seen.add(n)
                     queue.append(n)
+    maxrows, maxtables = MAXROWS, MAXTABLES
+    if max_parts:
+        total = sum(len(M[t]['cols']) + 3 for t in tables)
+        maxrows = max(MAXROWS, -(-int(total * 1.1) // max_parts))  # ceil with 10% slack
+        maxtables = len(tables)  # table count should never force extra parts here
+
     parts, cur, n_rows = [], [], 0
     for t in order:
         r = len(M[t]['cols']) + 3
-        if cur and (n_rows + r > MAXROWS or len(cur) >= MAXTABLES):
+        if cur and (n_rows + r > maxrows or len(cur) >= maxtables):
             parts.append(cur)
             cur, n_rows = [], 0
         cur.append(t)
         n_rows += r
     if cur:
         parts.append(cur)
+
+    # A lone disconnected table (no FK link to the rest) can be left dangling as its own
+    # trailing part even when the row budget would allow it; fold it into whichever part
+    # ends up smallest rather than leave an extra, near-empty part.
+    if max_parts:
+        while len(parts) > max_parts:
+            last = parts.pop()
+            sizes = [sum(len(M[t]['cols']) + 3 for t in p) for p in parts]
+            parts[sizes.index(min(sizes))].extend(last)
     return parts
 
 
 plan, where = [], {}
 for gi, (title, tables) in enumerate(GROUPS, 1):
     tables = [t for t in tables if t in M]
-    parts = partition(tables)
+    parts = partition(tables, max_parts=MAX_PARTS.get(title))
     plan.append((gi, title, parts))
     for pi, part in enumerate(parts):
         for t in part:

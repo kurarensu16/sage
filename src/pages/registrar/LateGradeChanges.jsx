@@ -12,7 +12,7 @@ import { MILESTONE_LABEL } from '../../lib/milestoneState';
 import EvidenceGallery from '../../components/grades/EvidenceGallery';
 import GradeChangeChain from '../../components/grades/GradeChangeChain';
 import {
-  STATUS_PRESENTATION, REQUEST_STATUS,
+  STATUS_PRESENTATION, REQUEST_STATUS, REQUEST_ORIGIN, ORIGIN_PRESENTATION,
   fetchGradeChangeRequests, registrarReviewRequest
 } from '../../lib/gradeChangeRequestService';
 
@@ -194,7 +194,7 @@ export default function RegistrarLateGradeChanges() {
         ) : (
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden divide-y divide-slate-100">
             {visible.map((row) => {
-              const fromStudent = row.submittedByRole === 'student';
+              const fromStudent = row.origin === REQUEST_ORIGIN.STUDENT;
               const late = daysPast(row.requestedAt);
               const waiting = row.status === REQUEST_STATUS.PENDING_REGISTRAR;
               return (
@@ -222,12 +222,10 @@ export default function RegistrarLateGradeChanges() {
                     <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
                       <span className={cn(
                         'text-micro font-bold uppercase tracking-wide px-2 py-0.5 rounded-md border',
-                        fromStudent
-                          ? 'bg-sky-50 text-sky-700 border-sky-200'
-                          : 'bg-slate-50 text-slate-600 border-slate-200'
+                        ORIGIN_PRESENTATION[row.origin]?.tone || 'bg-slate-50 text-slate-600 border-slate-200'
                       )}>
                         {fromStudent ? <GraduationCap className="h-3 w-3 inline-block mr-1 -mt-px" /> : <UserCheck className="h-3 w-3 inline-block mr-1 -mt-px" />}
-                        {fromStudent ? 'Raised by student' : 'Raised by instructor'}
+                        {ORIGIN_PRESENTATION[row.origin]?.label || 'Raised by instructor'}
                       </span>
                       <span className={cn(
                         'text-micro font-bold uppercase tracking-wide px-2 py-0.5 rounded-md border',
@@ -273,7 +271,7 @@ export default function RegistrarLateGradeChanges() {
                     </p>
                   </div>
 
-                  <GradeChangeChain status={row.status} reachedRegistrar={row.reachedRegistrar} className="mb-2" />
+                  <GradeChangeChain status={row.status} reachedRegistrar={row.reachedRegistrar} origin={row.origin} className="mb-2" />
                   <EvidenceGallery request={row} />
 
                   {waiting && (

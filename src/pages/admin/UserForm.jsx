@@ -23,7 +23,10 @@ const NUMBER_PREFIX = { student: '', faculty: 'FAC-', dean: 'DN-', registrar: 'R
 // so neither role carries a department.
 const COLLEGE_EXEMPT_ROLES = ['admin', 'registrar'];
 const YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
-const DEFAULT_PASSWORD = 'SagePassword123!';
+// Not only the label: this is the credential the account is actually created
+// with (see handleSubmit below), so it has to satisfy passwordPolicy.js --
+// 8+ characters with an uppercase, a lowercase, a digit and a symbol.
+const DEFAULT_PASSWORD = 'AspirePassword123!';
 
 const yearDigitOf = (yearLevel) => (yearLevel || '').charAt(0);
 const termLabel = (sec) => `${sec.school_year} · ${sec.semester}`;
@@ -409,7 +412,7 @@ export default function UserForm() {
                 value={formData.email}
                 onChange={(e) => updateField({ email: e.target.value })}
                 className={`${inputClass} font-mono ${isEditMode ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`}
-                placeholder="e.g. user@sage.edu.ph"
+                placeholder="e.g. user.college@dyci.edu.ph"
               />
               {isEditMode && (
                 <span className="text-[10px] text-slate-400 mt-0.5">The email is the account's login and can't be changed here.</span>

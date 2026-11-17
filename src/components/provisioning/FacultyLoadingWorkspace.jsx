@@ -2021,7 +2021,7 @@ function ReassignDialog({
               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
               <span>
                 This class is <strong>already live</strong> and students may be attending under the
-                current faculty. Enrollments, scores and the join code are kept — only who teaches
+                current faculty. Enrollments and scores are kept — only who teaches
                 it changes. Both faculty members are notified.
               </span>
             </div>
