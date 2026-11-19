@@ -13,7 +13,8 @@ import {
   ChevronDown,
   CheckSquare,
   Square,
-  X
+  X,
+  CalendarClock
 } from 'lucide-react';
 import { cn, formatRelativeTime } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
@@ -54,7 +55,9 @@ export default function Notifications() {
 
         const mapped = (data || []).map(n => {
           let type = 'system';
-          let title = 'System Notification';
+          // A notice's own title is better than a generic one for types this
+          // page has no branch for (e.g. the SG notices added 2026-11-18).
+          let title = n.title || 'System Notification';
           let icon = Info;
           let iconColor = 'text-slate-600 bg-slate-50 border-slate-200';
 
@@ -88,6 +91,12 @@ export default function Notifications() {
             title = 'Class Registration Success';
             icon = Info;
             iconColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
+          } else if (n.type === 'class_changed') {
+            // A live class's schedule or instructor changed (20261118184937).
+            type = 'system';
+            title = n.title || 'Class Changed';
+            icon = CalendarClock;
+            iconColor = 'text-amber-600 bg-amber-50 border-amber-200';
           } else if (n.type === 'class_join_declined') {
             type = 'system';
             title = 'Enrollment Request Not Approved';

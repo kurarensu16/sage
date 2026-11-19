@@ -54,7 +54,7 @@ export default function Notifications() {
 
         const mapped = (data || []).map(n => {
           let type = 'system';
-          let title = 'System Notification';
+          let title = n.title || 'System Notification';
           let icon = Info;
           let iconColor = 'text-slate-600 bg-slate-50 border-slate-200';
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Search, ShieldAlert, Check, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -440,6 +441,12 @@ export default function GradeOverride() {
                 </p>
                 <p className="text-[11px] text-slate-500 mt-0.5">Only the Semestral Grade (SG) can be overridden; MR and TFR are shown for reference.</p>
               </div>
+              <Link
+                to={`/registrar/studentrecords/${selectedStudent.id}?tab=grades`}
+                className="text-[11px] font-medium text-sage-700 hover:text-sage-800 whitespace-nowrap flex-shrink-0"
+              >
+                Full grade history
+              </Link>
             </div>
 
             {/* ── Mobile Grades Cards (md:hidden) ── */}

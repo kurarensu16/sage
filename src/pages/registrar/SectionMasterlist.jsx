@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { ClipboardList, Download, LoaderCircle, Printer, Users, UserPlus, AlertCircle } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
@@ -383,7 +384,11 @@ export default function SectionMasterlist() {
                         {regularStudents.map((student, index) => (
                           <tr key={student.user_id} className="hover:bg-slate-50/70">
                             <td className="px-4 sm:px-6 py-3 text-xs text-slate-400 font-mono">{index + 1}</td>
-                            <td className="px-4 sm:px-6 py-3 text-sm font-medium text-slate-900">{fullName(student)}</td>
+                            <td className="px-4 sm:px-6 py-3 text-sm font-medium text-slate-900">
+                              <Link to={`/registrar/studentrecords/${student.user_id}`} className="hover:text-sage-700 hover:underline print:no-underline">
+                                {fullName(student)}
+                              </Link>
+                            </td>
                             <td className="px-4 sm:px-6 py-3 text-xs font-mono text-slate-600">{student.user_number || '—'}</td>
                             <td className="px-4 sm:px-6 py-3 text-xs text-slate-600">{student.year_level || '—'}</td>
                             <td className="px-4 sm:px-6 py-3">
@@ -447,7 +452,11 @@ export default function SectionMasterlist() {
                             <tbody className="divide-y divide-slate-50">
                               {group.students.map(student => (
                                 <tr key={`${student.user_id}-${group.subjectCode}`}>
-                                  <td className="py-2.5 pr-4 text-sm font-medium text-slate-900">{fullName(student)}</td>
+                                  <td className="py-2.5 pr-4 text-sm font-medium text-slate-900">
+                                    <Link to={`/registrar/studentrecords/${student.user_id}`} className="hover:text-sage-700 hover:underline print:no-underline">
+                                      {fullName(student)}
+                                    </Link>
+                                  </td>
                                   <td className="py-2.5 pr-4 text-xs font-mono text-slate-600">{student.user_number || '—'}</td>
                                   <td className="py-2.5 pr-4 text-xs text-slate-600">{student.homeSectionName || 'No home section'}</td>
                                   <td className="py-2.5 pr-4 text-xs text-slate-600">{student.year_level || '—'}</td>

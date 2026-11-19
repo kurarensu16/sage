@@ -5287,5 +5287,187 @@
     ],
     "fks": [],
     "uq": []
+  },
+  "sg_approvals": {
+    "cols": {
+      "class_record_id": {
+        "type": "uuid",
+        "nullable": false,
+        "default": null
+      },
+      "status": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "submitted_by": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null
+      },
+      "submitted_at": {
+        "type": "timestamptz",
+        "nullable": true,
+        "default": null
+      },
+      "submission_count": {
+        "type": "integer",
+        "nullable": false,
+        "default": "1"
+      },
+      "decided_by": {
+        "type": "uuid",
+        "nullable": true,
+        "default": null
+      },
+      "decided_at": {
+        "type": "timestamptz",
+        "nullable": true,
+        "default": null
+      },
+      "return_reason": {
+        "type": "text",
+        "nullable": true,
+        "default": null
+      },
+      "approved_before_workflow": {
+        "type": "boolean",
+        "nullable": false,
+        "default": "false"
+      },
+      "updated_at": {
+        "type": "timestamptz",
+        "nullable": false,
+        "default": "CURRENT_TIMESTAMP"
+      }
+    },
+    "order": [
+      "class_record_id",
+      "status",
+      "submitted_by",
+      "submitted_at",
+      "submission_count",
+      "decided_by",
+      "decided_at",
+      "return_reason",
+      "approved_before_workflow",
+      "updated_at"
+    ],
+    "pk": [
+      "class_record_id"
+    ],
+    "fks": [
+      {
+        "col": "class_record_id",
+        "parent": "class_records",
+        "parent_col": "class_record_id",
+        "on_delete": "CASCADE"
+      },
+      {
+        "col": "submitted_by",
+        "parent": "users",
+        "parent_col": "user_id",
+        "on_delete": "SET NULL"
+      },
+      {
+        "col": "decided_by",
+        "parent": "users",
+        "parent_col": "user_id",
+        "on_delete": "SET NULL"
+      }
+    ],
+    "uq": [],
+    "partial": false
+  },
+  "sg_held_notifications": {
+    "cols": {
+      "held_id": {
+        "type": "uuid",
+        "nullable": false,
+        "default": "gen_random_uuid()"
+      },
+      "class_record_id": {
+        "type": "uuid",
+        "nullable": false,
+        "default": null
+      },
+      "recipient_id": {
+        "type": "uuid",
+        "nullable": false,
+        "default": null
+      },
+      "type": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "title": {
+        "type": "text",
+        "nullable": true,
+        "default": null
+      },
+      "link": {
+        "type": "text",
+        "nullable": true,
+        "default": null
+      },
+      "severity": {
+        "type": "text",
+        "nullable": true,
+        "default": null
+      },
+      "message": {
+        "type": "text",
+        "nullable": true,
+        "default": null
+      },
+      "payload": {
+        "type": "jsonb",
+        "nullable": false,
+        "default": "'{}'::jsonb"
+      },
+      "held_at": {
+        "type": "timestamptz",
+        "nullable": false,
+        "default": "CURRENT_TIMESTAMP"
+      },
+      "released_at": {
+        "type": "timestamptz",
+        "nullable": true,
+        "default": null
+      }
+    },
+    "order": [
+      "held_id",
+      "class_record_id",
+      "recipient_id",
+      "type",
+      "title",
+      "link",
+      "severity",
+      "message",
+      "payload",
+      "held_at",
+      "released_at"
+    ],
+    "pk": [
+      "held_id"
+    ],
+    "fks": [
+      {
+        "col": "class_record_id",
+        "parent": "class_records",
+        "parent_col": "class_record_id",
+        "on_delete": "CASCADE"
+      },
+      {
+        "col": "recipient_id",
+        "parent": "users",
+        "parent_col": "user_id",
+        "on_delete": "CASCADE"
+      }
+    ],
+    "uq": [],
+    "partial": false
   }
 }

@@ -1,11 +1,15 @@
 import { supabase } from './supabase';
 import { provisionClassroomByAdmin, getEnrollmentType } from './classRoomService';
-import { getProgramAbbrFromSectionName } from './constants';
+import { parseSectionName, YEAR_LEVEL_BY_DIGIT } from './sectionNaming';
 import { toUserMessage } from './errorMessages';
 import * as XLSX from 'xlsx';
 
-// Data layer for the Faculty Loading & Provisioning page, shared by the
-// Registrar (all colleges) and Dean (own college) pages so neither forks.
+// Section-name parsing moved to sectionNaming.js (2026-11-18) so the Registrar's
+// records screens share it. Re-exported so existing imports keep working.
+export { parseSectionName, YEAR_LEVEL_BY_DIGIT };
+
+// Data layer for the Faculty Loading & Provisioning page. Used by the Dean's
+// page only since 2026-11-18, when faculty loading left the Registrar.
 //
 // Provisioning itself is NOT reimplemented here. Finalize calls
 // provisionClassroomByAdmin() verbatim: it validates the slot, freezes the
@@ -26,23 +30,6 @@ async function fetchAllPaged(build) {
     if (page.length < PAGE_SIZE) return out;
   }
 }
-
-// A section's program and year level live only in its name -- there is no
-// program_id or year_level column on sections. SectionForm builds the name as
-// "<PROGRAM ABBREVIATION>-<year digit><suffix>", so the cascade reads it back
-// the same way. Anything that does not parse is surfaced rather than hidden,
-// because a section the picker silently drops is a class nobody can open.
-export function parseSectionName(name) {
-  const raw = String(name || '').trim();
-  const programAbbr = getProgramAbbrFromSectionName(raw);
-  const afterHyphen = raw.slice(raw.lastIndexOf('-') + 1);
-  const yearDigit = (afterHyphen.match(/^(\d)/) || [])[1] || '';
-  return { programAbbr, yearDigit, parsed: !!(programAbbr && yearDigit) };
-}
-
-export const YEAR_LEVEL_BY_DIGIT = Object.freeze({
-  1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year'
-});
 
 export async function fetchActiveTerm() {
   const { data, error } = await supabase

@@ -9,5 +9,5 @@ OUT = os.path.join(os.path.dirname(__file__), 'out')
 os.makedirs(OUT, exist_ok=True)
 for table in (D.EXISTING, D.PROPOSED):
     for name, (entity, mods) in table.items():
-        for p, w, h in level1(os.path.join(OUT, name), entity, mods):
+        for p, w, h in level1(os.path.join(OUT, name), entity, mods, parts=D.PARTS.get(name)):
             print(os.path.basename(p), w, h)

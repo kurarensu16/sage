@@ -22,15 +22,18 @@ MODULES = [
         ('Registrar', ['Subjects', 'Degree Programs', 'Grading Templates', 'Manage Sections',
                        'Colleges and Departments', 'Academic Terms']),
     ]),
+    # 2026-11-18: faculty loading is the Dean's alone; the Dean approves the SG; the
+    # Registrar gains Student Records and Class Grade Sheets.
     ('Enrollment and Faculty Loading', [
-        ('Registrar', ['Faculty Loading and Provisioning', 'Enrollment Management', 'Section Rosters']),
+        ('Registrar', ['Enrollment Management', 'Section Rosters']),
         ('Dean', ['Faculty Loading (own college)']),
     ]),
     ('Classes and Grading', [
         ('Faculty', ['My Classes', 'Grade Columns Setup', 'Scorebook', 'Review and Post Grades',
                      'Posted Grades and Corrections']),
         ('Student', ['My Subjects', 'Grade Report', 'Score Breakdown']),
-        ('Dean', ['Grade Submission Status', 'Grade Distribution']),
+        ('Dean', ['SG Approvals', 'Grade Submission Status', 'Grade Distribution']),
+        ('Registrar', ['Student Records', 'Class Grade Sheets']),
     ]),
     ('Attendance', [
         ('Faculty', ['Attendance Monitoring']),
@@ -69,7 +72,7 @@ MODULES = [
         ('Student', ['Previous-Term Attendance, Action Plans, and Consultations']),
         ('Faculty', ['Previous-Term Attendance, Interventions, and Consultation Log']),
         ('Dean', ['Previous-Term Grades, Risk, Cases, Results, and Reports']),
-        ('Registrar', ['Previous-Term Sections and Reports']),
+        ('Registrar', ['Previous-Term Sections, Reports, Student Records, and Grade Sheets']),
     ]),
 ]
 

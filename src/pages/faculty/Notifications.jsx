@@ -14,7 +14,8 @@ import {
   CheckSquare,
   Square,
   Users,
-  X
+  X,
+  CalendarClock
 } from 'lucide-react';
 import { cn, formatRelativeTime } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
@@ -56,7 +57,9 @@ export default function Notifications() {
 
         const mapped = (data || []).map(n => {
           let type = 'system';
-          let title = 'System Notification';
+          // A notice's own title is better than a generic one for types this
+          // page has no branch for (e.g. sg_approved / sg_returned, 2026-11-18).
+          let title = n.title || 'System Notification';
           let icon = Info;
           let iconColor = 'text-slate-600 bg-slate-50 border-slate-200';
 
@@ -87,6 +90,13 @@ export default function Notifications() {
             title = 'New Class Assigned';
             icon = Info;
             iconColor = 'text-emerald-600 bg-emerald-50 border-emerald-200';
+          } else if (n.type === 'class_changed') {
+            // A live class's schedule changed, or it was transferred to or
+            // from this faculty member (20261118184937).
+            type = 'system';
+            title = n.title || 'Class Changed';
+            icon = CalendarClock;
+            iconColor = 'text-amber-600 bg-amber-50 border-amber-200';
           } else if (n.type === 'class_join_request' || n.type === 'class_roster_added') {
             type = 'system';
             title = n.type === 'class_join_request' ? 'New Enrollment Request' : 'Class Roster Update';

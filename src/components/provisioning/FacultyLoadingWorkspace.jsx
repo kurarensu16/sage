@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import PageHeader from '../layout/PageHeader';
 import ClassRosterDialog from './ClassRosterDialog';
 import {
@@ -26,14 +27,15 @@ import LoadSummaryTable from './LoadSummaryTable';
 
 // The Faculty Loading & Provisioning workspace.
 //
-// Rendered by two separate page files -- one Registrar, one Dean -- which each
-// declare their own scope explicitly rather than this component sniffing the
-// signed-in role. That was the point of the "two pages, not one shared
-// component" decision: scope should be stated by the page, not inferred here.
-// The UI itself is shared so the two cannot drift apart.
+// Rendered by the Dean's page only. The Registrar's page was removed on
+// 2026-11-18 when faculty loading became the Dean's alone. The page still
+// declares its scope through props rather than this component sniffing the
+// signed-in role.
 //
 // Props:
-//   canChooseCollege  Registrar picks any college; Dean is fixed to their own.
+//   canChooseCollege  Pick any college. No page passes true since the Registrar
+//                     page was removed; the server now refuses any college
+//                     other than the Dean's own anyway.
 //   fixedDepartmentId Dean's college.
 //   portalLabel       Breadcrumb text.
 
@@ -123,10 +125,17 @@ function TimeField({ label, value, onChange, minTime = null }) {
   // bottom on a short one.
   const [dropUp, setDropUp] = useState(false);
   const buttonRef = useRef(null);
+  const panelRef = useRef(null);
+  // Where the panel sits on screen. The panel is rendered at page level (a
+  // portal) because inside the class-schedule dialog it was clipped by the
+  // dialog's scrolling body: opened upward, only its Minutes row showed and the
+  // hours could not be reached (QA, 2026-11-18). At page level nothing clips it.
+  const [anchor, setAnchor] = useState(null);
 
   // Roughly what the panel needs: period, hours, minutes, plus the duration row
   // when there is one. Over-estimating is safe -- it only flips upward sooner.
   const panelHeight = minTime ? 360 : 300;
+  const PANEL_W = 224; // w-56
 
   const toggle = () => {
     if (!open && buttonRef.current) {
@@ -134,10 +143,33 @@ function TimeField({ label, value, onChange, minTime = null }) {
       const below = window.innerHeight - rect.bottom;
       const above = rect.top;
       // Only flip when below genuinely cannot hold it AND above can do better.
-      setDropUp(below < panelHeight && above > below);
+      const up = below < panelHeight && above > below;
+      setDropUp(up);
+      setAnchor({
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - PANEL_W - 8)),
+        top: rect.bottom + 4,
+        bottom: window.innerHeight - rect.top + 4
+      });
     }
     setOpen(!open);
   };
+
+  // A page-level panel does not follow its field, so close it when the page or
+  // the dialog scrolls, or the window resizes. Scrolling inside the panel itself
+  // is fine.
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => {
+      if (e && e.target && panelRef.current && panelRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
 
   const { hour12, minute, meridiem } = splitTime(value);
   const hours = meridiem === 'AM' ? AM_HOURS : PM_HOURS;
@@ -190,18 +222,26 @@ function TimeField({ label, value, onChange, minTime = null }) {
         </span>
       </button>
 
-      {open && (
+      {open && anchor && createPortal(
         <>
           {/* Backdrop rather than a document listener: it closes on any outside
-              click without racing the button's own onClick. */}
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className={cn(
-            'absolute z-30 w-56 bg-white border border-slate-200 rounded-xl shadow-lg p-2.5 space-y-2.5',
-            // A cap plus its own scroll, so even a screen too short for either
-            // direction shows a usable panel instead of a clipped one.
-            'max-h-[min(22rem,70vh)] overflow-y-auto',
-            dropUp ? 'bottom-full mb-1' : 'mt-1'
-          )}>
+              click without racing the button's own onClick. Above every dialog. */}
+          <div className="fixed inset-0 z-[110]" onClick={() => setOpen(false)} />
+          <div
+            ref={panelRef}
+            className={cn(
+              // Above the loading dialogs, which sit at z-[100].
+              'fixed z-[120] w-56 bg-white border border-slate-200 rounded-xl shadow-lg p-2.5 space-y-2.5',
+              // A cap plus its own scroll, so even a screen too short for either
+              // direction shows a usable panel instead of a clipped one.
+              'max-h-[min(22rem,70vh)] overflow-y-auto'
+            )}
+            // Screen coordinates computed from the field when it opens; a class
+            // cannot express a runtime position (same reason as FacultyCharts).
+            style={dropUp
+              ? { left: anchor.left, bottom: anchor.bottom }
+              : { left: anchor.left, top: anchor.top }}
+          >
             {/* One click for the common case. Only shown on a field that has a
                 start to measure from, and a length that would run past 8 PM is
                 simply not offered. */}
@@ -291,7 +331,8 @@ function TimeField({ label, value, onChange, minTime = null }) {
               ))}
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
@@ -835,7 +876,7 @@ export default function FacultyLoadingWorkspace({
       else await updateDraftSchedule(chip.id, schedule);
       await refreshLoad(departmentId, term);
       setNotice(chip.state === 'Open'
-        ? 'Class schedule updated. Students see the new time.'
+        ? 'Class schedule updated. Its students and the faculty have been notified.'
         : 'Schedule updated.');
     } finally {
       setBusy(false);
@@ -908,7 +949,9 @@ export default function FacultyLoadingWorkspace({
       );
 
       await refreshLoad(departmentId, term);
-      setNotice('Reassigned. Enrollments and scores were not affected.');
+      setNotice(reassigning.state === 'Open'
+        ? 'Transferred. Enrollments, scores and grades stay with the class; its students and both faculty members have been notified.'
+        : 'Reassigned. The draft was never visible to students.');
       setReassigning(null);
       setReassignTo('');
       setConfirmFinalized(false);
@@ -1283,8 +1326,8 @@ function FinalizeDialog({ scopeLabel, chips, collegeName, busy, destructive = fa
             disabled={busy}
             className="px-3.5 py-2 text-xs sm:text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            Finalize
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : destructive ? <Trash2 className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+            {destructive ? 'Remove' : 'Finalize'}
           </button>
         </div>
       </div>
@@ -1314,14 +1357,36 @@ function FacultyLoadDialog({
     setErr('');
   };
 
-  const save = async (chip) => {
+  // A schedule change on a LIVE class is confirmed first: its students and
+  // faculty are notified (20261118184937). Drafts save straight away, and so
+  // does a live class whose schedule did not actually change.
+  const [confirmSave, setConfirmSave] = useState(null);
+
+  const commitSave = async (chip) => {
     setErr('');
+    setConfirmSave(null);
     try {
       await onEditSchedule(chip, { days, startTime: start, endTime: end });
       setEditing(null);
     } catch (e) {
       setErr(e.message);
     }
+  };
+
+  const save = (chip) => {
+    const sameDays = [...(chip.days || [])].sort().join() === [...days].sort().join();
+    const sameTimes = String(chip.startTime || '').slice(0, 5) === start
+      && String(chip.endTime || '').slice(0, 5) === end;
+    if (chip.state === 'Open' && !(sameDays && sameTimes)) {
+      setConfirmSave(chip);
+      return;
+    }
+    commitSave(chip);
+  };
+
+  const newScheduleText = () => {
+    const ordered = DAYS.filter((d) => days.includes(d));
+    return `${ordered.join('/') || 'no days'} ${start ? prettyTime(start) : '--'}–${end ? prettyTime(end) : '--'}`;
   };
 
   return (
@@ -1400,16 +1465,19 @@ function FacultyLoadDialog({
                       >
                         <Shuffle className="h-3.5 w-3.5" />
                       </button>
-                      <button
-                        onClick={() => onDelete(chip)}
-                        disabled={busy}
-                        className="p-1 text-rose-500 hover:text-rose-700 cursor-pointer disabled:opacity-50"
-                        title={chip.state === 'Open'
-                          ? 'Remove this class — refused once it has scores or posted grades'
-                          : 'Remove this assignment'}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {/* Only a draft can be removed. A live class is transferred
+                          (Reassign) instead, so its enrollments and records can
+                          never be deleted by mistake (owner, 2026-11-18). */}
+                      {chip.state === 'Draft' && (
+                        <button
+                          onClick={() => onDelete(chip)}
+                          disabled={busy}
+                          className="p-1 text-rose-500 hover:text-rose-700 cursor-pointer disabled:opacity-50"
+                          title="Remove this draft assignment"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       {chip.state === 'Draft' && (
                         <button
                           onClick={() => onFinalizeOne(chip, member.name)}
@@ -1475,6 +1543,47 @@ function FacultyLoadDialog({
           </button>
         </div>
       </div>
+
+      {confirmSave && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/40">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-2xl max-w-md w-full p-5 space-y-3">
+            <h3 className="text-base font-bold font-display text-slate-900">Change this class&apos;s schedule?</h3>
+            <p className="text-xs text-slate-600">
+              <span className="font-medium text-slate-800">{confirmSave.label}</span> is a live class.
+            </p>
+            <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 text-xs">
+              <div className="px-3 py-2 flex justify-between gap-3">
+                <span className="text-slate-500">From</span>
+                <span className="font-mono text-slate-700 text-right">{confirmSave.schedule || 'no schedule'}</span>
+              </div>
+              <div className="px-3 py-2 flex justify-between gap-3">
+                <span className="text-slate-500">To</span>
+                <span className="font-mono font-semibold text-slate-900 text-right">{newScheduleText()}</span>
+              </div>
+            </div>
+            <p className="text-[11px] sm:text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              Every student enrolled in this class and {member.name} will be notified of the new schedule.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                onClick={() => setConfirmSave(null)}
+                disabled={busy}
+                className="px-3.5 py-2 text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-900 rounded-xl cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => commitSave(confirmSave)}
+                disabled={busy}
+                className="px-3.5 py-2 text-xs sm:text-sm font-medium bg-sage-600 hover:bg-sage-700 text-white rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Change and notify
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2021,8 +2130,9 @@ function ReassignDialog({
               <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
               <span>
                 This class is <strong>already live</strong> and students may be attending under the
-                current faculty. Enrollments and scores are kept — only who teaches
-                it changes. Both faculty members are notified.
+                current faculty. Enrollments, scores and grades stay with the class; only who
+                teaches it changes. Every enrolled student, the new faculty and the previous
+                faculty are notified.
               </span>
             </div>
             <label className="flex items-start gap-2 text-[11px] sm:text-xs text-slate-700 cursor-pointer">

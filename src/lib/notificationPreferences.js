@@ -14,6 +14,7 @@ export const PREFERENCE_CATEGORIES = Object.freeze({
     { key: 'advising', label: 'Intervention plans and Dean notices', description: 'When an instructor publishes a plan or a Dean sends an academic notice.', types: ['academic_advising', 'academic_notice'] },
     { key: 'risk', label: 'Academic risk and AI insights', description: 'Early-warning alerts and new AI study diagnostics.', types: ['ews_alert', 'ai_recommendation'] },
     { key: 'enrollment', label: 'Class enrollment', description: 'When your instructor approves or declines your request to join a class.', types: ['class_enrolled', 'class_join_declined'] },
+    { key: 'class_changes', label: 'Class schedule changes', description: 'When one of your classes moves to a new day or time, or gets a new instructor.', types: ['class_changed'] },
     SYSTEM
   ],
   faculty: [
@@ -22,13 +23,19 @@ export const PREFERENCE_CATEGORIES = Object.freeze({
     { key: 'dean', label: 'Dean notices on referred cases', description: 'When a Dean adds a recommendation to a case you referred.', types: ['academic_notice'] },
     { key: 'compliance', label: 'Administrative grade adjustments', description: 'When an administrator overrides a grade in your class.', types: ['compliance'] },
     { key: 'reminders', label: 'Grade submission reminders', description: 'When a term is activated and grade deadlines start.', types: ['term_rollover_reminder'] },
+    { key: 'class_changes', label: 'Class schedule changes', description: 'When one of your classes moves to a new day or time, or is transferred to or from you.', types: ['class_changed'] },
+    { key: 'sg_decisions', label: 'SG approval decisions', description: 'When the Dean approves or returns a Semestral Grade you submitted.', types: ['sg_approved', 'sg_returned'] },
     SYSTEM
   ],
   dean: [
     { key: 'referrals', label: 'Escalated cases', description: 'When a faculty member refers an evaluation to you.', types: ['dean_referral'] },
-    { key: 'corrections', label: 'Grade correction requests', description: 'Faculty SG correction requests and pending grade sheets.', types: ['override_request', 'grades_pending'] },
+    { key: 'corrections', label: 'SG approvals and correction requests', description: 'Semestral Grades submitted for your approval, and faculty SG correction requests.', types: ['override_request', 'grades_pending'] },
     { key: 'actions', label: 'Your risk actions', description: 'Confirmations of alerts and notices you send.', types: ['risk_threshold', 'academic_notice'] },
     { key: 'reminders', label: 'Grade submission reminders', description: 'When a term is activated and grade deadlines start.', types: ['term_rollover_reminder'] },
+    SYSTEM
+  ],
+  registrar: [
+    { key: 'sg_received', label: 'Approved Semestral Grades', description: 'When a Dean approves a class\'s Semestral Grade and its grade sheet becomes official.', types: ['sg_approved'] },
     SYSTEM
   ],
   admin: [

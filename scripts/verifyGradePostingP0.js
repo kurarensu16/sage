@@ -136,10 +136,24 @@ assert.match(
   /const sgFinalized = lockedMilestones\.includes\('Semestral Grade'\)/,
   'Score input must derive sgFinalized from the posted Semestral Grade.'
 );
+// Since 2026-11-18 the Dean approves the SG. Review & Post Grades is the one
+// place a RETURNED SG is resubmitted, so there the posted SG is final unless the
+// Dean has returned it (20261118153739_sg_approval_by_the_dean.sql). The
+// Scorebook still treats any posted SG as final and links to that page.
 assert.match(
   gradeComputationPreview,
-  /const sgFinalized = lockedMilestones\.includes\('Semestral Grade'\)/,
-  'Grade preview must derive sgFinalized from the posted Semestral Grade.'
+  /const sgPosted = lockedMilestones\.includes\('Semestral Grade'\)/,
+  'Grade preview must derive the SG lock from the posted Semestral Grade.'
+);
+assert.match(
+  gradeComputationPreview,
+  /const sgReturned = sgApproval\?\.status === 'returned'/,
+  'Grade preview must know when the Dean returned the SG.'
+);
+assert.match(
+  gradeComputationPreview,
+  /const sgFinalized = sgPosted && !sgReturned/,
+  'Grade preview must treat a posted SG as final unless the Dean returned it.'
 );
 
 // Official exceptional remarks are never collapsed back to numeric pass/fail.

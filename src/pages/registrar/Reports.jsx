@@ -21,9 +21,9 @@ import { useAuth } from '../../lib/AuthContext';
 //
 // Records-oriented by design, so it does not overlap the Dean's performance
 // reporting (dean/SummaryReports.jsx) or faculty class reports. The faculty-load
-// export is deliberately absent: it belongs to the Faculty Loading &
-// Provisioning page, and duplicating it here would give the same figure two
-// sources of truth.
+// export is deliberately absent: faculty loading belongs to the Dean, whose
+// Faculty Loading & Provisioning page exports it, and duplicating it here would
+// give the same figure two sources of truth.
 
 const REPORTS = [
   {
@@ -216,8 +216,8 @@ export default function RegistrarReports() {
 
         <p className="text-[10px] sm:text-xs text-slate-400 flex items-start gap-1.5">
           <FileSpreadsheet className="h-3.5 w-3.5 mt-px flex-shrink-0" />
-          Faculty teaching loads are exported from Faculty Loading &amp; Provisioning, not here, so
-          that figure keeps a single source of truth.
+          Faculty teaching loads are exported by each college&apos;s Dean from Faculty Loading &amp;
+          Provisioning, not here, so that figure keeps a single source of truth.
         </p>
       </div>
     </>
