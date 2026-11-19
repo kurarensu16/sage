@@ -43,6 +43,7 @@ import {
   isTermCoveredByPostedMilestone
 } from '../../lib/gradeMilestones';
 import { postGradeMilestoneAtomic, preflightSgCorrectionPosting } from '../../lib/gradePostingService';
+import { fetchSgApproval } from '../../lib/sgApprovalService';
 import { collectBlankScoreReview, prepareReviewedBlankScores } from '../../lib/gradeScoreReview';
 import { fetchApprovedSgCorrections } from '../../lib/gradeCorrectionService';
 import { planSgCorrectionPosting, requireAuthorizedSgCorrectionPlan } from '../../lib/sgCorrectionPosting';
@@ -77,7 +78,16 @@ export default function ScoreInput() {
   // The SG has no consultation window to close, so posting it IS finalizing it.
   // post_grade_milestone_v2 already refuses to touch an existing SG row without
   // an approved request; this is the screen catching up with the database.
+  //
+  // Since 2026-11-18 the SG is submitted to the Dean for approval. A returned
+  // SG is resubmitted from Review & Post Grades, which shows the Dean's reason
+  // and the changed rows; this screen only reports the status and links there.
   const sgFinalized = lockedMilestones.includes('Semestral Grade');
+  const [sgApproval, setSgApproval] = useState(null);
+  // A returned SG reopens every score of the class, finalized MR/TFR terms
+  // included, until it is resubmitted (20261118192713). The posted MR and TFR
+  // follow the corrected scores when the Dean approves the resubmission.
+  const sgOpenForCorrection = sgApproval?.status === 'returned';
   const [studentLocks, setStudentLocks] = useState({});
   const [savingScores, setSavingScores] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState('saved'); // 'saving' | 'saved' | 'error'
@@ -816,6 +826,7 @@ export default function ScoreInput() {
 
         setLockedMilestones(collectPostedMilestoneCoverage(pgData || [], { lockedOnly: true }));
         setPostedMilestones(collectPostedMilestoneCoverage(pgData || []));
+        fetchSgApproval(classRecordId).then(setSgApproval).catch(() => setSgApproval(null));
         setStudentLocks(locksMap);
         setStudents(prev => prev.map(student => ({
           ...student,
@@ -1795,7 +1806,15 @@ export default function ScoreInput() {
       setShowPostModal(false);
       setPendingPostMilestone(null);
 
-      const notifDetailText = isFirstPost 
+      if (targetMilestone === 'semestral') {
+        fetchSgApproval(classRecordId).then(setSgApproval).catch(() => {});
+        setPopupTitle('SG Submitted to the Dean');
+        setPopupDesc(`The Semestral Grade of ${classInfo?.subjects?.code} (${classInfo?.sections?.name}) was submitted for the Dean's approval. Students will see it, and they and their guardians will be notified, once the Dean approves it.`);
+        setShowPopup(true);
+        return;
+      }
+
+      const notifDetailText = isFirstPost
         ? 'Enrolled students have been notified for consultation.'
         : Number(postingResult?.changed_count || 0) > 0
           ? `${postingResult.changed_count} student(s) with updated grades have been notified.`
@@ -2597,8 +2616,8 @@ export default function ScoreInput() {
                               gradingFormula={gradingFormula}
                               showCharacter={gradingPresentation.hasCharacter}
                               postedMilestones={postedMilestones}
-                              studentLocked={studentLocks[student.id]}
-                              frozenTerms={frozenTerms}
+                              studentLocked={!sgOpenForCorrection && studentLocks[student.id]}
+                              frozenTerms={sgOpenForCorrection ? [] : frozenTerms}
                               periodsList={periodsList}
                               onSaveStatusChange={(st, message) => {
                                 setAutoSaveStatus(st);
@@ -3199,7 +3218,7 @@ export default function ScoreInput() {
                           `Are you sure you want to post ${isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)'}? This will notify enrolled students for consultation so they can review their recorded period scores.`
                         )}
                         {pendingPostMilestone === 'semestral' && (
-                          `Are you sure you want to finalize Official Semestral Grade (SG)? This will publish final semestral grades and GWA for student review and official submission.`
+                          'Submit the Official Semestral Grade (SG) to the Dean for approval? Students will see it, and they and their guardians will be emailed, only after the Dean approves it.'
                         )}
                       </p>
                     </div>
@@ -3333,30 +3352,54 @@ export default function ScoreInput() {
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-emerald-955 font-sans">Step 3: Official Semestral Grade (SG)</span>
-                          {lockedMilestones.includes('Semestral Grade') ? (
+                          {sgApproval?.status === 'returned' ? (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-900 rounded-md">
+                              Returned by the Dean
+                            </span>
+                          ) : sgFinalized && sgApproval?.status === 'submitted' ? (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 rounded-md">
+                              Awaiting Dean approval
+                            </span>
+                          ) : sgFinalized ? (
                             <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-200 text-emerald-900 rounded-md flex items-center gap-1">
-                              <Check className="w-3 h-3" /> Officially Locked & Submitted
+                              <Check className="w-3 h-3" /> Approved &amp; Official
                             </span>
                           ) : (
                             <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-md">
-                              Final Lock & Submit
+                              Submit to Dean
                             </span>
                           )}
                         </div>
                         <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                          {sgFinalized
-                            ? 'This grade is final and has been submitted to the Dean and Registrar. A change now needs an approved grade change request.'
-                            : 'Finalizes overall Semestral Grade (SG) & Transmuted GWA. Submits official grade sheet to Dean & Registrar.'}
+                          {sgApproval?.status === 'returned'
+                            ? `The Dean returned this SG${sgApproval.returnReason ? `: "${sgApproval.returnReason}"` : '.'} The scores are open again: correct them here, then resubmit it from Review & Post Grades. MR and TFR update together with the SG once the Dean approves.`
+                            : sgFinalized && sgApproval?.status === 'submitted'
+                              ? 'Submitted to the Dean. Students do not see it until the Dean approves it.'
+                              : sgFinalized
+                                ? 'This grade is approved and official. A change now needs an approved grade change request.'
+                                : 'Computes the overall Semestral Grade (SG) & Transmuted GWA and submits the grade sheet to the Dean for approval.'}
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        disabled={sgFinalized || postingGrades || Boolean(getGradePeriodSequenceBlock('semestral', postedMilestones))}
-                        onClick={() => setPendingPostMilestone('semestral')}
-                        className="px-3 py-1.5 text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
-                      >
-                        {sgFinalized ? 'SG Final' : 'Finalize SG'}
-                      </button>
+                      {sgApproval?.status === 'returned' ? (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/faculty/gradecomputationpreview?id=${classRecordId}`)}
+                          className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shadow-xs shrink-0 cursor-pointer"
+                        >
+                          Resubmit SG
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={sgFinalized || postingGrades || Boolean(getGradePeriodSequenceBlock('semestral', postedMilestones))}
+                          onClick={() => setPendingPostMilestone('semestral')}
+                          className="px-3 py-1.5 text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
+                        >
+                          {sgFinalized
+                            ? (sgApproval?.status === 'submitted' ? 'With the Dean' : 'SG Approved')
+                            : 'Submit SG to Dean'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </>

@@ -240,7 +240,7 @@ export async function fetchRecordsIntegrity(term, enrolledSectionIds) {
       id: 'empty_sections',
       label: 'Sections with nobody enrolled yet',
       count: emptySections,
-      hint: 'Students may already be assigned to the section but not yet enrolled in any subject. This clears as faculty loading fills in their classes.',
+      hint: 'Students may already be assigned to the section but not yet enrolled in any subject. This clears as each Dean\'s faculty loading fills in their classes.',
       to: '/registrar/sectionmasterlist'
     }
   ];
@@ -300,8 +300,8 @@ export async function fetchRegistrarDashboard() {
 // ── Reports ──────────────────────────────────────────────────────────────────
 // Records-oriented, deliberately distinct from Dean/faculty performance
 // reporting. The faculty-load export is intentionally absent: that belongs to
-// the Faculty Loading & Provisioning page, and duplicating it here would create
-// two sources of truth for the same figure.
+// the Dean's Faculty Loading & Provisioning page, and duplicating it here would
+// create two sources of truth for the same figure.
 
 export async function fetchEnrollmentReport(term) {
   const sections = await fetchTermSections(term);

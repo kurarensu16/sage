@@ -77,6 +77,7 @@ import {
   isSummerClass
 } from '../../lib/gradeMilestones';
 import { postGradeMilestoneAtomic, preflightSgCorrectionPosting } from '../../lib/gradePostingService';
+import { fetchSgApproval } from '../../lib/sgApprovalService';
 import { fetchWindowsForClass, isMilestoneFinalized } from '../../lib/gradeConsultationService';
 import { collectBlankScoreReview, prepareReviewedBlankScores } from '../../lib/gradeScoreReview';
 import { fetchApprovedSgCorrections } from '../../lib/gradeCorrectionService';
@@ -217,7 +218,15 @@ export default function GradeComputationPreview() {
   // no window to close -- it is the official grade, so posting it IS the
   // finalization. post_grade_milestone_v2 has always treated it that way: an
   // existing SG row is preserved untouched unless an approved request names it.
-  const sgFinalized = lockedMilestones.includes('Semestral Grade');
+  //
+  // Since 2026-11-18 the SG is SUBMITTED to the Dean, who approves it (released
+  // to students) or returns it with a reason. A returned SG is the one case
+  // where the faculty may post it again over its existing rows
+  // (20261118153739_sg_approval_by_the_dean.sql).
+  const [sgApproval, setSgApproval] = useState(null);
+  const sgReturned = sgApproval?.status === 'returned';
+  const sgPosted = lockedMilestones.includes('Semestral Grade');
+  const sgFinalized = sgPosted && !sgReturned;
   const [postingGrades, setPostingGrades] = useState(false);
   const [postSuccess, setPostSuccess] = useState(null);
   const [nullScoreReview, setNullScoreReview] = useState(null);
@@ -589,6 +598,12 @@ export default function GradeComputationPreview() {
         }
         setLockedMilestones(collectPostedMilestoneCoverage(pgData || [], { lockedOnly: true }));
         try {
+          setSgApproval(await fetchSgApproval(classRecordId));
+        } catch (approvalErr) {
+          console.warn('Could not read the SG approval status:', approvalErr);
+          setSgApproval(null);
+        }
+        try {
           setConsultationWindows(await fetchWindowsForClass(classRecordId));
         } catch (winErr) {
           console.warn('Could not read consultation windows:', winErr);
@@ -812,7 +827,9 @@ export default function GradeComputationPreview() {
           let planned = rowsByStudent.get(stud.id);
           if (!planned) return;
           const oldRecord = existingMap[stud.id];
-          if (targetMilestone === 'semestral') {
+          // A returned SG is re-posted as a whole, so every row is compared as
+          // it stands; otherwise only a row with an approved correction changes.
+          if (targetMilestone === 'semestral' && !sgReturned) {
             const approval = approvedByStudent.get(stud.id);
             if (!approval || !oldRecord) return;
             planned = {
@@ -1120,7 +1137,20 @@ export default function GradeComputationPreview() {
       setShowConfirmModal(false);
       setPendingPostMilestone(null);
 
-      const notifDetailText = isFirstPost 
+      if (targetMilestone === 'semestral') {
+        try {
+          setSgApproval(await fetchSgApproval(classRecordId));
+        } catch (approvalErr) {
+          console.warn('Could not refresh the SG approval status:', approvalErr);
+        }
+        setPostSuccess({
+          title: 'SG Submitted to the Dean',
+          description: `${classInfo?.subjects?.code || 'Class'} Semestral Grade was submitted for the Dean's approval. Students will see it, and they and their guardians will be notified, once the Dean approves it.`
+        });
+        return;
+      }
+
+      const notifDetailText = isFirstPost
         ? 'Enrolled students have been notified for consultation.'
         : Number(postingResult?.changed_count || 0) > 0
           ? `${postingResult.changed_count} student(s) with updated grades have been notified.`
@@ -2330,11 +2360,17 @@ export default function GradeComputationPreview() {
                       </div>
                       <div>
                         <h4 className="text-xs font-bold text-amber-950 font-sans uppercase tracking-wider">
-                          Confirm {pendingPostMilestone === 'midterm' ? (isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)') : pendingPostMilestone === 'tfr' ? (isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)') : 'Official Semestral Grade (SG)'} {changedStudentsPreview ? 'Update' : 'Release'}
+                          Confirm {pendingPostMilestone === 'midterm' ? (isSummer ? 'Midterm Grade' : 'Midterm Rating (MR)') : pendingPostMilestone === 'tfr' ? (isSummer ? 'Final Grade (TFR)' : 'Tentative Final Rating (TFR)') : 'Official Semestral Grade (SG)'} {pendingPostMilestone === 'semestral' ? (sgReturned ? 'Resubmission' : 'Submission') : changedStudentsPreview ? 'Update' : 'Release'}
                         </h4>
                         <p className="text-xs text-amber-900 mt-1 leading-relaxed font-sans">
-                          {changedStudentsPreview ? (
-                            changedStudentsPreview.length > 0 ? 
+                          {pendingPostMilestone === 'semestral' && sgReturned ? (
+                            changedStudentsPreview && changedStudentsPreview.length > 0
+                              ? `Resubmit the Semestral Grade (SG) to the Dean with ${changedStudentsPreview.length} changed student(s)? Students still do not see it until the Dean approves.`
+                              : 'No grade changed since the Dean returned it. Resubmit the Semestral Grade (SG) as it is? Students still do not see it until the Dean approves.'
+                          ) : pendingPostMilestone === 'semestral' && !changedStudentsPreview ? (
+                            'Submit the Official Semestral Grade (SG) to the Dean for approval? Students will see it, and they and their guardians will be emailed, only after the Dean approves it.'
+                          ) : changedStudentsPreview ? (
+                            changedStudentsPreview.length > 0 ?
                               `You are about to update the grades for ${changedStudentsPreview.length} student(s). Only these students will receive the "Grade Updated" notification.` 
                               : "No grade changes were detected. Your current scores match the officially posted scores."
                           ) : (
@@ -2458,6 +2494,8 @@ export default function GradeComputationPreview() {
                           nullScoreReview?.targetMilestone !== pendingPostMilestone
                           && changedStudentsPreview
                           && changedStudentsPreview.length === 0
+                          // A returned SG may be resubmitted unchanged.
+                          && !(pendingPostMilestone === 'semestral' && sgReturned)
                         )}
                         onClick={() => handlePostGrades(
                           pendingPostMilestone,
@@ -2470,9 +2508,13 @@ export default function GradeComputationPreview() {
                           ? 'Posting...'
                           : nullScoreReview?.targetMilestone === pendingPostMilestone
                             ? 'Convert to Zero & Release'
-                            : changedStudentsPreview
-                              ? 'Confirm Update'
-                              : 'Review & Continue'}
+                            : pendingPostMilestone === 'semestral' && sgReturned
+                              ? 'Resubmit to Dean'
+                              : pendingPostMilestone === 'semestral' && !changedStudentsPreview
+                                ? 'Submit to Dean'
+                                : changedStudentsPreview
+                                  ? 'Confirm Update'
+                                  : 'Review & Continue'}
                       </button>
                     </div>
                   </div>
@@ -2566,21 +2608,38 @@ export default function GradeComputationPreview() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-bold text-emerald-955 font-sans">Step 3: Official Semestral Grade (SG)</span>
-                            {lockedMilestones.includes('Semestral Grade') ? (
+                            {sgReturned ? (
+                              <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-900 rounded-md">
+                                Returned by the Dean
+                              </span>
+                            ) : sgPosted && sgApproval?.status === 'submitted' ? (
+                              <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 rounded-md">
+                                Awaiting Dean approval
+                              </span>
+                            ) : sgPosted ? (
                               <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-200 text-emerald-900 rounded-md flex items-center gap-1">
-                                <Check className="w-3 h-3" /> Officially Locked & Submitted
+                                <Check className="w-3 h-3" /> Approved &amp; Official
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 rounded-md">
-                                Final Lock & Submit
+                                Submit to Dean
                               </span>
                             )}
                           </div>
                           <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">
-                            {sgFinalized
-                              ? 'This grade is final and has been submitted to the Dean and Registrar. A change now needs an approved grade change request.'
-                              : 'Finalizes overall Semestral Grade (SG) & Transmuted GWA. Submits official grade sheet to Dean & Registrar.'}
+                            {sgReturned
+                              ? 'The Dean returned this SG. Fix what the Dean asked for, then resubmit it: scores are open again in the Scorebook, and remarks such as INC, Dropped or FDA can be changed here. MR and TFR update together with the SG once the Dean approves.'
+                              : sgPosted && sgApproval?.status === 'submitted'
+                                ? 'Submitted to the Dean. Students do not see it yet; it becomes official, and is sent to them and the Registrar, once the Dean approves it.'
+                                : sgFinalized
+                                  ? 'This grade is approved and official. A change now needs an approved grade change request.'
+                                  : 'Computes the overall Semestral Grade (SG) & Transmuted GWA and submits the grade sheet to the Dean for approval. Students see it after approval.'}
                           </p>
+                          {sgReturned && sgApproval?.returnReason && (
+                            <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2">
+                              <span className="font-bold">Dean&apos;s reason:</span> {sgApproval.returnReason}
+                            </p>
+                          )}
                         </div>
                         <button
                           type="button"
@@ -2588,7 +2647,15 @@ export default function GradeComputationPreview() {
                           onClick={() => computeChangedStudents('semestral')}
                           className="px-3 py-1.5 text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors shadow-xs shrink-0 disabled:opacity-40 cursor-pointer"
                         >
-                          {isComputingDiff ? '...' : sgFinalized ? 'SG Final' : 'Finalize SG'}
+                          {isComputingDiff
+                            ? '...'
+                            : sgReturned
+                              ? 'Resubmit SG'
+                              : sgPosted && sgApproval?.status === 'submitted'
+                                ? 'With the Dean'
+                                : sgFinalized
+                                  ? 'SG Approved'
+                                  : 'Submit SG to Dean'}
                         </button>
                       </div>
                     </div>

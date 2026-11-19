@@ -12,6 +12,7 @@ import { getCachedData, setCachedData } from '../../lib/dataCache';
 import { TableSkeleton } from '../../components/common/Skeleton';
 import { GRADE_MILESTONES, findPostedMilestone } from '../../lib/gradeMilestones';
 import { fetchWindowsForClasses, resolveMilestoneState } from '../../lib/gradeConsultationService';
+import { fetchSgReleaseStates } from '../../lib/sgApprovalService';
 import { logActivity, resolveActorName } from '../../lib/auditLog';
 
 // ASPIRE v3.1: Transparent Official Milestone Ledger (No clearance locks)
@@ -38,9 +39,15 @@ function isEnrollmentInTerm(enrollment, termOption) {
 // Finalized carries no sub-label on purpose: it is the resting state, and
 // labelling every settled grade would bury the two that still need attention.
 // Semestral grade has no window, so it reads finalized the moment it posts.
+//
+// Since 2026-11-18 the SG has one more state before it is official: submitted
+// by the instructor and waiting for the Dean's approval. The database does not
+// show the student the SG row until then, so no number is shown -- only that
+// it is with the Dean.
 const MILESTONE_STATE_STYLES = Object.freeze({
   tentative: { value: 'text-amber-700', label: 'text-amber-600', text: 'Tentative' },
-  posted: { value: 'text-sky-700', label: 'text-sky-600', text: 'Not Final' }
+  posted: { value: 'text-sky-700', label: 'text-sky-600', text: 'Not Final' },
+  awaiting_dean: { value: 'text-slate-500 text-xs', label: 'text-amber-600', text: 'Awaiting Dean' }
 });
 
 function MilestoneValue({ value, state }) {
@@ -256,6 +263,10 @@ export default function MyGradesList() {
         // 4. Running grades: posted milestones first, unposted terms live (Tentative)
         const { bySubject: runningBySubject, summary } = await loadStudentRunningGrades(user.id, classRecordIds);
 
+        // 5. Which SGs the instructor has submitted but the Dean has not yet
+        // approved. Never fails the report: no answer reads as "not submitted".
+        const sgRelease = await fetchSgReleaseStates(classRecordIds);
+
         // Map data structures
         const subMap = {};
         enrolls?.forEach(e => {
@@ -310,9 +321,10 @@ export default function MyGradesList() {
             const tfrPostedGwa = tfrPostedRow ? postedGwaText(tfrPostedRow) : '—';
             const sgPostedGwa = sgPostedRow ? postedGwaText(sgPostedRow) : '—';
 
+            const sgAwaitingDean = !sgPostedRow && sgRelease.get(cr.class_record_id) === 'pending';
             const remarks = sgPostedRow
               ? toDisplayRemark(sgPostedRow.remarks)
-              : 'Ongoing';
+              : sgAwaitingDean ? 'Awaiting Dean approval' : 'Ongoing';
 
             return {
               class_record_id: cr.class_record_id,
@@ -324,7 +336,7 @@ export default function MyGradesList() {
               mrIsPosted: Boolean(mrPostedRow),
               tfrGwa: tfrPostedRow ? tfrPostedGwa : ratingGwaText(running?.tfr),
               tfrIsPosted: Boolean(tfrPostedRow),
-              sgGwa: sgPostedRow ? sgPostedGwa : ratingGwaText(running?.sg),
+              sgGwa: sgPostedRow ? sgPostedGwa : sgAwaitingDean ? 'Pending' : ratingGwaText(running?.sg),
               sgIsPosted: Boolean(sgPostedRow),
               mrPostedGwa,
               tfrPostedGwa,
@@ -334,7 +346,9 @@ export default function MyGradesList() {
               // it locks on posting.
               mrState: resolveMilestoneState({ posted: !!mrPostedRow, window: windowFor(GRADE_MILESTONES.MIDTERM_RATING), gradePeriod: GRADE_MILESTONES.MIDTERM_RATING }),
               tfrState: resolveMilestoneState({ posted: !!tfrPostedRow, window: windowFor(GRADE_MILESTONES.TENTATIVE_FINAL_RATING), gradePeriod: GRADE_MILESTONES.TENTATIVE_FINAL_RATING }),
-              sgState: resolveMilestoneState({ posted: !!sgPostedRow, window: null, gradePeriod: GRADE_MILESTONES.SEMESTRAL_GRADE }),
+              sgState: sgAwaitingDean
+                ? { state: 'awaiting_dean', label: 'Awaiting Dean' }
+                : resolveMilestoneState({ posted: !!sgPostedRow, window: null, gradePeriod: GRADE_MILESTONES.SEMESTRAL_GRADE }),
               runningGwa: running?.gwa != null ? running.gwa.toFixed(2) : '—',
               isOfficial: Boolean(running?.isOfficial),
               remarks

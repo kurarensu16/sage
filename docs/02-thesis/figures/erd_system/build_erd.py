@@ -30,7 +30,9 @@ GROUPS = [
     ('Grading Outcomes',
      ['posted_grades', 'posted_grade_revisions', 'grade_correction_history', 'remark_override_requests',
       'grade_change_evidence', 'grade_consultation_windows', 'grade_consultation_notes',
-      'grade_posting_operations', 'sg_correction_operations', 'admin_grade_override_operations']),
+      'grade_posting_operations', 'sg_correction_operations', 'admin_grade_override_operations',
+      # Dean approval of the SG (20261118153739, pre-final defense revision)
+      'sg_approvals', 'sg_held_notifications']),
     ('Evaluation and Intervention',
      ['student_risk_evaluations', 'student_risk_private_notes', 'student_evaluation_referrals',
       'student_evaluation_referral_requests', 'faculty_intervention_drafts',
@@ -335,10 +337,24 @@ def partition(tables, max_parts=None):
     return parts
 
 
+# Parts pinned by hand. Grading Outcomes part a stays exactly as published in the paper
+# (Figure 2.17a); the SG approval tables added on 2026-11-18 go to part b with the rest.
+# Without this the row-budget split moves grade_correction_history into part a, which
+# would make the published 2.17a figure and its description both wrong.
+FIXED_FIRST_PART = {
+    'Grading Outcomes': ['posted_grades', 'remark_override_requests', 'posted_grade_revisions'],
+}
+
 plan, where = [], {}
 for gi, (title, tables) in enumerate(GROUPS, 1):
     tables = [t for t in tables if t in M]
-    parts = partition(tables, max_parts=MAX_PARTS.get(title))
+    if title in FIXED_FIRST_PART:
+        first = [t for t in FIXED_FIRST_PART[title] if t in tables]
+        rest = [t for t in tables if t not in first]
+        rest = [t for p in partition(rest, max_parts=1) for t in p]
+        parts = [first, rest]
+    else:
+        parts = partition(tables, max_parts=MAX_PARTS.get(title))
     plan.append((gi, title, parts))
     for pi, part in enumerate(parts):
         for t in part:

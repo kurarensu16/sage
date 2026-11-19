@@ -216,18 +216,26 @@ def context(path_base, sysnum, sysname, left, right, W=1800, BW=320, PW=420, sto
 
 
 # ---------------------------------------------------------------- Level 1 ----
+ACRONYMS = {'Sg': 'SG'}  # title() turns sg_approvals into "Sg Approvals"
+
+
 def _human(n):
-    return n.replace('_', ' ').title() if '_' in n else n
+    if '_' not in n:
+        return n
+    return ' '.join(ACRONYMS.get(w, w) for w in n.replace('_', ' ').title().split(' '))
 
 
 def _lbl(mode_verb, label):
     return mode_verb + ' ' + label[0].lower() + label[1:] if label[:2].upper() != label[:2] else mode_verb + ' ' + label
 
 
-def level1(path_base, entity, modules, chunk_h=2550, W=1780):
+def level1(path_base, entity, modules, chunk_h=2550, W=1780, parts=None):
     """modules: list of dict(num, name, ins[], outs[], stores[]).
     stores: (id, name, label, mode) with mode r (store->process), w (process->store), rw (both),
             or ('X', name, label_to_ext, label_from_ext) for an external box.
+    parts: optional list of module counts per image, e.g. [3, 2, 2], to pin the page breaks a
+           published figure already uses (its part-by-part description in the paper depends on
+           them). Without it, images are filled up to chunk_h.
     Returns list of (png_path, w, h); bands never split across images."""
     wc_e, wc_s = 28, 26
     BW, PW, SW = 220, 320, 380
@@ -253,12 +261,20 @@ def level1(path_base, entity, modules, chunk_h=2550, W=1780):
         H = max(sh, eh, 190) + 30
         bands.append((m, rows, H))
     # chunking
-    chunks, cur, acc = [], [], 0
-    for b in bands:
-        if cur and acc + b[2] + 50 > chunk_h:
-            chunks.append(cur); cur, acc = [], 0
-        cur.append(b); acc += b[2] + 50
-    chunks.append(cur)
+    if parts:
+        if sum(parts) != len(bands):
+            raise ValueError(f'parts {parts} cover {sum(parts)} modules, figure has {len(bands)}')
+        chunks, i = [], 0
+        for n in parts:
+            chunks.append(bands[i:i + n])
+            i += n
+    else:
+        chunks, cur, acc = [], [], 0
+        for b in bands:
+            if cur and acc + b[2] + 50 > chunk_h:
+                chunks.append(cur); cur, acc = [], 0
+            cur.append(b); acc += b[2] + 50
+        chunks.append(cur)
     outs = []
     for ci, ch in enumerate(chunks):
         fig = Fig(W)

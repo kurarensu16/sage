@@ -45,7 +45,7 @@ const PRIMARY_TABS = {
   ],
   dean: [
     { to: '/dean/dashboard', label: 'Dashboard', icon: LayoutDashboard, match: (p) => p === '/dean/dashboard' || p === '/dean' },
-    { to: '/dean/gradepostingstatus', label: 'Grades', icon: BookOpen, match: (p) => p.startsWith('/dean/gradeposting') || p.startsWith('/dean/remarkoverride') || p.startsWith('/dean/graderequests') || p.startsWith('/dean/gradedistribution') },
+    { to: '/dean/gradepostingstatus', label: 'Grades', icon: BookOpen, match: (p) => p.startsWith('/dean/sgapprovals') || p.startsWith('/dean/gradeposting') || p.startsWith('/dean/remarkoverride') || p.startsWith('/dean/graderequests') || p.startsWith('/dean/gradedistribution') },
     { to: '/dean/atriskstudents', label: 'Risk', icon: AlertCircle, match: (p) => p.startsWith('/dean/atriskstudents') || p.startsWith('/dean/escalatedcases') || p.startsWith('/dean/interventionresults') },
     // Replaces the Reports tab. Faculty loading is a term-start workflow with
     // several steps; generating a report is one occasional page, so it is the
@@ -66,10 +66,10 @@ const PRIMARY_TABS = {
     // Exact section paths, not a '/registrar/section' prefix: that would also
     // swallow sectionmasterlist, which belongs to the Enrolment tab.
     { to: '/registrar/subjectlist', label: 'Setup', icon: BookMarked, match: (p) => p.startsWith('/registrar/subject') || p.startsWith('/registrar/program') || p.startsWith('/registrar/gradecomputations') || p.startsWith('/registrar/sectionlist') || p.startsWith('/registrar/sectionform') || p.startsWith('/registrar/departments') || p.startsWith('/registrar/termmanagement') },
-    // The registrar's term-start workflow, which had no tab at all: enrolment,
-    // faculty loading and rosters were all reachable only through "More".
-    { to: '/registrar/enrollment', label: 'Enrolment', icon: UserCheck, match: (p) => p.startsWith('/registrar/enrollment') || p.startsWith('/registrar/facultyloading') || p.startsWith('/registrar/sectionmasterlist') || p.startsWith('/registrar/newstudentaccounts') || p.startsWith('/registrar/viewusers') },
-    { to: '/registrar/gradeoverride', label: 'Grades', icon: Shield, match: (p) => p.startsWith('/registrar/gradeoverride') || p.startsWith('/registrar/lategradechanges') },
+    // The registrar's term-start workflow, which had no tab at all: enrolment
+    // and rosters were reachable only through "More".
+    { to: '/registrar/enrollment', label: 'Enrolment', icon: UserCheck, match: (p) => p.startsWith('/registrar/enrollment') || p.startsWith('/registrar/sectionmasterlist') || p.startsWith('/registrar/newstudentaccounts') || p.startsWith('/registrar/viewusers') || p.startsWith('/registrar/studentrecords') },
+    { to: '/registrar/gradeoverride', label: 'Grades', icon: Shield, match: (p) => p.startsWith('/registrar/gradesheets') || p.startsWith('/registrar/gradeoverride') || p.startsWith('/registrar/lategradechanges') },
   ],
 };
 

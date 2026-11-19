@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader';
 import { Users, Search, Eye, AlertTriangle, Info } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -114,7 +115,8 @@ export default function ViewUsers() {
           <span>
             Read-only. Accounts are created, edited, and deactivated by an administrator. To change
             a student's home section, year level, or college, use{' '}
-            <strong>Student Records → Enrollment Management</strong>.
+            <strong>Enrollment → Enrollment Management</strong>. Select a student&apos;s name to open their
+            Student Record.
           </span>
         </div>
 
@@ -191,7 +193,13 @@ export default function ViewUsers() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
-                        {u.last_name}, {u.first_name} {u.middle_name || ''}
+                        {u.role === 'student' ? (
+                          <Link to={`/registrar/studentrecords/${u.user_id}`} className="hover:text-sage-700 hover:underline">
+                            {u.last_name}, {u.first_name} {u.middle_name || ''}
+                          </Link>
+                        ) : (
+                          <>{u.last_name}, {u.first_name} {u.middle_name || ''}</>
+                        )}
                       </h3>
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-sage-700 bg-sage-50 border border-sage-200 px-1.5 py-0.5 rounded">
                         {u.role}

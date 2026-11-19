@@ -33,7 +33,6 @@ import RegistrarProgramList from './pages/registrar/ProgramList';
 import RegistrarProgramForm from './pages/registrar/ProgramForm';
 import RegistrarEnrollmentManagement from './pages/registrar/EnrollmentManagement';
 import RegistrarStudentAccountRequests from './pages/registrar/StudentAccountRequests';
-import RegistrarFacultyLoading from './pages/registrar/FacultyLoadingAndProvisioning';
 import RegistrarLateGradeChanges from './pages/registrar/LateGradeChanges';
 import DeanFacultyLoading from './pages/dean/FacultyLoadingAndProvisioning';
 import RegistrarViewUsers from './pages/registrar/ViewUsers';
@@ -46,10 +45,16 @@ import RegistrarTermManagement from './pages/registrar/TermManagement';
 import RegistrarGradeComputationsList from './pages/registrar/GradeComputationsList';
 import RegistrarDepartmentsList from './pages/registrar/DepartmentsList';
 import RegistrarGradeOverride from './pages/registrar/GradeOverride';
+import RegistrarStudentRecords from './pages/registrar/StudentRecords';
+import RegistrarStudentRecordDetail from './pages/registrar/StudentRecordDetail';
+import RegistrarClassGradeSheets from './pages/registrar/ClassGradeSheets';
+import RegistrarClassGradeSheet from './pages/registrar/ClassGradeSheet';
 
 // Dean Pages
 import DeanDashboard from './pages/dean/Dashboard';
 import DeanGradePostingStatus from './pages/dean/GradePostingStatus';
+import DeanSgApprovals from './pages/dean/SgApprovals';
+import DeanSgApprovalReview from './pages/dean/SgApprovalReview';
 import DeanGradeDistribution from './pages/dean/GradeDistribution';
 import DeanAtRiskStudents from './pages/dean/AtRiskStudents';
 import DeanSummaryReports from './pages/dean/SummaryReports';
@@ -169,7 +174,9 @@ function App() {
               <Route path="/registrar/programform" element={<RegistrarProgramForm />} />
               <Route path="/registrar/enrollment" element={<RegistrarEnrollmentManagement />} />
               <Route path="/registrar/newstudentaccounts" element={<RegistrarStudentAccountRequests />} />
-              <Route path="/registrar/facultyloading" element={<RegistrarFacultyLoading />} />
+              {/* Faculty Loading belongs to the Dean (2026-11-18). Kept as a redirect
+                  so older notifications that link here do not 404. */}
+              <Route path="/registrar/facultyloading" element={<Navigate to="/registrar/dashboard" replace />} />
               <Route path="/registrar/lategradechanges" element={<RegistrarLateGradeChanges />} />
               <Route path="/registrar/subjectlist" element={<RegistrarSubjectList />} />
               <Route path="/registrar/subjectform" element={<RegistrarSubjectForm />} />
@@ -180,6 +187,10 @@ function App() {
               <Route path="/registrar/departmentslist" element={<RegistrarDepartmentsList />} />
               <Route path="/registrar/termmanagement" element={<RegistrarTermManagement />} />
               <Route path="/registrar/gradeoverride" element={<RegistrarGradeOverride />} />
+              <Route path="/registrar/studentrecords" element={<RegistrarStudentRecords />} />
+              <Route path="/registrar/studentrecords/:studentId" element={<RegistrarStudentRecordDetail />} />
+              <Route path="/registrar/gradesheets" element={<RegistrarClassGradeSheets />} />
+              <Route path="/registrar/gradesheets/:classRecordId" element={<RegistrarClassGradeSheet />} />
               <Route path="/registrar/notifications" element={<RegistrarNotifications />} />
               <Route path="/registrar/settings" element={<Settings />} />
             </Route>
@@ -189,6 +200,8 @@ function App() {
               <Route path="/dean/facultyloading" element={<DeanFacultyLoading />} />
               <Route path="/dean/dashboard" element={<DeanDashboard />} />
               <Route path="/dean/gradepostingstatus" element={<DeanGradePostingStatus />} />
+              <Route path="/dean/sgapprovals" element={<DeanSgApprovals />} />
+              <Route path="/dean/sgapprovals/:classRecordId" element={<DeanSgApprovalReview />} />
               {/* Retired page. Its URL is kept because the Dean dashboard links
                   here and bookmarks exist; the new page supersedes it. */}
               <Route path="/dean/remarkoverriderequests" element={<DeanGradeChangeRequests />} />

@@ -38,7 +38,9 @@ import {
   Wrench,
   DatabaseBackup,
   FileWarning,
-  ShieldAlert
+  ShieldAlert,
+  UserSearch,
+  Table2
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import SageLogo from './SageLogo';
@@ -150,6 +152,9 @@ const PORTAL_NAVIGATION = {
       label: 'Grades',
       icon: FileText,
       items: [
+        // The SG reaches students and the Registrar only after the Dean
+        // approves it here (2026-11-18).
+        { to: '/dean/sgapprovals', label: 'SG Approvals', icon: ClipboardCheck },
         { to: '/dean/gradepostingstatus', label: 'Grade Submission Status', icon: BookOpen },
         { to: '/dean/graderequests', label: 'Grade Change Requests', icon: FileWarning },
         { to: '/dean/gradeoverrides', label: 'Grade Overrides', icon: ShieldAlert },
@@ -208,6 +213,9 @@ const PORTAL_NAVIGATION = {
       icon: Users,
       items: [
         { to: '/registrar/viewusers', label: 'View Users', icon: Users },
+        // A student's enrolled subjects and grade history (2026-11-18). Here
+        // rather than a group of its own: a one-link group breaks the rule above.
+        { to: '/registrar/studentrecords', label: 'Student Records', icon: UserSearch },
         { to: '/registrar/newstudentaccounts', label: 'New Student Accounts', icon: UserPlus }
       ]
     },
@@ -227,13 +235,12 @@ const PORTAL_NAVIGATION = {
       ]
     },
     {
-      // Faculty Loading was filed under "Student Records" despite assigning
-      // FACULTY to classes. These three together are the term-start workflow.
+      // The registrar's term-start workflow. Faculty Loading left this group on
+      // 2026-11-18: it belongs to the Dean of each college.
       id: 'enrollment',
-      label: 'Enrollment & Loading',
+      label: 'Enrollment',
       icon: UserCheck,
       items: [
-        { to: '/registrar/facultyloading', label: 'Faculty Loading & Provisioning', icon: GraduationCap },
         { to: '/registrar/enrollment', label: 'Enrollment Management', icon: UserCheck },
         { to: '/registrar/sectionmasterlist', label: 'Section Rosters', icon: ClipboardList }
       ]
@@ -245,6 +252,7 @@ const PORTAL_NAVIGATION = {
       label: 'Grade Records',
       icon: Shield,
       items: [
+        { to: '/registrar/gradesheets', label: 'Class Grade Sheets', icon: Table2 },
         { to: '/registrar/gradeoverride', label: 'Grade Override', icon: AlertCircle },
         { to: '/registrar/lategradechanges', label: 'Late Grade Changes', icon: FileWarning }
       ]
