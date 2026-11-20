@@ -88,7 +88,9 @@ function Tracker({ facultyId }) {
   const [recording, setRecording] = useState(false);
   const requestId = useRef(null);
   const dialogTrigger = useRef(null);
-  const skipLoadedQueryKey = useRef('');
+  // null, not '': with no URL filters the query key is '' too, and an empty
+  // marker made the very first load look already-loaded (endless "Loading").
+  const skipLoadedQueryKey = useRef(null);
   const [refresh, setRefresh] = useState(0);
   const [searchText, setSearchText] = useState(params.get('search') || '');
   const [archiveMode, setArchiveMode] = useState(params.get('scope') === 'history');
@@ -160,7 +162,7 @@ function Tracker({ facultyId }) {
   useEffect(() => {
     if (!metadata) return;
     if (skipLoadedQueryKey.current === queryKey) {
-      skipLoadedQueryKey.current = '';
+      skipLoadedQueryKey.current = null;
       return;
     }
     if (filters.history && !filters.periodId) {
